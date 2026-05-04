@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.mcp.json
+
+# Supabase local temp files (contain project ref, org ID, DB URLs)
+supabase/.temp/
