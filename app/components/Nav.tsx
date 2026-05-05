@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
+  const pathname = usePathname();
+  const isBlog = pathname?.startsWith("/blog");
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 20);
@@ -17,18 +21,28 @@ export default function Nav() {
         scrolled ? "border-b border-black" : "border-b border-transparent"
       }`}
     >
-      <a
-        href="#"
+      <Link
+        href="/"
         className="font-display text-sm font-medium tracking-[0.12em] uppercase text-black no-underline"
       >
         Cerebro
-      </a>
-      <a
-        href="#start"
-        className="text-[0.7rem] font-medium tracking-[0.12em] uppercase text-black border border-black px-5 py-2.5 no-underline transition-[background,color] duration-200 hover:bg-black hover:text-white"
-      >
-        Start the conversation
-      </a>
+      </Link>
+      <div className="flex items-center gap-6">
+        <Link
+          href="/blog"
+          className={`text-[0.7rem] font-medium tracking-[0.12em] uppercase no-underline transition-colors duration-200 ${
+            isBlog ? "text-black" : "text-black/40 hover:text-black"
+          }`}
+        >
+          Blog
+        </Link>
+        <a
+          href="/#start"
+          className="text-[0.7rem] font-medium tracking-[0.12em] uppercase text-black border border-black px-5 py-2.5 no-underline transition-[background,color] duration-200 hover:bg-black hover:text-white"
+        >
+          Start the conversation
+        </a>
+      </div>
     </nav>
   );
 }

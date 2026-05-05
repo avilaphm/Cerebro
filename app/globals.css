@@ -17,6 +17,50 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Blog post prose styles */
+.blog-prose h2 {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: #000;
+  margin-top: 2.5rem;
+  margin-bottom: 0.75rem;
+}
+.blog-prose p {
+  font-size: 0.9375rem;
+  font-weight: 300;
+  line-height: 1.8;
+  color: #000;
+  margin-bottom: 1.25rem;
+}
+.blog-prose a {
+  color: #000;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.blog-prose ul, .blog-prose ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+.blog-prose li {
+  font-size: 0.9375rem;
+  font-weight: 300;
+  line-height: 1.8;
+  color: #000;
+  margin-bottom: 0.35rem;
+}
+.blog-prose strong {
+  font-weight: 500;
+}
+.blog-prose blockquote {
+  border-left: 2px solid #000;
+  padding-left: 1.25rem;
+  margin-left: 0;
+  font-style: italic;
+  color: rgba(0,0,0,0.6);
+}
+
 /* Halftone dot texture overlay — mid-tone via pattern, never flat grey */
 body::before {
   content: '';
