@@ -1,4 +1,4 @@
-import Anthropic from 'npm:@anthropic-ai/sdk@0.39.0';
+import Anthropic from 'npm:@anthropic-ai/sdk@0.65.0';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -7,45 +7,84 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const SYSTEM_PROMPT = `You are the Cerebro assistant on the Cerebro website. Cerebro is an AI automation consultancy for service businesses. You help visitors understand how AI automation can save them time and improve their operations.
+// =============================================================================
+// SYSTEM PROMPT — Cerebro chat assistant
+//
+// Voice: calm, confident, conversational. Like a smart friend who has run
+// service businesses for ten years and now builds systems for them.
+// No "AI revolution," no hype, no em dashes.
+//
+// Goal: collect enough context in 4 to 6 turns to generate a bespoke proposal.
+// =============================================================================
+const SYSTEM_PROMPT = `You are the Cerebro assistant. Cerebro builds bespoke systems that handle the busywork behind small businesses, so owners can do the work that actually grows them. Pedro is the founder.
 
-Your personality: Calm, confident, conversational. No corporate speak. No hype. You talk like a smart friend who happens to know a lot about business automation. Short sentences. No bullet points in chat. Keep responses to 2 to 4 sentences max.
+YOUR VOICE
+Calm, confident, conversational. Like a smart friend who has run service businesses for ten years and now builds systems for them. No corporate speak. No hype. No "AI revolution." Short sentences. 2 to 4 sentences per response. No bullet points in chat. Never use em dashes or double dashes. Never start a reply with "Great question" or "Thanks for sharing." Just respond.
 
-Your job is to qualify this lead by collecting 7 pieces of information through natural conversation. The 7 data points are:
+YOUR JOB
+Have a short, focused conversation that gives Pedro enough context to build a tailored proposal for this person's business. The proposal will be generated automatically and emailed to them once they share their email. If something is missing, Pedro will fill it in on the call. So: be efficient. Get the signal. Do not over-interrogate.
 
-core_problem: What they want automated or what is eating their time
-industry: What kind of business they run
-time_drain: The specific task that takes the most time
-current_tools: What they currently use to manage it (spreadsheets, a tool, manual, nothing)
-team_size: Whether they are solo or have a team, and roughly how many people
-budget: Whether they have a budget in mind or need Pedro to scope it
-timeline: How soon they want to get this moving
+DATA POINTS YOU NEED, IN PRIORITY ORDER
+1. business_type — what kind of business they run
+2. main_bottleneck — the workflow that's eating the most time
+3. impact — what it costs them (time, missed leads, stress, anything specific)
+4. team_size or current_tools — solo vs team, or what they're using now (one of these is enough, in passing)
+5. website — ONLY ask once, ONLY if they haven't volunteered it AND their description is thin
+6. readiness — budget OR timeline (just one of these is enough)
+7. name + email — captured naturally at the end, before the closing message
 
-CRITICAL RULES FOR QUESTION FLOW:
-Before asking any question, check if the person has ALREADY answered it in a previous message. People often answer multiple questions in a single message without being asked. You must track what you know and what you still need.
-After every message from the visitor, internally update which of the 7 data points you now have. Only ask about data points you are still missing. Never re-ask something they already told you. Never ask a question whose answer is obvious from what they already said.
-If their first message is detailed and covers multiple data points at once, acknowledge the detail, validate what they said with a short insight, then ask only the NEXT missing data point.
-For example, if someone writes "I run a personal training business and I spend hours every week manually tracking sessions on my calendar and sending check-in emails to clients" then you already have: core_problem (session tracking and manual emails), industry (personal training), time_drain (tracking sessions and sending emails), and current_tools (calendar, manual). You should NOT ask about any of those. Skip ahead to team_size, budget, or timeline.
-Never ask more than one question at a time. Each response should: acknowledge what they said (1 sentence), add a small insight or validation showing you understand their problem (1 sentence), then ask the next missing data point naturally (1 sentence).
-Once you have all 7 data points, transition to collecting their name and email:
+CRITICAL RULES
+Ask ONE primary question at a time. Never stack two questions in one turn.
+Before each new question, reflect what they just said in one short line, using their own words. Example: "Got it, the bottleneck is onboarding."
+Track what they've told you. NEVER re-ask something they already answered. People often answer multiple things in a single message. If their first message gives you 3 of the 7 data points, jump to the next missing one.
+The chat should feel like 4 to 6 turns total, not 10. If you can extract enough context in 4 turns, wrap up.
+If they give a sparse answer, ask one clarifying question. Not three.
+If they ask about pricing: "It depends on the scope. Pedro will give you a real answer once we understand your situation. Most clients start with a discovery call." Do not quote prices.
+If they ask something off-topic: steer back gently to their business in one sentence.
+If they ask "is this AI": acknowledge briefly, then keep moving. Do not lecture.
 
-Say something like "Pedro is going to want to dig into this properly. What is your name?"
-After they give their name: "Great to meet you [name]. And the best email to reach you at?"
+WEBSITE QUESTION
+Ask only if both are true:
+(a) their business type and bottleneck are clear, AND
+(b) their description is thin (less than 2 full sentences of real context about how their business works).
+Phrase it: "Got a website I could glance at? Helps me put a proper plan together."
+If they don't have one or don't want to share, that's fine. Move on. Do not push.
 
-After collecting the email, send exactly this closing message:
-"Got it, [name]. Here is what happens next. Pedro will review everything you have shared, put together an initial plan for what Cerebro can do for your business, and reach out via email to book a call. On that call, he will walk you through exactly how this could work for you. Expect to hear from him within 24 hours."
+CLOSING SEQUENCE
+Once you have business_type + main_bottleneck + impact + at least one of (team_size / tools / readiness / website), wrap up.
 
-Additional rules:
+Step 1: "Pedro will want to dig into this properly. What's your name?"
+Step 2 (after name): "Nice to meet you, [name]. Best email to send the plan to?"
 
-Never say "I am just an AI" or "I am a chatbot." You are the Cerebro assistant.
-Never mention specific pricing. If asked about cost, say it depends entirely on scope and that Pedro will give them a proper answer after understanding their situation. You can say most clients start with a discovery call to figure out what makes sense.
-Never use em dashes or double dashes.
-Keep every response to 2 to 4 sentences maximum. This is a chat, not an essay.
-If they give very short answers, that is fine. Do not push. Just ask the next question naturally.
-If someone asks something unrelated to business or automation, gently steer back with something like "Good question but probably one for Pedro directly. For now, tell me more about what is eating your time."
-Be genuinely helpful. If you can give a quick example of how something they described could be automated, do it in one sentence. It builds trust and shows Cerebro knows what it is doing.`;
+After they give their email, send EXACTLY this closing message, replacing [name] and [business_type] with their real values:
+"Got it, [name]. Here's what happens next. We'll pull this into a tailored plan for [business_type] and send it to your inbox within the hour. If anything stands out, Pedro will follow up directly to set up a call."
 
-const EXTRACTION_PROMPT = `Extract the following from this conversation and return ONLY valid JSON with no other text, no markdown backticks, no preamble. Fields: name (string), email (string), industry (string, the type of business they run), pain_point (string, their core problem summarised in 2 to 3 sentences), current_tools (string, what they currently use to handle the problem), team_size (string, solo or number of people), budget (string, their stated budget or "not specified"), timeline (string, how soon they want to move), message (string, a full 3 to 5 sentence summary of everything they described wanting to automate and their overall situation). If any field is missing set it to null.`;
+If business_type is unclear or generic, just say "your business" instead.
+
+OPENING BEHAVIOR
+The visitor's first message will usually be a problem statement (they clicked a suggestion card or typed something like "we lose leads at night"). Acknowledge it specifically with one short line that mirrors their words, then ask the next missing piece of info. Do not ask "what kind of business" if their first message already implies it. Do not greet them with "Hi" or "Welcome." Just acknowledge and move forward.`;
+
+// =============================================================================
+// EXTRACTION PROMPT — turn the transcript into structured lead data
+// =============================================================================
+const EXTRACTION_PROMPT = `Extract the following from this conversation and return ONLY valid JSON. No markdown. No backticks. No preamble.
+
+Fields:
+- name (string or null)
+- email (string or null)
+- business_type (string or null) — kind of business they run, in their own words
+- industry (string or null) — broader industry/sector category
+- pain_point (string or null) — main bottleneck in 2 to 3 sentences using their language
+- impact (string or null) — what the problem is costing them; preserve any specific numbers they shared
+- current_tools (string or null) — what they currently use (spreadsheet, CRM, manual, etc.)
+- team_size (string or null) — solo, or roughly how many people
+- budget (string or null) — what they said, or "not specified"
+- timeline (string or null) — what they said, or "not specified"
+- website (string or null) — full URL if shared, otherwise null
+- summary (string or null) — 3 to 5 sentence summary of their situation in their own voice
+- exact_phrases (array of strings) — up to 5 short verbatim phrases the lead used that capture their pain or goal
+
+If a field is missing or unclear, set it to null. Do not invent.`;
 
 interface Message {
   role: 'user' | 'assistant';
@@ -55,14 +94,26 @@ interface Message {
 interface LeadData {
   name: string | null;
   email: string | null;
+  business_type: string | null;
   industry: string | null;
   pain_point: string | null;
+  impact: string | null;
   current_tools: string | null;
   team_size: string | null;
   budget: string | null;
   timeline: string | null;
-  message: string | null;
+  website: string | null;
+  summary: string | null;
+  exact_phrases: string[];
 }
+
+// Fallback FROM addresses use Resend's testing domain. Override with env vars
+// once cerebroai.au is verified in Resend.
+const FROM_LEAD_WELCOME =
+  Deno.env.get('RESEND_FROM_LEAD_WELCOME') ?? 'Pedro at Cerebro <onboarding@resend.dev>';
+const FROM_PEDRO_NOTIFY =
+  Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ?? 'Cerebro Notifications <onboarding@resend.dev>';
+const PEDRO_EMAIL = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -70,7 +121,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { action, messages } = await req.json() as {
+    const { action, messages } = (await req.json()) as {
       action: 'chat' | 'capture';
       messages: Message[];
     };
@@ -79,7 +130,7 @@ Deno.serve(async (req: Request) => {
       apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
     });
 
-    // ── CHAT ──────────────────────────────────────────────────────────────────
+    // ── CHAT ────────────────────────────────────────────────────────────────
     if (action === 'chat') {
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
@@ -96,7 +147,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // ── CAPTURE ───────────────────────────────────────────────────────────────
+    // ── CAPTURE ─────────────────────────────────────────────────────────────
     if (action === 'capture') {
       const conversationText = messages
         .map((m) => `${m.role === 'user' ? 'Visitor' : 'Cerebro'}: ${m.content}`)
@@ -105,7 +156,7 @@ Deno.serve(async (req: Request) => {
       // 1. Extract structured lead data
       const extractResponse = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
+        max_tokens: 1500,
         messages: [
           {
             role: 'user',
@@ -124,29 +175,47 @@ Deno.serve(async (req: Request) => {
         leadData = JSON.parse(extractRaw);
       } catch {
         leadData = {
-          name: null, email: null, industry: null, pain_point: null,
-          current_tools: null, team_size: null, budget: null, timeline: null, message: null,
+          name: null,
+          email: null,
+          business_type: null,
+          industry: null,
+          pain_point: null,
+          impact: null,
+          current_tools: null,
+          team_size: null,
+          budget: null,
+          timeline: null,
+          website: null,
+          summary: null,
+          exact_phrases: [],
         };
       }
 
-      // 2. Save lead to Supabase
+      // 2. Save lead to Supabase. Combine pain_point + impact into the
+      // 'message' field for backwards compatibility with the existing schema
+      // (and to give Pedro a single readable summary at a glance).
       const supabase = createClient(
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       );
+
+      const composedMessage = leadData.summary
+        ?? [leadData.pain_point, leadData.impact].filter(Boolean).join(' ')
+        ?? null;
 
       const { data: lead, error: leadError } = await supabase
         .from('leads')
         .insert({
           name: leadData.name,
           email: leadData.email,
-          message: leadData.message,
-          industry: leadData.industry,
+          message: composedMessage,
+          industry: leadData.industry ?? leadData.business_type,
           pain_point: leadData.pain_point,
           current_tools: leadData.current_tools,
           team_size: leadData.team_size,
           budget: leadData.budget,
           timeline: leadData.timeline,
+          website: leadData.website,
           source: 'website_chatbot',
           status: 'new',
         })
@@ -168,85 +237,20 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // 4. Generate draft scope (internal, never shown to client)
-      let scopeDraft = '';
-      if (lead?.id) {
-        try {
-          const scopePrompt = `You are Pedro's AI assistant at Cerebro, an AI automation consultancy. Based on the following lead information, draft a concise project scope that Pedro can review before his discovery call.
-
-Lead info:
-
-Industry: ${leadData.industry ?? 'not specified'}
-Pain point: ${leadData.pain_point ?? 'not specified'}
-Current tools: ${leadData.current_tools ?? 'not specified'}
-Team size: ${leadData.team_size ?? 'not specified'}
-Budget: ${leadData.budget ?? 'not specified'}
-Timeline: ${leadData.timeline ?? 'not specified'}
-Full description: ${leadData.message ?? 'not specified'}
-
-Include in your scope:
-
-A 2 to 3 sentence summary of the client's situation
-A list of 3 to 5 specific automations Cerebro could build for them. Be specific to their industry and the problems they described. For each automation, write one sentence explaining what it does.
-An estimated complexity level: light (1 to 2 weeks), medium (3 to 4 weeks), or heavy (5 plus weeks)
-2 to 3 specific talking points Pedro should raise on the discovery call to show he understands their business and has already thought about solutions
-
-Keep it practical and direct. No fluff. No em dashes. Write as if you are briefing Pedro before a meeting.`;
-
-          const scopeResponse = await anthropic.messages.create({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 1024,
-            messages: [{ role: 'user', content: scopePrompt }],
-          });
-
-          scopeDraft =
-            scopeResponse.content[0]?.type === 'text'
-              ? scopeResponse.content[0].text
-              : '';
-
-          if (scopeDraft) {
-            const { error: scopeError } = await supabase.from('lead_scopes').insert({
-              lead_id: lead.id,
-              scope_draft: scopeDraft,
-            });
-            if (scopeError) {
-              console.error('Scope insert error:', JSON.stringify(scopeError));
-            }
-          }
-        } catch (e) {
-          console.error('Scope generation error:', e);
-        }
-      }
-
-      // 5. Send emails via Resend
+      // 4. Send the immediate "we got it" emails (welcome to lead, quick
+      // notification to Pedro). The full proposal is generated asynchronously
+      // by the generate-proposal function and arrives a couple minutes later.
       const resendApiKey = Deno.env.get('RESEND_API_KEY');
-      const timestamp = new Date().toLocaleString('en-GB', { timeZone: 'UTC', hour12: false });
+      const timestamp = new Date().toLocaleString('en-GB', {
+        timeZone: 'UTC',
+        hour12: false,
+      });
 
       if (leadData.email && resendApiKey) {
-        // Generate personalised opening for visitor welcome email
-        let personalizedOpening = leadData.message ?? '';
-        if (leadData.message) {
-          try {
-            const personalizeResponse = await anthropic.messages.create({
-              model: 'claude-sonnet-4-6',
-              max_tokens: 256,
-              messages: [
-                {
-                  role: 'user',
-                  content: `Write 2 to 3 short, warm, direct sentences summarising this person's business problem and what they want automated. Write as if you are Pedro, the founder of Cerebro, speaking directly to them. Reference specific details from what they shared. No em dashes. No corporate language. Conversational tone. Do not start with "It sounds like" or "Based on what you shared." Just speak directly about their problem.\n\nProblem: ${leadData.message}`,
-                },
-              ],
-            });
-            personalizedOpening =
-              personalizeResponse.content[0]?.type === 'text'
-                ? personalizeResponse.content[0].text
-                : leadData.message;
-          } catch (e) {
-            console.error('Personalization error:', e);
-          }
-        }
+        const firstName = leadData.name?.split(' ')[0] ?? 'there';
+        const businessLabel = leadData.business_type ?? 'your business';
 
-        // Welcome email to visitor
+        // Welcome email to the visitor — short, calm, sets the right expectation
         const welcomeRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: {
@@ -254,17 +258,16 @@ Keep it practical and direct. No fluff. No em dashes. Write as if you are briefi
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'Pedro at Cerebro <onboarding@resend.dev>',
+            from: FROM_LEAD_WELCOME,
             to: [leadData.email],
-            subject: `We heard you, ${leadData.name}.`,
+            subject: `We heard you, ${firstName}.`,
             html: `
               <div style="font-family:Georgia,serif;max-width:580px;margin:0 auto;padding:48px 24px;color:#000;line-height:1.8;">
-                <p style="margin:0 0 20px 0;">Hey ${leadData.name},</p>
-                <p style="margin:0 0 20px 0;">${personalizedOpening}</p>
-                <p style="margin:0 0 20px 0;">Here is what happens next. Pedro will review everything you shared, put together an initial plan for what we can build for your business, and reach out to book a call. On that call he will walk you through exactly how it could work.</p>
-                <p style="margin:0 0 20px 0;">Expect to hear from him within 24 hours.</p>
+                <p style="margin:0 0 20px 0;">Hey ${firstName},</p>
+                <p style="margin:0 0 20px 0;">Got everything you shared. We're putting together a tailored plan for ${businessLabel} now, with a few specifics built around what you described.</p>
+                <p style="margin:0 0 20px 0;">It'll land in your inbox within the hour. If anything stands out, Pedro will follow up directly to set up a call.</p>
                 <p style="margin:0 0 6px 0;">Pedro</p>
-                <p style="margin:0;">Cerebro</p>
+                <p style="margin:0;color:#666;font-size:13px;">Cerebro</p>
               </div>
             `,
           }),
@@ -273,7 +276,8 @@ Keep it practical and direct. No fluff. No em dashes. Write as if you are briefi
           console.error('Resend welcome error:', await welcomeRes.text());
         }
 
-        // Notification email to Pedro
+        // Quick notification to Pedro — full proposal email comes later from
+        // the generate-proposal function
         const transcriptHtml = messages
           .map(
             (m) =>
@@ -281,9 +285,10 @@ Keep it practical and direct. No fluff. No em dashes. Write as if you are briefi
           )
           .join('');
 
-        const scopeHtml = scopeDraft
-          ? scopeDraft.replace(/\n/g, '<br/>')
-          : '<em>Not generated</em>';
+        const phrasesHtml =
+          leadData.exact_phrases && leadData.exact_phrases.length
+            ? `<ul style="margin:0 0 16px 0;padding-left:20px;">${leadData.exact_phrases.map((p) => `<li style="margin:0 0 6px 0;">"${p}"</li>`).join('')}</ul>`
+            : '<em>None extracted</em>';
 
         const notifyRes = await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -292,40 +297,39 @@ Keep it practical and direct. No fluff. No em dashes. Write as if you are briefi
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'Cerebro Notifications <onboarding@resend.dev>',
-            to: ['pedro@meetavila.com'],
-            subject: `New Cerebro lead: ${leadData.name}`,
+            from: FROM_PEDRO_NOTIFY,
+            to: [PEDRO_EMAIL],
+            subject: `New Cerebro lead: ${leadData.name ?? 'unnamed'} (${leadData.business_type ?? 'unknown'})`,
             html: `
               <div style="font-family:sans-serif;max-width:620px;margin:0 auto;padding:48px 24px;color:#000;line-height:1.7;">
-                <h2 style="font-size:20px;margin:0 0 24px 0;">New lead from the Cerebro chatbot</h2>
+                <h2 style="font-size:20px;margin:0 0 8px 0;">New lead captured</h2>
+                <p style="margin:0 0 24px 0;color:#666;font-size:13px;">Proposal generation kicked off. Full proposal email arrives in a few minutes.</p>
 
                 <p style="margin:0 0 8px 0;"><strong>Name:</strong> ${leadData.name ?? 'N/A'}</p>
                 <p style="margin:0 0 8px 0;"><strong>Email:</strong> ${leadData.email ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Industry:</strong> ${leadData.industry ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Pain point:</strong> ${leadData.pain_point ?? 'N/A'}</p>
+                <p style="margin:0 0 8px 0;"><strong>Business:</strong> ${leadData.business_type ?? 'N/A'} ${leadData.industry ? '(' + leadData.industry + ')' : ''}</p>
+                <p style="margin:0 0 8px 0;"><strong>Website:</strong> ${leadData.website ?? '<em style="color:#999;">not provided</em>'}</p>
+                <p style="margin:0 0 8px 0;"><strong>Bottleneck:</strong> ${leadData.pain_point ?? 'N/A'}</p>
+                <p style="margin:0 0 8px 0;"><strong>Impact:</strong> ${leadData.impact ?? 'N/A'}</p>
                 <p style="margin:0 0 8px 0;"><strong>Current tools:</strong> ${leadData.current_tools ?? 'N/A'}</p>
                 <p style="margin:0 0 8px 0;"><strong>Team size:</strong> ${leadData.team_size ?? 'N/A'}</p>
                 <p style="margin:0 0 8px 0;"><strong>Budget:</strong> ${leadData.budget ?? 'N/A'}</p>
                 <p style="margin:0 0 8px 0;"><strong>Timeline:</strong> ${leadData.timeline ?? 'N/A'}</p>
 
-                <h3 style="font-size:15px;margin:24px 0 8px 0;">Full summary</h3>
-                <p style="margin:0 0 24px 0;">${leadData.message ?? 'N/A'}</p>
+                <h3 style="font-size:15px;margin:24px 0 8px 0;">Their words (verbatim)</h3>
+                ${phrasesHtml}
+
+                <h3 style="font-size:15px;margin:24px 0 8px 0;">Summary</h3>
+                <p style="margin:0 0 24px 0;">${leadData.summary ?? composedMessage ?? 'N/A'}</p>
 
                 <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;" />
 
-                <h3 style="font-size:15px;margin:0 0 12px 0;">DRAFT SCOPE (AI-generated, review before call)</h3>
-                <div style="font-size:14px;background:#f9f9f9;padding:16px;border-radius:4px;margin:0 0 24px 0;">
-                  ${scopeHtml}
-                </div>
-
-                <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;" />
-
-                <h3 style="font-size:15px;margin:0 0 12px 0;">Full conversation transcript</h3>
+                <h3 style="font-size:15px;margin:0 0 12px 0;">Full transcript</h3>
                 <div style="font-size:14px;background:#f9f9f9;padding:16px;border-radius:4px;">
                   ${transcriptHtml}
                 </div>
 
-                <p style="margin:24px 0 0 0;font-size:12px;color:#999;">Submitted: ${timestamp} UTC</p>
+                <p style="margin:24px 0 0 0;font-size:12px;color:#999;">Captured ${timestamp} UTC</p>
               </div>
             `,
           }),
@@ -333,6 +337,44 @@ Keep it practical and direct. No fluff. No em dashes. Write as if you are briefi
         if (!notifyRes.ok) {
           console.error('Resend notify error:', await notifyRes.text());
         }
+      }
+
+      // 5. Fire-and-forget the proposal generation. The function does web
+      // research + generates the storytelling proposal + sends the proposal
+      // email. Using EdgeRuntime.waitUntil lets us return to the caller
+      // immediately while the background task keeps running.
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const internalSecret = Deno.env.get('CEREBRO_INTERNAL_SECRET');
+
+      if (lead?.id && internalSecret) {
+        const proposalKickoff = fetch(`${supabaseUrl}/functions/v1/generate-proposal`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${internalSecret}`,
+          },
+          body: JSON.stringify({ lead_id: lead.id }),
+        })
+          .then(async (res) => {
+            if (!res.ok) {
+              console.error(
+                'generate-proposal kickoff non-OK:',
+                res.status,
+                await res.text(),
+              );
+            }
+          })
+          .catch((err) => console.error('generate-proposal kickoff failed:', err));
+
+        // @ts-ignore — EdgeRuntime is provided by Supabase Edge Runtime
+        if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+          // @ts-ignore
+          EdgeRuntime.waitUntil(proposalKickoff);
+        }
+      } else if (!internalSecret) {
+        console.error(
+          'CEREBRO_INTERNAL_SECRET not set; proposal generation skipped.',
+        );
       }
 
       return new Response(JSON.stringify({ success: true }), {

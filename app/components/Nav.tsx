@@ -24,10 +24,10 @@ export default function Nav() {
         Cerebro
       </a>
       <a
-        href="#get-in-touch"
+        href="#start"
         className="text-[0.7rem] font-medium tracking-[0.12em] uppercase text-black border border-black px-5 py-2.5 no-underline transition-[background,color] duration-200 hover:bg-black hover:text-white"
       >
-        Get in touch
+        Start the conversation
       </a>
     </nav>
   );

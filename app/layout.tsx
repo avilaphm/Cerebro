@@ -17,9 +17,9 @@ const syne = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Cerebro — AI Automation for Service Businesses",
+  title: "Cerebro. Bespoke systems for small businesses.",
   description:
-    "Cerebro builds the systems that keep your business moving so you can focus on the work that actually matters.",
+    "Cerebro builds bespoke systems that handle the busywork behind small businesses, so owners can do the work that actually grows them.",
 };
 
 export default function RootLayout({

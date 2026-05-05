@@ -8,11 +8,30 @@ interface Message {
   content: string;
 }
 
+// Problem-led shortcuts. Each card sends a fuller sentence so the bot has
+// something concrete to reflect on. Mirrors the noun list in the landing
+// page's Reality section: invoices, follow-ups, onboarding, reports.
 const SUGGESTED_ACTIONS = [
-  { title: 'How can AI', label: 'help my business?', action: 'How can AI help my business?' },
-  { title: 'How much does', label: 'it usually cost?', action: 'How much does it usually cost?' },
-  { title: 'What tasks can', label: 'actually be automated?', action: 'What tasks can actually be automated?' },
-  { title: 'How fast can', label: 'I see results?', action: 'How fast can I see results?' },
+  {
+    title: "I'm losing leads",
+    label: 'after hours.',
+    action: "I'm losing leads after hours. People reach out at night and we don't get back to them until the next day.",
+  },
+  {
+    title: 'Onboarding eats',
+    label: 'my whole week.',
+    action: "Onboarding eats my whole week. Every new client is forms, emails, and reminders, all manual.",
+  },
+  {
+    title: 'My admin is',
+    label: 'out of control.',
+    action: "My admin is out of control. Too many tools, too many things to track, too much manual updating.",
+  },
+  {
+    title: 'Reports take',
+    label: 'forever.',
+    action: "Reports take forever. I spend hours every week pulling numbers together for clients.",
+  },
 ];
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
@@ -128,10 +147,15 @@ export default function GetInTouchSection() {
         const finalMessages = [...nextMessages, assistantMsg];
         setMessages(finalMessages);
 
-        // Detect email in conversation — trigger capture once
+        // Trigger capture once: when the user's most recent message contains an
+        // email address, they've just answered the bot's "best email to send the
+        // plan to?" prompt. Checking only the last user message (not the whole
+        // transcript) avoids false triggers if an email gets reflected back.
         if (!captureCalledRef.current) {
-          const fullText = finalMessages.map((m) => m.content).join(' ');
-          if (EMAIL_REGEX.test(fullText)) {
+          const lastUser = [...finalMessages]
+            .reverse()
+            .find((m) => m.role === 'user');
+          if (lastUser && EMAIL_REGEX.test(lastUser.content)) {
             triggerCapture(finalMessages);
           }
         }
@@ -213,7 +237,7 @@ export default function GetInTouchSection() {
             adjustTextarea();
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Tell us how we can help you?"
+          placeholder="What's eating your week?"
           disabled={isTyping}
           rows={1}
           className="w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 pr-12 text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-1 focus:ring-black disabled:opacity-50"

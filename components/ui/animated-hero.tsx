@@ -27,7 +27,7 @@ function AnimatedHero() {
     <div className="w-full min-h-screen flex items-end pb-20 pt-44 px-6 md:px-12">
       <div className="w-full max-w-5xl mx-auto">
         <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black mb-10">
-          AI Automation for Service Businesses
+          Bespoke systems for small businesses
         </p>
 
         <h1 className="font-display text-[clamp(2.8rem,8vw,7rem)] font-light leading-[1.06] tracking-[-0.02em] max-w-[900px] mb-6 text-black">
@@ -55,17 +55,21 @@ function AnimatedHero() {
           </span>
         </h1>
 
+        <p className="text-[clamp(1rem,1.8vw,1.15rem)] font-light text-black/70 leading-[1.7] max-w-[560px] mt-10">
+          We build the systems that quietly handle the busywork behind your
+          business. So you can do the work that actually grows it.
+        </p>
+
         <div className="flex items-start gap-10 flex-col sm:flex-row mt-14">
           <a
-            href="#get-in-touch"
+            href="#start"
             className="inline-flex items-center gap-3 text-[0.7rem] font-medium tracking-[0.12em] uppercase text-white bg-black px-8 py-4 no-underline transition-[opacity,transform] duration-200 hover:opacity-75 hover:-translate-y-px shrink-0"
           >
-            Get in touch
+            Start the conversation
             <span aria-hidden="true">→</span>
           </a>
           <p className="text-sm font-light text-black/60 leading-relaxed max-w-[360px] pt-1">
-            We make that part disappear. So your business keeps running.
-            While you do the work that matters.
+            Built around how your business actually works. Not a template.
           </p>
         </div>
       </div>
