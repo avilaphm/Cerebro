@@ -222,6 +222,7 @@ Deno.serve(async (req: Request) => {
       .from('proposals')
       .insert({
         lead_id: lead.id,
+        lead_name: lead.name ?? null,
         status: 'pending',
       })
       .select()
@@ -426,11 +427,15 @@ ${transcript || 'not available'}
           .update({ status: 'failed' })
           .eq('id', proposalId);
       }
-    } else if (proposalId) {
-      await supabase
-        .from('proposals')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
-        .eq('id', proposalId);
+    } else {
+      const proposalSendData = await proposalSendRes.json();
+      console.log('Resend proposal email accepted:', proposalSendData.id, 'to:', lead.email);
+      if (proposalId) {
+        await supabase
+          .from('proposals')
+          .update({ status: 'sent', sent_at: new Date().toISOString() })
+          .eq('id', proposalId);
+      }
     }
 
     // 7. Email Pedro the proposal preview + the discovery questions
@@ -478,7 +483,10 @@ ${transcript || 'not available'}
         html: pedroNotifyHtml,
       }),
     });
-    if (!pedroNotifyRes.ok) {
+    if (pedroNotifyRes.ok) {
+      const pedroNotifyData = await pedroNotifyRes.json();
+      console.log('Resend Pedro notify accepted:', pedroNotifyData.id, 'to:', PEDRO_EMAIL);
+    } else {
       console.error('Pedro notify error:', await pedroNotifyRes.text());
     }
 

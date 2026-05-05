@@ -72,6 +72,12 @@ export default function GetInTouchSection() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  useEffect(() => {
+    if (!isTyping && messages.length > 0) {
+      textareaRef.current?.focus();
+    }
+  }, [isTyping, messages.length]);
+
   const adjustTextarea = () => {
     const ta = textareaRef.current;
     if (!ta) return;

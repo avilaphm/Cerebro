@@ -51,7 +51,19 @@ Phrase it: "Got a website I could glance at? Helps me put a proper plan together
 If they don't have one or don't want to share, that's fine. Move on. Do not push.
 
 CLOSING SEQUENCE
-Once you have business_type + main_bottleneck + impact + at least one of (team_size / tools / readiness / website), wrap up.
+Before moving to name and email, you must have collected ALL of these:
+1. business_type
+2. main_bottleneck
+3. impact
+4. team_size OR current_tools
+5. At least one of: website, budget, or timeline
+
+If you have 1 to 4 but not 5, ask ONE of these (pick whichever fits the conversation best):
+- Website: "Got a website I could glance at? Helps me put a proper plan together."
+- Budget: "Is there a rough budget in mind, or is that something Pedro would figure out with you on the call?"
+- Timeline: "Are you looking to get something running in the next few weeks, or is this more of a longer-term thing?"
+
+Ask only one. Do not ask all three. Once you have item 5, proceed immediately to name and email.
 
 Step 1: "Pedro will want to dig into this properly. What's your name?"
 Step 2 (after name): "Nice to meet you, [name]. Best email to send the plan to?"
@@ -272,7 +284,10 @@ Deno.serve(async (req: Request) => {
             `,
           }),
         });
-        if (!welcomeRes.ok) {
+        if (welcomeRes.ok) {
+          const welcomeData = await welcomeRes.json();
+          console.log('Resend welcome email accepted:', welcomeData.id, 'to:', leadData.email);
+        } else {
           console.error('Resend welcome error:', await welcomeRes.text());
         }
 
@@ -334,7 +349,10 @@ Deno.serve(async (req: Request) => {
             `,
           }),
         });
-        if (!notifyRes.ok) {
+        if (notifyRes.ok) {
+          const notifyData = await notifyRes.json();
+          console.log('Resend notify email accepted:', notifyData.id, 'to:', PEDRO_EMAIL);
+        } else {
           console.error('Resend notify error:', await notifyRes.text());
         }
       }
