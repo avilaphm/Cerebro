@@ -29,12 +29,10 @@ RESEARCH FINDINGS:
 TOP PAIN POINTS:
 [Top 3 specific pains with evidence from research]
 
-5 BLOG ANGLES:
+3 BLOG ANGLES:
 1. [Short title] | [Target: who specifically] | [Unique insight: what dots does this connect that nobody else is connecting?]
 2. [Same format]
 3. [Same format]
-4. [Same format]
-5. [Same format]
 
 Each angle must: target a slightly different persona or moment, lead with something contrarian or surprising, and have a unique insight that only Pedro (builder + PT background) would notice.`;
 
@@ -69,7 +67,7 @@ BLOG STRUCTURE (follow this exactly, no H2 headers except optional in section 5)
 6. WHAT TO DO (1 paragraph): One clear, specific, immediately actionable thing. Not a list. One thing.
 7. CLOSE: A single standalone line that feels inevitable, like the reader was already getting there. Then a new line: "ps:" with one nuancing thought.
 
-OUTPUT: Return ONLY a valid JSON object. No markdown fences. No preamble.
+OUTPUT: Return ONLY a valid JSON object. No markdown fences. No preamble. No trailing text.
 
 {
   "title": "Specific, benefit-led title. No clickbait. Under 70 chars.",
@@ -97,6 +95,20 @@ function extractText(content: Anthropic.ContentBlock[]): string {
     .trim();
 }
 
+function parseJsonSafely(raw: string): { title: string; slug: string; meta_description: string; hook: string; content_md: string } | null {
+  // Strip markdown code fences if present
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  // Find the first { and last } to extract just the JSON object
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end === -1) return null;
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -120,36 +132,44 @@ Deno.serve(async (req: Request) => {
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
 
-    // PHASE 1: Research
+    // PHASE 1: Research (with web search, fallback to knowledge-based)
     let researchContext = '';
 
     try {
       const researchResponse = await (anthropic as any).messages.create(
         {
           model: 'claude-sonnet-4-6',
-          max_tokens: 4096,
+          max_tokens: 2048,
           system: RESEARCH_SYSTEM_PROMPT,
           tools: [{ type: 'web_search_20250305', name: 'web_search' }],
           messages: [{
             role: 'user',
-            content: 'Search Reddit, forums, and recent articles to find what small business owners, solopreneurs, coaches, consultants, and personal trainers are actively struggling with right now in terms of workflow, admin burden, AI tools, and business automation. Then give me 5 unique blog angles based on your findings.',
+            content: 'Search Reddit, forums, and recent articles to find what small business owners, solopreneurs, coaches, consultants, and personal trainers are actively struggling with right now in terms of workflow, admin burden, AI tools, and business automation. Then give me 3 unique blog angles based on your findings.',
           }],
         },
         { headers: { 'anthropic-beta': 'web-search-2025-03-05' } },
       );
       researchContext = extractText(researchResponse.content);
     } catch (_err) {
+      console.error('Web search failed, using fallback:', _err);
+    }
+
+    if (!researchContext) {
       // Fallback: knowledge-based research
-      const fallback = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
-        system: RESEARCH_SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: 'Based on your knowledge of discussions on Reddit, forums, and industry conversations: what are small business owners, solopreneurs, coaches, consultants, and personal trainers struggling with most right now around workflow, admin, AI tools, and automation? Give me specific examples from real discussions you know about. Output 5 unique blog angles following the required format.',
-        }],
-      });
-      researchContext = extractText(fallback.content);
+      try {
+        const fallback = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2048,
+          system: RESEARCH_SYSTEM_PROMPT,
+          messages: [{
+            role: 'user',
+            content: 'Based on your knowledge of discussions on Reddit, forums, and industry conversations: what are small business owners, solopreneurs, coaches, consultants, and personal trainers struggling with most right now around workflow, admin, AI tools, and automation? Give me specific examples from real discussions you know about. Output 3 unique blog angles following the required format.',
+          }],
+        });
+        researchContext = extractText(fallback.content);
+      } catch (fallbackErr) {
+        console.error('Fallback research also failed:', fallbackErr);
+      }
     }
 
     if (!researchContext) {
@@ -159,22 +179,22 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // PHASE 2: Generate 5 blog drafts in parallel
-    const blogPromises = [1, 2, 3, 4, 5].map((i) =>
+    // PHASE 2: Generate 3 blog drafts in parallel (allSettled so one failure doesn't kill all)
+    const blogPromises = [1, 2, 3].map((i) =>
       anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: BLOG_SYSTEM_PROMPT,
         messages: [{
           role: 'user',
-          content: `Based on this research:\n\n${researchContext}\n\nWrite blog post option ${i} — use angle number ${i} from the "5 BLOG ANGLES" list above. Make it distinctly different from the others in entry point, persona, and insight. Return the JSON object as specified.`,
+          content: `Based on this research:\n\n${researchContext}\n\nWrite blog post option ${i} — use angle number ${i} from the "3 BLOG ANGLES" list above. Make it distinctly different from the others in entry point, persona, and insight. Return ONLY the JSON object with no extra text.`,
         }],
       })
     );
 
-    const blogResponses = await Promise.all(blogPromises);
+    const blogResults = await Promise.allSettled(blogPromises);
 
-    // Save all 5 drafts
+    // Save successful drafts
     const serviceSupabase = createClient(
       supabaseUrl,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -182,16 +202,28 @@ Deno.serve(async (req: Request) => {
 
     const insertedIds: string[] = [];
 
-    for (let i = 0; i < blogResponses.length; i++) {
-      const raw = extractText(blogResponses[i].content)
-        .replace(/```json\n?|\n?```/g, '')
-        .trim();
+    for (let i = 0; i < blogResults.length; i++) {
+      const result = blogResults[i];
 
-      let blogData: { title: string; slug: string; meta_description: string; hook: string; content_md: string };
-      try {
-        blogData = JSON.parse(raw);
-      } catch {
-        console.error(`Draft ${i + 1} JSON parse error:`, raw.slice(0, 200));
+      if (result.status === 'rejected') {
+        console.error(`Draft ${i + 1} API call failed:`, result.reason);
+        continue;
+      }
+
+      const raw = extractText(result.value.content);
+      if (!raw) {
+        console.error(`Draft ${i + 1} returned no text content`);
+        continue;
+      }
+
+      const blogData = parseJsonSafely(raw);
+      if (!blogData) {
+        console.error(`Draft ${i + 1} JSON parse error. Raw (first 300 chars):`, raw.slice(0, 300));
+        continue;
+      }
+
+      if (!blogData.title || !blogData.content_md) {
+        console.error(`Draft ${i + 1} missing required fields`);
         continue;
       }
 
@@ -204,7 +236,7 @@ Deno.serve(async (req: Request) => {
           slug: finalSlug,
           topic: blogData.title,
           content_md: blogData.content_md,
-          meta_description: blogData.meta_description,
+          meta_description: blogData.meta_description ?? null,
           status: 'research_draft',
           research_context: researchContext,
           author: 'Pedro Avila',
@@ -213,7 +245,7 @@ Deno.serve(async (req: Request) => {
         .single<{ id: string }>();
 
       if (insertError || !post) {
-        console.error(`Draft ${i + 1} insert error:`, insertError);
+        console.error(`Draft ${i + 1} insert error:`, insertError?.message);
         continue;
       }
 
@@ -221,7 +253,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (insertedIds.length === 0) {
-      return new Response(JSON.stringify({ error: 'Failed to save any drafts' }), {
+      return new Response(JSON.stringify({ error: 'Failed to save any drafts. Check function logs for details.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -232,8 +264,8 @@ Deno.serve(async (req: Request) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (err) {
-    console.error('research-and-draft error:', err);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    console.error('research-and-draft unhandled error:', err);
+    return new Response(JSON.stringify({ error: String(err) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
