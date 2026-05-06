@@ -32,23 +32,26 @@ export default async function BlogPostPage({ params }: Props) {
 
   const { data: post } = await supabase
     .from('blog_posts')
-    .select('id, title, slug, content_md, published_at, author, meta_description')
+    .select('id, title, slug, content_md, published_at, scheduled_at, author, meta_description, header_image_url')
     .eq('slug', slug)
-    .eq('status', 'published')
+    .or('status.eq.published,and(status.eq.scheduled,scheduled_at.lte.' + new Date().toISOString() + ')')
     .single<{
       id: string;
       title: string;
       slug: string;
       content_md: string;
       published_at: string | null;
+      scheduled_at: string | null;
       author: string;
       meta_description: string;
+      header_image_url: string | null;
     }>();
 
   if (!post) notFound();
 
-  const date = post.published_at
-    ? new Date(post.published_at).toLocaleDateString('en-AU', {
+  const dateSource = post.published_at ?? post.scheduled_at;
+  const date = dateSource
+    ? new Date(dateSource).toLocaleDateString('en-AU', {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
@@ -58,7 +61,16 @@ export default async function BlogPostPage({ params }: Props) {
   return (
     <>
       <Nav />
-      <div className="min-h-screen bg-white pt-24 pb-32 px-6 md:px-12">
+      {post.header_image_url && (
+        <div className="w-full h-[40vh] max-h-96 overflow-hidden">
+          <img
+            src={post.header_image_url}
+            alt={post.title}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      )}
+      <div className="min-h-screen bg-white pt-16 pb-32 px-6 md:px-12">
         <div className="max-w-2xl mx-auto">
           <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black/30 mb-8">
             {date}
