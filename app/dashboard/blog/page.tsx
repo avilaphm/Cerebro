@@ -11,6 +11,7 @@ interface DraftPost {
   meta_description: string;
   slug: string;
   header_image_url: string | null;
+  header_image_position: number;
   scheduled_at: string | null;
 }
 
@@ -52,6 +53,7 @@ export default function BlogDashboardPage() {
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
   const [scheduleValue, setScheduleValue] = useState('');
   const [posting, setPosting] = useState<string | null>(null);
+  const [imagePosition, setImagePosition] = useState<Record<string, number>>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetId = useRef<string | null>(null);
@@ -60,7 +62,7 @@ export default function BlogDashboardPage() {
   const loadPosts = useCallback(async () => {
     const { data } = await supabase
       .from('blog_posts')
-      .select('id, title, slug, status, published_at, scheduled_at, content_md, meta_description, header_image_url, social_drafts(platform, status)')
+      .select('id, title, slug, status, published_at, scheduled_at, content_md, meta_description, header_image_url, header_image_position, social_drafts(platform, status)')
       .in('status', ['research_draft', 'published', 'scheduled'])
       .order('created_at', { ascending: false })
       .limit(200);
@@ -74,8 +76,13 @@ export default function BlogDashboardPage() {
     setPublished(publishedRows);
 
     const contents: Record<string, string> = {};
-    draftRows.forEach((d) => { contents[d.id] = d.content_md ?? ''; });
+    const positions: Record<string, number> = {};
+    draftRows.forEach((d) => {
+      contents[d.id] = d.content_md ?? '';
+      positions[d.id] = d.header_image_position ?? 50;
+    });
     setEditContent((prev) => ({ ...contents, ...prev }));
+    setImagePosition((prev) => ({ ...positions, ...prev }));
   }, [supabase]);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
@@ -190,6 +197,13 @@ export default function BlogDashboardPage() {
     const { data: { publicUrl } } = supabase.storage.from('blog-headers').getPublicUrl(upload.path);
     await supabase.from('blog_posts').update({ header_image_url: publicUrl }).eq('id', postId);
     setDrafts((prev) => prev.map((d) => d.id === postId ? { ...d, header_image_url: publicUrl } : d));
+  }
+
+  async function handleImagePosition(id: string, direction: 'up' | 'down') {
+    const current = imagePosition[id] ?? 50;
+    const next = Math.max(0, Math.min(100, current + (direction === 'down' ? 10 : -10)));
+    setImagePosition((prev) => ({ ...prev, [id]: next }));
+    await supabase.from('blog_posts').update({ header_image_position: next }).eq('id', id);
   }
 
   async function handlePostNow(id: string) {
@@ -315,11 +329,30 @@ export default function BlogDashboardPage() {
                   <div className="flex items-start justify-between p-5 gap-4">
                     <div className="flex-1 min-w-0">
                       {draft.header_image_url && (
-                        <img
-                          src={draft.header_image_url}
-                          alt=""
-                          className="w-full h-32 object-cover rounded-lg mb-3"
-                        />
+                        <div className="relative w-full h-52 rounded-lg overflow-hidden mb-3 group">
+                          <img
+                            src={draft.header_image_url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            style={{ objectPosition: `center ${imagePosition[draft.id] ?? 50}%` }}
+                          />
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleImagePosition(draft.id, 'up')}
+                              className="w-7 h-7 bg-white/90 hover:bg-white rounded-lg shadow flex items-center justify-center text-black text-xs font-medium transition-colors"
+                              title="Move image up"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              onClick={() => handleImagePosition(draft.id, 'down')}
+                              className="w-7 h-7 bg-white/90 hover:bg-white rounded-lg shadow flex items-center justify-center text-black text-xs font-medium transition-colors"
+                              title="Move image down"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
                       )}
                       <h3 className="font-display text-base font-medium text-black leading-snug mb-1.5">
                         {draft.title}
