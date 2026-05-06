@@ -86,15 +86,12 @@ export default function BlogDashboardPage() {
 
   function startProgressSimulation() {
     const steps = [
-      { at: 0, pct: 2, label: 'Searching Reddit and forums…' },
-      { at: 3000, pct: 15, label: 'Scanning recent discussions…' },
-      { at: 12000, pct: 30, label: 'Identifying what your audience is struggling with…' },
-      { at: 25000, pct: 45, label: 'Analysing pain points and content angles…' },
-      { at: 38000, pct: 60, label: 'Writing draft 1…' },
-      { at: 48000, pct: 72, label: 'Writing drafts 2 and 3…' },
-      { at: 58000, pct: 82, label: 'Writing drafts 4 and 5…' },
-      { at: 68000, pct: 92, label: 'Saving to your dashboard…' },
-      { at: 74000, pct: 96, label: 'Almost done…' },
+      { at: 0, pct: 5, label: 'Identifying what your audience is struggling with…' },
+      { at: 4000, pct: 25, label: 'Analysing pain points and content angles…' },
+      { at: 9000, pct: 50, label: 'Writing draft 1…' },
+      { at: 14000, pct: 72, label: 'Writing draft 2…' },
+      { at: 20000, pct: 88, label: 'Saving to your dashboard…' },
+      { at: 25000, pct: 95, label: 'Almost done…' },
     ];
     progressTimersRef.current = steps.map(({ at, pct, label }) =>
       setTimeout(() => {
@@ -285,7 +282,7 @@ export default function BlogDashboardPage() {
               style={{ width: `${researchProgress}%` }}
             />
           </div>
-          <p className="text-xs text-black/30 mt-3">This takes about 80 seconds. Sit tight.</p>
+          <p className="text-xs text-black/30 mt-3">This takes about 30 seconds.</p>
         </div>
       )}
 
