@@ -214,10 +214,10 @@ export default function BlogDashboardPage() {
       .update({ status: 'published', published_at: now, content_md: editContent[id] ?? undefined })
       .eq('id', id);
 
-    // Trigger social drafts generation
+    // Auto-generate 5 X posts
     const { data: { session } } = await supabase.auth.getSession();
-    await supabase.functions.invoke('generate-social-drafts', {
-      body: { blog_post_id: id },
+    await supabase.functions.invoke('generate-x-posts', {
+      body: { blog_post_id: id, count: 5 },
       headers: { Authorization: `Bearer ${session?.access_token}` },
     }).catch(() => {});
 

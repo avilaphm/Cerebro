@@ -19,7 +19,7 @@ interface SocialDraft {
   post_type: string | null;
   scheduled_at: string | null;
   blog_post_id: string;
-  blog_posts: { title: string; slug: string } | null;
+  blog_posts: { title: string; slug: string }[] | null;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -49,6 +49,7 @@ export default function SocialPage() {
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
   const [scheduleValue, setScheduleValue] = useState('');
   const [filter, setFilter] = useState<'all' | 'twitter' | 'linkedin'>('twitter');
+  const [generateCount, setGenerateCount] = useState<1 | 3 | 5>(5);
 
   const selectorRef = useRef<HTMLDivElement>(null);
 
@@ -97,7 +98,7 @@ export default function SocialPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('generate-x-posts', {
-        body: { blog_post_id: selectedBlogId },
+        body: { blog_post_id: selectedBlogId, count: generateCount },
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (error || data?.error) {
@@ -201,8 +202,26 @@ export default function SocialPage() {
                   ))}
                 </div>
               </div>
-              <div className="p-3">
-                {generateError && <p className="text-xs text-red-500 mb-2">{generateError}</p>}
+              <div className="p-3 space-y-2.5">
+                <div>
+                  <p className="text-xs font-medium text-black/50 uppercase tracking-wide mb-1.5">How many posts</p>
+                  <div className="flex gap-1.5">
+                    {([1, 3, 5] as const).map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setGenerateCount(n)}
+                        className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
+                          generateCount === n
+                            ? 'bg-black text-white border-black'
+                            : 'border-black/20 text-black/60 hover:border-black/40'
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {generateError && <p className="text-xs text-red-500">{generateError}</p>}
                 <button
                   onClick={handleGenerate}
                   disabled={!selectedBlogId || generating}
@@ -213,7 +232,7 @@ export default function SocialPage() {
                       <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
                       Generating…
                     </>
-                  ) : 'Generate 5 X posts'}
+                  ) : `Generate ${generateCount} X post${generateCount > 1 ? 's' : ''}`}
                 </button>
               </div>
             </div>
@@ -249,7 +268,7 @@ export default function SocialPage() {
       {/* Grouped by blog post */}
       <div className="space-y-10">
         {Object.entries(grouped).map(([blogPostId, groupDrafts]) => {
-          const blogPost = blogPostMap[blogPostId] ?? groupDrafts[0]?.blog_posts;
+          const blogPost = blogPostMap[blogPostId] ?? groupDrafts[0]?.blog_posts?.[0];
           const title = (blogPost as { title?: string })?.title ?? 'Unknown post';
 
           return (

@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const SYSTEM_PROMPT = `You write X (Twitter) posts for Pedro Avila, founder of Cerebro (cerebroai.au), an AI automation consultancy for small service businesses.
+const BASE_VOICE = `You write X (Twitter) posts for Pedro Avila, founder of Cerebro (cerebroai.au), an AI automation consultancy for small service businesses.
 
 PEDRO'S VOICE:
 - Calm, direct, observational. Sounds like a smart person thinking out loud, not a marketer.
@@ -25,25 +25,31 @@ X BEST PRACTICES (what actually performs):
 - No hashtags. They look desperate on X in 2025.
 - No "RT if you agree" / "drop a comment" / "thread below 🧵" — all engagement-bait tells.
 - Under 280 characters per tweet. Tight. No filler.
-- Soft CTAs only: "wrote about this at cerebroai.au" if it fits naturally. Never forced.
+- Soft CTAs only: "wrote about this at cerebroai.au" if it fits naturally. Never forced.`;
 
-Generate exactly 5 X posts from the blog content, each with a distinct angle:
+const ALL_TYPES = [
+  { type: 'hook', desc: 'HOOK — The core insight as a pattern-interrupt. One idea. Under 180 chars. Feels inevitable once you read it.' },
+  { type: 'contrarian', desc: 'CONTRARIAN — Starts with the unexpected claim from the blog. Makes the reader go "wait, really?"' },
+  { type: 'specific', desc: 'SPECIFIC — Grounded in a concrete scenario or example from the blog. Real and tactile.' },
+  { type: 'thread_opener', desc: 'THREAD_OPENER — First tweet of a thread. Creates enough curiosity that people want the rest. Ends with "Thread:" on its own line.' },
+  { type: 'observation', desc: 'OBSERVATION — A broader industry truth connected to the blog\'s theme. Feels like a shower thought that turned out to be correct.' },
+];
 
-1. HOOK — The core insight as a pattern-interrupt. One idea. Under 180 chars. Feels inevitable once you read it.
-2. CONTRARIAN — Starts with the unexpected claim from the blog. Makes the reader go "wait, really?"
-3. SPECIFIC — Grounded in a concrete scenario or example from the blog. Real and tactile.
-4. THREAD_OPENER — First tweet of a thread. Creates enough curiosity that people want the rest. Ends with "Thread:" on its own line.
-5. OBSERVATION — A broader industry truth connected to the blog's theme. Feels like a shower thought that turned out to be correct.
+function buildSystemPrompt(count: number): string {
+  const types = ALL_TYPES.slice(0, count);
+  const typeList = types.map((t, i) => `${i + 1}. ${t.desc}`).join('\n');
+  const example = types.map((t) => `  {"type":"${t.type}","content":"..."}`).join(',\n');
 
-Return ONLY a valid JSON array of exactly 5 objects. No markdown fences. No preamble.
+  return `${BASE_VOICE}
 
-[
-  {"type":"hook","content":"..."},
-  {"type":"contrarian","content":"..."},
-  {"type":"specific","content":"..."},
-  {"type":"thread_opener","content":"..."},
-  {"type":"observation","content":"..."}
-]`;
+Generate exactly ${count} X post${count > 1 ? 's' : ''} from the blog content, each with a distinct angle:
+
+${typeList}
+
+Return ONLY a valid JSON array of exactly ${count} object${count > 1 ? 's' : ''}. No markdown fences. No preamble.
+
+[\n${example}\n]`;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -68,7 +74,10 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return respond({ error: 'Unauthorized' }, 401);
 
-    const { blog_post_id } = (await req.json()) as { blog_post_id: string };
+    const body = (await req.json()) as { blog_post_id: string; count?: number };
+    const { blog_post_id } = body;
+    const count = [1, 3, 5].includes(body.count ?? 5) ? (body.count ?? 5) : 5;
+
     if (!blog_post_id) return respond({ error: 'blog_post_id required' }, 400);
 
     const serviceSupabase = createClient(supabaseUrl, serviceRoleKey);
@@ -93,8 +102,8 @@ ${(post.content_md ?? '').slice(0, 4000)}`;
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: `Generate 5 X posts from this blog post:\n\n${blogContext}` }],
+      system: buildSystemPrompt(count),
+      messages: [{ role: 'user', content: `Generate ${count} X post${count > 1 ? 's' : ''} from this blog post:\n\n${blogContext}` }],
     });
 
     const raw = response.content
@@ -103,7 +112,6 @@ ${(post.content_md ?? '').slice(0, 4000)}`;
       .join('')
       .trim();
 
-    // Extract JSON array from response
     const start = raw.indexOf('[');
     const end = raw.lastIndexOf(']');
     if (start === -1 || end === -1) {
