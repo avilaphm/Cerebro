@@ -36,6 +36,9 @@ export default function BlogDashboardPage() {
   const [published, setPublished] = useState<PublishedPost[]>([]);
   const [researching, setResearching] = useState(false);
   const [researchError, setResearchError] = useState('');
+  const [researchProgress, setResearchProgress] = useState(0);
+  const [researchStep, setResearchStep] = useState('');
+  const progressTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<Record<string, string>>({});
@@ -81,23 +84,56 @@ export default function BlogDashboardPage() {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, chatId]);
 
+  function startProgressSimulation() {
+    const steps = [
+      { at: 0, pct: 2, label: 'Searching Reddit and forums…' },
+      { at: 3000, pct: 15, label: 'Scanning recent discussions…' },
+      { at: 12000, pct: 30, label: 'Identifying what your audience is struggling with…' },
+      { at: 25000, pct: 45, label: 'Analysing pain points and content angles…' },
+      { at: 38000, pct: 60, label: 'Writing draft 1…' },
+      { at: 48000, pct: 72, label: 'Writing drafts 2 and 3…' },
+      { at: 58000, pct: 82, label: 'Writing drafts 4 and 5…' },
+      { at: 68000, pct: 92, label: 'Saving to your dashboard…' },
+      { at: 74000, pct: 96, label: 'Almost done…' },
+    ];
+    progressTimersRef.current = steps.map(({ at, pct, label }) =>
+      setTimeout(() => {
+        setResearchProgress(pct);
+        setResearchStep(label);
+      }, at)
+    );
+  }
+
+  function stopProgressSimulation() {
+    progressTimersRef.current.forEach(clearTimeout);
+    progressTimersRef.current = [];
+  }
+
   async function handleResearch() {
     setResearching(true);
     setResearchError('');
+    setResearchProgress(0);
+    setResearchStep('Starting research…');
+    startProgressSimulation();
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('research-and-draft', {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (error || data?.error) {
-        setResearchError(error?.message ?? data?.error ?? 'Research failed');
+        setResearchError(data?.error ?? error?.message ?? 'Research failed. Try again.');
       } else {
+        setResearchProgress(100);
+        setResearchStep('Done.');
         await loadPosts();
       }
     } catch (e: any) {
-      setResearchError(e.message ?? 'Research failed');
+      setResearchError(e.message ?? 'Research failed. Try again.');
     } finally {
+      stopProgressSimulation();
       setResearching(false);
+      setResearchProgress(0);
+      setResearchStep('');
     }
   }
 
@@ -238,9 +274,18 @@ export default function BlogDashboardPage() {
       )}
 
       {researching && (
-        <div className="mb-8 border border-black/10 rounded-xl p-6 text-center">
-          <p className="text-sm text-black/50">Searching Reddit, forums, and recent articles for what your audience is talking about…</p>
-          <p className="text-xs text-black/30 mt-1">This takes about 60 seconds.</p>
+        <div className="mb-8 border border-black/10 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-black/60">{researchStep}</p>
+            <p className="text-xs text-black/30">{researchProgress}%</p>
+          </div>
+          <div className="w-full h-1.5 bg-black/8 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-black rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${researchProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-black/30 mt-3">This takes about 80 seconds. Sit tight.</p>
         </div>
       )}
 
