@@ -1,6 +1,7 @@
 import Nav from "./components/Nav";
 import FadeIn from "./components/FadeIn";
 import { AnimatedHero } from "@/components/ui/animated-hero";
+import AuthHashRedirect from "./components/AuthHashRedirect";
 import RealitySection from "./components/RealitySection";
 import WhatChangesSection from "./components/WhatChangesSection";
 import HowItWorksSection from "./components/HowItWorksSection";
@@ -12,6 +13,7 @@ import GetInTouchSection from "./components/GetInTouchSection";
 export default function Home() {
   return (
     <>
+      <AuthHashRedirect />
       <Nav />
 
       {/* 1. Hero */}
