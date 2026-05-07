@@ -18,6 +18,8 @@ interface SocialDraft {
   status: string;
   post_type: string | null;
   scheduled_at: string | null;
+  tweet_id: string | null;
+  posted_at: string | null;
   blog_post_id: string;
   blog_posts: { title: string; slug: string }[] | null;
 }
@@ -48,6 +50,8 @@ export default function SocialPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
   const [scheduleValue, setScheduleValue] = useState('');
+  const [posting, setPosting] = useState<string | null>(null);
+  const [postError, setPostError] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<'all' | 'twitter' | 'linkedin'>('twitter');
   const [generateCount, setGenerateCount] = useState<1 | 3 | 5>(5);
 
@@ -57,7 +61,7 @@ export default function SocialPage() {
     const [draftsRes, postsRes] = await Promise.all([
       supabase
         .from('social_drafts')
-        .select('id, created_at, platform, content, status, post_type, scheduled_at, blog_post_id, blog_posts(title, slug)')
+        .select('id, created_at, platform, content, status, post_type, scheduled_at, tweet_id, posted_at, blog_post_id, blog_posts(title, slug)')
         .order('created_at', { ascending: false })
         .limit(200),
       supabase
@@ -132,9 +136,27 @@ export default function SocialPage() {
     setScheduleValue('');
   }
 
-  async function handleMarkPosted(id: string) {
-    await supabase.from('social_drafts').update({ status: 'posted' }).eq('id', id);
-    setDrafts((prev) => prev.map((d) => d.id === id ? { ...d, status: 'posted' } : d));
+  async function handlePostNow(id: string) {
+    setPosting(id);
+    setPostError((prev) => { const n = { ...prev }; delete n[id]; return n; });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error } = await supabase.functions.invoke('post-to-x', {
+        body: { draft_id: id },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error || data?.error) {
+        setPostError((prev) => ({ ...prev, [id]: data?.error ?? error?.message ?? 'Post failed' }));
+      } else {
+        setDrafts((prev) => prev.map((d) =>
+          d.id === id ? { ...d, status: 'posted', tweet_id: data.tweet_id ?? null, posted_at: new Date().toISOString() } : d,
+        ));
+      }
+    } catch (e) {
+      setPostError((prev) => ({ ...prev, [id]: e instanceof Error ? e.message : 'Post failed' }));
+    } finally {
+      setPosting(null);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -303,7 +325,20 @@ export default function SocialPage() {
                               Scheduled · {new Date(draft.scheduled_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
-                          {isPosted && <span className="text-xs text-black/30">Posted</span>}
+                            {isPosted && (
+                            draft.tweet_id ? (
+                              <a
+                                href={`https://x.com/i/web/status/${draft.tweet_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-black/30 hover:text-black transition-colors"
+                              >
+                                Posted ↗
+                              </a>
+                            ) : (
+                              <span className="text-xs text-black/30">Posted</span>
+                            )
+                          )}
                         </div>
                         <button
                           onClick={() => handleDelete(draft.id)}
@@ -406,11 +441,22 @@ export default function SocialPage() {
                                 </button>
                               )}
                               <div className="flex-1" />
+                              {postError[draft.id] && (
+                                <span className="text-xs text-red-500 max-w-[160px] truncate" title={postError[draft.id]}>
+                                  {postError[draft.id]}
+                                </span>
+                              )}
                               <button
-                                onClick={() => handleMarkPosted(draft.id)}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-80 transition-opacity"
+                                onClick={() => handlePostNow(draft.id)}
+                                disabled={posting === draft.id}
+                                className="text-xs px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-1.5"
                               >
-                                Mark posted
+                                {posting === draft.id ? (
+                                  <>
+                                    <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
+                                    Posting…
+                                  </>
+                                ) : 'Post now'}
                               </button>
                             </>
                           )}
