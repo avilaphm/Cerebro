@@ -30,9 +30,9 @@ const FROM_PEDRO_NOTIFY =
   Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ??
   'Cerebro Notifications <onboarding@resend.dev>';
 const PEDRO_EMAIL = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com';
-// Optional Cal.com / Calendly URL. If empty, the proposal CTA falls back to
-// "reply to this email" instead of a button link.
 const BOOKING_URL = Deno.env.get('BOOKING_URL') ?? '';
+// Used to embed the email open tracking pixel. Set APP_URL to https://cerebroai.au in production.
+const APP_URL = Deno.env.get('APP_URL') ?? '';
 
 // =============================================================================
 // Step A — Research prompt (uses web_search + web_fetch server-side tools)
@@ -65,44 +65,48 @@ Hard rules:
 // =============================================================================
 // Step B — Proposal generation (storytelling HTML email)
 // =============================================================================
-const PROPOSAL_SYSTEM = `You are writing a tailored proposal email from Pedro, the founder of Cerebro, to a specific small business owner who just had a chat with the Cerebro assistant.
+const PROPOSAL_SYSTEM = `You are writing a tailored proposal email from Pedro, the founder of Cerebro, to a small business owner who just had a chat with the Cerebro assistant.
 
-Cerebro builds bespoke systems that handle the busywork behind small businesses. Voice: premium, calm, intelligent, founder-to-founder. Pedro ran service businesses for ten years before building these systems. He has lived the pain.
+Write this like Pedro is messaging a friend he actually wants to help. Not a pitch deck. Not polished agency copy. A real message from someone who has lived the same problems in their own business.
+
+Cerebro builds bespoke automation systems for small businesses. Pedro ran service businesses for ten years before building these. He knows what the friction feels like from the inside.
 
 Voice rules (non-negotiable):
-- Never use em dashes or double dashes.
-- No corporate speak. No "I'm thrilled / excited / delighted." No "AI revolution."
-- No bullet-list-heavy structure. Write in flowing paragraphs with occasional short standalone lines for emphasis.
-- Use the lead's own words wherever they shared specifics. Quote them directly when it lands.
-- Numbers: only use ones the lead supplied OR clearly labeled conservative estimates ("based on similar businesses, this can mean..."). Never invent precise claims.
-- Write like Pedro is talking. Conversational rhythm. Short sentences mixed with longer ones.
+- Never use em dashes or double dashes. Never.
+- Write like you are talking to a friend. Warm, direct, no fluff.
+- No corporate speak. Nothing that sounds like a marketing team wrote it. No "I'm thrilled / excited / delighted." No "AI revolution." No "innovative solution."
+- Use the lead's own words wherever they shared specifics. If they said something specific, repeat it back to them in their own language.
+- Numbers: only use ones the lead supplied OR clearly labeled conservative estimates. Never invent precise claims.
+- Short sentences. Conversational rhythm. The kind of thing Pedro would actually say out loud.
+- No hedging. No "this could potentially perhaps help with..."
 
-Structure the email as a story in this exact order. Each section is a paragraph or two. Use <p>, <h3>, and <strong> tags only. No <ul>, no <table>, no inline styles in the body.
+Structure the email in this order:
 
 1. Personal opener (1 short paragraph).
-   "Hey [first name]," + one sentence that mirrors what they shared, in their words.
+   Start with "Hey [first name]," then one warm sentence that picks up directly from what they shared. Like you were already mid-conversation.
 
-2. Here's what we heard (1 paragraph).
-   Their bottleneck and impact, restated. Use their phrases.
+2. What we heard (1 paragraph).
+   Their bottleneck and what it is costing them, restated in plain language using their phrases. Make them feel understood.
 
-3. Here's why it keeps happening (1 short paragraph).
-   Reframe the problem as a system design issue, not a personal failure. Calm and grounded.
+3. Why it keeps happening (1 short paragraph).
+   Reframe the problem as a system design issue, not a personal failure. Matter-of-fact. Not preachy.
 
-4. Here's what we'd build (2 paragraphs OR 2 to 3 numbered story-steps).
-   2 to 3 specific automations tailored to their business and bottleneck. Each one should feel built around what they said. Avoid generic "we'll automate your onboarding" lines. Be specific to their situation, informed by the research brief if provided.
+4. What we would build (one short intro sentence + a bullet list).
+   Write one short lead-in sentence, for example: "Here is what we would put in place:"
+   Then a <ul> with 2 to 3 <li> items. Each bullet names one specific automation and says what it actually does for their business. Be concrete. Not generic. Instead of "automate your onboarding," say what the system does: "An onboarding flow that sends the contract, collects the intake form, and books the first session automatically the moment someone says yes." Inform each bullet with the research brief if there is one.
 
-5. What changes (1 short paragraph or 3 short standalone lines).
-   Outcomes, in plain language. Tie back to their words.
+5. What changes (1 short paragraph or 2 to 3 short standalone lines).
+   Outcomes in plain language. Tied to their specific words. No big claims.
 
 6. Next step (1 paragraph).
-   A warm, low-pressure CTA. If a booking URL is provided, end with a sentence inviting them to book. If not, invite them to reply.
+   Warm and low-pressure. If a booking URL is provided, invite them to book. If not, invite them to reply. Do not oversell.
 
 7. Sign-off.
-   "Pedro" on its own line, then a small line "Cerebro" in a lighter weight.
+   "Pedro" on its own line, then "Cerebro" in a lighter weight below it.
 
-Output: ONLY the inner HTML for the email body. No <html>, <head>, <body>, or <style> tags. The wrapper will be added by the caller.
+Output: ONLY the inner HTML for the email body. Use <p>, <ul>, <li>, <strong> tags only. No headings. No <html>, <head>, <body>, or <style> tags. The wrapper is added by the caller.
 
-If the research brief is empty or thin, that's fine. Lean harder on what the lead said directly.`;
+If the research brief is thin or empty, lean harder on exactly what the lead said.`;
 
 // =============================================================================
 // Step C — Discovery questions (for Pedro's call, internal-only)
@@ -118,6 +122,16 @@ Output 3 to 5 questions, each on its own line. Each question should:
 - Not repeat anything the lead already answered in the chat
 
 Output ONLY the questions, one per line, no numbering, no preamble. No em dashes.`;
+
+// =============================================================================
+// Step D — Deliverables extraction (for the dashboard lead card)
+// =============================================================================
+const DELIVERABLES_SYSTEM = `Extract the 2 to 3 automation deliverables from this proposal email body. These are the specific things that would be built for the business, found in the "what we would build" section.
+
+Return ONLY a raw JSON array of strings. Each string names one deliverable concisely (under 12 words). No explanation, no wrapper object, no markdown code fences.
+
+Example output:
+["Lead capture and instant reply system", "Automated client onboarding flow", "Weekly check-in reminders"]`;
 
 // =============================================================================
 // Helpers
@@ -265,7 +279,6 @@ ${transcript || 'not available'}
         max_uses: 2,
       },
     ];
-    // Only enable web_fetch if a website was provided. Restrict to that domain.
     if (websiteDomain) {
       researchTools.push({
         type: 'web_fetch_20250910',
@@ -278,8 +291,6 @@ ${transcript || 'not available'}
 
     let researchSummary = '';
     try {
-      // The web_fetch tool requires the anthropic-beta header. Pass it via the
-      // SDK's per-request options (second arg), not in the body.
       const researchOptions = websiteDomain
         ? { headers: { 'anthropic-beta': 'web-fetch-2025-09-10' } }
         : undefined;
@@ -349,7 +360,32 @@ ${transcript || 'not available'}
       console.error('Discovery questions step failed:', err);
     }
 
-    // 5. Save everything to the proposals table
+    // 5. Step D — Extract deliverables as a JSON array for the dashboard card
+    let deliverables: string[] | null = null;
+    if (proposalInnerHtml) {
+      try {
+        const deliverablesResponse = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 300,
+          system: DELIVERABLES_SYSTEM,
+          messages: [
+            {
+              role: 'user',
+              content: proposalInnerHtml,
+            },
+          ],
+        });
+        const raw = extractTextFromBlocks(deliverablesResponse.content as unknown[]).trim();
+        const match = raw.match(/\[[\s\S]*\]/);
+        if (match) {
+          deliverables = JSON.parse(match[0]);
+        }
+      } catch (err) {
+        console.error('Deliverables extraction failed:', err);
+      }
+    }
+
+    // 6. Save everything to the proposals table
     if (proposalId) {
       const { error: updateError } = await supabase
         .from('proposals')
@@ -358,6 +394,7 @@ ${transcript || 'not available'}
           proposal_text: proposalInnerHtml.replace(/<[^>]+>/g, ''),
           research_summary: researchSummary,
           discovery_questions: discoveryQuestions,
+          deliverables: deliverables ?? null,
           status: proposalInnerHtml ? 'pending' : 'failed',
         })
         .eq('id', proposalId);
@@ -367,7 +404,7 @@ ${transcript || 'not available'}
       }
     }
 
-    // 6. Email the proposal to the lead
+    // 7. Email the proposal to the lead
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     if (!resendApiKey) {
       console.error('RESEND_API_KEY not set');
@@ -396,10 +433,15 @@ ${transcript || 'not available'}
          </p>`
       : `<p style="margin:32px 0 0 0;color:#666;font-size:14px;">Just hit reply if you want to talk it through.</p>`;
 
+    const trackingPixel = APP_URL
+      ? `<img src="${APP_URL}/api/track/${lead.id}" width="1" height="1" style="display:none!important;border:0;outline:none;" alt="" />`
+      : '';
+
     const proposalEmailHtml = `
       <div style="font-family:Georgia,'Times New Roman',serif;max-width:620px;margin:0 auto;padding:48px 24px;color:#000;line-height:1.8;font-size:16px;">
         ${proposalInnerHtml}
         ${ctaHtml}
+        ${trackingPixel}
       </div>
     `;
 
@@ -438,7 +480,7 @@ ${transcript || 'not available'}
       }
     }
 
-    // 7. Email Pedro the proposal preview + the discovery questions
+    // 8. Email Pedro the proposal preview + the discovery questions
     const questionsHtml = discoveryQuestions
       ? `<ol style="margin:0 0 0 0;padding-left:20px;">${discoveryQuestions
           .split('\n')
