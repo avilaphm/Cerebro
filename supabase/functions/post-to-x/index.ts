@@ -194,11 +194,11 @@ Deno.serve(async (req: Request) => {
     // ── Post one specific draft ──
     if (body.draft_id) {
       const result = await postDraft(svc, body.draft_id);
-      if (!result.ok) return respond({ error: result.error }, 400);
+      if (!result.ok) return respond({ error: result.error });
       return respond({ ok: true, tweet_id: result.tweet_id });
     }
 
-    return respond({ error: 'draft_id or process_scheduled required' }, 400);
+    return respond({ error: 'draft_id or process_scheduled required' });
   } catch (err) {
     console.error('post-to-x error:', err);
     return respond({ error: err instanceof Error ? err.message : String(err) }, 500);
