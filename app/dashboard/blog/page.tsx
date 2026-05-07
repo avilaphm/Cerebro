@@ -54,6 +54,8 @@ export default function BlogDashboardPage() {
   const [scheduleValue, setScheduleValue] = useState('');
   const [posting, setPosting] = useState<string | null>(null);
   const [imagePosition, setImagePosition] = useState<Record<string, number>>({});
+  const [reschedulingId, setReschedulingId] = useState<string | null>(null);
+  const [rescheduleValue, setRescheduleValue] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetId = useRef<string | null>(null);
@@ -227,7 +229,9 @@ export default function BlogDashboardPage() {
 
   async function handleSchedule(id: string) {
     if (!scheduleValue) return;
-    const scheduledAt = new Date(scheduleValue).toISOString();
+    const offset = new Date().getTimezoneOffset();
+    const local = new Date(new Date(scheduleValue).getTime() - offset * 60000);
+    const scheduledAt = local.toISOString();
     await supabase
       .from('blog_posts')
       .update({ status: 'scheduled', scheduled_at: scheduledAt, content_md: editContent[id] ?? undefined })
@@ -242,6 +246,34 @@ export default function BlogDashboardPage() {
     setDrafts((prev) => prev.filter((d) => d.id !== id));
     if (expandedId === id) setExpandedId(null);
     if (chatId === id) setChatId(null);
+  }
+
+  async function handleReschedule(id: string) {
+    if (!rescheduleValue) return;
+    const offset = new Date().getTimezoneOffset();
+    const local = new Date(new Date(rescheduleValue).getTime() - offset * 60000);
+    const scheduledAt = local.toISOString();
+    await supabase
+      .from('blog_posts')
+      .update({ scheduled_at: scheduledAt })
+      .eq('id', id);
+    setReschedulingId(null);
+    setRescheduleValue('');
+    await loadPosts();
+  }
+
+  async function handleMoveToDraft(id: string) {
+    await supabase
+      .from('blog_posts')
+      .update({ status: 'research_draft', scheduled_at: null })
+      .eq('id', id);
+    await loadPosts();
+  }
+
+  function localDatetimeMin() {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
   }
 
   const activeChatDraft = drafts.find((d) => d.id === chatId);
@@ -393,7 +425,7 @@ export default function BlogDashboardPage() {
                         type="datetime-local"
                         value={scheduleValue}
                         onChange={(e) => setScheduleValue(e.target.value)}
-                        min={new Date().toISOString().slice(0, 16)}
+                        min={localDatetimeMin()}
                         className="text-sm border border-black/20 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-black"
                       />
                       <button
@@ -512,38 +544,91 @@ export default function BlogDashboardPage() {
                   : '—';
                 const hasDrafts = post.social_drafts?.length > 0;
                 const allPosted = hasDrafts && post.social_drafts.every((d) => d.status === 'posted');
+                const isRescheduling = reschedulingId === post.id;
 
                 return (
-                  <tr key={post.id} className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
-                    <td className="px-5 py-3.5 text-black font-medium max-w-xs">
-                      <span className="line-clamp-1">{post.title}</span>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      {isScheduled ? (
-                        <span className="text-black/40 text-xs">Scheduled · {date}</span>
-                      ) : (
-                        <span className="text-black/40">{date}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      {hasDrafts ? (
-                        <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${allPosted ? 'bg-black text-white' : 'bg-black/10 text-black/60'}`}>
-                          {allPosted ? 'posted' : 'drafts ready'}
-                        </span>
-                      ) : (
-                        <span className="text-black/20 text-xs">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <Link
-                        href={`/blog/${post.slug}`}
-                        target="_blank"
-                        className="text-black/40 hover:text-black transition-colors text-xs"
-                      >
-                        ↗ open
-                      </Link>
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={post.id} className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
+                      <td className="px-5 py-3.5 text-black font-medium max-w-xs">
+                        <span className="line-clamp-1">{post.title}</span>
+                      </td>
+                      <td className="px-5 py-3.5 whitespace-nowrap">
+                        {isScheduled ? (
+                          <span className="text-black/40 text-xs">Scheduled · {date}</span>
+                        ) : (
+                          <span className="text-black/40">{date}</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {hasDrafts ? (
+                          <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${allPosted ? 'bg-black text-white' : 'bg-black/10 text-black/60'}`}>
+                            {allPosted ? 'posted' : 'drafts ready'}
+                          </span>
+                        ) : (
+                          <span className="text-black/20 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          {isScheduled ? (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setReschedulingId(isRescheduling ? null : post.id);
+                                  setRescheduleValue('');
+                                }}
+                                className="text-black/40 hover:text-black transition-colors text-xs"
+                              >
+                                {isRescheduling ? 'Cancel' : 'Reschedule'}
+                              </button>
+                              <button
+                                onClick={() => handleMoveToDraft(post.id)}
+                                className="text-black/40 hover:text-black transition-colors text-xs"
+                              >
+                                Edit
+                              </button>
+                            </>
+                          ) : (
+                            <Link
+                              href={`/blog/${post.slug}`}
+                              target="_blank"
+                              className="text-black/40 hover:text-black transition-colors text-xs"
+                            >
+                              ↗ open
+                            </Link>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {isRescheduling && (
+                      <tr key={`${post.id}-reschedule`} className="border-b border-black/5 bg-black/[0.01]">
+                        <td colSpan={4} className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="datetime-local"
+                              value={rescheduleValue}
+                              onChange={(e) => setRescheduleValue(e.target.value)}
+                              min={localDatetimeMin()}
+                              className="text-sm border border-black/20 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-black"
+                            />
+                            <button
+                              onClick={() => handleReschedule(post.id)}
+                              disabled={!rescheduleValue}
+                              className="bg-black text-white text-xs px-4 py-2 rounded-lg disabled:opacity-40 hover:opacity-80 transition-opacity"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => { setReschedulingId(null); setRescheduleValue(''); }}
+                              className="text-xs text-black/40 hover:text-black transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 );
               })}
             </tbody>
