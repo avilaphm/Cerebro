@@ -5,36 +5,44 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
 // Handles implicit-flow auth responses that land on the root page as URL hash fragments.
-// Supabase magic links (admin-sent) arrive as /#access_token=... and /#error=...
+// Supabase admin magic links and recovery emails arrive as /#access_token=...
 export default function AuthHashRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash) return;
+    const raw = window.location.hash.slice(1); // strip leading #
+    if (!raw) return;
 
-    if (hash.includes('error=')) {
-      window.location.hash = '';
+    const params = new URLSearchParams(raw);
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token') ?? '';
+    const errorParam = params.get('error');
+    const type = params.get('type');
+
+    // Clear hash from URL immediately so it doesn't persist on refresh
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    if (errorParam) {
       router.replace('/login?error=link_expired');
       return;
     }
 
-    if (hash.includes('access_token=')) {
-      const supabase = createClient();
+    if (!accessToken) return;
 
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          router.replace('/dashboard');
+    const supabase = createClient();
+    supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+      .then(({ data, error }) => {
+        if (error || !data.session) {
+          router.replace('/login?error=session_failed');
           return;
         }
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-          if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
-            subscription.unsubscribe();
-            router.replace('/dashboard');
-          }
-        });
+        // Recovery emails set type=recovery — send to password reset page
+        if (type === 'recovery') {
+          router.replace('/auth/update-password');
+        } else {
+          router.replace('/dashboard');
+        }
       });
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
