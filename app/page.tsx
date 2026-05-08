@@ -51,16 +51,16 @@ export default function Home() {
       <WhatHappensNextSection />
 
       {/* 8. Start the Conversation (chatbot) */}
-      <section id="start" className="border-t border-black py-[140px] px-6 md:px-12">
+      <section id="start" className="border-t border-black py-20 md:py-[140px] px-6 md:px-12 scroll-mt-20">
         <div className="max-w-5xl mx-auto">
           <FadeIn>
-            <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black mb-8">
+            <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black mb-6 md:mb-8">
               Start the conversation
             </p>
-            <h2 className="font-display text-[clamp(2.2rem,5vw,4rem)] font-light tracking-[-0.025em] text-black mb-5 max-w-[640px]">
+            <h2 className="font-display text-[clamp(2rem,5vw,4rem)] font-light tracking-[-0.025em] text-black mb-4 md:mb-5 max-w-[640px]">
               Tell us where the hours are going.
             </h2>
-            <p className="text-sm font-light text-black mb-14 leading-relaxed max-w-[460px]">
+            <p className="text-sm font-light text-black mb-8 md:mb-14 leading-relaxed max-w-[460px]">
               Five minutes of conversation. We&apos;ll help you think it through.
             </p>
             <GetInTouchSection />

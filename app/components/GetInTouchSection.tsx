@@ -195,14 +195,14 @@ export default function GetInTouchSection() {
 
       {/* Conversation history */}
       {messages.length > 0 && (
-        <div className="mb-5 space-y-3 max-h-[380px] overflow-y-auto pr-1 scroll-smooth">
+        <div className="mb-4 md:mb-5 space-y-3 max-h-[55vh] md:max-h-[380px] overflow-y-auto pr-1 scroll-smooth">
           {messages.map((msg) => (
             <div
               key={msg.id}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[82%] px-4 py-3 text-sm font-light leading-relaxed ${
+                className={`max-w-[85%] md:max-w-[82%] px-4 py-3 text-[0.95rem] md:text-sm font-light leading-relaxed ${
                   msg.role === 'user'
                     ? 'bg-black text-white rounded-2xl rounded-br-sm'
                     : 'bg-gray-100 text-black rounded-2xl rounded-bl-sm'
@@ -219,12 +219,12 @@ export default function GetInTouchSection() {
 
       {/* Suggestion cards */}
       {showSuggestions && (
-        <div className="grid grid-cols-2 gap-2 mb-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4 md:mb-5">
           {SUGGESTED_ACTIONS.map((s) => (
             <button
               key={s.action}
               onClick={() => sendMessage(s.action)}
-              className="text-left border border-gray-300 bg-white hover:bg-gray-50 rounded-xl px-4 py-3 text-sm transition-colors duration-150"
+              className="text-left border border-gray-300 bg-white hover:bg-gray-50 active:bg-gray-100 rounded-xl px-4 py-3 text-sm transition-colors duration-150"
             >
               <span className="block font-medium text-black">{s.title}</span>
               <span className="block text-black/50">{s.label}</span>
@@ -246,14 +246,14 @@ export default function GetInTouchSection() {
           placeholder="What's eating your week?"
           disabled={isTyping}
           rows={1}
-          className="w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 pr-12 text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
+          className="w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 pr-14 text-base md:text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
           style={{ overflow: 'hidden' }}
         />
         <button
           onClick={() => sendMessage(input)}
           disabled={!input.trim() || isTyping}
           aria-label="Send message"
-          className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black text-white transition-opacity hover:opacity-75 disabled:opacity-25"
+          className="absolute right-2 top-1/2 -translate-y-1/2 flex h-9 w-9 md:h-8 md:w-8 items-center justify-center rounded-full bg-black text-white transition-opacity hover:opacity-75 disabled:opacity-25"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path
@@ -265,9 +265,9 @@ export default function GetInTouchSection() {
         </button>
       </div>
 
-      {/* Hint text */}
+      {/* Hint text — desktop only (Enter/Shift+Enter doesn't apply on mobile) */}
       {messages.length === 0 && (
-        <p className="mt-3 text-[0.65rem] tracking-[0.08em] uppercase text-black/30">
+        <p className="hidden md:block mt-3 text-[0.65rem] tracking-[0.08em] uppercase text-black/30">
           Enter to send · Shift+Enter for new line
         </p>
       )}
