@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-const GRAPH = 'https://graph.facebook.com/v19.0';
+// Instagram Business Login API uses graph.instagram.com (not graph.facebook.com)
+const GRAPH = 'https://graph.instagram.com/v21.0';
 
 interface MediaItem {
   id: string;
@@ -21,16 +22,16 @@ interface InsightMetric {
 
 export async function GET() {
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
 
-  if (!token || !accountId) {
+  if (!token) {
     return NextResponse.json({ connected: false });
   }
 
   try {
+    // Use /me — Business Login tokens identify the user directly
     const [accountRes, mediaRes] = await Promise.all([
-      fetch(`${GRAPH}/${accountId}?fields=followers_count,media_count,name,username&access_token=${token}`),
-      fetch(`${GRAPH}/${accountId}/media?fields=id,caption,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=20&access_token=${token}`),
+      fetch(`${GRAPH}/me?fields=followers_count,media_count,name,username&access_token=${token}`),
+      fetch(`${GRAPH}/me/media?fields=id,caption,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=20&access_token=${token}`),
     ]);
 
     const [accountData, mediaData] = await Promise.all([accountRes.json(), mediaRes.json()]);
@@ -49,7 +50,7 @@ export async function GET() {
       comments: p.comments_count ?? 0,
     }));
 
-    // Fetch insights (requires instagram_manage_insights permission)
+    // Fetch insights (requires instagram_business_manage_insights permission)
     const postsWithInsights = await Promise.all(
       posts.slice(0, 12).map(async (post: {
         id: string;
