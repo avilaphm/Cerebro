@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import Image from 'next/image';
+import {
+  YouTubePanel,
+  InstagramPanel,
+  TikTokPanel,
+  XAnalyticsNote,
+  type YouTubeData,
+  type InstagramData,
+} from './AnalyticsPanels';
 
 interface BlogPost {
   id: string;
@@ -23,59 +30,6 @@ interface SocialDraft {
   posted_at: string | null;
   blog_post_id: string;
   blog_posts: { title: string; slug: string }[] | null;
-}
-
-interface YouTubeChannel {
-  name: string;
-  subscribers: number;
-  totalViews: number;
-  videoCount: number;
-}
-
-interface YouTubeVideo {
-  id: string;
-  title: string;
-  publishedAt: string;
-  thumbnail?: string;
-  views: number;
-  likes: number;
-  comments: number;
-  duration: string;
-}
-
-interface YouTubeData {
-  connected: boolean;
-  channel?: YouTubeChannel;
-  videos?: YouTubeVideo[];
-  error?: string;
-}
-
-interface InstagramAccount {
-  name: string;
-  username?: string;
-  followers: number;
-  mediaCount: number;
-}
-
-interface InstagramPost {
-  id: string;
-  caption: string;
-  mediaType: string;
-  timestamp: string;
-  thumbnail?: string;
-  likes: number;
-  comments: number;
-  impressions?: number;
-  reach?: number;
-  saves?: number;
-  videoViews?: number;
-}
-
-interface InstagramData {
-  connected: boolean;
-  account?: InstagramAccount;
-  posts?: InstagramPost[];
-  error?: string;
 }
 
 type PlatformTab = 'x' | 'instagram' | 'youtube' | 'tiktok';
@@ -110,235 +64,6 @@ function buildScheduleQueue(afterUtc: Date, count: number): Date[] {
   }
 
   return results;
-}
-
-function fmtNum(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
-  return n.toString();
-}
-
-function parseDuration(iso: string): string {
-  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return '';
-  const h = parseInt(match[1] ?? '0', 10);
-  const m = parseInt(match[2] ?? '0', 10);
-  const s = parseInt(match[3] ?? '0', 10);
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function timeAgo(isoDate: string): string {
-  const diff = Date.now() - new Date(isoDate).getTime();
-  const days = Math.floor(diff / 86_400_000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days}d ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
-
-// ── Analytics panels ──────────────────────────────────────────────────────────
-
-function StatPill({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="border border-black/10 rounded-xl px-5 py-4">
-      <p className="text-2xl font-display font-light text-black mb-0.5">{value}</p>
-      <p className="text-xs text-black/40">{label}</p>
-    </div>
-  );
-}
-
-function NotConnected({ platform, error, onRetry, retrying }: {
-  platform: string;
-  error?: string;
-  onRetry?: () => void;
-  retrying?: boolean;
-}) {
-  return (
-    <div className="border border-black/10 rounded-xl p-10 text-center max-w-md mx-auto mt-8">
-      <p className="text-sm font-medium text-black mb-2">{platform} not connected</p>
-      {error ? (
-        <p className="text-xs text-red-400 leading-relaxed mb-4 font-mono break-all">{error}</p>
-      ) : (
-        <p className="text-xs text-black/40 leading-relaxed mb-4">
-          Add your API credentials to{' '}
-          <code className="text-black/60 bg-black/5 px-1.5 py-0.5 rounded">.env.local</code>{' '}
-          and redeploy.
-        </p>
-      )}
-      {onRetry && (
-        <button
-          onClick={onRetry}
-          disabled={retrying}
-          className="text-xs px-4 py-2 rounded-lg border border-black/20 text-black/60 hover:border-black/40 hover:text-black transition-colors disabled:opacity-40 flex items-center gap-2 mx-auto"
-        >
-          {retrying && <span className="w-3 h-3 border-2 border-black/30 border-t-black/70 rounded-full animate-spin inline-block" />}
-          {retrying ? 'Retrying…' : 'Retry'}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function AnalyticsLoader() {
-  return (
-    <div className="space-y-4 mt-4">
-      {[1, 2, 3].map((i) => (
-        <div key={i} className="h-16 bg-black/[0.03] rounded-xl animate-pulse" />
-      ))}
-    </div>
-  );
-}
-
-function YouTubePanel({ data, loading, onRetry }: { data: YouTubeData | null; loading: boolean; onRetry: () => void }) {
-  if (loading) return <AnalyticsLoader />;
-  if (!data || !data.connected) return <NotConnected platform="YouTube" error={data?.error} onRetry={onRetry} retrying={loading} />;
-
-  const { channel, videos = [] } = data;
-
-  return (
-    <div>
-      {channel && (
-        <div className="grid grid-cols-3 gap-3 mb-8">
-          <StatPill label="Subscribers" value={fmtNum(channel.subscribers)} />
-          <StatPill label="Total views" value={fmtNum(channel.totalViews)} />
-          <StatPill label="Videos" value={fmtNum(channel.videoCount)} />
-        </div>
-      )}
-
-      <p className="text-xs font-medium tracking-[0.12em] uppercase text-black/40 mb-4">
-        Recent videos
-      </p>
-
-      {videos.length === 0 ? (
-        <p className="text-sm text-black/30">No videos found.</p>
-      ) : (
-        <div className="space-y-3">
-          {videos.map((v) => (
-            <div key={v.id} className="flex gap-4 border border-black/10 rounded-xl p-4 hover:border-black/20 transition-colors">
-              {v.thumbnail && (
-                <div className="flex-shrink-0 w-28 h-16 rounded-lg overflow-hidden bg-black/5 relative">
-                  <Image
-                    src={v.thumbnail}
-                    alt={v.title}
-                    fill
-                    className="object-cover"
-                    sizes="112px"
-                    unoptimized
-                  />
-                  {v.duration && (
-                    <span className="absolute bottom-1 right-1 text-[0.55rem] bg-black/70 text-white px-1 py-0.5 rounded">
-                      {parseDuration(v.duration)}
-                    </span>
-                  )}
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <a
-                  href={`https://youtube.com/watch?v=${v.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-black font-medium line-clamp-2 hover:opacity-70 transition-opacity"
-                >
-                  {v.title}
-                </a>
-                <p className="text-xs text-black/30 mt-1">{timeAgo(v.publishedAt)}</p>
-                <div className="flex items-center gap-4 mt-2">
-                  <span className="text-xs text-black/50">{fmtNum(v.views)} views</span>
-                  <span className="text-xs text-black/30">{fmtNum(v.likes)} likes</span>
-                  <span className="text-xs text-black/30">{fmtNum(v.comments)} comments</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InstagramPanel({ data, loading, onRetry }: { data: InstagramData | null; loading: boolean; onRetry: () => void }) {
-  if (loading) return <AnalyticsLoader />;
-  if (!data || !data.connected) return <NotConnected platform="Instagram" error={data?.error} onRetry={onRetry} retrying={loading} />;
-
-  const { account, posts = [] } = data;
-
-  return (
-    <div>
-      {account && (
-        <div className="grid grid-cols-2 gap-3 mb-8">
-          <StatPill label="Followers" value={fmtNum(account.followers)} />
-          <StatPill label="Total posts" value={fmtNum(account.mediaCount)} />
-        </div>
-      )}
-
-      <p className="text-xs font-medium tracking-[0.12em] uppercase text-black/40 mb-4">
-        Recent posts
-      </p>
-
-      {posts.length === 0 ? (
-        <p className="text-sm text-black/30">No posts found.</p>
-      ) : (
-        <div className="space-y-3">
-          {posts.map((p) => (
-            <div key={p.id} className="flex gap-4 border border-black/10 rounded-xl p-4 hover:border-black/20 transition-colors">
-              {p.thumbnail && (
-                <div className="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-black/5 relative">
-                  <Image
-                    src={p.thumbnail}
-                    alt={p.caption.slice(0, 40) || 'Post'}
-                    fill
-                    className="object-cover"
-                    sizes="64px"
-                    unoptimized
-                  />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                {p.caption ? (
-                  <p className="text-sm text-black line-clamp-2 leading-relaxed">{p.caption}</p>
-                ) : (
-                  <p className="text-sm text-black/30 italic">{p.mediaType.toLowerCase()}</p>
-                )}
-                <p className="text-xs text-black/30 mt-1">{timeAgo(p.timestamp)}</p>
-                <div className="flex items-center gap-4 mt-2 flex-wrap">
-                  <span className="text-xs text-black/50">{fmtNum(p.likes)} likes</span>
-                  <span className="text-xs text-black/30">{fmtNum(p.comments)} comments</span>
-                  {p.saves != null && (
-                    <span className="text-xs text-black/30">{fmtNum(p.saves)} saves</span>
-                  )}
-                  {p.reach != null && (
-                    <span className="text-xs text-black/30">{fmtNum(p.reach)} reach</span>
-                  )}
-                  {p.impressions != null && (
-                    <span className="text-xs text-black/30">{fmtNum(p.impressions)} impressions</span>
-                  )}
-                  {p.videoViews != null && (
-                    <span className="text-xs text-black/30">{fmtNum(p.videoViews)} views</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TikTokPanel() {
-  return (
-    <div className="border border-black/10 rounded-xl p-10 text-center max-w-md mx-auto mt-8">
-      <p className="text-sm font-medium text-black mb-2">TikTok coming soon</p>
-      <p className="text-xs text-black/40 leading-relaxed">
-        Once you have your TikTok API credentials, add them to your environment and this tab will
-        show your analytics.
-      </p>
-    </div>
-  );
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -743,6 +468,7 @@ export default function SocialPage() {
       {/* X tab */}
       {platformTab === 'x' && (
         <>
+          <XAnalyticsNote />
           {lastScheduledAt && (
             <div className="mb-6 flex items-center gap-2.5 bg-black/[0.025] border border-black/[0.07] rounded-xl px-4 py-3">
               <span className="w-1.5 h-1.5 rounded-full bg-black/30 flex-shrink-0" />

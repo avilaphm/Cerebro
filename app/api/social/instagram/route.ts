@@ -60,7 +60,7 @@ export async function GET() {
         try {
           const metrics = ['impressions', 'reach', 'saved'];
           if (post.mediaType === 'VIDEO' || post.mediaType === 'REELS') {
-            metrics.push('video_views');
+            metrics.push('video_views', 'shares');
           }
           const insightsRes = await fetch(
             `${GRAPH}/${post.id}/insights?metric=${metrics.join(',')}&access_token=${token}`
@@ -77,6 +77,7 @@ export async function GET() {
               reach: m.reach,
               saves: m.saved,
               videoViews: m.video_views,
+              shares: m.shares,
             };
           }
         } catch {
