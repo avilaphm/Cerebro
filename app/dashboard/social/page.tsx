@@ -151,15 +151,34 @@ function StatPill({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function NotConnected({ platform }: { platform: string }) {
+function NotConnected({ platform, error, onRetry, retrying }: {
+  platform: string;
+  error?: string;
+  onRetry?: () => void;
+  retrying?: boolean;
+}) {
   return (
     <div className="border border-black/10 rounded-xl p-10 text-center max-w-md mx-auto mt-8">
       <p className="text-sm font-medium text-black mb-2">{platform} not connected</p>
-      <p className="text-xs text-black/40 leading-relaxed">
-        Add your API credentials to{' '}
-        <code className="text-black/60 bg-black/5 px-1.5 py-0.5 rounded">.env.local</code>{' '}
-        and redeploy to see your analytics here.
-      </p>
+      {error ? (
+        <p className="text-xs text-red-400 leading-relaxed mb-4 font-mono break-all">{error}</p>
+      ) : (
+        <p className="text-xs text-black/40 leading-relaxed mb-4">
+          Add your API credentials to{' '}
+          <code className="text-black/60 bg-black/5 px-1.5 py-0.5 rounded">.env.local</code>{' '}
+          and redeploy.
+        </p>
+      )}
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          disabled={retrying}
+          className="text-xs px-4 py-2 rounded-lg border border-black/20 text-black/60 hover:border-black/40 hover:text-black transition-colors disabled:opacity-40 flex items-center gap-2 mx-auto"
+        >
+          {retrying && <span className="w-3 h-3 border-2 border-black/30 border-t-black/70 rounded-full animate-spin inline-block" />}
+          {retrying ? 'Retrying…' : 'Retry'}
+        </button>
+      )}
     </div>
   );
 }
@@ -174,9 +193,9 @@ function AnalyticsLoader() {
   );
 }
 
-function YouTubePanel({ data, loading }: { data: YouTubeData | null; loading: boolean }) {
+function YouTubePanel({ data, loading, onRetry }: { data: YouTubeData | null; loading: boolean; onRetry: () => void }) {
   if (loading) return <AnalyticsLoader />;
-  if (!data || !data.connected) return <NotConnected platform="YouTube" />;
+  if (!data || !data.connected) return <NotConnected platform="YouTube" error={data?.error} onRetry={onRetry} retrying={loading} />;
 
   const { channel, videos = [] } = data;
 
@@ -241,9 +260,9 @@ function YouTubePanel({ data, loading }: { data: YouTubeData | null; loading: bo
   );
 }
 
-function InstagramPanel({ data, loading }: { data: InstagramData | null; loading: boolean }) {
+function InstagramPanel({ data, loading, onRetry }: { data: InstagramData | null; loading: boolean; onRetry: () => void }) {
   if (loading) return <AnalyticsLoader />;
-  if (!data || !data.connected) return <NotConnected platform="Instagram" />;
+  if (!data || !data.connected) return <NotConnected platform="Instagram" error={data?.error} onRetry={onRetry} retrying={loading} />;
 
   const { account, posts = [] } = data;
 
@@ -396,25 +415,36 @@ export default function SocialPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  function fetchYouTube() {
+    setYoutubeData(null);
+    setYoutubeLoading(true);
+    fetch('/api/social/youtube')
+      .then((r) => r.json())
+      .then((d) => setYoutubeData(d as YouTubeData))
+      .catch(() => setYoutubeData({ connected: false, error: 'Network error — check console' }))
+      .finally(() => setYoutubeLoading(false));
+  }
+
+  function fetchInstagram() {
+    setInstagramData(null);
+    setInstagramLoading(true);
+    fetch('/api/social/instagram')
+      .then((r) => r.json())
+      .then((d) => setInstagramData(d as InstagramData))
+      .catch(() => setInstagramData({ connected: false, error: 'Network error — check console' }))
+      .finally(() => setInstagramLoading(false));
+  }
+
   // Fetch analytics when tab is activated (once per session)
   useEffect(() => {
     if (platformTab === 'youtube' && !youtubeData && !youtubeLoading) {
-      setYoutubeLoading(true);
-      fetch('/api/social/youtube')
-        .then((r) => r.json())
-        .then((d) => setYoutubeData(d as YouTubeData))
-        .catch(() => setYoutubeData({ connected: false, error: 'Failed to fetch' }))
-        .finally(() => setYoutubeLoading(false));
+      fetchYouTube();
     }
     if (platformTab === 'instagram' && !instagramData && !instagramLoading) {
-      setInstagramLoading(true);
-      fetch('/api/social/instagram')
-        .then((r) => r.json())
-        .then((d) => setInstagramData(d as InstagramData))
-        .catch(() => setInstagramData({ connected: false, error: 'Failed to fetch' }))
-        .finally(() => setInstagramLoading(false));
+      fetchInstagram();
     }
-  }, [platformTab, youtubeData, instagramData, youtubeLoading, instagramLoading]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platformTab]);
 
   // X tab derived values
   const xDrafts = drafts.filter((d) => d.platform === 'twitter');
@@ -951,12 +981,12 @@ export default function SocialPage() {
 
       {/* YouTube tab */}
       {platformTab === 'youtube' && (
-        <YouTubePanel data={youtubeData} loading={youtubeLoading} />
+        <YouTubePanel data={youtubeData} loading={youtubeLoading} onRetry={fetchYouTube} />
       )}
 
       {/* Instagram tab */}
       {platformTab === 'instagram' && (
-        <InstagramPanel data={instagramData} loading={instagramLoading} />
+        <InstagramPanel data={instagramData} loading={instagramLoading} onRetry={fetchInstagram} />
       )}
 
       {/* TikTok tab */}
