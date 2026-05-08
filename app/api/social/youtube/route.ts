@@ -14,13 +14,21 @@ export async function GET() {
     return NextResponse.json({ connected: false });
   }
 
-  try {
-    const [channelRes, searchRes] = await Promise.all([
-      fetch(`${YT}/channels?part=statistics,snippet&id=${channelId}&key=${apiKey}`),
-      fetch(`${YT}/search?part=snippet&channelId=${channelId}&type=video&order=date&maxResults=10&key=${apiKey}`),
-    ]);
+  // Accept full URL (https://youtube.com/@handle), @handle, or raw UC... channel ID
+  function resolveChannelParam(raw: string): string {
+    const s = raw.trim();
+    const handleMatch = s.match(/@([\w.-]+)/);
+    if (handleMatch) return `forHandle=%40${handleMatch[1]}`;
+    if (s.startsWith('UC')) return `id=${s}`;
+    return `forUsername=${encodeURIComponent(s)}`;
+  }
 
-    const [channelData, searchData] = await Promise.all([channelRes.json(), searchRes.json()]);
+  const channelParam = resolveChannelParam(channelId);
+
+  try {
+    // Resolve channel first to get the canonical UC... id
+    const channelRes = await fetch(`${YT}/channels?part=statistics,snippet&${channelParam}&key=${apiKey}`);
+    const channelData = await channelRes.json();
 
     if (channelData.error) {
       return NextResponse.json({ connected: false, error: channelData.error.message });
@@ -31,6 +39,14 @@ export async function GET() {
     }
 
     const ch = channelData.items[0];
+    const resolvedId: string = ch.id;
+
+    // Now fetch recent videos using the canonical channel ID
+    const searchRes = await fetch(
+      `${YT}/search?part=snippet&channelId=${resolvedId}&type=video&order=date&maxResults=10&key=${apiKey}`
+    );
+    const searchData = await searchRes.json();
+
     const videoIds = (searchData.items ?? [])
       .map((v: { id: { videoId?: string } }) => v.id?.videoId)
       .filter(Boolean)
