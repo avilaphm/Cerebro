@@ -36,22 +36,20 @@ const TYPE_LABELS: Record<string, string> = {
 // 3 daily slots in Sydney time (AEST UTC+10 — update offset to 11 during AEDT Oct–Apr)
 const SYDNEY_OFFSET_MS = 10 * 3600 * 1000;
 const SLOT_HOURS = [7.5, 12, 19]; // 7:30am · 12:00pm · 7:00pm
+const DAY_MS = 86_400_000;
 
 function buildScheduleQueue(afterUtc: Date, count: number): Date[] {
   const results: Date[] = [];
-  const startLocalMs = afterUtc.getTime() + SYDNEY_OFFSET_MS;
-
-  const dayStart = new Date(startLocalMs);
-  dayStart.setHours(0, 0, 0, 0);
+  // Work purely in numeric ms to avoid browser timezone interference with setHours
+  const afterSydneyMs = afterUtc.getTime() + SYDNEY_OFFSET_MS;
+  const dayMidnight = Math.floor(afterSydneyMs / DAY_MS) * DAY_MS;
 
   for (let day = 0; day < 60 && results.length < count; day++) {
-    const dayMs = dayStart.getTime() + day * 86_400_000;
+    const dayMs = dayMidnight + day * DAY_MS;
     for (const slotH of SLOT_HOURS) {
-      const h = Math.floor(slotH);
-      const m = Math.round((slotH - h) * 60);
-      const slotLocalMs = dayMs + h * 3_600_000 + m * 60_000;
-      if (slotLocalMs > startLocalMs + 60_000) {
-        results.push(new Date(slotLocalMs - SYDNEY_OFFSET_MS));
+      const slotSydneyMs = dayMs + slotH * 3_600_000;
+      if (slotSydneyMs > afterSydneyMs + 60_000) {
+        results.push(new Date(slotSydneyMs - SYDNEY_OFFSET_MS));
         if (results.length >= count) break;
       }
     }
