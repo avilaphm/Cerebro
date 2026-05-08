@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
+import SocialChannels from './components/SocialChannels';
 
 async function getStats() {
   const supabase = await createClient();
@@ -67,6 +68,8 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      <SocialChannels />
 
       <div className="border border-black/10 rounded-xl p-6 max-w-sm">
         <p className="text-sm font-medium text-black mb-1">Quick actions</p>

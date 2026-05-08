@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import Image from 'next/image';
 
 interface BlogPost {
   id: string;
@@ -24,6 +25,61 @@ interface SocialDraft {
   blog_posts: { title: string; slug: string }[] | null;
 }
 
+interface YouTubeChannel {
+  name: string;
+  subscribers: number;
+  totalViews: number;
+  videoCount: number;
+}
+
+interface YouTubeVideo {
+  id: string;
+  title: string;
+  publishedAt: string;
+  thumbnail?: string;
+  views: number;
+  likes: number;
+  comments: number;
+  duration: string;
+}
+
+interface YouTubeData {
+  connected: boolean;
+  channel?: YouTubeChannel;
+  videos?: YouTubeVideo[];
+  error?: string;
+}
+
+interface InstagramAccount {
+  name: string;
+  username?: string;
+  followers: number;
+  mediaCount: number;
+}
+
+interface InstagramPost {
+  id: string;
+  caption: string;
+  mediaType: string;
+  timestamp: string;
+  thumbnail?: string;
+  likes: number;
+  comments: number;
+  impressions?: number;
+  reach?: number;
+  saves?: number;
+  videoViews?: number;
+}
+
+interface InstagramData {
+  connected: boolean;
+  account?: InstagramAccount;
+  posts?: InstagramPost[];
+  error?: string;
+}
+
+type PlatformTab = 'x' | 'instagram' | 'youtube' | 'tiktok';
+
 const TYPE_LABELS: Record<string, string> = {
   hook: 'Hook',
   contrarian: 'Contrarian',
@@ -33,14 +89,12 @@ const TYPE_LABELS: Record<string, string> = {
   single: 'Post',
 };
 
-// 3 daily slots in Sydney time (AEST UTC+10 — update offset to 11 during AEDT Oct–Apr)
 const SYDNEY_OFFSET_MS = 10 * 3600 * 1000;
-const SLOT_HOURS = [7.5, 12, 19]; // 7:30am · 12:00pm · 7:00pm
+const SLOT_HOURS = [7.5, 12, 19];
 const DAY_MS = 86_400_000;
 
 function buildScheduleQueue(afterUtc: Date, count: number): Date[] {
   const results: Date[] = [];
-  // Work purely in numeric ms to avoid browser timezone interference with setHours
   const afterSydneyMs = afterUtc.getTime() + SYDNEY_OFFSET_MS;
   const dayMidnight = Math.floor(afterSydneyMs / DAY_MS) * DAY_MS;
 
@@ -57,6 +111,218 @@ function buildScheduleQueue(afterUtc: Date, count: number): Date[] {
 
   return results;
 }
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return n.toString();
+}
+
+function parseDuration(iso: string): string {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return '';
+  const h = parseInt(match[1] ?? '0', 10);
+  const m = parseInt(match[2] ?? '0', 10);
+  const s = parseInt(match[3] ?? '0', 10);
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function timeAgo(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const days = Math.floor(diff / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+// ── Analytics panels ──────────────────────────────────────────────────────────
+
+function StatPill({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="border border-black/10 rounded-xl px-5 py-4">
+      <p className="text-2xl font-display font-light text-black mb-0.5">{value}</p>
+      <p className="text-xs text-black/40">{label}</p>
+    </div>
+  );
+}
+
+function NotConnected({ platform }: { platform: string }) {
+  return (
+    <div className="border border-black/10 rounded-xl p-10 text-center max-w-md mx-auto mt-8">
+      <p className="text-sm font-medium text-black mb-2">{platform} not connected</p>
+      <p className="text-xs text-black/40 leading-relaxed">
+        Add your API credentials to{' '}
+        <code className="text-black/60 bg-black/5 px-1.5 py-0.5 rounded">.env.local</code>{' '}
+        and redeploy to see your analytics here.
+      </p>
+    </div>
+  );
+}
+
+function AnalyticsLoader() {
+  return (
+    <div className="space-y-4 mt-4">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="h-16 bg-black/[0.03] rounded-xl animate-pulse" />
+      ))}
+    </div>
+  );
+}
+
+function YouTubePanel({ data, loading }: { data: YouTubeData | null; loading: boolean }) {
+  if (loading) return <AnalyticsLoader />;
+  if (!data || !data.connected) return <NotConnected platform="YouTube" />;
+
+  const { channel, videos = [] } = data;
+
+  return (
+    <div>
+      {channel && (
+        <div className="grid grid-cols-3 gap-3 mb-8">
+          <StatPill label="Subscribers" value={fmtNum(channel.subscribers)} />
+          <StatPill label="Total views" value={fmtNum(channel.totalViews)} />
+          <StatPill label="Videos" value={fmtNum(channel.videoCount)} />
+        </div>
+      )}
+
+      <p className="text-xs font-medium tracking-[0.12em] uppercase text-black/40 mb-4">
+        Recent videos
+      </p>
+
+      {videos.length === 0 ? (
+        <p className="text-sm text-black/30">No videos found.</p>
+      ) : (
+        <div className="space-y-3">
+          {videos.map((v) => (
+            <div key={v.id} className="flex gap-4 border border-black/10 rounded-xl p-4 hover:border-black/20 transition-colors">
+              {v.thumbnail && (
+                <div className="flex-shrink-0 w-28 h-16 rounded-lg overflow-hidden bg-black/5 relative">
+                  <Image
+                    src={v.thumbnail}
+                    alt={v.title}
+                    fill
+                    className="object-cover"
+                    sizes="112px"
+                    unoptimized
+                  />
+                  {v.duration && (
+                    <span className="absolute bottom-1 right-1 text-[0.55rem] bg-black/70 text-white px-1 py-0.5 rounded">
+                      {parseDuration(v.duration)}
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <a
+                  href={`https://youtube.com/watch?v=${v.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-black font-medium line-clamp-2 hover:opacity-70 transition-opacity"
+                >
+                  {v.title}
+                </a>
+                <p className="text-xs text-black/30 mt-1">{timeAgo(v.publishedAt)}</p>
+                <div className="flex items-center gap-4 mt-2">
+                  <span className="text-xs text-black/50">{fmtNum(v.views)} views</span>
+                  <span className="text-xs text-black/30">{fmtNum(v.likes)} likes</span>
+                  <span className="text-xs text-black/30">{fmtNum(v.comments)} comments</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InstagramPanel({ data, loading }: { data: InstagramData | null; loading: boolean }) {
+  if (loading) return <AnalyticsLoader />;
+  if (!data || !data.connected) return <NotConnected platform="Instagram" />;
+
+  const { account, posts = [] } = data;
+
+  return (
+    <div>
+      {account && (
+        <div className="grid grid-cols-2 gap-3 mb-8">
+          <StatPill label="Followers" value={fmtNum(account.followers)} />
+          <StatPill label="Total posts" value={fmtNum(account.mediaCount)} />
+        </div>
+      )}
+
+      <p className="text-xs font-medium tracking-[0.12em] uppercase text-black/40 mb-4">
+        Recent posts
+      </p>
+
+      {posts.length === 0 ? (
+        <p className="text-sm text-black/30">No posts found.</p>
+      ) : (
+        <div className="space-y-3">
+          {posts.map((p) => (
+            <div key={p.id} className="flex gap-4 border border-black/10 rounded-xl p-4 hover:border-black/20 transition-colors">
+              {p.thumbnail && (
+                <div className="flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden bg-black/5 relative">
+                  <Image
+                    src={p.thumbnail}
+                    alt={p.caption.slice(0, 40) || 'Post'}
+                    fill
+                    className="object-cover"
+                    sizes="64px"
+                    unoptimized
+                  />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                {p.caption ? (
+                  <p className="text-sm text-black line-clamp-2 leading-relaxed">{p.caption}</p>
+                ) : (
+                  <p className="text-sm text-black/30 italic">{p.mediaType.toLowerCase()}</p>
+                )}
+                <p className="text-xs text-black/30 mt-1">{timeAgo(p.timestamp)}</p>
+                <div className="flex items-center gap-4 mt-2 flex-wrap">
+                  <span className="text-xs text-black/50">{fmtNum(p.likes)} likes</span>
+                  <span className="text-xs text-black/30">{fmtNum(p.comments)} comments</span>
+                  {p.saves != null && (
+                    <span className="text-xs text-black/30">{fmtNum(p.saves)} saves</span>
+                  )}
+                  {p.reach != null && (
+                    <span className="text-xs text-black/30">{fmtNum(p.reach)} reach</span>
+                  )}
+                  {p.impressions != null && (
+                    <span className="text-xs text-black/30">{fmtNum(p.impressions)} impressions</span>
+                  )}
+                  {p.videoViews != null && (
+                    <span className="text-xs text-black/30">{fmtNum(p.videoViews)} views</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TikTokPanel() {
+  return (
+    <div className="border border-black/10 rounded-xl p-10 text-center max-w-md mx-auto mt-8">
+      <p className="text-sm font-medium text-black mb-2">TikTok coming soon</p>
+      <p className="text-xs text-black/40 leading-relaxed">
+        Once you have your TikTok API credentials, add them to your environment and this tab will
+        show your analytics.
+      </p>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function SocialPage() {
   const supabase = createClient();
@@ -76,13 +342,21 @@ export default function SocialPage() {
   const [scheduleValue, setScheduleValue] = useState('');
   const [posting, setPosting] = useState<string | null>(null);
   const [postError, setPostError] = useState<Record<string, string>>({});
-  const [filter, setFilter] = useState<'all' | 'twitter' | 'linkedin'>('twitter');
   const [generateCount, setGenerateCount] = useState<1 | 3 | 5>(5);
 
-  // Batch selection state
+  // Batch selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batching, setBatching] = useState(false);
   const [batchError, setBatchError] = useState('');
+
+  // Platform tabs
+  const [platformTab, setPlatformTab] = useState<PlatformTab>('x');
+
+  // Analytics data
+  const [youtubeData, setYoutubeData] = useState<YouTubeData | null>(null);
+  const [instagramData, setInstagramData] = useState<InstagramData | null>(null);
+  const [youtubeLoading, setYoutubeLoading] = useState(false);
+  const [instagramLoading, setInstagramLoading] = useState(false);
 
   const selectorRef = useRef<HTMLDivElement>(null);
 
@@ -122,29 +396,44 @@ export default function SocialPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const filtered = drafts.filter((d) => filter === 'all' || d.platform === filter);
+  // Fetch analytics when tab is activated (once per session)
+  useEffect(() => {
+    if (platformTab === 'youtube' && !youtubeData && !youtubeLoading) {
+      setYoutubeLoading(true);
+      fetch('/api/social/youtube')
+        .then((r) => r.json())
+        .then((d) => setYoutubeData(d as YouTubeData))
+        .catch(() => setYoutubeData({ connected: false, error: 'Failed to fetch' }))
+        .finally(() => setYoutubeLoading(false));
+    }
+    if (platformTab === 'instagram' && !instagramData && !instagramLoading) {
+      setInstagramLoading(true);
+      fetch('/api/social/instagram')
+        .then((r) => r.json())
+        .then((d) => setInstagramData(d as InstagramData))
+        .catch(() => setInstagramData({ connected: false, error: 'Failed to fetch' }))
+        .finally(() => setInstagramLoading(false));
+    }
+  }, [platformTab, youtubeData, instagramData, youtubeLoading, instagramLoading]);
 
-  const grouped = filtered.reduce<Record<string, SocialDraft[]>>((acc, d) => {
+  // X tab derived values
+  const xDrafts = drafts.filter((d) => d.platform === 'twitter');
+  const grouped = xDrafts.reduce<Record<string, SocialDraft[]>>((acc, d) => {
     const key = d.blog_post_id ?? 'unlinked';
     if (!acc[key]) acc[key] = [];
     acc[key].push(d);
     return acc;
   }, {});
-
   const blogPostMap = Object.fromEntries(blogPosts.map((p) => [p.id, p]));
 
-  // Scheduled queue status
-  const scheduledTwitter = drafts.filter(
-    (d) => d.platform === 'twitter' && d.status === 'scheduled' && d.scheduled_at,
+  const scheduledTwitter = xDrafts.filter(
+    (d) => d.status === 'scheduled' && d.scheduled_at,
   );
   const lastScheduledAt = scheduledTwitter.length > 0
     ? new Date(Math.max(...scheduledTwitter.map((d) => new Date(d.scheduled_at!).getTime())))
     : null;
 
-  // Only draft-status posts are selectable (not posted or already scheduled)
-  const selectableIds = filtered
-    .filter((d) => d.status === 'draft' && d.platform === 'twitter')
-    .map((d) => d.id);
+  const selectableIds = xDrafts.filter((d) => d.status === 'draft').map((d) => d.id);
   const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
 
   function toggleSelectAll() {
@@ -163,7 +452,7 @@ export default function SocialPage() {
     });
   }
 
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
   async function handleGenerate() {
     if (!selectedBlogId || generating) return;
@@ -237,7 +526,6 @@ export default function SocialPage() {
       const ids = Array.from(selectedIds);
       const [firstId, ...restIds] = ids;
 
-      // Start new queue after the last already-scheduled post
       const { data: lastScheduled } = await supabase
         .from('social_drafts')
         .select('scheduled_at')
@@ -251,7 +539,6 @@ export default function SocialPage() {
         ? new Date(lastScheduled.scheduled_at)
         : new Date();
 
-      // Post the first one immediately
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('post-to-x', {
         body: { draft_id: firstId },
@@ -267,7 +554,6 @@ export default function SocialPage() {
           : d,
       ));
 
-      // Schedule the rest — 3 per day, queued after existing scheduled posts
       if (restIds.length > 0) {
         const slots = buildScheduleQueue(afterUtc, restIds.length);
         await Promise.all(
@@ -303,7 +589,14 @@ export default function SocialPage() {
     setTimeout(() => setCopied(null), 2000);
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  const platformTabs: { id: PlatformTab; label: string }[] = [
+    { id: 'x', label: 'X' },
+    { id: 'instagram', label: 'Instagram' },
+    { id: 'youtube', label: 'YouTube' },
+    { id: 'tiktok', label: 'TikTok' },
+  ];
 
   return (
     <div className={`p-8 ${selectedIds.size > 0 ? 'pb-28' : ''}`}>
@@ -315,353 +608,362 @@ export default function SocialPage() {
           <h1 className="font-display text-3xl font-light tracking-[-0.02em] text-black">Social</h1>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Select all — only shown on X tab when there are draft posts */}
-          {filter === 'twitter' && selectableIds.length > 0 && (
-            <button
-              onClick={toggleSelectAll}
-              className={`text-xs px-3 py-2 rounded-lg border transition-colors ${
-                allSelected
-                  ? 'bg-black/5 border-black/25 text-black'
-                  : 'border-black/15 text-black/40 hover:border-black/30 hover:text-black/60'
-              }`}
-            >
-              {allSelected ? `${selectedIds.size} selected · deselect` : 'Select all'}
-            </button>
-          )}
+        {platformTab === 'x' && (
+          <div className="flex items-center gap-3">
+            {selectableIds.length > 0 && (
+              <button
+                onClick={toggleSelectAll}
+                className={`text-xs px-3 py-2 rounded-lg border transition-colors ${
+                  allSelected
+                    ? 'bg-black/5 border-black/25 text-black'
+                    : 'border-black/15 text-black/40 hover:border-black/30 hover:text-black/60'
+                }`}
+              >
+                {allSelected ? `${selectedIds.size} selected · deselect` : 'Select all'}
+              </button>
+            )}
 
-          {/* Generate button + dropdown */}
-          <div className="relative" ref={selectorRef}>
-            <button
-              onClick={() => setShowBlogSelector((v) => !v)}
-              className="flex items-center gap-2 bg-black text-white text-sm px-5 py-2.5 rounded-xl hover:opacity-80 transition-opacity"
-            >
-              <span className="text-base">✦</span> Generate X posts
-            </button>
+            <div className="relative" ref={selectorRef}>
+              <button
+                onClick={() => setShowBlogSelector((v) => !v)}
+                className="flex items-center gap-2 bg-black text-white text-sm px-5 py-2.5 rounded-xl hover:opacity-80 transition-opacity"
+              >
+                <span className="text-base">✦</span> Generate X posts
+              </button>
 
-            {showBlogSelector && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-black/10 rounded-xl shadow-xl z-50 overflow-hidden">
-                <div className="p-3 border-b border-black/10">
-                  <p className="text-xs font-medium text-black/50 uppercase tracking-wide mb-2">Pick a blog post</p>
-                  <div className="space-y-1 max-h-52 overflow-y-auto">
-                    {blogPosts.length === 0 && (
-                      <p className="text-xs text-black/30 py-2">No blog posts found.</p>
-                    )}
-                    {blogPosts.map((post) => (
-                      <button
-                        key={post.id}
-                        onClick={() => setSelectedBlogId(post.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                          selectedBlogId === post.id ? 'bg-black text-white' : 'hover:bg-black/5 text-black'
-                        }`}
-                      >
-                        <span className="line-clamp-1">{post.title}</span>
-                        <span className="text-xs opacity-50 mt-0.5 block">{post.status}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="p-3 space-y-2.5">
-                  <div>
-                    <p className="text-xs font-medium text-black/50 uppercase tracking-wide mb-1.5">How many posts</p>
-                    <div className="flex gap-1.5">
-                      {([1, 3, 5] as const).map((n) => (
+              {showBlogSelector && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-black/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                  <div className="p-3 border-b border-black/10">
+                    <p className="text-xs font-medium text-black/50 uppercase tracking-wide mb-2">Pick a blog post</p>
+                    <div className="space-y-1 max-h-52 overflow-y-auto">
+                      {blogPosts.length === 0 && (
+                        <p className="text-xs text-black/30 py-2">No blog posts found.</p>
+                      )}
+                      {blogPosts.map((post) => (
                         <button
-                          key={n}
-                          onClick={() => setGenerateCount(n)}
-                          className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
-                            generateCount === n
-                              ? 'bg-black text-white border-black'
-                              : 'border-black/20 text-black/60 hover:border-black/40'
+                          key={post.id}
+                          onClick={() => setSelectedBlogId(post.id)}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                            selectedBlogId === post.id ? 'bg-black text-white' : 'hover:bg-black/5 text-black'
                           }`}
                         >
-                          {n}
+                          <span className="line-clamp-1">{post.title}</span>
+                          <span className="text-xs opacity-50 mt-0.5 block">{post.status}</span>
                         </button>
                       ))}
                     </div>
                   </div>
-                  {generateError && <p className="text-xs text-red-500">{generateError}</p>}
-                  <button
-                    onClick={handleGenerate}
-                    disabled={!selectedBlogId || generating}
-                    className="w-full bg-black text-white text-sm py-2.5 rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity flex items-center justify-center gap-2"
-                  >
-                    {generating ? (
-                      <>
-                        <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
-                        Generating…
-                      </>
-                    ) : `Generate ${generateCount} X post${generateCount > 1 ? 's' : ''}`}
-                  </button>
+                  <div className="p-3 space-y-2.5">
+                    <div>
+                      <p className="text-xs font-medium text-black/50 uppercase tracking-wide mb-1.5">How many posts</p>
+                      <div className="flex gap-1.5">
+                        {([1, 3, 5] as const).map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => setGenerateCount(n)}
+                            className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
+                              generateCount === n
+                                ? 'bg-black text-white border-black'
+                                : 'border-black/20 text-black/60 hover:border-black/40'
+                            }`}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {generateError && <p className="text-xs text-red-500">{generateError}</p>}
+                    <button
+                      onClick={handleGenerate}
+                      disabled={!selectedBlogId || generating}
+                      className="w-full bg-black text-white text-sm py-2.5 rounded-lg disabled:opacity-30 hover:opacity-80 transition-opacity flex items-center justify-center gap-2"
+                    >
+                      {generating ? (
+                        <>
+                          <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
+                          Generating…
+                        </>
+                      ) : `Generate ${generateCount} X post${generateCount > 1 ? 's' : ''}`}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Scheduled queue status banner */}
-      {lastScheduledAt && (
-        <div className="mb-6 flex items-center gap-2.5 bg-black/[0.025] border border-black/[0.07] rounded-xl px-4 py-3">
-          <span className="w-1.5 h-1.5 rounded-full bg-black/30 flex-shrink-0" />
-          <p className="text-xs text-black/50">
-            <span className="font-medium text-black/70">
-              {scheduledTwitter.length} post{scheduledTwitter.length !== 1 ? 's' : ''} scheduled
-            </span>
-            {' · '}until{' '}
-            <span className="font-medium text-black/70">
-              {lastScheduledAt.toLocaleDateString('en-AU', {
-                day: 'numeric',
-                month: 'long',
-                timeZone: 'Australia/Sydney',
-              })}
-            </span>
-            {' · '}3/day at 7:30am, 12pm &amp; 7pm
-          </p>
-        </div>
-      )}
-
-      {/* Filter tabs */}
+      {/* Platform tabs */}
       <div className="flex gap-1.5 mb-8">
-        {(['twitter', 'linkedin', 'all'] as const).map((f) => (
+        {platformTabs.map((tab) => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-              filter === f
+            key={tab.id}
+            onClick={() => setPlatformTab(tab.id)}
+            className={`text-xs px-4 py-1.5 rounded-full border transition-colors ${
+              platformTab === tab.id
                 ? 'bg-black text-white border-black'
                 : 'border-black/20 text-black/50 hover:border-black/40'
             }`}
           >
-            {f === 'twitter' ? 'X' : f === 'linkedin' ? 'LinkedIn' : 'All'}
+            {tab.label}
           </button>
         ))}
       </div>
 
-      {loading && <p className="text-sm text-black/30">Loading…</p>}
-
-      {!loading && filtered.length === 0 && (
-        <p className="text-sm text-black/30">
-          No drafts yet. Click &ldquo;Generate X posts&rdquo; to create some from a blog post.
-        </p>
-      )}
-
-      {/* Posts grouped by blog post */}
-      <div className="space-y-10">
-        {Object.entries(grouped).map(([blogPostId, groupDrafts]) => {
-          const blogPost = blogPostMap[blogPostId] ?? groupDrafts[0]?.blog_posts?.[0];
-          const title = (blogPost as { title?: string })?.title ?? 'Unknown post';
-
-          return (
-            <div key={blogPostId}>
-              <p className="text-xs font-medium tracking-[0.12em] uppercase text-black/40 mb-3 truncate">
-                {title}
+      {/* X tab */}
+      {platformTab === 'x' && (
+        <>
+          {lastScheduledAt && (
+            <div className="mb-6 flex items-center gap-2.5 bg-black/[0.025] border border-black/[0.07] rounded-xl px-4 py-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-black/30 flex-shrink-0" />
+              <p className="text-xs text-black/50">
+                <span className="font-medium text-black/70">
+                  {scheduledTwitter.length} post{scheduledTwitter.length !== 1 ? 's' : ''} scheduled
+                </span>
+                {' · '}until{' '}
+                <span className="font-medium text-black/70">
+                  {lastScheduledAt.toLocaleDateString('en-AU', {
+                    day: 'numeric',
+                    month: 'long',
+                    timeZone: 'Australia/Sydney',
+                  })}
+                </span>
+                {' · '}3/day at 7:30am, 12pm &amp; 7pm
               </p>
+            </div>
+          )}
 
-              <div className="space-y-3">
-                {groupDrafts.map((draft) => {
-                  const isEditing = editingId === draft.id;
-                  const isScheduling = schedulingId === draft.id;
-                  const charCount = (editContent[draft.id] ?? draft.content).length;
-                  const isPosted = draft.status === 'posted';
-                  const isScheduled = draft.status === 'scheduled';
-                  const isDraft = draft.status === 'draft';
-                  const isSelected = selectedIds.has(draft.id);
+          {loading && <p className="text-sm text-black/30">Loading…</p>}
 
-                  return (
-                    <div
-                      key={draft.id}
-                      className={`border rounded-xl overflow-hidden transition-all ${
-                        isPosted
-                          ? 'opacity-40 border-black/5'
-                          : isSelected
-                          ? 'border-black ring-1 ring-black/20'
-                          : 'border-black/10'
-                      }`}
-                    >
-                      {/* Card header */}
-                      <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
-                        <div className="flex items-center gap-2">
-                          {/* Checkbox — only for selectable draft posts */}
-                          {isDraft && draft.platform === 'twitter' && (
-                            <button
-                              onClick={() => toggleSelect(draft.id)}
-                              className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                                isSelected
-                                  ? 'bg-black border-black'
-                                  : 'border-black/25 hover:border-black/50'
-                              }`}
-                            >
-                              {isSelected && (
-                                <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                                  <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                              )}
-                            </button>
-                          )}
+          {!loading && xDrafts.length === 0 && (
+            <p className="text-sm text-black/30">
+              No drafts yet. Click &ldquo;Generate X posts&rdquo; to create some from a blog post.
+            </p>
+          )}
 
-                          <span className="text-xs font-medium text-black/40 bg-black/5 px-2 py-0.5 rounded-full">
-                            {TYPE_LABELS[draft.post_type ?? 'single'] ?? draft.post_type}
-                          </span>
+          <div className="space-y-10">
+            {Object.entries(grouped).map(([blogPostId, groupDrafts]) => {
+              const blogPost = blogPostMap[blogPostId] ?? groupDrafts[0]?.blog_posts?.[0];
+              const title = (blogPost as { title?: string })?.title ?? 'Unknown post';
 
-                          {isScheduled && draft.scheduled_at && (
-                            <span className="text-xs text-black/30">
-                              Scheduled · {new Date(draft.scheduled_at).toLocaleDateString('en-AU', {
-                                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-                                timeZone: 'Australia/Sydney',
-                              })}
-                            </span>
-                          )}
+              return (
+                <div key={blogPostId}>
+                  <p className="text-xs font-medium tracking-[0.12em] uppercase text-black/40 mb-3 truncate">
+                    {title}
+                  </p>
 
-                          {isPosted && (
-                            draft.tweet_id ? (
-                              <a
-                                href={`https://x.com/i/web/status/${draft.tweet_id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-black/30 hover:text-black transition-colors"
-                              >
-                                Posted ↗
-                              </a>
-                            ) : (
-                              <span className="text-xs text-black/30">Posted</span>
-                            )
-                          )}
-                        </div>
+                  <div className="space-y-3">
+                    {groupDrafts.map((draft) => {
+                      const isEditing = editingId === draft.id;
+                      const isScheduling = schedulingId === draft.id;
+                      const charCount = (editContent[draft.id] ?? draft.content).length;
+                      const isPosted = draft.status === 'posted';
+                      const isScheduled = draft.status === 'scheduled';
+                      const isDraft = draft.status === 'draft';
+                      const isSelected = selectedIds.has(draft.id);
 
-                        <button
-                          onClick={() => handleDelete(draft.id)}
-                          className="text-black/20 hover:text-red-400 transition-colors text-lg leading-none"
+                      return (
+                        <div
+                          key={draft.id}
+                          className={`border rounded-xl overflow-hidden transition-all ${
+                            isPosted
+                              ? 'opacity-40 border-black/5'
+                              : isSelected
+                              ? 'border-black ring-1 ring-black/20'
+                              : 'border-black/10'
+                          }`}
                         >
-                          ×
-                        </button>
-                      </div>
+                          <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
+                            <div className="flex items-center gap-2">
+                              {isDraft && (
+                                <button
+                                  onClick={() => toggleSelect(draft.id)}
+                                  className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                                    isSelected
+                                      ? 'bg-black border-black'
+                                      : 'border-black/25 hover:border-black/50'
+                                  }`}
+                                >
+                                  {isSelected && (
+                                    <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                                      <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  )}
+                                </button>
+                              )}
 
-                      {/* Content */}
-                      <div className="px-4 pb-3">
-                        {isEditing ? (
-                          <textarea
-                            value={editContent[draft.id] ?? ''}
-                            onChange={(e) => setEditContent((prev) => ({ ...prev, [draft.id]: e.target.value }))}
-                            rows={5}
-                            className="w-full text-sm text-black bg-black/[0.02] border border-black/10 rounded-lg p-3 resize-y focus:outline-none focus:ring-1 focus:ring-black font-mono"
-                          />
-                        ) : (
-                          <p className="text-sm text-black leading-relaxed whitespace-pre-wrap">
-                            {editContent[draft.id] ?? draft.content}
-                          </p>
-                        )}
-                        {draft.platform === 'twitter' && (
-                          <p className={`text-xs mt-1 ${charCount > 280 ? 'text-red-500' : 'text-black/25'}`}>
-                            {charCount} / 280
-                          </p>
-                        )}
-                      </div>
+                              <span className="text-xs font-medium text-black/40 bg-black/5 px-2 py-0.5 rounded-full">
+                                {TYPE_LABELS[draft.post_type ?? 'single'] ?? draft.post_type}
+                              </span>
 
-                      {/* Manual schedule picker */}
-                      {isScheduling && (
-                        <div className="border-t border-black/10 px-4 py-3 flex items-center gap-3">
-                          <input
-                            type="datetime-local"
-                            value={scheduleValue}
-                            onChange={(e) => setScheduleValue(e.target.value)}
-                            min={new Date().toISOString().slice(0, 16)}
-                            className="text-sm border border-black/20 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-black"
-                          />
-                          <button
-                            onClick={() => handleSchedule(draft.id)}
-                            disabled={!scheduleValue}
-                            className="bg-black text-white text-xs px-4 py-2 rounded-lg disabled:opacity-40 hover:opacity-80 transition-opacity"
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            onClick={() => { setSchedulingId(null); setScheduleValue(''); }}
-                            className="text-xs text-black/40 hover:text-black transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
+                              {isScheduled && draft.scheduled_at && (
+                                <span className="text-xs text-black/30">
+                                  Scheduled · {new Date(draft.scheduled_at).toLocaleDateString('en-AU', {
+                                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                                    timeZone: 'Australia/Sydney',
+                                  })}
+                                </span>
+                              )}
 
-                      {/* Per-card actions */}
-                      {!isPosted && (
-                        <div className="border-t border-black/10 px-4 py-2.5 flex items-center gap-2 flex-wrap">
-                          {isEditing ? (
-                            <>
+                              {isPosted && (
+                                draft.tweet_id ? (
+                                  <a
+                                    href={`https://x.com/i/web/status/${draft.tweet_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-black/30 hover:text-black transition-colors"
+                                  >
+                                    Posted ↗
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-black/30">Posted</span>
+                                )
+                              )}
+                            </div>
+
+                            <button
+                              onClick={() => handleDelete(draft.id)}
+                              className="text-black/20 hover:text-red-400 transition-colors text-lg leading-none"
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          <div className="px-4 pb-3">
+                            {isEditing ? (
+                              <textarea
+                                value={editContent[draft.id] ?? ''}
+                                onChange={(e) => setEditContent((prev) => ({ ...prev, [draft.id]: e.target.value }))}
+                                rows={5}
+                                className="w-full text-sm text-black bg-black/[0.02] border border-black/10 rounded-lg p-3 resize-y focus:outline-none focus:ring-1 focus:ring-black font-mono"
+                              />
+                            ) : (
+                              <p className="text-sm text-black leading-relaxed whitespace-pre-wrap">
+                                {editContent[draft.id] ?? draft.content}
+                              </p>
+                            )}
+                            <p className={`text-xs mt-1 ${charCount > 280 ? 'text-red-500' : 'text-black/25'}`}>
+                              {charCount} / 280
+                            </p>
+                          </div>
+
+                          {isScheduling && (
+                            <div className="border-t border-black/10 px-4 py-3 flex items-center gap-3">
+                              <input
+                                type="datetime-local"
+                                value={scheduleValue}
+                                onChange={(e) => setScheduleValue(e.target.value)}
+                                min={new Date().toISOString().slice(0, 16)}
+                                className="text-sm border border-black/20 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-black"
+                              />
                               <button
-                                onClick={() => handleSaveEdit(draft.id)}
-                                disabled={savingId === draft.id}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-80 transition-opacity disabled:opacity-40"
+                                onClick={() => handleSchedule(draft.id)}
+                                disabled={!scheduleValue}
+                                className="bg-black text-white text-xs px-4 py-2 rounded-lg disabled:opacity-40 hover:opacity-80 transition-opacity"
                               >
-                                {savingId === draft.id ? 'Saving…' : 'Save'}
+                                Confirm
                               </button>
                               <button
-                                onClick={() => { setEditingId(null); setEditContent((prev) => ({ ...prev, [draft.id]: draft.content })); }}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors"
+                                onClick={() => { setSchedulingId(null); setScheduleValue(''); }}
+                                className="text-xs text-black/40 hover:text-black transition-colors"
                               >
                                 Cancel
                               </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => setEditingId(draft.id)}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => copyToClipboard(draft.id, editContent[draft.id] ?? draft.content)}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors"
-                              >
-                                {copied === draft.id ? 'Copied!' : 'Copy'}
-                              </button>
-                              {!isScheduling && (
-                                <button
-                                  onClick={() => { setSchedulingId(draft.id); setScheduleValue(''); }}
-                                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                                    isScheduled
-                                      ? 'border-black/30 text-black/60 hover:border-black/50'
-                                      : 'border-black/15 text-black/60 hover:border-black/40 hover:text-black'
-                                  }`}
-                                >
-                                  {isScheduled ? 'Reschedule' : 'Schedule'}
-                                </button>
+                            </div>
+                          )}
+
+                          {!isPosted && (
+                            <div className="border-t border-black/10 px-4 py-2.5 flex items-center gap-2 flex-wrap">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    onClick={() => handleSaveEdit(draft.id)}
+                                    disabled={savingId === draft.id}
+                                    className="text-xs px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-80 transition-opacity disabled:opacity-40"
+                                  >
+                                    {savingId === draft.id ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setEditingId(null); setEditContent((prev) => ({ ...prev, [draft.id]: draft.content })); }}
+                                    className="text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => setEditingId(draft.id)}
+                                    className="text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(draft.id, editContent[draft.id] ?? draft.content)}
+                                    className="text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors"
+                                  >
+                                    {copied === draft.id ? 'Copied!' : 'Copy'}
+                                  </button>
+                                  {!isScheduling && (
+                                    <button
+                                      onClick={() => { setSchedulingId(draft.id); setScheduleValue(''); }}
+                                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                                        isScheduled
+                                          ? 'border-black/30 text-black/60 hover:border-black/50'
+                                          : 'border-black/15 text-black/60 hover:border-black/40 hover:text-black'
+                                      }`}
+                                    >
+                                      {isScheduled ? 'Reschedule' : 'Schedule'}
+                                    </button>
+                                  )}
+                                  <div className="flex-1" />
+                                  {postError[draft.id] && (
+                                    <span className="text-xs text-red-500 max-w-[200px] truncate" title={postError[draft.id]}>
+                                      {postError[draft.id]}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => handlePostNow(draft.id)}
+                                    disabled={posting === draft.id}
+                                    className="text-xs px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-1.5"
+                                  >
+                                    {posting === draft.id ? (
+                                      <>
+                                        <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
+                                        Posting…
+                                      </>
+                                    ) : 'Post now'}
+                                  </button>
+                                </>
                               )}
-                              <div className="flex-1" />
-                              {postError[draft.id] && (
-                                <span className="text-xs text-red-500 max-w-[200px] truncate" title={postError[draft.id]}>
-                                  {postError[draft.id]}
-                                </span>
-                              )}
-                              <button
-                                onClick={() => handlePostNow(draft.id)}
-                                disabled={posting === draft.id}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-80 transition-opacity disabled:opacity-40 flex items-center gap-1.5"
-                              >
-                                {posting === draft.id ? (
-                                  <>
-                                    <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />
-                                    Posting…
-                                  </>
-                                ) : 'Post now'}
-                              </button>
-                            </>
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
-      {/* Batch action bar — appears when posts are selected */}
-      {selectedIds.size > 0 && (
+      {/* YouTube tab */}
+      {platformTab === 'youtube' && (
+        <YouTubePanel data={youtubeData} loading={youtubeLoading} />
+      )}
+
+      {/* Instagram tab */}
+      {platformTab === 'instagram' && (
+        <InstagramPanel data={instagramData} loading={instagramLoading} />
+      )}
+
+      {/* TikTok tab */}
+      {platformTab === 'tiktok' && <TikTokPanel />}
+
+      {/* Batch action bar */}
+      {selectedIds.size > 0 && platformTab === 'x' && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-t border-black/10 shadow-[0_-4px_32px_rgba(0,0,0,0.08)]">
           <div className="flex items-center justify-between px-8 py-4">
             <div>
