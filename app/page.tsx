@@ -1,3 +1,4 @@
+import Link from "next/link";
 import Nav from "./components/Nav";
 import FadeIn from "./components/FadeIn";
 import { AnimatedHero } from "@/components/ui/animated-hero";
@@ -72,9 +73,17 @@ export default function Home() {
         <span className="font-display text-sm font-medium tracking-[0.1em] uppercase text-black">
           Cerebro
         </span>
-        <span className="text-xs font-light text-black/30">
-          &copy; 2026 Cerebro
-        </span>
+        <div className="flex items-center gap-5">
+          <Link href="/privacy" className="text-[0.6rem] font-light text-black/25 hover:text-black/50 transition-colors">
+            Privacy
+          </Link>
+          <Link href="/terms" className="text-[0.6rem] font-light text-black/25 hover:text-black/50 transition-colors">
+            Terms
+          </Link>
+          <span className="text-xs font-light text-black/30">
+            &copy; 2026 Cerebro
+          </span>
+        </div>
       </footer>
     </>
   );
