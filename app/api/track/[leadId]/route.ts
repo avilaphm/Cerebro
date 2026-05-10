@@ -26,11 +26,21 @@ export async function GET(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
       );
+      // Legacy boolean (kept until Phase 2 backfill drops it).
       await supabase
         .from('leads')
         .update({ email_opened: true })
         .eq('id', leadId)
         .eq('email_opened', false);
+      // Tag-based stage. The pixel currently lives only in the proposal email,
+      // so an open here means email 2 was opened. Phase 2 will key the pixel
+      // by send_id and write to a richer email_events table.
+      await supabase
+        .from('lead_tags')
+        .upsert(
+          { lead_id: leadId, tag_slug: 'email2_opened', source: 'webhook' },
+          { onConflict: 'lead_id,tag_slug', ignoreDuplicates: true },
+        );
     } catch {
       // Never fail the pixel response
     }

@@ -1,7 +1,18 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import {
+  TAG,
+  computeStage,
+  hasTag,
+  progressIndex,
+  progressStages,
+  STAGES,
+  type Stage,
+  type TagSlug,
+} from '@/utils/leads/tags';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,39 +29,20 @@ interface Lead {
   industry: string | null;
   pain_point: string | null;
   website: string | null;
-  email_opened: boolean;
-  call_booked: boolean;
-  became_client: boolean | null;
   proposals: Proposal[];
+  tags: string[];
 }
 
-type Stage = 'fresh' | 'proposal_sent' | 'email_opened' | 'call_booked' | 'client' | 'lost';
+// ─── Engagement chips for the card ────────────────────────────────────────────
 
-// ─── Stage config ─────────────────────────────────────────────────────────────
-
-const STAGE_CONFIG: { key: Stage; label: string }[] = [
-  { key: 'fresh',         label: 'Fresh Lead' },
-  { key: 'proposal_sent', label: 'Proposal Sent' },
-  { key: 'email_opened',  label: 'Opened Email' },
-  { key: 'call_booked',   label: 'Call Booked' },
-  { key: 'client',        label: 'Client' },
-  { key: 'lost',          label: 'Lost' },
+const CHIPS: { tag: TagSlug; label: string }[] = [
+  { tag: TAG.EMAIL1_OPENED,       label: 'Welcome opened'      },
+  { tag: TAG.EMAIL2_OPENED,       label: 'Proposal email opened' },
+  { tag: TAG.PROPOSAL_VIEWED,     label: 'Proposal page viewed'  },
+  { tag: TAG.PROPOSAL_DOWNLOADED, label: 'PDF downloaded'      },
+  { tag: TAG.CALL_BOOKED,         label: 'Call booked'         },
+  { tag: TAG.CALL_COMPLETED,      label: 'Call done'           },
 ];
-
-const PROGRESS_STAGES: Stage[] = ['fresh', 'proposal_sent', 'email_opened', 'call_booked', 'client'];
-
-function getStage(lead: Lead): Stage {
-  if (lead.became_client === true)  return 'client';
-  if (lead.became_client === false) return 'lost';
-  if (lead.call_booked)             return 'call_booked';
-  if (lead.email_opened)            return 'email_opened';
-  if (lead.proposals?.[0]?.sent_at) return 'proposal_sent';
-  return 'fresh';
-}
-
-function stageIndex(stage: Stage): number {
-  return PROGRESS_STAGES.indexOf(stage);
-}
 
 // ─── Lead card ────────────────────────────────────────────────────────────────
 
@@ -62,13 +54,20 @@ function LeadCard({
   onUpdate: (id: string, patch: Partial<Lead>) => void;
 }) {
   const supabase = createClient();
-  const stage = getStage(lead);
-  const currentIdx = stageIndex(stage);
+  const stage = computeStage(lead.tags);
+  const currentIdx = progressIndex(stage);
   const proposal = lead.proposals?.[0];
 
-  async function patch(data: Partial<Lead>) {
-    onUpdate(lead.id, data);
-    await supabase.from('leads').update(data).eq('id', lead.id);
+  async function addTagAction(slug: TagSlug) {
+    const nextTags = Array.from(new Set([...lead.tags, slug]));
+    onUpdate(lead.id, { tags: nextTags });
+    const { error } = await supabase
+      .from('lead_tags')
+      .upsert(
+        { lead_id: lead.id, tag_slug: slug, source: 'manual' },
+        { onConflict: 'lead_id,tag_slug', ignoreDuplicates: true },
+      );
+    if (error) console.error('addTag error:', error);
   }
 
   const dateLabel = new Date(lead.created_at).toLocaleDateString('en-AU', {
@@ -76,11 +75,16 @@ function LeadCard({
     month: 'short',
   });
 
+  const PROGRESS = progressStages();
+
   return (
-    <div className="bg-white border border-black/10 rounded-xl p-4 flex flex-col gap-3">
+    <Link
+      href={`/dashboard/leads/${lead.id}`}
+      className="bg-white border border-black/10 rounded-xl p-4 flex flex-col gap-3 hover:border-black/30 transition-colors no-underline"
+    >
       {/* Progress dots */}
       <div className="flex items-center gap-1.5">
-        {PROGRESS_STAGES.map((s, i) => {
+        {PROGRESS.map((s, i) => {
           const filled = stage === 'client'
             ? true
             : stage === 'lost'
@@ -100,7 +104,7 @@ function LeadCard({
           );
         })}
         <span className="ml-1 text-[10px] text-black/30 uppercase tracking-widest">
-          {STAGE_CONFIG.find((s) => s.key === stage)?.label}
+          {STAGES.find((s) => s.key === stage)?.label}
         </span>
       </div>
 
@@ -118,14 +122,9 @@ function LeadCard({
           <p className="text-xs text-black/60">{lead.industry}</p>
         )}
         {lead.website && (
-          <a
-            href={lead.website.startsWith('http') ? lead.website : `https://${lead.website}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-black/40 hover:text-black transition-colors truncate block"
-          >
+          <span className="text-xs text-black/40 truncate block">
             ↗ {lead.website.replace(/^https?:\/\/(www\.)?/, '')}
-          </a>
+          </span>
         )}
       </div>
 
@@ -157,16 +156,37 @@ function LeadCard({
         </p>
       )}
 
+      {/* Engagement chips — only show the ones that fired */}
+      {CHIPS.some((c) => hasTag(lead.tags, c.tag)) && (
+        <div className="flex flex-wrap gap-1 pt-1 border-t border-black/5">
+          {CHIPS.filter((c) => hasTag(lead.tags, c.tag)).map((c) => (
+            <span
+              key={c.tag}
+              className="text-[10px] tracking-wider px-2 py-0.5 rounded-full bg-black/5 text-black/60"
+            >
+              {c.label}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Email */}
       {lead.email && (
         <p className="text-[10px] text-black/30 truncate">{lead.email}</p>
       )}
 
-      {/* Actions */}
-      <div className="flex flex-col gap-1.5 pt-1 border-t border-black/5">
-        {(stage === 'proposal_sent' || stage === 'email_opened') && (
+      {/* Actions — only render in stages where they apply */}
+      <div
+        className="flex flex-col gap-1.5 pt-1 border-t border-black/5"
+        onClick={(e) => e.preventDefault()}
+      >
+        {(stage === 'email2_sent' || stage === 'proposal_viewed') && (
           <button
-            onClick={() => patch({ call_booked: true })}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              addTagAction(TAG.CALL_BOOKED);
+            }}
             className="text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors text-left"
           >
             Mark call booked
@@ -175,42 +195,39 @@ function LeadCard({
         {stage === 'call_booked' && (
           <div className="flex gap-1.5">
             <button
-              onClick={() => patch({ became_client: true })}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                addTagAction(TAG.CLIENT);
+              }}
               className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-black text-white hover:opacity-80 transition-opacity"
             >
               Became client
             </button>
             <button
-              onClick={() => patch({ became_client: false })}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                addTagAction(TAG.NOT_CLIENT);
+              }}
               className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-black/15 text-black/50 hover:border-black/40 hover:text-black transition-colors"
             >
               Didn't convert
             </button>
           </div>
         )}
-        {stage === 'lost' && (
-          <button
-            disabled
-            title="Nurture email sequences coming soon"
-            className="text-xs px-3 py-1.5 rounded-lg border border-dashed border-black/15 text-black/25 cursor-not-allowed"
-          >
-            Nurture sequence — coming soon
-          </button>
-        )}
       </div>
-    </div>
+    </Link>
   );
 }
 
 // ─── Pipeline column ──────────────────────────────────────────────────────────
 
 function PipelineColumn({
-  stage,
   label,
   leads,
   onUpdate,
 }: {
-  stage: Stage;
   label: string;
   leads: Lead[];
   onUpdate: (id: string, patch: Partial<Lead>) => void;
@@ -245,35 +262,59 @@ function PipelineColumn({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+interface LeadTagRow {
+  lead_id: string;
+  tag_slug: string;
+}
+
 export default function LeadsPage() {
   const supabase = createClient();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadLeads = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('leads')
-      .select('id, created_at, name, email, industry, pain_point, website, email_opened, call_booked, became_client, proposals(sent_at, deliverables)')
-      .order('created_at', { ascending: false })
-      .limit(200);
+    const [{ data: leadRows, error: leadErr }, { data: tagRows, error: tagErr }] =
+      await Promise.all([
+        supabase
+          .from('leads')
+          .select(
+            'id, created_at, name, email, industry, pain_point, website, proposals(sent_at, deliverables)',
+          )
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase.from('lead_tags').select('lead_id, tag_slug'),
+      ]);
 
-    if (error) {
-      console.error('Leads fetch error:', error);
-    }
-    setLeads((data as Lead[]) ?? []);
+    if (leadErr) console.error('Leads fetch error:', leadErr);
+    if (tagErr) console.error('Tags fetch error:', tagErr);
+
+    const tagsByLead = new Map<string, string[]>();
+    (tagRows as LeadTagRow[] | null)?.forEach((row) => {
+      const list = tagsByLead.get(row.lead_id) ?? [];
+      list.push(row.tag_slug);
+      tagsByLead.set(row.lead_id, list);
+    });
+
+    type LeadRow = Omit<Lead, 'tags'>;
+    const merged = ((leadRows as LeadRow[] | null) ?? []).map<Lead>((l) => ({
+      ...l,
+      tags: tagsByLead.get(l.id) ?? [],
+    }));
+
+    setLeads(merged);
     setLoading(false);
   }, [supabase]);
 
-  useEffect(() => { loadLeads(); }, [loadLeads]);
+  useEffect(() => {
+    loadLeads();
+  }, [loadLeads]);
 
   function handleUpdate(id: string, patch: Partial<Lead>) {
-    setLeads((prev) =>
-      prev.map((l) => (l.id === id ? { ...l, ...patch } : l)),
-    );
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   }
 
   const byStage = (stage: Stage) =>
-    leads.filter((l) => getStage(l) === stage);
+    leads.filter((l) => computeStage(l.tags) === stage);
 
   return (
     <div className="p-8 min-h-screen">
@@ -292,10 +333,9 @@ export default function LeadsPage() {
       ) : (
         <div className="overflow-x-auto pb-8">
           <div className="flex gap-5" style={{ minWidth: 'max-content' }}>
-            {STAGE_CONFIG.map(({ key, label }) => (
+            {STAGES.map(({ key, label }) => (
               <PipelineColumn
                 key={key}
-                stage={key}
                 label={label}
                 leads={byStage(key)}
                 onUpdate={handleUpdate}

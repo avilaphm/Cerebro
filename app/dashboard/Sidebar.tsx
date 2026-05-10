@@ -6,11 +6,13 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 
 const NAV = [
-  { label: 'Overview', href: '/dashboard', icon: '◈' },
-  { label: 'Leads', href: '/dashboard/leads', icon: '◎' },
-  { label: 'Blog', href: '/dashboard/blog', icon: '◻' },
-  { label: 'Social', href: '/dashboard/social', icon: '◇' },
-  { label: 'Settings', href: '/dashboard/social/settings', icon: '◉' },
+  { label: 'Overview',  href: '/dashboard',           icon: '◈' },
+  { label: 'Leads',     href: '/dashboard/leads',     icon: '◎' },
+  { label: 'Templates', href: '/dashboard/templates', icon: '✉' },
+  { label: 'Bookings',  href: '/dashboard/bookings',  icon: '⌖' },
+  { label: 'Blog',      href: '/dashboard/blog',      icon: '◻' },
+  { label: 'Social',    href: '/dashboard/social',    icon: '◇' },
+  { label: 'Settings',  href: '/dashboard/social/settings', icon: '◉' },
 ];
 
 export default function DashboardSidebar({ userEmail }: { userEmail: string }) {

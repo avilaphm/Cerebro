@@ -478,6 +478,18 @@ ${transcript || 'not available'}
           .update({ status: 'sent', sent_at: new Date().toISOString() })
           .eq('id', proposalId);
       }
+      const { error: e2Tag } = await supabase
+        .from('lead_tags')
+        .upsert(
+          {
+            lead_id: lead.id,
+            tag_slug: 'email2_sent',
+            source: 'auto',
+            metadata: { resend_message_id: proposalSendData.id, proposal_id: proposalId },
+          },
+          { onConflict: 'lead_id,tag_slug', ignoreDuplicates: true },
+        );
+      if (e2Tag) console.error('email2_sent tag error:', JSON.stringify(e2Tag));
     }
 
     // 8. Email Pedro the proposal preview + the discovery questions

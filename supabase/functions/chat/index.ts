@@ -238,6 +238,19 @@ Deno.serve(async (req: Request) => {
         console.error('Lead insert error:', JSON.stringify(leadError));
       }
 
+      // 2b. Tag the lead as captured from the chatbot. Stage = Fresh.
+      if (lead?.id) {
+        const { error: tagError } = await supabase
+          .from('lead_tags')
+          .upsert(
+            { lead_id: lead.id, tag_slug: 'chat_lead', source: 'auto' },
+            { onConflict: 'lead_id,tag_slug', ignoreDuplicates: true },
+          );
+        if (tagError) {
+          console.error('chat_lead tag insert error:', JSON.stringify(tagError));
+        }
+      }
+
       // 3. Save full conversation
       if (lead?.id) {
         const { error: convError } = await supabase.from('conversations').insert({
@@ -287,6 +300,20 @@ Deno.serve(async (req: Request) => {
         if (welcomeRes.ok) {
           const welcomeData = await welcomeRes.json();
           console.log('Resend welcome email accepted:', welcomeData.id, 'to:', leadData.email);
+          if (lead?.id) {
+            const { error: e1Tag } = await supabase
+              .from('lead_tags')
+              .upsert(
+                {
+                  lead_id: lead.id,
+                  tag_slug: 'email1_sent',
+                  source: 'auto',
+                  metadata: { resend_message_id: welcomeData.id },
+                },
+                { onConflict: 'lead_id,tag_slug', ignoreDuplicates: true },
+              );
+            if (e1Tag) console.error('email1_sent tag error:', JSON.stringify(e1Tag));
+          }
         } else {
           console.error('Resend welcome error:', await welcomeRes.text());
         }
