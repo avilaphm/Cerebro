@@ -72,7 +72,7 @@ export default function Nav() {
             href="/#start"
             className="text-[0.7rem] font-medium tracking-[0.12em] uppercase text-black border border-black px-5 py-2.5 no-underline transition-[background,color] duration-200 hover:bg-black hover:text-white"
           >
-            Start the conversation
+            Free operations audit
           </a>
         </div>
 
@@ -125,7 +125,7 @@ export default function Nav() {
             onClick={() => setOpen(false)}
             className="mt-auto inline-flex justify-center items-center text-[0.75rem] font-medium tracking-[0.14em] uppercase text-white bg-black px-6 py-4 no-underline"
           >
-            Start the conversation
+            Free operations audit
           </a>
         </div>
       </div>

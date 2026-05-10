@@ -8,29 +8,26 @@ interface Message {
   content: string;
 }
 
-// Problem-led shortcuts. Each card sends a fuller sentence so the bot has
-// something concrete to reflect on. Mirrors the noun list in the landing
-// page's Reality section: invoices, follow-ups, onboarding, reports.
 const SUGGESTED_ACTIONS = [
   {
-    title: "I'm losing leads",
+    title: 'Leads go cold',
     label: 'after hours.',
-    action: "I'm losing leads after hours. People reach out at night and we don't get back to them until the next day.",
+    action: "I'm losing leads after hours. People message on Instagram at night and I don't see it until Monday.",
   },
   {
-    title: 'Onboarding eats',
-    label: 'my whole week.',
-    action: "Onboarding eats my whole week. Every new client is forms, emails, and reminders, all manual.",
+    title: 'Members are',
+    label: 'going quiet.',
+    action: "Members are going quiet and then cancelling. By the time I notice, they're already gone.",
   },
   {
-    title: 'My admin is',
-    label: 'out of control.',
-    action: "My admin is out of control. Too many tools, too many things to track, too much manual updating.",
+    title: 'Failed payments',
+    label: 'pile up.',
+    action: "Failed payments are piling up. I feel uncomfortable chasing and most of them just sit there.",
   },
   {
-    title: 'Reports take',
-    label: 'forever.',
-    action: "Reports take forever. I spend hours every week pulling numbers together for clients.",
+    title: 'Sunday is',
+    label: 'always admin.',
+    action: "Sunday is always admin. Programs, check-ins, DMs, reports. I can't get my evenings back.",
   },
 ];
 
@@ -243,7 +240,7 @@ export default function GetInTouchSection() {
             adjustTextarea();
           }}
           onKeyDown={handleKeyDown}
-          placeholder="What's eating your week?"
+          placeholder="Tell us where the friction is."
           disabled={isTyping}
           rows={1}
           className="w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 pr-14 text-base md:text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-1 focus:ring-black disabled:opacity-50"

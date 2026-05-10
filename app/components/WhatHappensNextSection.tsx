@@ -3,18 +3,18 @@ import FadeIn from "./FadeIn";
 const ITEMS = [
   {
     n: "01",
-    title: "A clear picture.",
-    body: "You'll come away knowing exactly what's slowing your business down, in plain language. No diagnosis-by-jargon.",
+    title: "The picture.",
+    body: "Three specific leaks in your operation. Named, ranked by impact, with time and money estimates. In plain language.",
   },
   {
     n: "02",
-    title: "A tailored path.",
-    body: "A specific automation recommendation built around your workflow. Not a template. Not a stack of tools.",
+    title: "The order to fix them.",
+    body: "Not all three at once. The sequence. What to build first, because it pays for the next two.",
   },
   {
     n: "03",
-    title: "A next step with Pedro.",
-    body: "If there's a fit, a call to walk through the plan together. If there isn't, you keep the picture anyway.",
+    title: "A conversation with Pedro.",
+    body: "Thirty minutes. No deck, no pitch. If you want to go further, we talk. If not, you keep the picture anyway.",
   },
 ];
 
@@ -24,7 +24,7 @@ export default function WhatHappensNextSection() {
       <div className="max-w-5xl mx-auto">
         <FadeIn>
           <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black mb-20">
-            What happens next
+            From the audit
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
             {ITEMS.map((item, i) => (

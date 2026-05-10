@@ -3,23 +3,23 @@ import FadeIn from "./FadeIn";
 const STEPS = [
   {
     n: "01",
-    title: "We talk",
-    body: "You tell us where the hours are going. We listen and ask the right questions until the workflow that's costing you the most starts showing itself.",
+    title: "The audit",
+    body: "Tell us how your operation actually runs. Where leads come from, what software you use, where the week goes. Thirty minutes. We ask the questions most operators have never been asked.",
   },
   {
     n: "02",
-    title: "We map",
-    body: "What you said becomes a clear picture of what to automate first, second, and third. Tailored to how your business actually runs. Not a stack of off-the-shelf tools.",
+    title: "The diagnosis",
+    body: "Three specific leaks, ranked by financial impact. The order to fix them. Time and money estimates. Sent in writing after the call, whether you hire us or not.",
   },
   {
     n: "03",
-    title: "We build",
-    body: "Custom systems, connected to your tools, your inbox, your calendar. Tested before they go live. You see exactly what it does and how.",
+    title: "The build",
+    body: "We connect your existing tools. Mindbody, Glofox, Trainerize, Stripe. Custom workflows, tested before they go live. You see exactly what runs and how.",
   },
   {
     n: "04",
     title: "It runs",
-    body: "You get the time back. We stay on call. The systems keep working whether you're at the desk or not.",
+    body: "Lead replies happen automatically. Payments recover themselves. Members get flagged before they cancel. You get a Sunday report instead of a Sunday session.",
   },
 ];
 

@@ -10,14 +10,17 @@ export default function RealitySection() {
           </p>
           <div className="max-w-[700px]">
             <p className="font-display text-[clamp(1.4rem,3.2vw,2rem)] font-light leading-[1.65] text-black italic">
-              &ldquo;Every small business runs on the same hidden tax. The work
-              that grows the business keeps getting pushed to tomorrow. Because
-              today is full of the work that just needs to get done.&rdquo;
+              &ldquo;The Australian fitness market shrank 7% last year. Your
+              software got more expensive. Your members got more selective. The
+              studios that come out ahead aren&apos;t the ones with the best
+              programming. They&apos;re the ones who fixed what their front desk
+              never had time to fix.&rdquo;
             </p>
             <p className="text-[clamp(0.95rem,1.8vw,1.1rem)] font-light leading-[1.8] text-black/60 max-w-[540px] mt-8">
-              Invoices. Follow-ups. Onboarding. Reports. Scheduling. None of it
-              is hard. All of it takes time. And it never stops. So nothing
-              important moves.
+              Trial members ghost. Leads sit unanswered until Monday. Payments
+              fail and nobody chases. Members drift away for two weeks before
+              they cancel. None of it is complicated. None of it gets fixed
+              because you&apos;re on the floor.
             </p>
           </div>
         </FadeIn>

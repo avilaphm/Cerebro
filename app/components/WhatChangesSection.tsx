@@ -1,10 +1,10 @@
 import FadeIn from "./FadeIn";
 
 const OUTCOMES = [
-  "Lead replies happen the moment someone reaches out. Day or night.",
-  "Clients get onboarded without you lifting a finger.",
-  "Follow-ups happen at the right time, in the right tone, every time.",
-  "Reports compile themselves while you sleep.",
+  "A lead messages at 9pm. They have a booking link before you finish dinner.",
+  "A member misses two classes. Your coach gets a flag before it turns into a cancellation.",
+  "A payment fails. It retries, messages the member, and recovers automatically.",
+  "Sunday evening. A 90-second summary of your week lands in your inbox instead.",
 ];
 
 export default function WhatChangesSection() {
@@ -32,7 +32,7 @@ export default function WhatChangesSection() {
             <li className="border-t border-black" aria-hidden="true" />
           </ul>
           <p className="text-sm font-light text-black/60 leading-relaxed mt-12 max-w-[480px]">
-            Your week gets lighter. Your service gets sharper. Nothing dropped.
+            Your floor time stays yours. The numbers take care of themselves.
           </p>
         </FadeIn>
       </div>

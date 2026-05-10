@@ -1,12 +1,9 @@
 import FadeIn from "./FadeIn";
 
 const SEGMENTS = [
-  "Personal trainers, coaches, and gym owners.",
-  "Course creators and online educators.",
-  "Plumbers, electricians, and trades.",
-  "Dentists, clinics, and health businesses.",
-  "Lawyers, finance firms, and consultants.",
-  "Solo founders, small teams, and boutique agencies.",
+  "Solo PTs and coaches. 10 to 40 active clients. Admin eating your evenings.",
+  "Boutique studio and gym owners. 80 to 350 members. First-year churn to fix.",
+  "Multi-site operators. Two to five locations. Fragmented systems, decisions in the dark.",
 ];
 
 export default function WhoItsForSection() {
@@ -19,8 +16,8 @@ export default function WhoItsForSection() {
           </p>
 
           <p className="font-display text-[clamp(1.4rem,3vw,1.9rem)] font-light leading-[1.5] text-black max-w-[720px] mb-16">
-            If your week is full of follow-up, onboarding, scheduling,
-            reporting, quoting, or handoffs, Cerebro is built for you.
+            If you run a gym, studio, or PT practice in Australia or New
+            Zealand, this is built for you.
           </p>
 
           <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-12">
@@ -41,7 +38,7 @@ export default function WhoItsForSection() {
           </ul>
 
           <p className="text-sm font-light text-black/50 mt-10 italic">
-            Different industries. Same hidden tax.
+            Same operational ceiling. One fix.
           </p>
         </FadeIn>
       </div>

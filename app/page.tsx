@@ -55,13 +55,13 @@ export default function Home() {
         <div className="max-w-5xl mx-auto">
           <FadeIn>
             <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black mb-6 md:mb-8">
-              Start the conversation
+              Free operations audit
             </p>
             <h2 className="font-display text-[clamp(2rem,5vw,4rem)] font-light tracking-[-0.025em] text-black mb-4 md:mb-5 max-w-[640px]">
-              Tell us where the hours are going.
+              Tell us where the friction is.
             </h2>
             <p className="text-sm font-light text-black mb-8 md:mb-14 leading-relaxed max-w-[460px]">
-              Five minutes of conversation. We&apos;ll help you think it through.
+              Two minutes. We send your personalized picture in five.
             </p>
             <GetInTouchSection />
           </FadeIn>
