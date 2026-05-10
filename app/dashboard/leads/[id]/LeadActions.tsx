@@ -19,6 +19,8 @@ export default function LeadActions({
   const [busy, startTransition] = useTransition();
   const [tags, setTags] = useState<string[]>(initialTags);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function add(slug: TagSlug) {
     setError(null);
@@ -51,8 +53,54 @@ export default function LeadActions({
     startTransition(() => router.refresh());
   }
 
+  async function deleteLead() {
+    setError(null);
+    setDeleting(true);
+    const { error: e } = await supabase.from('leads').delete().eq('id', leadId);
+    if (e) {
+      setError(e.message);
+      setDeleting(false);
+      return;
+    }
+    router.push('/dashboard/leads');
+  }
+
   const has = (s: TagSlug) => tags.includes(s);
 
+  // ── Confirmation pane (step 2 of delete) ──────────────────────────────────
+  if (confirmingDelete) {
+    return (
+      <section>
+        <h2 className="text-[10px] font-medium tracking-[0.2em] uppercase text-black/40 mb-3">
+          Delete lead?
+        </h2>
+        <div className="border border-red-200 rounded-xl p-5 bg-red-50/40 space-y-4">
+          <p className="text-sm text-black/75 leading-relaxed">
+            This permanently removes the lead, the chat transcript, all engagement tags, and any proposals. It cannot be undone.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={deleteLead}
+              disabled={deleting}
+              className="flex-1 text-xs px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+            >
+              {deleting ? 'Deleting…' : 'Yes, delete permanently'}
+            </button>
+            <button
+              onClick={() => setConfirmingDelete(false)}
+              disabled={deleting}
+              className="flex-1 text-xs px-3 py-2 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+      </section>
+    );
+  }
+
+  // ── Default action panel ──────────────────────────────────────────────────
   return (
     <section>
       <h2 className="text-[10px] font-medium tracking-[0.2em] uppercase text-black/40 mb-3">
@@ -98,7 +146,7 @@ export default function LeadActions({
           </div>
         )}
 
-        {!has(TAG.LOST) && (
+        {!has(TAG.LOST) ? (
           <button
             onClick={() => add(TAG.LOST)}
             disabled={busy}
@@ -106,9 +154,7 @@ export default function LeadActions({
           >
             Mark lost
           </button>
-        )}
-
-        {has(TAG.LOST) && (
+        ) : (
           <button
             onClick={() => remove(TAG.LOST)}
             disabled={busy}
@@ -117,6 +163,14 @@ export default function LeadActions({
             Un-mark lost
           </button>
         )}
+
+        <button
+          onClick={() => setConfirmingDelete(true)}
+          disabled={busy}
+          className="w-full text-xs px-3 py-2 rounded-lg text-red-600/70 hover:text-red-700 hover:bg-red-50 transition-colors text-left disabled:opacity-50"
+        >
+          Delete lead…
+        </button>
 
         {error && <p className="text-xs text-red-600 pt-2">{error}</p>}
       </div>
