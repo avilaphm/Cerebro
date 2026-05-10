@@ -1,18 +1,18 @@
 import { STAGE1_QUARTERS, hasTag } from '@/utils/leads/tags';
 
-// Four-quadrant pie indicator. Each wedge maps to one Stage 1 milestone,
-// going clockwise from 12 o'clock: Fresh lead, Email 1, Email 2, Proposal viewed.
-// Filled emerald when the milestone has fired, faint grey when still pending.
+// Four-quadrant pie indicator. Each wedge maps to one Stage 1 milestone.
+// Q1 (top-left) + Q2 (top-right) are side-by-side so the first two milestones
+// fill the top half together. Q3 = proposal viewed, Q4 = booking clicked.
 
 const WEDGES = [
-  // top-right (12 → 3): Fresh lead
-  'M 16 16 L 16 0 A 16 16 0 0 1 32 16 Z',
-  // bottom-right (3 → 6): Email 1
-  'M 16 16 L 32 16 A 16 16 0 0 1 16 32 Z',
-  // bottom-left (6 → 9): Email 2
-  'M 16 16 L 16 32 A 16 16 0 0 1 0 16 Z',
-  // top-left (9 → 12): Proposal viewed
+  // top-left (9 → 12): Fresh lead
   'M 16 16 L 0 16 A 16 16 0 0 1 16 0 Z',
+  // top-right (12 → 3): Email sent
+  'M 16 16 L 16 0 A 16 16 0 0 1 32 16 Z',
+  // bottom-right (3 → 6): Proposal viewed
+  'M 16 16 L 32 16 A 16 16 0 0 1 16 32 Z',
+  // bottom-left (6 → 9): Booking clicked
+  'M 16 16 L 16 32 A 16 16 0 0 1 0 16 Z',
 ];
 
 export default function QuadProgress({

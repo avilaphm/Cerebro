@@ -53,9 +53,9 @@ export function computeStage(tags: readonly string[]): Stage {
 
 export const STAGE1_QUARTERS: { key: TagSlug; label: string }[] = [
   { key: TAG.CHAT_LEAD,       label: 'Fresh lead'      },
-  { key: TAG.EMAIL1_SENT,     label: 'Email 1 sent'    },
-  { key: TAG.EMAIL2_SENT,     label: 'Email 2 sent'    },
+  { key: TAG.EMAIL1_SENT,     label: 'Email sent'      },
   { key: TAG.PROPOSAL_VIEWED, label: 'Proposal viewed' },
+  { key: TAG.CALL_BOOKED,     label: 'Booking clicked' },
 ];
 
 // ─── Mutations ───────────────────────────────────────────────────────────────

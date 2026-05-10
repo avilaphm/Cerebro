@@ -107,16 +107,6 @@ export default function LeadActions({
         Actions
       </h2>
       <div className="border border-black/10 rounded-xl p-5 bg-white space-y-2">
-        {stage === 'stage1' && !has(TAG.CALL_BOOKED) && (
-          <button
-            onClick={() => add(TAG.CALL_BOOKED)}
-            disabled={busy}
-            className="w-full text-xs px-3 py-2 rounded-lg border border-black/15 text-black/60 hover:border-black/40 hover:text-black transition-colors text-left disabled:opacity-50"
-          >
-            Mark call booked
-          </button>
-        )}
-
         {stage === 'call_booked' && !has(TAG.CALL_COMPLETED) && (
           <button
             onClick={() => add(TAG.CALL_COMPLETED)}
