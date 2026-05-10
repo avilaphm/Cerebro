@@ -107,7 +107,7 @@ export default function LeadActions({
         Actions
       </h2>
       <div className="border border-black/10 rounded-xl p-5 bg-white space-y-2">
-        {(stage === 'email2_sent' || stage === 'proposal_viewed') && (
+        {stage === 'stage1' && !has(TAG.CALL_BOOKED) && (
           <button
             onClick={() => add(TAG.CALL_BOOKED)}
             disabled={busy}

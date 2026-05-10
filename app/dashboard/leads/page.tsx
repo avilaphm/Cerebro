@@ -3,14 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import {
-  TAG,
-  computeStage,
-  hasTag,
-  STAGES,
-  type Stage,
-  type TagSlug,
-} from '@/utils/leads/tags';
+import { computeStage, STAGES, type Stage } from '@/utils/leads/tags';
+import QuadProgress from './QuadProgress';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,29 +25,9 @@ interface Lead {
   tags: string[];
 }
 
-// ─── Engagement milestones shown inside each card ────────────────────────────
-// Each milestone resolves green when ANY of its match tags is present.
-// Order = the order Pedro talked about: email1 sent → email2 sent → opened →
-// PDF downloaded → booking link clicked.
-
-interface Milestone {
-  label: string;
-  match: TagSlug[];
-}
-
-const MILESTONES: Milestone[] = [
-  { label: 'Email 1 sent',         match: [TAG.EMAIL1_SENT] },
-  { label: 'Email 2 sent',         match: [TAG.EMAIL2_SENT] },
-  { label: 'Proposal opened',      match: [TAG.EMAIL2_OPENED, TAG.PROPOSAL_VIEWED] },
-  { label: 'PDF downloaded',       match: [TAG.PROPOSAL_DOWNLOADED] },
-  { label: 'Booking link clicked', match: [TAG.CALL_BOOKED] },
-];
-
 // ─── Lead card ────────────────────────────────────────────────────────────────
 
 function LeadCard({ lead }: { lead: Lead }) {
-  const stage = computeStage(lead.tags);
-  const stageLabel = STAGES.find((s) => s.key === stage)?.label ?? stage;
   const proposal = lead.proposals?.[0];
 
   const dateLabel = new Date(lead.created_at).toLocaleDateString('en-AU', {
@@ -66,14 +40,12 @@ function LeadCard({ lead }: { lead: Lead }) {
       href={`/dashboard/leads/${lead.id}`}
       className="group block bg-white border border-black/10 rounded-2xl p-6 hover:border-black/30 hover:shadow-[0_2px_24px_rgba(0,0,0,0.04)] transition-all no-underline"
     >
-      {/* Header: stage label + capture date */}
-      <div className="flex items-center justify-between mb-5">
-        <span className="text-[10px] font-medium tracking-[0.2em] uppercase text-black/50">
-          {stageLabel}
-        </span>
-        <span className="text-[10px] tracking-wider text-black/30 uppercase">
+      {/* Header: date (left) + Stage 1 quad indicator (right) */}
+      <div className="flex items-start justify-between mb-5">
+        <span className="text-[10px] tracking-[0.2em] text-black/40 uppercase pt-1">
           {dateLabel}
         </span>
+        <QuadProgress tags={lead.tags} />
       </div>
 
       {/* Name + email */}
@@ -106,35 +78,6 @@ function LeadCard({ lead }: { lead: Lead }) {
           {lead.pain_point}
         </p>
       )}
-
-      {/* Engagement milestones — the live "green light" timeline */}
-      <div className="mb-5">
-        <p className="text-[9px] font-medium tracking-[0.2em] uppercase text-black/35 mb-3">
-          Progress
-        </p>
-        <ol className="space-y-2">
-          {MILESTONES.map((m) => {
-            const done = m.match.some((t) => hasTag(lead.tags, t));
-            return (
-              <li key={m.label} className="flex items-center gap-2.5">
-                <span
-                  aria-hidden
-                  className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${
-                    done ? 'bg-emerald-500' : 'bg-black/10'
-                  }`}
-                />
-                <span
-                  className={`text-xs transition-colors ${
-                    done ? 'text-black' : 'text-black/35'
-                  }`}
-                >
-                  {m.label}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
 
       {/* Deliverables */}
       {proposal?.deliverables && proposal.deliverables.length > 0 && (

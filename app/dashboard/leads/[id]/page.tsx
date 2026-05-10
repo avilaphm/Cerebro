@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import { computeStage, STAGES } from '@/utils/leads/tags';
 import LeadActions from './LeadActions';
+import MilestoneStrip from './MilestoneStrip';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -110,7 +111,7 @@ export default async function LeadDetailPage({
       </Link>
 
       {/* Header */}
-      <div className="mb-10 flex items-baseline justify-between gap-6 flex-wrap">
+      <div className="mb-8 flex items-baseline justify-between gap-6 flex-wrap">
         <div>
           <h1 className="font-display text-3xl font-light tracking-[-0.02em] text-black">
             {lead.name ?? 'Unknown'}
@@ -125,6 +126,11 @@ export default async function LeadDetailPage({
             {stageLabel}
           </span>
         </div>
+      </div>
+
+      {/* Horizontal journey strip */}
+      <div className="mb-10">
+        <MilestoneStrip tags={tagSlugs} />
       </div>
 
       {/* Two-col layout */}

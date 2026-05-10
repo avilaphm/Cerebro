@@ -2,7 +2,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 // ─── Tag slugs ───────────────────────────────────────────────────────────────
 // Mirrors the seed in 20260510000000_lead_tags_and_pipeline.sql.
-// Keep this list in sync with the `tags` table.
 
 export const TAG = {
   CHAT_LEAD:           'chat_lead',
@@ -25,48 +24,19 @@ export const TAG = {
 export type TagSlug = typeof TAG[keyof typeof TAG];
 
 // ─── Stage ───────────────────────────────────────────────────────────────────
+// Pipeline columns. Stage 1 collapses fresh / email1 / email2 / proposal_viewed
+// into a single column — the card's quad-circle indicator shows sub-progress.
 
-export type Stage =
-  | 'fresh'
-  | 'email1_sent'
-  | 'email2_sent'
-  | 'proposal_viewed'
-  | 'call_booked'
-  | 'client'
-  | 'nurture'
-  | 'lost';
+export type Stage = 'stage1' | 'call_booked' | 'client' | 'nurture' | 'lost';
 
 export const STAGES: { key: Stage; label: string }[] = [
-  { key: 'fresh',           label: 'Fresh Lead'      },
-  { key: 'email1_sent',     label: 'Email 1 Sent'    },
-  { key: 'email2_sent',     label: 'Email 2 Sent'    },
-  { key: 'proposal_viewed', label: 'Proposal Viewed' },
-  { key: 'call_booked',     label: 'Call Booked'     },
-  { key: 'client',          label: 'Client'          },
-  { key: 'nurture',         label: 'Nurture'         },
-  { key: 'lost',            label: 'Lost'            },
+  { key: 'stage1',      label: 'Stage 1'     },
+  { key: 'call_booked', label: 'Call Booked' },
+  { key: 'client',      label: 'Client'      },
+  { key: 'nurture',     label: 'Nurture'     },
+  { key: 'lost',        label: 'Lost'        },
 ];
 
-const PROGRESS: Stage[] = [
-  'fresh',
-  'email1_sent',
-  'email2_sent',
-  'proposal_viewed',
-  'call_booked',
-  'client',
-];
-
-export function progressIndex(stage: Stage): number {
-  return PROGRESS.indexOf(stage);
-}
-
-export function progressStages(): Stage[] {
-  return PROGRESS;
-}
-
-// Mirrors the SQL function lead_stage() in 20260510000000_lead_tags_and_pipeline.sql.
-// Keeping a TS twin lets the dashboard compute stage from in-memory tags
-// without round-tripping to the DB after a tag toggle.
 export function computeStage(tags: readonly string[]): Stage {
   const has = (s: TagSlug) => tags.includes(s);
 
@@ -75,11 +45,18 @@ export function computeStage(tags: readonly string[]): Stage {
   if (has(TAG.NOT_CLIENT) || has(TAG.POST_CALL_NURTURE)) return 'nurture';
   if (has(TAG.CALL_COMPLETED) || has(TAG.CALL_BOOKED))   return 'call_booked';
   if (has(TAG.PRE_CALL_NURTURE))                         return 'nurture';
-  if (has(TAG.PROPOSAL_DOWNLOADED) || has(TAG.PROPOSAL_VIEWED)) return 'proposal_viewed';
-  if (has(TAG.EMAIL2_OPENED) || has(TAG.EMAIL2_SENT))    return 'email2_sent';
-  if (has(TAG.EMAIL1_OPENED) || has(TAG.EMAIL1_SENT))    return 'email1_sent';
-  return 'fresh';
+  return 'stage1';
 }
+
+// ─── Stage 1 sub-progress (the quad-circle on the card) ─────────────────────
+// Four named milestones inside Stage 1, clockwise from 12 o'clock.
+
+export const STAGE1_QUARTERS: { key: TagSlug; label: string }[] = [
+  { key: TAG.CHAT_LEAD,       label: 'Fresh lead'      },
+  { key: TAG.EMAIL1_SENT,     label: 'Email 1 sent'    },
+  { key: TAG.EMAIL2_SENT,     label: 'Email 2 sent'    },
+  { key: TAG.PROPOSAL_VIEWED, label: 'Proposal viewed' },
+];
 
 // ─── Mutations ───────────────────────────────────────────────────────────────
 
