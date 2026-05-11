@@ -4,53 +4,71 @@
 2026-05-11 by claude
 
 ## Last completed task
-PT Dashboard Revamp Phase 1: full navigation restructure + Clients section. Single-page tab layout replaced with 7 sub-routes. Client cards with password status, session pack, PDF upload, and programme assignment. Live overview dashboard.
+PT Dashboard Revamp Phases 1-4 complete. Full sub-route architecture, client cards, overview dashboard, WhatsApp-style messaging with AI note extraction, and AI programme wizard.
 
 ## Last commit
-(see git log)
+pt-dashboard-v4 (tag) -- 361080b
 
 ## Current state
 
-### PT Dashboard (Revamp Phase 1 complete)
-
-Architecture changed: `/dashboard/pt` is now a sub-routed app with its own PT sidebar nav.
+### PT Dashboard (Phases 1-4 complete)
 
 **Routes live:**
 - `/dashboard/pt` redirects to `/dashboard/pt/overview`
-- `/dashboard/pt/overview` live widgets: client count, worked out, needs programming, recent workouts, sessions low
-- `/dashboard/pt/clients` all clients grid + Add client modal
-- `/dashboard/pt/clients/[id]` full client card: edit name/goals/notes, status, sessions remaining, password status, last login, programme assignment, PDF upload, send invite, delete
-- `/dashboard/pt/messages` placeholder (Phase 3)
+- `/dashboard/pt/overview` live widgets: client count, worked out (7d), needs attention (14d), needs programming, sessions low, recent activity
+- `/dashboard/pt/clients` all clients grid + Add client modal, note badges from AI extraction
+- `/dashboard/pt/clients/[id]` full client card: edit inline, status, sessions, password status, last login, programme assignment, PDF upload + signed URL view, send invite, delete, AI notes with dismiss
+- `/dashboard/pt/messages` WhatsApp-style chat: Supabase realtime, context chips (phase/day), marks read on open
+- `/dashboard/pt/programmes` list of templates + assignments + "New programme" button
+- `/dashboard/pt/programmes/new` 4-step AI wizard: select client + generate from PDF / brain dump + voice, edit phase cards, build workouts per day (drag/drop), save + assign to client
 - `/dashboard/pt/groups` placeholder (Phase 5)
-- `/dashboard/pt/programmes` read-only list (Phase 4 = full AI wizard)
 - `/dashboard/pt/emails` placeholder (Phase 5)
 - `/dashboard/pt/settings` placeholder (Phase 5)
 
-**New DB columns/tables applied to remote:**
-- `pt_clients`: sessions_remaining int, document_url text, password_created_at timestamptz
-- `pt_messages` table (with RLS: admins see all, clients see own)
-- `pt_groups` + `pt_group_members` tables
+**Client portal:**
+- Floating MessageBubble (bottom-right) with real-time chat, context chip (current phase/day), unread badge
+- After client sends message: `extract-client-note` edge function auto-extracts important info (injuries, travel, dislikes) into `pt_client_notes`, shown as amber badges on client card in PT view
+
+**DB tables/columns live (remote):**
+- `pt_clients`: sessions_remaining, document_url, password_created_at
+- `pt_messages`: id, client_id, sender, content, read_at, context (jsonb), created_at
+- `pt_client_notes`: id, client_id, source_message_id, content, is_active, created_at
+- `pt_groups` + `pt_group_members`
 - Storage bucket: `pt-client-docs` (private, admin upload/read)
+- `pt_messages` has REPLICA IDENTITY FULL for realtime
 
-**`/client-setup` now sets `password_created_at`** on the pt_clients row after password creation.
+**Edge functions deployed:**
+- `parse-client-document`: gets client PDF from Storage via signed URL, uploads to OpenAI Files API, processes with Responses API + file_id, returns PTProgramme JSON. Falls back to text file content or client goals/notes.
+- `extract-client-note`: GPT-4.1-mini analyzes client messages for notable info, inserts to pt_client_notes if relevant
+- `generate-pt-programme`, `invite-pt-client`, `delete-pt-client`: unchanged
 
-**Active plan:** `plans/2026-05-pt-dashboard-revamp-v2.md` (Phase 2 next: full messages; Phase 4: AI programme wizard)
+**Storage pattern:** `document_url` stores the storage PATH (e.g. `{client_id}/{timestamp}-filename.pdf`), NOT a public URL. Signed URLs generated on demand via `supabase.storage.from('pt-client-docs').createSignedUrl(path, seconds)`.
 
 ### Old PTDashboard.tsx
-Still exists at `app/dashboard/pt/PTDashboard.tsx`. No longer rendered (page.tsx redirects). Safe to delete once all functionality is confirmed migrated. Library and Activity tabs not yet migrated (deferred to Phase 5 Settings and Phase 3 overview respectively).
+Still exists at `app/dashboard/pt/PTDashboard.tsx`. No longer rendered. Safe to delete now.
 
 ### Leads dashboard
 - Phase 1 complete, Phase 2+ pending Pedro re-brief
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-Phase 3: Messages. Full WhatsApp-style chat UI between Pedro and clients.
-- Build `app/dashboard/pt/messages/page.tsx` as 'use client' with Supabase real-time subscription
-- Add messages to client portal (`app/client/ClientPortal.tsx`)
-- `pt_messages` table is already live
+Phase 5: Groups + Emails + Settings
 
-Or Pedro may want Phase 4 (AI Programme Wizard) first. Ask at session start.
+**Groups (`/dashboard/pt/groups`):**
+- Create groups (e.g. Online Clients, In-person, Weight loss)
+- Color chip + member count
+- Click group = filtered client list
+- Add/remove clients from groups
+- Group tags visible on client cards
+
+**Settings (`/dashboard/pt/settings`):**
+- Move exercise library (CSV import) here from old PTDashboard
+- PT profile settings placeholder
+
+**Emails (`/dashboard/pt/emails`):**
+- Placeholder for now: "Email sequences coming soon"
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`
 - Full repo lint has pre-existing failures outside PT code. Do not fix.
+- Pre-commit hook rejects em dashes in .md files -- use plain dashes
