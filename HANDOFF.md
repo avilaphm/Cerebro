@@ -4,12 +4,23 @@
 2026-05-11 by codex
 
 ## Last completed task
-Fixed PT client resend login/setup link flow and client password login.
+Rebuilt client workout flow into phase cards, workout preview, and section-based logging.
 
 ## Last commit
-c480e11 - fix PT client login links
+PENDING - client workout flow
 
 ## Current state
+
+### Client workout flow (NEW)
+- `/client` now shows one active phase at a time instead of every phase/exercise.
+- Active phase displays workout cards only.
+- Clicking a workout opens a preview screen showing the full day, grouped by programmed sections.
+- "Begin workout" opens the logging screen.
+- Logging screen uses collapsible section cards (e.g. Warm up, Main work), with all exercises for that section inside the card.
+- Clients can log weight and reps for each set.
+- Programmed set count is preloaded, but clients can add or remove sets per exercise.
+- Each section has "Notes for Pedro" after the section exercises.
+- Finishing a detailed workout writes `pt_workout_logs`, `pt_set_logs`, section notes, and counts toward progression/block advancement.
 
 ### PT client auth link fix (NEW)
 - `/dashboard/pt/clients/[id]` resend button now distinguishes client account state:
