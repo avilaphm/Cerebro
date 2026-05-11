@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { safeProgramme, getBlockSets, requiredWorkoutsForBlock } from '@/utils/pt/programme';
+import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
 import { isPedroAdminEmail } from '@/utils/pt/access';
 import type { PTClient, PTProgramAssignment, PTProgrammeExercise, PTSetLog, PTProgrammeWeekBlock } from '@/utils/pt/types';
 import MessageBubble from './MessageBubble';

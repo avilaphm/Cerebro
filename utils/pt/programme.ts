@@ -1,4 +1,4 @@
-import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammeWeekBlock } from './types';
+import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammeWeekBlock, PTProgrammeExerciseBlockOverride } from './types';
 
 export const emptyProgramme: PTProgramme = { phases: [] };
 
@@ -75,6 +75,8 @@ function safeExercise(value: unknown, index: number): PTProgrammeExercise {
     video_url: typeof e.video_url === 'string' ? e.video_url : null,
     cues: Array.isArray(e.cues) ? e.cues.map((cue) => String(cue)).slice(0, 4) : [],
     superset_id: typeof e.superset_id === 'string' ? e.superset_id : null,
+    section_start: typeof e.section_start === 'string' && e.section_start ? e.section_start : undefined,
+    week_overrides: safeBlockOverrides(e.week_overrides),
   };
 }
 
@@ -128,6 +130,42 @@ export function getBlockSets(
   if (!weekBlocks || weekBlocks.length === 0) return exerciseSets;
   const block = weekBlocks[Math.min(blockIndex, weekBlocks.length - 1)];
   return block?.sets ?? exerciseSets;
+}
+
+export function getExerciseBlockValues(
+  exercise: PTProgrammeExercise,
+  weekBlocks: PTProgrammeWeekBlock[] | undefined,
+  blockIndex: number,
+): { sets: string; reps: string; weight_pct: string; notes: string } {
+  const override = exercise.week_overrides?.find((o) => o.block_index === blockIndex);
+  const blockSets = weekBlocks
+    ? (weekBlocks[Math.min(blockIndex, weekBlocks.length - 1)]?.sets ?? exercise.sets)
+    : exercise.sets;
+  return {
+    sets: override?.sets ?? blockSets,
+    reps: override?.reps ?? exercise.reps,
+    weight_pct: override?.weight_pct ?? '',
+    notes: override?.notes ?? exercise.notes,
+  };
+}
+
+function safeBlockOverrides(value: unknown): PTProgrammeExerciseBlockOverride[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const overrides = value
+    .map((o): PTProgrammeExerciseBlockOverride | null => {
+      const item = o as Record<string, unknown>;
+      const block_index = typeof item.block_index === 'number' ? item.block_index : parseInt(String(item.block_index), 10);
+      if (!Number.isFinite(block_index)) return null;
+      return {
+        block_index,
+        sets: typeof item.sets === 'string' ? item.sets : undefined,
+        reps: typeof item.reps === 'string' ? item.reps : undefined,
+        weight_pct: typeof item.weight_pct === 'string' ? item.weight_pct : undefined,
+        notes: typeof item.notes === 'string' ? item.notes : undefined,
+      };
+    })
+    .filter((o): o is PTProgrammeExerciseBlockOverride => o !== null);
+  return overrides.length > 0 ? overrides : undefined;
 }
 
 export function requiredWorkoutsForBlock(

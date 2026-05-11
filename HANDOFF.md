@@ -1,15 +1,24 @@
 # Handoff
 
 ## Last updated
-2026-05-11 by claude
+2026-05-11 by codex
 
 ## Last completed task
-Programme progressive overload + workout tracking system (full feature).
+Fixed PT client resend login/setup link flow and client password login.
 
 ## Last commit
-bb17041 -- feat: programme progressive overload + workout done tracking
+ae3af1b - fix PT client login links
 
 ## Current state
+
+### PT client auth link fix (NEW)
+- `/dashboard/pt/clients/[id]` resend button now distinguishes client account state:
+  - clients without `password_created_at`: sends setup link to `/client-setup`
+  - clients with `password_created_at`: sends login link to `/client`
+- `invite-pt-client` edge function now falls back to a setup magic link if a first-time invite hits an already-created Supabase Auth user.
+- `/client-login` now supports normal email + password login, with a secondary one-click login link option.
+- `invite-pt-client` deployed to Supabase as version 6 on project `otcnrkfvgyvwolironoz`.
+- `npm run build` passed after fixing the programme override type predicate.
 
 ### Programme progression system (NEW)
 - `PTProgrammePhase.week_blocks` -- per-phase progressive overload blocks: [{weeks, sets}, ...]

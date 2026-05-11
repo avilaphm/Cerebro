@@ -18,9 +18,11 @@ Deno.serve(async (req: Request) => {
     const url = Deno.env.get('SUPABASE_URL')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const origin = req.headers.get('Origin') ?? 'https://cerebroai.au';
     const userClient = createClient(url, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
+    const authClient = createClient(url, anonKey);
     const adminClient = createClient(url, serviceKey);
 
     const { data: authData, error: authError } = await userClient.auth.getUser();
@@ -48,13 +50,48 @@ Deno.serve(async (req: Request) => {
 
     if (clientError || !ptClient) return json({ error: clientError?.message ?? 'Client not found.' }, 404);
 
-    const redirectTo = `${req.headers.get('Origin') ?? 'https://cerebroai.au'}/auth/callback?next=/client-setup`;
+    const sendLoginLink = async (nextPath: '/client' | '/client-setup') => {
+      const { error } = await authClient.auth.signInWithOtp({
+        email: ptClient.email,
+        options: {
+          shouldCreateUser: false,
+          emailRedirectTo: `${origin}/auth/callback?next=${nextPath}`,
+        },
+      });
+      return error;
+    };
+
+    if (ptClient.password_created_at) {
+      const loginError = await sendLoginLink('/client');
+      if (loginError) return json({ error: loginError.message }, 400);
+
+      await adminClient.from('pt_events').insert({
+        client_id: ptClient.id,
+        event_type: 'client_login_link_sent',
+        metadata: { email: ptClient.email },
+      });
+
+      return json({ ok: true, action: 'login_link_sent' });
+    }
+
+    const redirectTo = `${origin}/auth/callback?next=/client-setup`;
     const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(ptClient.email, {
       redirectTo,
       data: { full_name: ptClient.name, role: 'client' },
     });
 
-    if (inviteError) return json({ error: inviteError.message }, 400);
+    if (inviteError) {
+      const setupLinkError = await sendLoginLink('/client-setup');
+      if (setupLinkError) return json({ error: inviteError.message }, 400);
+
+      await adminClient.from('pt_events').insert({
+        client_id: ptClient.id,
+        event_type: 'client_setup_link_sent',
+        metadata: { email: ptClient.email, fallback: true },
+      });
+
+      return json({ ok: true, action: 'setup_link_sent' });
+    }
 
     if (invited.user) {
       await adminClient.from('profiles').upsert({
@@ -70,12 +107,12 @@ Deno.serve(async (req: Request) => {
         .eq('id', ptClient.id);
       await adminClient.from('pt_events').insert({
         client_id: ptClient.id,
-        event_type: 'client_invited',
+        event_type: 'client_setup_link_sent',
         metadata: { email: ptClient.email },
       });
     }
 
-    return json({ ok: true });
+    return json({ ok: true, action: 'setup_link_sent' });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Invite failed.' }, 500);
   }

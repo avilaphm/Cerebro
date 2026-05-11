@@ -4,6 +4,10 @@ import { useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTExercise } from '@/utils/pt/types';
 
+const EMPTY_EXERCISE_FORM = {
+  name: '', muscles: '', equipment: '', purpose: '', video_url: '', cue_1: '', cue_2: '', cue_3: '', cue_4: '', tags: '',
+};
+
 export default function PTSettingsView({ exercises: initialExercises }: { exercises: PTExercise[] }) {
   const supabase = createClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -11,6 +15,9 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
   const [status, setStatus] = useState('');
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState(EMPTY_EXERCISE_FORM);
+  const [addSaving, setAddSaving] = useState(false);
 
   const importExercises = async (file: File) => {
     setImporting(true);
@@ -45,6 +52,32 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
       setExercises((data ?? []) as PTExercise[]);
     }
     setImporting(false);
+  };
+
+  const saveExercise = async () => {
+    if (!addForm.name.trim()) return;
+    setAddSaving(true);
+    const record = {
+      name: addForm.name.trim(),
+      muscles: splitList(addForm.muscles),
+      purpose: addForm.purpose.trim() || null,
+      equipment: addForm.equipment.trim() || null,
+      video_url: addForm.video_url.trim() || null,
+      cues: [addForm.cue_1, addForm.cue_2, addForm.cue_3, addForm.cue_4].filter(Boolean).slice(0, 4),
+      tags: splitList(addForm.tags),
+      source: 'manual' as const,
+    };
+    const { error } = await supabase.from('pt_exercises').upsert(record, { onConflict: 'name' });
+    if (error) {
+      setStatus(error.message);
+    } else {
+      const { data } = await supabase.from('pt_exercises').select('*').order('name');
+      setExercises((data ?? []) as PTExercise[]);
+      setAddForm(EMPTY_EXERCISE_FORM);
+      setShowAddModal(false);
+      setStatus('Exercise saved.');
+    }
+    setAddSaving(false);
   };
 
   const filtered = exercises.filter((e) =>
@@ -87,12 +120,20 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">
             Exercise library ({exercises.length})
           </h2>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search exercises…"
-            className="border border-black/15 px-3 py-1.5 text-sm outline-none focus:border-black/40 w-56"
-          />
+          <div className="flex items-center gap-3">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search exercises…"
+              className="border border-black/15 px-3 py-1.5 text-sm outline-none focus:border-black/40 w-56"
+            />
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="border border-black bg-black text-white px-4 py-1.5 text-sm hover:bg-white hover:text-black transition-colors"
+            >
+              + Add exercise
+            </button>
+          </div>
         </div>
 
         {filtered.length === 0 && (
@@ -125,6 +166,100 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
           ))}
         </div>
       </section>
+
+      {/* Add Exercise Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white w-full max-w-lg border border-black/20 p-6 space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-display text-lg font-light">Add exercise</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-black/30 hover:text-black text-xl leading-none">×</button>
+            </div>
+
+            <div>
+              <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Name *</label>
+              <input
+                value={addForm.name}
+                onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. Goblet Squat"
+                className="w-full border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Muscles</label>
+                <input
+                  value={addForm.muscles}
+                  onChange={(e) => setAddForm((f) => ({ ...f, muscles: e.target.value }))}
+                  placeholder="Quads, glutes, core"
+                  className="w-full border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+                />
+              </div>
+              <div>
+                <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Equipment</label>
+                <input
+                  value={addForm.equipment}
+                  onChange={(e) => setAddForm((f) => ({ ...f, equipment: e.target.value }))}
+                  placeholder="Dumbbell"
+                  className="w-full border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">YouTube URL</label>
+              <input
+                value={addForm.video_url}
+                onChange={(e) => setAddForm((f) => ({ ...f, video_url: e.target.value }))}
+                placeholder="https://youtube.com/watch?v=…"
+                className="w-full border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+              />
+              {addForm.video_url && addForm.video_url.includes('youtube') && (
+                <p className="mt-1 text-[0.6rem] text-black/35">YouTube link detected — will show in client portal.</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Description / purpose</label>
+              <input
+                value={addForm.purpose}
+                onChange={(e) => setAddForm((f) => ({ ...f, purpose: e.target.value }))}
+                placeholder="What this exercise is for"
+                className="w-full border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {(['cue_1', 'cue_2', 'cue_3', 'cue_4'] as const).map((key, idx) => (
+                <div key={key}>
+                  <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Cue {idx + 1}</label>
+                  <input
+                    value={addForm[key]}
+                    onChange={(e) => setAddForm((f) => ({ ...f, [key]: e.target.value }))}
+                    placeholder={`Cue ${idx + 1}`}
+                    className="w-full border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setShowAddModal(false)} className="border border-black/15 px-5 py-2.5 text-sm hover:bg-black/5">
+                Cancel
+              </button>
+              <button
+                onClick={() => void saveExercise()}
+                disabled={addSaving || !addForm.name.trim()}
+                className="flex-1 border border-black bg-black text-white py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
+              >
+                {addSaving ? 'Saving…' : 'Save to library'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

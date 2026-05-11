@@ -1,31 +1,57 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
 export default function ClientLoginPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [status, setStatus] = useState('');
-  const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sendingLink, setSendingLink] = useState(false);
 
-  const sendLink = async () => {
+  const login = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!email.trim() || !password) return;
+    setLoading(true);
+    setStatus('');
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+
+    if (error) {
+      setStatus(error.message);
+      setLoading(false);
+      return;
+    }
+
+    router.push('/client');
+  };
+
+  const sendMagicLink = async () => {
     if (!email.trim()) return;
+    setSendingLink(true);
     setStatus('Sending login link...');
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback?next=/client`,
+        shouldCreateUser: false,
       },
     });
 
     if (error) {
       setStatus(error.message);
+      setSendingLink(false);
       return;
     }
 
-    setSent(true);
     setStatus('Check your email for the login link.');
+    setSendingLink(false);
   };
 
   return (
@@ -36,7 +62,7 @@ export default function ClientLoginPage() {
         <p className="mt-3 text-sm leading-relaxed text-black/50">
           Enter the email Pedro used for your programme.
         </p>
-        <div className="mt-6 space-y-3">
+        <form onSubmit={login} className="mt-6 space-y-3">
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
@@ -44,15 +70,29 @@ export default function ClientLoginPage() {
             placeholder="you@example.com"
             type="email"
           />
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="w-full border border-black/10 bg-[#fbfbf8] px-4 py-3 text-sm outline-none focus:border-black/40"
+            placeholder="Password"
+            type="password"
+          />
           <button
-            type="button"
-            onClick={sendLink}
-            disabled={sent}
+            type="submit"
+            disabled={loading || !email || !password}
             className="w-full border border-black bg-black px-4 py-3 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {sent ? 'Link sent' : 'Send login link'}
+            {loading ? 'Logging in...' : 'Log in'}
           </button>
-        </div>
+        </form>
+        <button
+          type="button"
+          onClick={sendMagicLink}
+          disabled={sendingLink || !email}
+          className="mt-3 w-full border border-black/10 px-4 py-3 text-sm text-black/55 transition-colors hover:border-black/30 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {sendingLink ? 'Sending...' : 'Email me a one-click login link'}
+        </button>
         {status && <p className="mt-4 text-sm text-black/50">{status}</p>}
       </section>
     </main>

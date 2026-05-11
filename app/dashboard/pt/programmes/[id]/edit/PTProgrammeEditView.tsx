@@ -1,21 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import {
-  makeId, exerciseFromLibrary, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks,
-} from '@/utils/pt/programme';
+import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks } from '@/utils/pt/programme';
 import type {
-  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise, PTProgramAssignment,
+  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramAssignment,
 } from '@/utils/pt/types';
+import PTDayEditor from '../../PTDayEditor';
 
 interface SpeechRecognitionLike {
   continuous: boolean; interimResults: boolean; lang: string;
   onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean } & ArrayLike<{ transcript: string }>> }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
+  stop: () => void;
 }
 function getSR() {
   const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
@@ -42,9 +42,9 @@ export default function PTProgrammeEditView({
   const [editingPhase, setEditingPhase] = useState<number | null>(null);
   const [activePhaseTab, setActivePhaseTab] = useState(0);
   const [activeDay, setActiveDay] = useState<number | null>(null);
-  const [dragged, setDragged] = useState<number | null>(null);
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
+  const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
 
   const update = (fn: (p: PTProgramme) => PTProgramme) =>
     setProgramme((cur) => fn(structuredClone(cur)));
@@ -70,39 +70,11 @@ export default function PTProgrammeEditView({
     p.phases[pi].days[di] = { ...p.phases[pi].days[di], ...patch }; return p;
   });
 
-  const addExerciseFromLibrary = (pi: number, di: number, ex: PTExercise) => update((p) => {
-    p.phases[pi].days[di].exercises.push(exerciseFromLibrary(ex)); return p;
-  });
-
-  const addBlankExercise = (pi: number, di: number) => update((p) => {
-    p.phases[pi].days[di].exercises.push({
-      id: makeId('ex'), exercise_id: null, name: '', sets: '3', reps: '8-12', rest: '60 sec', notes: '', video_url: null, cues: [],
-    }); return p;
-  });
-
-  const patchExercise = (pi: number, di: number, ei: number, patch: Partial<PTProgrammeExercise>) => update((p) => {
-    p.phases[pi].days[di].exercises[ei] = { ...p.phases[pi].days[di].exercises[ei], ...patch }; return p;
-  });
-
-  const removeExercise = (pi: number, di: number, ei: number) => update((p) => {
-    p.phases[pi].days[di].exercises.splice(ei, 1); return p;
-  });
-
-  const dropExercise = (pi: number, di: number, targetIdx: number) => {
-    if (dragged === null || dragged === targetIdx) return;
-    update((p) => {
-      const exs = p.phases[pi].days[di].exercises;
-      const [item] = exs.splice(dragged, 1);
-      exs.splice(targetIdx, 0, item);
-      return p;
-    });
-    setDragged(null);
-  };
-
   const startDictationForPhase = (phaseIdx: number) => {
     const SR = getSR();
     if (!SR) return;
     const r = new SR();
+    srPhaseRef.current = r;
     r.continuous = true; r.interimResults = true; r.lang = 'en-AU';
     r.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -113,16 +85,21 @@ export default function PTProgrammeEditView({
             setWeekBlocksInput((cur) => {
               const next = (cur[phaseIdx] ? `${cur[phaseIdx]} ${transcript}` : transcript).trim();
               const parsed = parseWeekBlocks(next);
-              if (parsed.length > 0) patchPhase(phaseIdx, { week_blocks: parsed });
+              if (parsed.length > 0) {
+                const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
+                patchPhase(phaseIdx, { week_blocks: parsed, weeks: String(totalWeeks) });
+              }
               return { ...cur, [phaseIdx]: next };
             });
           }
         }
       }
     };
-    r.onend = () => setListeningForPhase(null);
+    r.onend = () => { setListeningForPhase(null); srPhaseRef.current = null; };
     r.start(); setListeningForPhase(phaseIdx);
   };
+
+  const stopPhraseDictation = () => { srPhaseRef.current?.stop(); };
 
   const save = async () => {
     setSaving(true);
@@ -185,6 +162,7 @@ export default function PTProgrammeEditView({
         </div>
       </div>
 
+      {/* Phases section */}
       <div className="mb-8">
         <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Phases</p>
         <div className="space-y-3">
@@ -226,19 +204,30 @@ export default function PTProgrammeEditView({
                           const val = e.target.value;
                           setWeekBlocksInput((cur) => ({ ...cur, [i]: val }));
                           const parsed = parseWeekBlocks(val);
-                          if (parsed.length > 0) patchPhase(i, { week_blocks: parsed });
-                          else if (val === '') patchPhase(i, { week_blocks: undefined });
+                          if (parsed.length > 0) {
+                            const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
+                            patchPhase(i, { week_blocks: parsed, weeks: String(totalWeeks) });
+                          } else if (val === '') {
+                            patchPhase(i, { week_blocks: undefined });
+                          }
                         }}
                         placeholder="2 sets for 2 weeks, 3 sets for 3 weeks…"
                         className="flex-1 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40"
                       />
-                      <button
-                        type="button"
-                        onClick={() => startDictationForPhase(i)}
-                        className={`border px-3 py-2 text-xs transition-colors ${listeningForPhase === i ? 'bg-red-50 border-red-300 text-red-600' : 'border-black/15 hover:border-black/30'}`}
-                      >
-                        {listeningForPhase === i ? '● Listening' : 'Voice'}
-                      </button>
+                      {listeningForPhase === i ? (
+                        <div className="flex gap-1">
+                          <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">● Recording</span>
+                          <button type="button" onClick={stopPhraseDictation}
+                            className="border border-black bg-black text-white px-3 py-2 text-xs hover:bg-white hover:text-black transition-colors">
+                            Done
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => startDictationForPhase(i)}
+                          className="border border-black/15 px-3 py-2 text-xs hover:border-black/30 transition-colors">
+                          Voice
+                        </button>
+                      )}
                     </div>
                     {ph.week_blocks && ph.week_blocks.length > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -252,6 +241,7 @@ export default function PTProgrammeEditView({
                             )}
                           </span>
                         ))}
+                        <span className="text-[0.6rem] text-black/30 ml-1">= {ph.weeks}w total</span>
                       </div>
                     )}
                   </div>
@@ -298,6 +288,7 @@ export default function PTProgrammeEditView({
         </button>
       </div>
 
+      {/* Workouts section */}
       <div>
         <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Workouts</p>
         <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
@@ -361,7 +352,7 @@ export default function PTProgrammeEditView({
                       />
                     </div>
                     <div>
-                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Focus</label>
+                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 focus:border-black/40 mb-1.5">Focus</label>
                       <input
                         value={currentDay.focus}
                         onChange={(e) => patchDay(activePhaseTab, activeDay, { focus: e.target.value })}
@@ -370,91 +361,12 @@ export default function PTProgrammeEditView({
                     </div>
                   </div>
 
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Exercises</p>
-                    <div className="flex items-center gap-2">
-                      <select
-                        className="border border-black/10 px-3 py-1.5 text-xs outline-none"
-                        defaultValue=""
-                        onChange={(e) => {
-                          const ex = exercises.find((x) => x.id === e.target.value);
-                          if (ex) addExerciseFromLibrary(activePhaseTab, activeDay, ex);
-                          e.target.value = '';
-                        }}
-                      >
-                        <option value="">+ From library</option>
-                        {exercises.map((ex) => (
-                          <option key={ex.id} value={ex.id}>{ex.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => addBlankExercise(activePhaseTab, activeDay)}
-                        className="border border-black/10 px-3 py-1.5 text-xs hover:border-black/30"
-                      >
-                        + Custom
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {currentDay.exercises.map((ex, ei) => (
-                      <div
-                        key={ex.id}
-                        draggable
-                        onDragStart={() => setDragged(ei)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => dropExercise(activePhaseTab, activeDay, ei)}
-                        className="border border-black/10 bg-[#fafaf8] p-4 cursor-grab active:cursor-grabbing"
-                      >
-                        <div className="grid grid-cols-[1.5rem_1fr_4rem_5rem_5rem_5rem_1.5rem] gap-2 items-center">
-                          <span className="text-black/20 text-sm select-none">⠿</span>
-                          <input
-                            value={ex.name}
-                            onChange={(e) => patchExercise(activePhaseTab, activeDay, ei, { name: e.target.value })}
-                            placeholder="Exercise name"
-                            className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30"
-                          />
-                          <input
-                            value={ex.sets}
-                            onChange={(e) => patchExercise(activePhaseTab, activeDay, ei, { sets: e.target.value })}
-                            placeholder="Sets"
-                            className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 text-center"
-                          />
-                          <input
-                            value={ex.reps}
-                            onChange={(e) => patchExercise(activePhaseTab, activeDay, ei, { reps: e.target.value })}
-                            placeholder="Reps"
-                            className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 text-center"
-                          />
-                          <input
-                            value={ex.rest}
-                            onChange={(e) => patchExercise(activePhaseTab, activeDay, ei, { rest: e.target.value })}
-                            placeholder="Rest"
-                            className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 text-center"
-                          />
-                          <input
-                            value={ex.notes}
-                            onChange={(e) => patchExercise(activePhaseTab, activeDay, ei, { notes: e.target.value })}
-                            placeholder="Notes"
-                            className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeExercise(activePhaseTab, activeDay, ei)}
-                            className="text-black/20 hover:text-red-500 transition-colors text-sm"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    {currentDay.exercises.length === 0 && (
-                      <p className="text-xs text-black/30 py-4 text-center border border-black/8 border-dashed">
-                        No exercises yet.
-                      </p>
-                    )}
-                  </div>
+                  <PTDayEditor
+                    exercises={currentDay.exercises}
+                    libraryExercises={exercises}
+                    weekBlocks={phase.week_blocks}
+                    onChange={(updated) => patchDay(activePhaseTab, activeDay, { exercises: updated })}
+                  />
                 </div>
               )}
             </div>

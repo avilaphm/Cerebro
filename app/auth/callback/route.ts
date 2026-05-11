@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import type { EmailOtpType } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
   if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({
       token_hash,
-      type: type as 'recovery' | 'signup' | 'magiclink' | 'email_change' | 'email',
+      type: type as EmailOtpType,
     });
     if (!error) {
       const redirectTo = type === 'recovery' ? '/auth/update-password' : next;

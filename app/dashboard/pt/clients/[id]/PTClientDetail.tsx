@@ -132,11 +132,15 @@ export default function PTClientDetail({ client: initial, templates, assignments
 
   const sendInvite = async () => {
     setInviting(true);
-    setStatus('Sending invite…');
-    const { error } = await supabase.functions.invoke('invite-pt-client', {
+    setStatus(client.password_created_at ? 'Sending login link...' : 'Sending setup link...');
+    const { data, error } = await supabase.functions.invoke<{ action?: 'login_link_sent' | 'setup_link_sent' }>('invite-pt-client', {
       body: { client_id: client.id },
     });
-    setStatus(error ? `Error: ${error.message}` : 'Invite sent.');
+    if (error) {
+      setStatus(`Error: ${error.message}`);
+    } else {
+      setStatus(data?.action === 'login_link_sent' ? 'Login link sent.' : 'Setup link sent.');
+    }
     setInviting(false);
   };
 
@@ -408,7 +412,7 @@ export default function PTClientDetail({ client: initial, templates, assignments
           disabled={inviting}
           className="border border-black/20 px-5 py-2 text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-40"
         >
-          {inviting ? 'Sending…' : 'Resend login link'}
+          {inviting ? 'Sending...' : client.password_created_at ? 'Resend login link' : 'Resend setup link'}
         </button>
         {!confirmDelete ? (
           <button

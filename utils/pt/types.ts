@@ -24,6 +24,14 @@ export interface PTClient {
   created_at?: string;
 }
 
+export interface PTProgrammeExerciseBlockOverride {
+  block_index: number;
+  sets?: string;
+  reps?: string;
+  weight_pct?: string;
+  notes?: string;
+}
+
 export interface PTProgrammeExercise {
   id: string;
   exercise_id: string | null;
@@ -35,6 +43,8 @@ export interface PTProgrammeExercise {
   video_url: string | null;
   cues: string[];
   superset_id?: string | null;
+  section_start?: string;
+  week_overrides?: PTProgrammeExerciseBlockOverride[];
 }
 
 export interface PTProgrammeDay {
