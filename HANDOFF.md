@@ -1,31 +1,41 @@
 # Handoff
 
 ## Last updated
-2026-05-11 by codex
+2026-05-11 by claude
 
 ## Last completed task
-PT Dashboard Programming MVP implemented and deployed to Supabase.
+Full PT dashboard MVP built, tested, and all invite/auth/delete bugs resolved. Client onboarding flow works end to end.
 
 ## Last commit
-Latest commit is `Build PT dashboard programming MVP`; run `git log --oneline -1` for the exact hash.
+5a1ddaf - Add sign out to client portal; show back-to-dashboard link for Pedro
 
 ## Current state
-- Pipeline board fully functional: 4 columns (Stage 1, Call Booked, Client, Nurture)
+
+### Leads dashboard (Phase 1 complete, Phase 2 pending)
+- Pipeline board: 4 columns (Stage 1, Call Booked, Client, Nurture)
 - QuadProgress on each card: Q1 fresh lead, Q2 email sent, Q3 proposal viewed, Q4 booking clicked
-- Tag system complete: `utils/leads/tags.ts` with TAG constants, STAGE1_QUARTERS, computeStage(), addTag(), removeTag(), hasTag()
-- Lead detail page + LeadActions + MilestoneStrip wired up
-- call_booked tag auto-moves lead to Stage 2 column via webhook
-- Supabase tables: leads + lead_tags (with source field)
-- Session continuity system installed (this file + Stop hook + git tags)
-- PT Dashboard route added at `/dashboard/pt` under Overview
-- Client portal route added at `/client`, with `/client-login` magic-link entry
-- PT Supabase tables created remotely: pt_clients, pt_exercises, pt_program_templates, pt_program_assignments, pt_workout_logs, pt_set_logs, pt_events
-- PT Edge Functions deployed: generate-pt-programme, invite-pt-client, weekly-pt-summary
-- Pedro/admin access is allowed via profiles role or known Pedro emails; clients redirect away from `/dashboard` to `/client`
+- Tag system: `utils/leads/tags.ts` with TAG constants, computeStage(), addTag(), removeTag(), hasTag()
+- Lead detail page + LeadActions + MilestoneStrip
+- Phase 2+ scope not yet defined - Pedro will re-brief when ready
+
+### PT dashboard (active work)
+- Route: `/dashboard/pt`
+- Client portal: `/client` (with `/client-login` magic link and `/client-setup` password setup)
+- Supabase tables: pt_clients, pt_exercises, pt_program_templates, pt_program_assignments, pt_workout_logs, pt_set_logs, pt_events
+- Edge functions deployed: generate-pt-programme, invite-pt-client, delete-pt-client, weekly-pt-summary
+- Client invite flow: Pedro invites from PT dashboard, client gets email, clicks link, lands on /client-setup (sets password), redirected to /client
+- Delete client: calls delete-pt-client edge function which removes pt_clients row AND auth user (so email can be reused)
+- Session separation: client portal shows "Sign out" for clients, "Back to dashboard" for Pedro
+
+### Known issues / notes
+- Supabase migration history is clean (repaired today)
+- Full repo lint has pre-existing failures outside PT code - do not fix these without Pedro asking
+- Do NOT run `supabase db push` without checking migration list first
 
 ## Next task
-Test the PT Dashboard with Pedro logged in, import the first exercise CSV, create a test client, generate a test programme, assign it, and confirm client logging works with a real invited client account.
+Continue building out the PT dashboard. Pedro will brief specific features at session start.
+Ask Pedro: "What do you want to build on the PT dashboard next?"
 
 ## Open issues / blockers
-- `supabase db push` is blocked because remote migration history contains versions not present locally. The PT schema was applied with `supabase db query --linked -f ...`; do not run migration repair casually.
-- Full repo lint still fails due to older pre-existing issues outside the PT implementation. Targeted PT lint, TypeScript, and build pass.
+- Leads dashboard Phase 2 scope unknown - Pedro will re-brief separately when ready
+- PT dashboard is functional MVP - next features TBD by Pedro
