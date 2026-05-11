@@ -36,9 +36,10 @@ export default function AuthHashRedirect() {
           router.replace('/login?error=session_failed');
           return;
         }
-        // Recovery emails set type=recovery — send to password reset page
         if (type === 'recovery') {
           router.replace('/auth/update-password');
+        } else if (type === 'invite') {
+          router.replace('/client-setup');
         } else {
           router.replace('/dashboard');
         }

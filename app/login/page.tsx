@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import AuthHashRedirect from '@/app/components/AuthHashRedirect';
 
 type Mode = 'login' | 'reset' | 'reset-sent';
 
@@ -46,6 +47,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6">
+      <AuthHashRedirect />
       <div className="w-full max-w-sm">
         <p className="font-display text-sm font-medium tracking-[0.18em] uppercase text-black mb-12">
           Cerebro
