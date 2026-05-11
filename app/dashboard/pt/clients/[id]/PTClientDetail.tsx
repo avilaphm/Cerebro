@@ -88,17 +88,23 @@ export default function PTClientDetail({ client: initial, templates, assignments
       setUploading(false);
       return;
     }
-    const { data: urlData } = supabase.storage.from('pt-client-docs').getPublicUrl(path);
-    const url = urlData.publicUrl;
     const { data: updated } = await supabase
       .from('pt_clients')
-      .update({ document_url: url })
+      .update({ document_url: path })
       .eq('id', client.id)
       .select()
       .single();
     if (updated) setClient(updated as PTClient);
     setStatus('Document saved.');
     setUploading(false);
+  };
+
+  const viewDocument = async () => {
+    if (!client.document_url) return;
+    const { data } = await supabase.storage
+      .from('pt-client-docs')
+      .createSignedUrl(client.document_url, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
   };
 
   const assignProgramme = async (templateId: string) => {
@@ -359,14 +365,12 @@ export default function PTClientDetail({ client: initial, templates, assignments
         />
         {client.document_url ? (
           <div className="flex items-center gap-3">
-            <a
-              href={client.document_url}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              onClick={() => void viewDocument()}
               className="text-sm border border-black/10 px-4 py-2 hover:bg-black/5 transition-colors"
             >
               View document
-            </a>
+            </button>
             <button
               onClick={() => fileRef.current?.click()}
               disabled={uploading}

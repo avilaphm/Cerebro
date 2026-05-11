@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import type { PTProgramTemplate, PTProgramAssignment } from '@/utils/pt/types';
 import { safeProgramme } from '@/utils/pt/programme';
@@ -24,9 +25,18 @@ export default async function PTProgrammesPage() {
 
   return (
     <div className="p-8">
-      <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
-      <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-2">Programmes</h1>
-      <p className="text-sm text-black/40 mb-8">AI programme builder coming in Phase 4. Existing templates and assignments below.</p>
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
+          <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Programmes</h1>
+        </div>
+        <Link
+          href="/dashboard/pt/programmes/new"
+          className="border border-black bg-black text-white px-5 py-2.5 text-sm hover:bg-white hover:text-black transition-colors"
+        >
+          + New programme
+        </Link>
+      </div>
 
       {templates.length > 0 && (
         <section className="mb-10">
@@ -80,7 +90,12 @@ export default async function PTProgrammesPage() {
       )}
 
       {templates.length === 0 && assignments.length === 0 && (
-        <p className="text-sm text-black/30">No programmes yet. The full AI builder is coming in Phase 4.</p>
+        <div className="text-center py-16">
+          <p className="text-sm text-black/30 mb-4">No programmes yet.</p>
+          <Link href="/dashboard/pt/programmes/new" className="border border-black bg-black text-white px-5 py-2.5 text-sm hover:bg-white hover:text-black transition-colors">
+            Create your first programme
+          </Link>
+        </div>
       )}
     </div>
   );
