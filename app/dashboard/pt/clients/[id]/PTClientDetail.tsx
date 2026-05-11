@@ -54,6 +54,9 @@ export default function PTClientDetail({ client: initial, templates, assignments
   const [uploading, setUploading] = useState(false);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordPanelOpen, setPasswordPanelOpen] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState('');
   const [notes, setNotes] = useState(initialNotes);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [status, setStatus] = useState('');
@@ -144,6 +147,33 @@ export default function PTClientDetail({ client: initial, templates, assignments
     setInviting(false);
   };
 
+  const handlePasswordAction = async (action: 'send_reset' | 'set_temporary_password') => {
+    setPasswordBusy(true);
+    setTemporaryPassword('');
+    setStatus(action === 'send_reset' ? 'Sending password reset link...' : 'Creating temporary password...');
+    const { data, error } = await supabase.functions.invoke<{
+      action?: 'password_reset_sent' | 'temporary_password_set';
+      password?: string;
+    }>('manage-pt-client-password', {
+      body: { client_id: client.id, action },
+    });
+
+    if (error) {
+      setStatus(`Error: ${error.message}`);
+    } else if (data?.action === 'temporary_password_set' && data.password) {
+      setTemporaryPassword(data.password);
+      setStatus('Temporary password created.');
+      setClient((current) => ({
+        ...current,
+        status: 'active',
+        password_created_at: current.password_created_at ?? new Date().toISOString(),
+      }));
+    } else {
+      setStatus('Password reset link sent.');
+    }
+    setPasswordBusy(false);
+  };
+
   const deleteClient = async () => {
     const { error } = await supabase.functions.invoke('delete-pt-client', {
       body: { client_id: client.id },
@@ -158,6 +188,17 @@ export default function PTClientDetail({ client: initial, templates, assignments
 
   const activeAssignment = assignments.find((a) => a.status === 'active');
   const lastLogin = events.find((e) => e.event_type === 'client_login');
+  const workoutActivity = events.find((e) => e.event_type === 'workout_logged');
+  const accountIsLive = client.status === 'active' || Boolean(client.password_created_at || lastLogin || workoutActivity);
+  const accountDetail = lastLogin
+    ? `Logged in ${new Date(lastLogin.created_at).toLocaleDateString('en-AU')}`
+    : workoutActivity
+      ? `Workout logged ${new Date(workoutActivity.created_at).toLocaleDateString('en-AU')}`
+      : client.password_created_at
+        ? `Since ${new Date(client.password_created_at).toLocaleDateString('en-AU')}`
+        : client.status === 'active'
+          ? 'Client is active'
+          : null;
 
   return (
     <div className="p-8 max-w-3xl">
@@ -211,15 +252,15 @@ export default function PTClientDetail({ client: initial, templates, assignments
         <div className="border border-black/8 px-4 py-4">
           <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Account</p>
           <p className="text-sm font-medium">
-            {client.password_created_at ? (
-              <span className="text-green-600">Active</span>
+            {accountIsLive ? (
+              <span className="text-green-600">Live</span>
             ) : (
               <span className="text-amber-600">Awaiting setup</span>
             )}
           </p>
-          {client.password_created_at && (
+          {accountDetail && (
             <p className="text-xs text-black/30 mt-0.5">
-              Since {new Date(client.password_created_at).toLocaleDateString('en-AU')}
+              {accountDetail}
             </p>
           )}
         </div>
@@ -414,6 +455,12 @@ export default function PTClientDetail({ client: initial, templates, assignments
         >
           {inviting ? 'Sending...' : client.password_created_at ? 'Resend login link' : 'Resend setup link'}
         </button>
+        <button
+          onClick={() => setPasswordPanelOpen((open) => !open)}
+          className="border border-black/20 px-5 py-2 text-sm hover:bg-black hover:text-white transition-colors"
+        >
+          Password
+        </button>
         {!confirmDelete ? (
           <button
             onClick={() => setConfirmDelete(true)}
@@ -433,6 +480,39 @@ export default function PTClientDetail({ client: initial, templates, assignments
           </div>
         )}
       </div>
+      {passwordPanelOpen && (
+        <div className="mt-4 border border-black/10 bg-[#fbfbf8] p-4">
+          <p className="text-sm font-medium text-black">Client password</p>
+          <p className="mt-1 text-xs leading-relaxed text-black/45">
+            Current passwords are encrypted and cannot be viewed. Send the client a reset link, or create a new temporary password now.
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button
+              onClick={() => void handlePasswordAction('send_reset')}
+              disabled={passwordBusy}
+              className="border border-black/20 px-4 py-2 text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-40"
+            >
+              Send reset link
+            </button>
+            <button
+              onClick={() => void handlePasswordAction('set_temporary_password')}
+              disabled={passwordBusy}
+              className="border border-black bg-black px-4 py-2 text-sm text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+            >
+              Generate temporary password
+            </button>
+          </div>
+          {temporaryPassword && (
+            <div className="mt-4 border border-green-200 bg-green-50 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.15em] text-green-700">New temporary password</p>
+              <p className="mt-2 break-all font-mono text-sm text-black">{temporaryPassword}</p>
+              <p className="mt-2 text-xs text-black/45">
+                Share this with the client once. They can change it from the forgot-password flow after login.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

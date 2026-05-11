@@ -12,6 +12,7 @@ export default function ClientLoginPage() {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [sendingLink, setSendingLink] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
 
   const login = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -54,6 +55,24 @@ export default function ClientLoginPage() {
     setSendingLink(false);
   };
 
+  const sendPasswordReset = async () => {
+    if (!email.trim()) return;
+    setSendingReset(true);
+    setStatus('Sending password reset link...');
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: `${window.location.origin}/auth/callback?next=/client`,
+    });
+
+    if (error) {
+      setStatus(error.message);
+      setSendingReset(false);
+      return;
+    }
+
+    setStatus('Check your email for the password reset link.');
+    setSendingReset(false);
+  };
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f7f7f3] px-5">
       <section className="w-full max-w-md border border-black/10 bg-white p-8">
@@ -88,10 +107,18 @@ export default function ClientLoginPage() {
         <button
           type="button"
           onClick={sendMagicLink}
-          disabled={sendingLink || !email}
+          disabled={sendingLink || sendingReset || !email}
           className="mt-3 w-full border border-black/10 px-4 py-3 text-sm text-black/55 transition-colors hover:border-black/30 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
         >
           {sendingLink ? 'Sending...' : 'Email me a one-click login link'}
+        </button>
+        <button
+          type="button"
+          onClick={sendPasswordReset}
+          disabled={sendingReset || sendingLink || !email}
+          className="mt-3 w-full px-4 py-2 text-sm text-black/40 transition-colors hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {sendingReset ? 'Sending...' : 'Forgot password?'}
         </button>
         {status && <p className="mt-4 text-sm text-black/50">{status}</p>}
       </section>

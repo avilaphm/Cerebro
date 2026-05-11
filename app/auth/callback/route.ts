@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      const redirectTo = type === 'recovery' ? '/auth/update-password' : next;
+      const redirectTo = type === 'recovery' ? `/auth/update-password?next=${encodeURIComponent(next)}` : next;
       return NextResponse.redirect(`${origin}${redirectTo}`);
     }
   }
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
       type: type as EmailOtpType,
     });
     if (!error) {
-      const redirectTo = type === 'recovery' ? '/auth/update-password' : next;
+      const redirectTo = type === 'recovery' ? `/auth/update-password?next=${encodeURIComponent(next)}` : next;
       return NextResponse.redirect(`${origin}${redirectTo}`);
     }
   }

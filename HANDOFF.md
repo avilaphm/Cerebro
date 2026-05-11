@@ -4,12 +4,24 @@
 2026-05-11 by codex
 
 ## Last completed task
-Improved mobile client UX and fixed PT chat realtime/latency.
+Fixed PT client account status and password management.
 
 ## Last commit
-cebf43f - fix PT chat realtime and mobile client UX
+Pending commit - fix PT client account password controls
 
 ## Current state
+
+### PT client account status + password controls (NEW)
+- `/dashboard/pt/clients/[id]` Account card now shows `Live` when the client is active, has created a password, has a login event, or has workout activity.
+- Client setup now sets `pt_clients.status = active` when the client creates their password, preventing active clients from staying in an awaiting setup state.
+- Added a `Password` panel on the PT client detail page.
+- Password panel can send a Supabase password reset email to the client.
+- Password panel can generate a new temporary password through a secured admin Edge Function and display that newly created password once.
+- Current passwords are not viewable because Supabase stores password hashes only.
+- `/client-login` now includes a `Forgot password?` flow.
+- Recovery callbacks preserve `next=/client`, and `/auth/update-password` redirects the client back to the right dashboard after the password is changed.
+- New Edge Function deployed: `manage-pt-client-password` version 1 on project `otcnrkfvgyvwolironoz`.
+- `npm run build` passed.
 
 ### Mobile client UX + chat latency fix (NEW)
 - `/client` workout screens have tighter mobile-first spacing, smaller mobile headings, larger touch targets, safe bottom padding, and phone-friendly set inputs.
@@ -90,6 +102,7 @@ cebf43f - fix PT chat realtime and mobile client UX
 **Edge functions deployed:**
 - `parse-client-document`: gets client PDF from Storage via signed URL, uploads to OpenAI Files API, processes with Responses API + file_id, returns PTProgramme JSON. Falls back to text file content or client goals/notes.
 - `extract-client-note`: GPT-4.1-mini analyzes client messages for notable info, inserts to pt_client_notes if relevant
+- `manage-pt-client-password`: sends reset links or sets a new temporary password for PT clients, admin-only
 - `generate-pt-programme`, `invite-pt-client`, `delete-pt-client`: unchanged
 
 **Storage pattern:** `document_url` stores the storage PATH (e.g. `{client_id}/{timestamp}-filename.pdf`), NOT a public URL. Signed URLs generated on demand via `supabase.storage.from('pt-client-docs').createSignedUrl(path, seconds)`.
@@ -102,7 +115,7 @@ Deleted. No longer exists.
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-Programme progression system complete. Pedro to test and brief next feature.
+PT client password controls complete. Pedro to test on the live dashboard and brief next feature.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`

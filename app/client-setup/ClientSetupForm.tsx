@@ -30,7 +30,7 @@ export default function ClientSetupForm({ name, email }: { name: string; email: 
       if (updatedUser.user?.email) {
         await supabase
           .from('pt_clients')
-          .update({ password_created_at: new Date().toISOString() })
+          .update({ password_created_at: new Date().toISOString(), status: 'active' })
           .eq('email', updatedUser.user.email.toLowerCase());
       }
       router.push('/client');
