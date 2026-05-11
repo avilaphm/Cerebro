@@ -33,7 +33,7 @@ export default async function PTOverviewPage() {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [clientRes, assignmentRes, workoutRes, eventRes] = await Promise.all([
+  const [clientRes, assignmentRes, workoutRes, eventRes, unreadRes] = await Promise.all([
     supabase.from('pt_clients').select('*').order('created_at', { ascending: false }),
     supabase.from('pt_program_assignments').select('client_id, status').eq('status', 'active'),
     supabase
@@ -46,12 +46,18 @@ export default async function PTOverviewPage() {
       .select('*, pt_clients(name)')
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase
+      .from('pt_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('sender', 'client')
+      .is('read_at', null),
   ]);
 
   const clients = (clientRes.data ?? []) as PTClient[];
   const activeAssignments = assignmentRes.data ?? [];
   const recentWorkouts = workoutRes.data ?? [];
   const events = (eventRes.data ?? []) as PTEvent[];
+  const unreadMessages = unreadRes.count ?? 0;
 
   const activeAssignedClientIds = new Set(activeAssignments.map((a) => a.client_id));
   const needsProgramming = clients.filter((c) => !activeAssignedClientIds.has(c.id));
@@ -84,17 +90,25 @@ export default async function PTOverviewPage() {
       <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">Dashboard</p>
       <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-8">Overview</h1>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-10">
         {[
           { label: 'Clients', value: clients.length },
           { label: 'Active programmes', value: activeAssignments.length },
           { label: 'Worked out this week', value: workedOutThisWeek.length },
           { label: 'Needs attention', value: needsAttention.length, alert: needsAttention.length > 0 },
+          { label: 'Unread messages', value: unreadMessages, alert: unreadMessages > 0, href: '/dashboard/pt/messages' },
         ].map((s) => (
-          <div key={s.label} className={`border p-5 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
-            <p className={`text-3xl font-light ${s.alert ? 'text-amber-700' : ''}`}>{s.value}</p>
-            <p className={`text-xs mt-1 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
-          </div>
+          s.href ? (
+            <Link key={s.label} href={s.href} className={`border p-5 transition-colors hover:border-black/30 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
+              <p className={`text-3xl font-light ${s.alert ? 'text-amber-700' : ''}`}>{s.value}</p>
+              <p className={`text-xs mt-1 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
+            </Link>
+          ) : (
+            <div key={s.label} className={`border p-5 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
+              <p className={`text-3xl font-light ${s.alert ? 'text-amber-700' : ''}`}>{s.value}</p>
+              <p className={`text-xs mt-1 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
+            </div>
+          )
         ))}
       </div>
 
