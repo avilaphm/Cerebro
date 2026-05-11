@@ -46,6 +46,7 @@ export default function PTDashboard() {
   const [loading, setLoading] = useState(true);
   const [dragged, setDragged] = useState<{ phase: number; day: number; exercise: number } | null>(null);
   const [listening, setListening] = useState(false);
+  const [confirmDeleteClientId, setConfirmDeleteClientId] = useState<string | null>(null);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? null,
@@ -143,6 +144,23 @@ export default function PTDashboard() {
     setStatus(`Sending invite to ${client.name}...`);
     const inviteMessage = await sendClientInvite(client.id);
     setStatus(inviteMessage ?? `Invite sent to ${client.email}.`);
+    await loadAll();
+  };
+
+  const deleteClient = async (client: PTClient) => {
+    setStatus(`Deleting ${client.name}...`);
+    const { error } = await supabase
+      .from('pt_clients')
+      .delete()
+      .eq('id', client.id);
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    setConfirmDeleteClientId(null);
+    setStatus(`${client.name} deleted.`);
     await loadAll();
   };
 
@@ -592,7 +610,7 @@ export default function PTDashboard() {
                 <Panel title="Clients">
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {clients.map((client) => (
-                      <div key={client.id} className="border border-black/10 bg-white p-4">
+                      <div key={client.id} className="flex min-h-44 flex-col border border-black/10 bg-white p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <p className="font-medium">{client.name}</p>
@@ -601,13 +619,41 @@ export default function PTDashboard() {
                           <span className="text-[10px] uppercase tracking-[0.16em] text-black/35">{client.status}</span>
                         </div>
                         {client.goals && <p className="mt-4 text-sm leading-relaxed text-black/55">{client.goals}</p>}
-                        <button
-                          type="button"
-                          onClick={() => inviteClient(client)}
-                          className="mt-4 border border-black/10 px-3 py-2 text-xs text-black/60 hover:border-black/30 hover:text-black"
-                        >
-                          Send invite
-                        </button>
+                        <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => inviteClient(client)}
+                            className="border border-black/10 px-3 py-2 text-xs text-black/60 hover:border-black/30 hover:text-black"
+                          >
+                            Send invite
+                          </button>
+                          {confirmDeleteClientId === client.id ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteClientId(null)}
+                                className="px-2 py-2 text-xs text-black/40 hover:text-black"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteClient(client)}
+                                className="border border-red-500 bg-red-500 px-3 py-2 text-xs text-white"
+                              >
+                                Yes, delete
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteClientId(client.id)}
+                              className="px-2 py-2 text-xs text-red-500 hover:text-red-700"
+                            >
+                              Delete client
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
