@@ -120,31 +120,41 @@ export default function PTDashboard() {
 
   const createPTClient = async () => {
     if (!clientForm.name.trim() || !clientForm.email.trim()) return;
-    setStatus('Creating client...');
-    const { error } = await supabase.from('pt_clients').insert({
+    setStatus('Creating client and sending invite...');
+    const { data: createdClient, error } = await supabase.from('pt_clients').insert({
       name: clientForm.name.trim(),
       email: clientForm.email.trim().toLowerCase(),
       goals: clientForm.goals.trim() || null,
       notes: clientForm.notes.trim() || null,
-    });
+    }).select('*').single();
 
     if (error) {
       setStatus(error.message);
       return;
     }
 
+    const inviteMessage = await sendClientInvite((createdClient as PTClient).id);
     setClientForm({ name: '', email: '', goals: '', notes: '' });
-    setStatus('Client created.');
+    setStatus(inviteMessage ?? `Client created and invite sent to ${(createdClient as PTClient).email}.`);
     await loadAll();
   };
 
   const inviteClient = async (client: PTClient) => {
     setStatus(`Sending invite to ${client.name}...`);
-    const { error } = await supabase.functions.invoke('invite-pt-client', {
-      body: { client_id: client.id },
-    });
-    setStatus(error ? error.message : `Invite sent to ${client.email}.`);
+    const inviteMessage = await sendClientInvite(client.id);
+    setStatus(inviteMessage ?? `Invite sent to ${client.email}.`);
     await loadAll();
+  };
+
+  const sendClientInvite = async (clientId: string) => {
+    const { error } = await supabase.functions.invoke('invite-pt-client', {
+      body: { client_id: clientId },
+    });
+
+    if (!error) return null;
+
+    const details = await readFunctionError(error);
+    return details || error.message;
   };
 
   const importExercises = async (file: File) => {
@@ -882,6 +892,18 @@ function normalizeHeader(header: string) {
 
 function splitList(value: string) {
   return value.split(/[,;|]/).map((item) => item.trim()).filter(Boolean);
+}
+
+async function readFunctionError(error: unknown) {
+  const maybeContext = error as { context?: Response };
+  if (!maybeContext.context) return null;
+
+  try {
+    const body = await maybeContext.context.json() as { error?: string };
+    return body.error ?? null;
+  } catch {
+    return null;
+  }
 }
 
 interface SpeechRecognitionLike {
