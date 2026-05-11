@@ -44,12 +44,18 @@ export interface PTProgrammeDay {
   exercises: PTProgrammeExercise[];
 }
 
+export interface PTProgrammeWeekBlock {
+  weeks: number;
+  sets: string;
+}
+
 export interface PTProgrammePhase {
   id: string;
   title: string;
   focus: string;
   weeks: string;
   progression: string;
+  week_blocks?: PTProgrammeWeekBlock[];
   days: PTProgrammeDay[];
 }
 
@@ -79,6 +85,8 @@ export interface PTProgramAssignment {
   start_date: string | null;
   status: 'draft' | 'active' | 'completed' | 'paused' | 'archived';
   programme: PTProgramme;
+  current_week: number;
+  current_block_index: number;
   pt_clients?: Pick<PTClient, 'name' | 'email'> | null;
 }
 

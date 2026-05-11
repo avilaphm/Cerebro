@@ -288,13 +288,23 @@ export default function PTClientDetail({ client: initial, templates, assignments
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programme</h2>
         {activeAssignment ? (
           <div className="border border-black/10 px-5 py-4">
-            <p className="text-sm font-medium">{activeAssignment.name}</p>
-            <p className="text-xs text-black/40 mt-0.5">
-              {activeAssignment.phase_count} phase{activeAssignment.phase_count !== 1 ? 's' : ''} · {activeAssignment.duration_weeks} weeks
-            </p>
-            <span className="inline-block mt-2 text-xs border border-green-300 bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
-              Active
-            </span>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">{activeAssignment.name}</p>
+                <p className="text-xs text-black/40 mt-0.5">
+                  {activeAssignment.phase_count} phase{activeAssignment.phase_count !== 1 ? 's' : ''} · {activeAssignment.duration_weeks} weeks
+                </p>
+                <span className="inline-block mt-2 text-xs border border-green-300 bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
+                  Active
+                </span>
+              </div>
+              <Link
+                href={`/dashboard/pt/programmes/${activeAssignment.id}/edit`}
+                className="shrink-0 text-xs border border-black/20 px-3 py-1.5 hover:bg-black hover:text-white transition-colors"
+              >
+                Edit programme
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="border border-black/8 px-5 py-4">
@@ -398,7 +408,7 @@ export default function PTClientDetail({ client: initial, templates, assignments
           disabled={inviting}
           className="border border-black/20 px-5 py-2 text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-40"
         >
-          {inviting ? 'Sending…' : 'Send invite'}
+          {inviting ? 'Sending…' : 'Resend login link'}
         </button>
         {!confirmDelete ? (
           <button

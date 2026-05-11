@@ -1,4 +1,4 @@
-import type { PTExercise, PTProgramme, PTProgrammeExercise } from './types';
+import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammeWeekBlock } from './types';
 
 export const emptyProgramme: PTProgramme = { phases: [] };
 
@@ -21,6 +21,7 @@ export function safeProgramme(value: unknown): PTProgramme {
         focus: text(p.focus, ''),
         weeks: text(p.weeks, ''),
         progression: text(p.progression, ''),
+        week_blocks: safeWeekBlocks(p.week_blocks),
         days: days.map((day, dayIndex) => {
           const d = day as Record<string, unknown>;
           const exercises = Array.isArray(d.exercises) ? d.exercises : [];
@@ -79,4 +80,61 @@ function safeExercise(value: unknown, index: number): PTProgrammeExercise {
 
 function text(value: unknown, fallback: string) {
   return typeof value === 'string' ? value : fallback;
+}
+
+function safeWeekBlocks(value: unknown): PTProgrammeWeekBlock[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const blocks = value
+    .map((b) => {
+      const block = b as Record<string, unknown>;
+      const weeks = typeof block.weeks === 'number' ? block.weeks : parseInt(String(block.weeks), 10);
+      const sets = text(block.sets, '');
+      return { weeks, sets };
+    })
+    .filter((b) => Number.isFinite(b.weeks) && b.weeks > 0 && b.sets);
+  return blocks.length > 0 ? blocks : undefined;
+}
+
+export function parseWeekBlocks(input: string): PTProgrammeWeekBlock[] {
+  const blocks: PTProgrammeWeekBlock[] = [];
+  // "N sets for M weeks" or "N sets M weeks"
+  const p1 = /(\d+)\s*sets?(?:\s+(?:for|in|then|during))?\s+(\d+)\s*weeks?/gi;
+  let m = p1.exec(input);
+  while (m !== null) {
+    blocks.push({ sets: m[1], weeks: parseInt(m[2], 10) });
+    m = p1.exec(input);
+  }
+  if (blocks.length > 0) return blocks;
+  // "M weeks N sets" or "M weeks, N sets"
+  const p2 = /(\d+)\s*weeks?[,\s]+(\d+)\s*sets?/gi;
+  m = p2.exec(input);
+  while (m !== null) {
+    blocks.push({ sets: m[2], weeks: parseInt(m[1], 10) });
+    m = p2.exec(input);
+  }
+  return blocks;
+}
+
+export function formatWeekBlocks(blocks: PTProgrammeWeekBlock[] | undefined): string {
+  if (!blocks || blocks.length === 0) return '';
+  return blocks.map((b) => `${b.sets} sets for ${b.weeks} weeks`).join(', ');
+}
+
+export function getBlockSets(
+  exerciseSets: string,
+  weekBlocks: PTProgrammeWeekBlock[] | undefined,
+  blockIndex: number,
+): string {
+  if (!weekBlocks || weekBlocks.length === 0) return exerciseSets;
+  const block = weekBlocks[Math.min(blockIndex, weekBlocks.length - 1)];
+  return block?.sets ?? exerciseSets;
+}
+
+export function requiredWorkoutsForBlock(
+  weekBlocks: PTProgrammeWeekBlock[] | undefined,
+  blockIndex: number,
+  daysInPhase: number,
+): number {
+  if (!weekBlocks || !weekBlocks[blockIndex]) return 0;
+  return weekBlocks[blockIndex].weeks * daysInPhase;
 }

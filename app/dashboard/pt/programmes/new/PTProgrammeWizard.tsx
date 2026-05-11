@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, safeProgramme, exerciseFromLibrary, countProgrammeWeeks } from '@/utils/pt/programme';
+import { makeId, safeProgramme, exerciseFromLibrary, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks } from '@/utils/pt/programme';
 import type {
   PTClient, PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise,
 } from '@/utils/pt/types';
@@ -40,6 +40,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [activeDay, setActiveDay] = useState<number | null>(null);
   const [dragged, setDragged] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
+  const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
 
   const selectedClient = clients.find((c) => c.id === clientId) ?? null;
 
@@ -104,6 +106,31 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     };
     r.onend = () => setListening(false);
     r.start(); setListening(true);
+  };
+
+  const startDictationForPhase = (phaseIdx: number) => {
+    const SR = getSR();
+    if (!SR) return;
+    const r = new SR();
+    r.continuous = true; r.interimResults = true; r.lang = 'en-AU';
+    r.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        if (result?.isFinal) {
+          const transcript = result[0]?.transcript ?? '';
+          if (transcript) {
+            setWeekBlocksInput((cur) => {
+              const next = (cur[phaseIdx] ? `${cur[phaseIdx]} ${transcript}` : transcript).trim();
+              const parsed = parseWeekBlocks(next);
+              if (parsed.length > 0) patchPhase(phaseIdx, { week_blocks: parsed });
+              return { ...cur, [phaseIdx]: next };
+            });
+          }
+        }
+      }
+    };
+    r.onend = () => setListeningForPhase(null);
+    r.start(); setListeningForPhase(phaseIdx);
   };
 
   const addPhase = () => update((p) => {
@@ -316,16 +343,58 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                         className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
                     </div>
                     <div>
-                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Progression</label>
+                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Progression notes</label>
                       <input value={ph.progression} onChange={(e) => patchPhase(i, { progression: e.target.value })}
                         className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
+                    </div>
+                    <div>
+                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">
+                        Progressive overload — sets per block
+                      </label>
+                      <p className="text-[0.6rem] text-black/30 mb-2">
+                        e.g. "2 sets for 2 weeks, 3 sets for 3 weeks, 4 sets for 4 weeks"
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          value={weekBlocksInput[i] ?? formatWeekBlocks(ph.week_blocks)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setWeekBlocksInput((cur) => ({ ...cur, [i]: val }));
+                            const parsed = parseWeekBlocks(val);
+                            if (parsed.length > 0) patchPhase(i, { week_blocks: parsed });
+                            else if (val === '') patchPhase(i, { week_blocks: undefined });
+                          }}
+                          placeholder="2 sets for 2 weeks, 3 sets for 3 weeks…"
+                          className="flex-1 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => startDictationForPhase(i)}
+                          className={`border px-3 py-2 text-xs transition-colors ${listeningForPhase === i ? 'bg-red-50 border-red-300 text-red-600' : 'border-black/15 hover:border-black/30'}`}
+                        >
+                          {listeningForPhase === i ? '● Listening' : 'Voice'}
+                        </button>
+                      </div>
+                      {ph.week_blocks && ph.week_blocks.length > 0 && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {ph.week_blocks.map((block, bi) => (
+                            <span key={bi} className="flex items-center gap-1">
+                              <span className="border border-black/15 bg-black/3 px-2.5 py-1 text-[0.6rem] uppercase tracking-[0.1em]">
+                                {block.sets} sets · {block.weeks}w
+                              </span>
+                              {bi < (ph.week_blocks?.length ?? 0) - 1 && (
+                                <span className="text-black/25 text-xs">→</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <button onClick={() => setEditingPhase(null)} className="text-xs border border-black/15 px-4 py-1.5 hover:bg-black/5">Done</button>
                   </div>
                 ) : (
-                  <div className="border border-black/10 px-5 py-4 flex items-center justify-between group cursor-pointer hover:border-black/25 transition-colors"
-                    onClick={() => setEditingPhase(i)}>
-                    <div>
+                  <div className="border border-black/10 px-5 py-4 flex items-center justify-between hover:border-black/25 transition-colors">
+                    <button type="button" className="flex-1 text-left" onClick={() => setEditingPhase(i)}>
                       <div className="flex items-center gap-2">
                         <span className="text-[0.55rem] text-black/30">☰</span>
                         <p className="font-medium text-sm">{ph.title || `Phase ${i + 1}`}</p>
@@ -333,10 +402,24 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                       <p className="text-xs text-black/40 mt-0.5">
                         {ph.weeks ? `${ph.weeks} weeks` : 'Duration not set'}{ph.focus ? ` · ${ph.focus}` : ''}
                       </p>
-                    </div>
-                    <div className="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setEditingPhase(i); }}
-                        className="text-xs text-black/40 hover:text-black">Edit</button>
+                      {ph.week_blocks && ph.week_blocks.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                          {ph.week_blocks.map((block, bi) => (
+                            <span key={bi} className="flex items-center gap-1">
+                              <span className="text-[0.55rem] text-black/40 border border-black/10 px-1.5 py-0.5">
+                                {block.sets} sets · {block.weeks}w
+                              </span>
+                              {bi < (ph.week_blocks?.length ?? 0) - 1 && (
+                                <span className="text-black/20 text-[0.6rem]">→</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                    <div className="flex items-center gap-3 ml-4">
+                      <button type="button" onClick={() => setEditingPhase(i)}
+                        className="text-xs text-black/40 hover:text-black border border-black/15 px-3 py-1 hover:bg-black/5 transition-colors">Edit</button>
                       <button type="button" onClick={(e) => { e.stopPropagation(); removePhase(i); }}
                         className="text-xs text-red-400 hover:text-red-600">Remove</button>
                     </div>
