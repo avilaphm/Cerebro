@@ -1,0 +1,5 @@
+{
+  "smtp_sender_name": "Pedro Avila Coaching",
+  "mailer_subjects_invite": "Your Pedro Avila Coaching programme",
+  "mailer_templates_invite_content": "<h2>Pedro Avila Coaching</h2>\n\n<p>Hello, Pedro here.</p>\n\n<p>I am inviting you to create a password so you can access your programme and coaching inside Pedro Avila Coaching.</p>\n\n<p>Once you are in, you will have access to everything you need for your training.</p>\n\n<p><a href=\"{{ .ConfirmationURL }}\">Create your password</a></p>\n\n<p>See you inside,<br>Pedro</p>"
+}
