@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import AuthHashRedirect from '@/app/components/AuthHashRedirect';
 
 export default function ClientLoginPage() {
   const supabase = createClient();
@@ -40,7 +41,7 @@ export default function ClientLoginPage() {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=/client`,
+        emailRedirectTo: clientCallbackUrl(),
         shouldCreateUser: false,
       },
     });
@@ -60,7 +61,7 @@ export default function ClientLoginPage() {
     setSendingReset(true);
     setStatus('Sending password reset link...');
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: `${window.location.origin}/auth/callback?next=/client`,
+      redirectTo: clientCallbackUrl(),
     });
 
     if (error) {
@@ -73,8 +74,15 @@ export default function ClientLoginPage() {
     setSendingReset(false);
   };
 
+  const clientCallbackUrl = () => {
+    const url = new URL('/auth/callback', window.location.origin);
+    url.searchParams.set('next', '/client');
+    return url.toString();
+  };
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f7f7f3] px-5">
+      <AuthHashRedirect />
       <section className="w-full max-w-md border border-black/10 bg-white p-8">
         <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Cerebro PT</p>
         <h1 className="mt-3 font-display text-3xl font-light tracking-[-0.02em]">Client login</h1>

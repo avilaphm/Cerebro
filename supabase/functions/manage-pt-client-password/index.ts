@@ -62,7 +62,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'send_reset') {
       const { error } = await authClient.auth.resetPasswordForEmail(ptClient.email, {
-        redirectTo: `${origin}/auth/callback?next=/client`,
+        redirectTo: callbackUrl(origin, '/client'),
       });
       if (error) return json({ error: error.message }, 400);
 
@@ -117,4 +117,10 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+function callbackUrl(origin: string, nextPath: '/client') {
+  const url = new URL('/auth/callback', origin);
+  url.searchParams.set('next', nextPath);
+  return url.toString();
 }

@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const token_hash = searchParams.get('token_hash');
   const type = searchParams.get('type');
-  const next = searchParams.get('next') ?? '/dashboard';
+  const next = normalizeNext(searchParams.get('next'), origin);
 
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -32,7 +32,9 @@ export async function GET(request: NextRequest) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      const redirectTo = type === 'recovery' ? `/auth/update-password?next=${encodeURIComponent(next)}` : next;
+      const redirectTo = type === 'recovery'
+        ? `/auth/update-password?next=${encodeURIComponent(next)}`
+        : await resolvePostAuthRedirect(supabase, next);
       return NextResponse.redirect(`${origin}${redirectTo}`);
     }
   }
@@ -44,10 +46,48 @@ export async function GET(request: NextRequest) {
       type: type as EmailOtpType,
     });
     if (!error) {
-      const redirectTo = type === 'recovery' ? `/auth/update-password?next=${encodeURIComponent(next)}` : next;
+      const redirectTo = type === 'recovery'
+        ? `/auth/update-password?next=${encodeURIComponent(next)}`
+        : await resolvePostAuthRedirect(supabase, next);
       return NextResponse.redirect(`${origin}${redirectTo}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=link_expired`);
+  const loginPath = next.startsWith('/client') ? '/client-login' : '/login';
+  return NextResponse.redirect(`${origin}${loginPath}?error=link_expired`);
+}
+
+function normalizeNext(rawNext: string | null, origin: string) {
+  if (!rawNext) return '/dashboard';
+  if (rawNext.startsWith('/')) return rawNext;
+
+  try {
+    const nextUrl = new URL(rawNext);
+    if (nextUrl.origin !== origin) return '/dashboard';
+    if (nextUrl.pathname === '/auth/callback') {
+      return normalizeNext(nextUrl.searchParams.get('next'), origin);
+    }
+    return `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`;
+  } catch {
+    return '/dashboard';
+  }
+}
+
+async function resolvePostAuthRedirect(
+  supabase: ReturnType<typeof createServerClient>,
+  next: string,
+) {
+  if (next !== '/dashboard') return next;
+
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return next;
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', userId)
+    .maybeSingle();
+
+  return profile?.role === 'client' ? '/client' : next;
 }

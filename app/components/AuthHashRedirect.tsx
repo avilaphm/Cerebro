@@ -36,12 +36,24 @@ export default function AuthHashRedirect() {
           router.replace('/login?error=session_failed');
           return;
         }
+        const next = new URLSearchParams(window.location.search).get('next');
         if (type === 'recovery') {
-          router.replace('/auth/update-password');
+          router.replace(`/auth/update-password?next=${encodeURIComponent(next ?? '/dashboard')}`);
         } else if (type === 'invite') {
           router.replace('/client-setup');
         } else {
-          router.replace('/dashboard');
+          void supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', data.session.user.id)
+            .maybeSingle()
+            .then(({ data: profile }) => {
+              if (next) {
+                router.replace(next);
+                return;
+              }
+              router.replace(profile?.role === 'client' ? '/client' : '/dashboard');
+            });
         }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps

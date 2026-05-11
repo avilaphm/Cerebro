@@ -55,7 +55,7 @@ Deno.serve(async (req: Request) => {
         email: ptClient.email,
         options: {
           shouldCreateUser: false,
-          emailRedirectTo: `${origin}/auth/callback?next=${nextPath}`,
+          emailRedirectTo: callbackUrl(origin, nextPath),
         },
       });
       return error;
@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, action: 'login_link_sent' });
     }
 
-    const redirectTo = `${origin}/auth/callback?next=/client-setup`;
+    const redirectTo = callbackUrl(origin, '/client-setup');
     const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(ptClient.email, {
       redirectTo,
       data: { full_name: ptClient.name, role: 'client' },
@@ -123,4 +123,10 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+function callbackUrl(origin: string, nextPath: '/client' | '/client-setup') {
+  const url = new URL('/auth/callback', origin);
+  url.searchParams.set('next', nextPath);
+  return url.toString();
 }

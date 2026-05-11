@@ -4,14 +4,18 @@
 2026-05-11 by codex
 
 ## Last completed task
-Fixed PT client account status and password management.
+Fixed PT client login link redirect regression.
 
 ## Last commit
-Pending commit - fix PT client account password controls
+Pending commit - fix client auth link redirects
 
 ## Current state
 
 ### PT client account status + password controls (NEW)
+- Follow-up redirect fix: client auth callbacks now normalize nested `next` URLs and route client users to `/client` instead of falling back to the generic Cerebro dashboard login.
+- Legacy implicit auth hash handling now detects client profiles and routes them to `/client`; `/client-login` also mounts that handler.
+- Client login, invite, and password reset links now build callback URLs with `URLSearchParams` so `next=/client` is preserved reliably.
+- Redeployed `invite-pt-client` and `manage-pt-client-password` after callback URL fixes.
 - `/dashboard/pt/clients/[id]` Account card now shows `Live` when the client is active, has created a password, has a login event, or has workout activity.
 - Client setup now sets `pt_clients.status = active` when the client creates their password, preventing active clients from staying in an awaiting setup state.
 - Added a `Password` panel on the PT client detail page.
