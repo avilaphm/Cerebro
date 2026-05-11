@@ -1,4 +1,4 @@
-export const PEDRO_ADMIN_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com'];
+export const PEDRO_ADMIN_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au'];
 
 export function isPedroAdminEmail(email: string | null | undefined) {
   if (!email) return false;
