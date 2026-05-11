@@ -4,10 +4,10 @@
 2026-05-11 by claude
 
 ## Last completed task
-PT Dashboard Revamp Phases 1-4 complete. Full sub-route architecture, client cards, overview dashboard, WhatsApp-style messaging with AI note extraction, and AI programme wizard.
+PT Dashboard Revamp Phases 1-5 complete. Full app: navigation, clients, overview, messaging, programme wizard, groups, settings (exercise library), emails placeholder.
 
 ## Last commit
-pt-dashboard-v4 (tag) -- 361080b
+pt-dashboard-v5 (tag) -- 716a0e7
 
 ## Current state
 
@@ -21,9 +21,9 @@ pt-dashboard-v4 (tag) -- 361080b
 - `/dashboard/pt/messages` WhatsApp-style chat: Supabase realtime, context chips (phase/day), marks read on open
 - `/dashboard/pt/programmes` list of templates + assignments + "New programme" button
 - `/dashboard/pt/programmes/new` 4-step AI wizard: select client + generate from PDF / brain dump + voice, edit phase cards, build workouts per day (drag/drop), save + assign to client
-- `/dashboard/pt/groups` placeholder (Phase 5)
-- `/dashboard/pt/emails` placeholder (Phase 5)
-- `/dashboard/pt/settings` placeholder (Phase 5)
+- `/dashboard/pt/groups` create/delete groups with colour chips, manage members per group
+- `/dashboard/pt/emails` placeholder (sequences coming later)
+- `/dashboard/pt/settings` exercise library CSV import + searchable exercise grid
 
 **Client portal:**
 - Floating MessageBubble (bottom-right) with real-time chat, context chip (current phase/day), unread badge
@@ -52,21 +52,11 @@ Still exists at `app/dashboard/pt/PTDashboard.tsx`. No longer rendered. Safe to 
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-Phase 5: Groups + Emails + Settings
+All 5 phases of the PT Dashboard Revamp are complete. Possible next steps:
 
-**Groups (`/dashboard/pt/groups`):**
-- Create groups (e.g. Online Clients, In-person, Weight loss)
-- Color chip + member count
-- Click group = filtered client list
-- Add/remove clients from groups
-- Group tags visible on client cards
-
-**Settings (`/dashboard/pt/settings`):**
-- Move exercise library (CSV import) here from old PTDashboard
-- PT profile settings placeholder
-
-**Emails (`/dashboard/pt/emails`):**
-- Placeholder for now: "Email sequences coming soon"
+- Delete `app/dashboard/pt/PTDashboard.tsx` (old file, no longer rendered)
+- Move the plan file to `plans/archived/`
+- Start a new feature (Pedro to brief)
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`
