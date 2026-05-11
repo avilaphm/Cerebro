@@ -4,12 +4,21 @@
 2026-05-11 by codex
 
 ## Last completed task
-Rebuilt client workout flow into phase cards, workout preview, and section-based logging.
+Added YouTube demo videos, verbal cues, and previous-weight prefill to client workout logging.
 
 ## Last commit
-a3a89f9 - feat: rebuild client workout flow
+PENDING - client exercise video and history UI
 
 ## Current state
+
+### Client exercise demo + history UI (NEW)
+- Client workout logging cards now show a small YouTube video screen under the exercise name when `video_url` exists.
+- Clicking the video screen opens a full-screen video overlay.
+- Full-screen video unmounts on close and listens for YouTube end events to close when playback finishes.
+- Each exercise can show a "Verbal cues" toggle with up to 5 cues from the exercise library/spreadsheet data.
+- Previous logged set weights are shown in a "Last time" strip.
+- Weight inputs are prefilled from the client's latest logged weights for that exercise, set-by-set where available.
+- Added sets inherit the matching previous set weight, or the last available previous weight.
 
 ### Client workout flow (NEW)
 - `/client` now shows one active phase at a time instead of every phase/exercise.

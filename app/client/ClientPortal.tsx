@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ChevronLeft, ChevronRight, Minus, Play, Plus } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Minus, Play, Plus, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
 import { isPedroAdminEmail } from '@/utils/pt/access';
@@ -53,6 +53,11 @@ interface WorkoutSectionView {
   id: string;
   title: string;
   exercises: WorkoutExerciseView[];
+}
+
+interface VideoState {
+  id: string;
+  title: string;
 }
 
 function calcPhaseProgress(
@@ -106,6 +111,37 @@ function toNullableNumber(value: string | undefined) {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
+  return exercise.exercise_id ?? exercise.name.toLowerCase();
+}
+
+function getYouTubeId(url: string | null) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtu.be')) return parsed.pathname.split('/').filter(Boolean)[0] ?? null;
+    if (parsed.pathname.startsWith('/shorts/')) return parsed.pathname.split('/')[2] ?? null;
+    if (parsed.pathname.startsWith('/embed/')) return parsed.pathname.split('/')[2] ?? null;
+    return parsed.searchParams.get('v');
+  } catch {
+    const match = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{6,})/);
+    return match?.[1] ?? null;
+  }
+}
+
+function getYouTubeEmbedUrl(videoId: string, autoplay = false) {
+  const params = new URLSearchParams({
+    rel: '0',
+    modestbranding: '1',
+    playsinline: '1',
+    enablejsapi: '1',
+    playerapiid: videoId,
+  });
+  if (typeof window !== 'undefined') params.set('origin', window.location.origin);
+  if (autoplay) params.set('autoplay', '1');
+  return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 }
 
 function draftKey(phaseIndex: number, dayIndex: number, exerciseId: string, setIndex: number) {
@@ -173,7 +209,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [openCues, setOpenCues] = useState<Record<string, boolean>>({});
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
+  const [activeVideo, setActiveVideo] = useState<VideoState | null>(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingWorkout, setSavingWorkout] = useState(false);
@@ -233,6 +271,23 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     return () => window.clearTimeout(id);
   }, [loadPortal]);
 
+  useEffect(() => {
+    if (!activeVideo) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (typeof event.data !== 'string') return;
+      try {
+        const payload = JSON.parse(event.data) as { event?: string; info?: number };
+        if (payload.event === 'onStateChange' && payload.info === 0) setActiveVideo(null);
+      } catch {
+        return;
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [activeVideo]);
+
   const assignment = assignments[0] ?? null;
   const phaseProgress = useMemo(() => {
     if (!assignment) return [];
@@ -260,12 +315,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     ? phaseProgress[selectedWorkout.phaseIndex] ?? null
     : null;
 
-  const lastWeightByExercise = useMemo(() => {
-    const map = new Map<string, PTSetLog>();
+  const lastSetsByExercise = useMemo(() => {
+    const map = new Map<string, PTSetLog[]>();
+    const seen = new Set<string>();
     setLogs.forEach((log) => {
       const key = log.exercise_id ?? log.exercise_name.toLowerCase();
-      if (!map.has(key) && log.weight !== null) map.set(key, log);
+      const setKey = `${key}-${log.set_number}`;
+      if (seen.has(setKey)) return;
+      seen.add(setKey);
+      const logs = map.get(key) ?? [];
+      logs.push(log);
+      map.set(key, logs);
     });
+    map.forEach((logs) => logs.sort((a, b) => a.set_number - b.set_number));
     return map;
   }, [setLogs]);
 
@@ -285,6 +347,23 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       ...current,
       [key]: Math.max(1, nextCount),
     }));
+  };
+
+  const addExerciseSet = (exercise: PTProgrammeExercise, currentCount: number) => {
+    if (!selectedWorkout) return;
+    const nextIndex = currentCount;
+    const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, nextIndex);
+    const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
+    const previous = history[nextIndex] ?? history[history.length - 1];
+
+    setSetDrafts((current) => ({
+      ...current,
+      [key]: current[key] ?? {
+        reps: '',
+        weight: previous?.weight !== null && previous?.weight !== undefined ? String(previous.weight) : '',
+      },
+    }));
+    setExerciseCount(exercise.id, currentCount + 1);
   };
 
   const openWorkout = (phaseIndex: number, dayIndex: number) => {
@@ -308,6 +387,25 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     });
     setSetCounts((current) => ({ ...initialCounts, ...current }));
     setOpenSections(initialSections);
+    setSetDrafts((current) => {
+      const next = { ...current };
+      getWorkoutSections(day, phase, blockIndex).forEach((section) => {
+        section.exercises.forEach(({ exercise, values }) => {
+          const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
+          const count = parseSets(values.sets);
+          Array.from({ length: count }).forEach((_, setIndex) => {
+            const key = draftKey(phaseIndex, dayIndex, exercise.id, setIndex);
+            if (next[key]) return;
+            const previous = history[setIndex] ?? history[history.length - 1];
+            next[key] = {
+              reps: '',
+              weight: previous?.weight !== null && previous?.weight !== undefined ? String(previous.weight) : '',
+            };
+          });
+        });
+      });
+      return next;
+    });
   };
 
   const closeWorkout = () => {
@@ -600,8 +698,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     <div className="space-y-4">
                       {section.exercises.map(({ exercise, values }) => {
                         const count = setCounts[exercise.id] ?? parseSets(values.sets);
-                        const historyKey = exercise.exercise_id ?? exercise.name.toLowerCase();
-                        const last = lastWeightByExercise.get(historyKey);
+                        const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
+                        const last = history[0] ?? null;
+                        const videoId = getYouTubeId(exercise.video_url);
+                        const cueKey = `${section.id}-${exercise.id}`;
+                        const cuesAreOpen = openCues[cueKey] ?? false;
 
                         return (
                           <div key={exercise.id} className="border border-black/8 bg-[#fbfbf8] p-4">
@@ -617,12 +718,75 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                                   </p>
                                 )}
                               </div>
-                              {exercise.video_url && (
-                                <a href={exercise.video_url} target="_blank" className="text-xs text-black/45 underline hover:text-black">
-                                  Demo
-                                </a>
-                              )}
                             </div>
+
+                            {(videoId || exercise.cues.length > 0) && (
+                              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,16rem)_1fr] sm:items-start">
+                                {videoId ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveVideo({ id: videoId, title: exercise.name })}
+                                    className="group relative aspect-video overflow-hidden border border-black/10 bg-black text-left"
+                                  >
+                                    <iframe
+                                      title={`${exercise.name} demo`}
+                                      src={getYouTubeEmbedUrl(videoId)}
+                                      className="h-full w-full pointer-events-none opacity-90 transition-opacity group-hover:opacity-100"
+                                      allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                    />
+                                    <span className="absolute inset-0 flex items-center justify-center bg-black/20 text-white transition-colors group-hover:bg-black/10">
+                                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-black shadow-sm">
+                                        <Play className="h-4 w-4 fill-black" />
+                                      </span>
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <div className="flex aspect-video items-center justify-center border border-black/10 bg-white text-xs text-black/30">
+                                    No video added
+                                  </div>
+                                )}
+
+                                <div>
+                                  {exercise.cues.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenCues((current) => ({ ...current, [cueKey]: !cuesAreOpen }))}
+                                      className={`flex w-full items-center justify-between border px-3 py-2 text-left text-xs transition-colors ${
+                                        cuesAreOpen
+                                          ? 'border-black bg-white text-black'
+                                          : 'border-black/10 bg-white/60 text-black/45 hover:border-black/25 hover:text-black'
+                                      }`}
+                                    >
+                                      <span>Verbal cues</span>
+                                      <ChevronRight className={`h-4 w-4 transition-transform ${cuesAreOpen ? 'rotate-90' : ''}`} />
+                                    </button>
+                                  )}
+
+                                  {cuesAreOpen && (
+                                    <ul className="mt-2 list-disc space-y-1 border border-black/8 bg-white px-6 py-3">
+                                      {exercise.cues.slice(0, 5).map((cue) => (
+                                        <li key={cue} className="text-xs leading-relaxed text-black/60">
+                                          {cue}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {history.length > 0 && (
+                              <div className="mt-4 border border-black/8 bg-white px-3 py-2">
+                                <p className="text-[0.58rem] uppercase tracking-[0.14em] text-black/30">Last time</p>
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {history.slice(0, Math.max(count, history.length)).map((log) => (
+                                    <span key={`${log.id}-${log.set_number}`} className="border border-black/8 bg-[#fbfbf8] px-2 py-1 text-xs text-black/50">
+                                      Set {log.set_number}: {log.weight ?? '-'}kg x {log.reps ?? '-'}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
 
                             <div className="mt-4 space-y-2">
                               {Array.from({ length: count }).map((_, setIndex) => {
@@ -662,7 +826,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setExerciseCount(exercise.id, count + 1)}
+                                onClick={() => addExerciseSet(exercise, count)}
                                 className="inline-flex h-8 w-8 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black"
                                 aria-label="Add set"
                               >
@@ -797,6 +961,34 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         )}
       </div>
+
+      {activeVideo && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/95 p-4">
+          <div className="w-full max-w-5xl">
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <p className="truncate text-sm font-medium text-white">{activeVideo.title}</p>
+              <button
+                type="button"
+                onClick={() => setActiveVideo(null)}
+                className="inline-flex h-10 w-10 items-center justify-center border border-white/20 text-white transition-colors hover:bg-white hover:text-black"
+                aria-label="Close video"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="aspect-video w-full overflow-hidden bg-black">
+              <iframe
+                key={activeVideo.id}
+                title={`${activeVideo.title} full video`}
+                src={getYouTubeEmbedUrl(activeVideo.id, true)}
+                className="h-full w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {client && !isPedro && (
         <MessageBubble
