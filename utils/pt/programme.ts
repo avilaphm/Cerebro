@@ -99,8 +99,8 @@ function safeWeekBlocks(value: unknown): PTProgrammeWeekBlock[] | undefined {
 
 export function parseWeekBlocks(input: string): PTProgrammeWeekBlock[] {
   const blocks: PTProgrammeWeekBlock[] = [];
-  // "N sets for M weeks" or "N sets M weeks"
-  const p1 = /(\d+)\s*sets?(?:\s+(?:for|in|then|during))?\s+(\d+)\s*weeks?/gi;
+  // "N sets for [the] [first|next|last] M weeks" — handles natural language ordinals
+  const p1 = /(\d+)\s*sets?[^0-9]*?(\d+)\s*weeks?/gi;
   let m = p1.exec(input);
   while (m !== null) {
     blocks.push({ sets: m[1], weeks: parseInt(m[2], 10) });

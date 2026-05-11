@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { makeId, exerciseFromLibrary } from '@/utils/pt/programme';
+import { makeId } from '@/utils/pt/programme';
 import type {
   PTExercise,
   PTProgrammeExercise,
@@ -20,20 +20,23 @@ function calcWeekRanges(blocks: PTProgrammeWeekBlock[]) {
   const ranges: Array<{ label: string; block: PTProgrammeWeekBlock; blockIndex: number }> = [];
   let week = 1;
   blocks.forEach((b, i) => {
-    ranges.push({
-      label: `Week ${week}–${week + b.weeks - 1} · ${b.sets} sets`,
-      block: b,
-      blockIndex: i,
-    });
+    ranges.push({ label: `Week ${week}–${week + b.weeks - 1} · ${b.sets} sets`, block: b, blockIndex: i });
     week += b.weeks;
   });
   return ranges;
 }
 
+const SECTION_NAMES = ['Warm Up', 'Workout', 'MetCon', 'Stretches', 'Cool Down'];
+
 export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, onChange }: Props) {
   const [dragged, setDragged] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [activeBlock, setActiveBlock] = useState(-1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showSectionPicker, setShowSectionPicker] = useState(false);
+  const [showVideoFor, setShowVideoFor] = useState<Set<string>>(new Set());
+  const [autocompleteFor, setAutocompleteFor] = useState<string | null>(null);
+  const [customSection, setCustomSection] = useState('');
 
   const blocks = weekBlocks && weekBlocks.length > 0 ? calcWeekRanges(weekBlocks) : [];
 
@@ -43,7 +46,10 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     onChange(updated);
   };
 
-  const remove = (i: number) => onChange(exercises.filter((_, idx) => idx !== i));
+  const remove = (i: number) => {
+    onChange(exercises.filter((_, idx) => idx !== i));
+    setSelected((s) => { const n = new Set(s); n.delete(exercises[i].id); return n; });
+  };
 
   const drop = (targetIdx: number) => {
     if (dragged === null || dragged === targetIdx) return;
@@ -54,87 +60,99 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     setDragged(null);
   };
 
-  const addFromLibrary = (exId: string) => {
-    const ex = libraryExercises.find((e) => e.id === exId);
-    if (ex) onChange([...exercises, exerciseFromLibrary(ex)]);
-  };
-
   const addBlank = () =>
-    onChange([
-      ...exercises,
-      { id: makeId('ex'), exercise_id: null, name: '', sets: '3', reps: '8-12', rest: '60 sec', notes: '', video_url: null, cues: [] },
-    ]);
+    onChange([...exercises, { id: makeId('ex'), exercise_id: null, name: '', sets: '2', reps: '8-12', rest: '30 sec', notes: '', video_url: null, cues: [] }]);
 
-  const addSection = (beforeIdx: number) => {
+  const toggleSelect = (id: string) =>
+    setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const clearSelected = () => { setSelected(new Set()); setShowSectionPicker(false); };
+
+  const supersetSelected = () => {
+    const indices = exercises.map((e, i) => selected.has(e.id) ? i : -1).filter((i) => i >= 0);
+    if (indices.length < 2) return;
+    const ssId = makeId('ss');
     const updated = [...exercises];
-    if (beforeIdx >= updated.length) {
-      updated.push({ id: makeId('ex'), exercise_id: null, name: '', sets: '3', reps: '8-12', rest: '60 sec', notes: '', video_url: null, cues: [], section_start: 'Section' });
-    } else {
-      updated[beforeIdx] = { ...updated[beforeIdx], section_start: updated[beforeIdx].section_start ?? 'Section' };
-    }
+    indices.forEach((i) => { updated[i] = { ...updated[i], superset_id: ssId }; });
     onChange(updated);
+    clearSelected();
   };
 
-  const toggleSuperset = (i: number) => {
-    const ex = exercises[i];
-    const next = exercises[i + 1];
-    if (!next) return;
+  const sectionSelected = (name: string) => {
+    if (!name.trim()) return;
+    const sortedIndices = exercises
+      .map((e, i) => selected.has(e.id) ? i : -1)
+      .filter((i) => i >= 0)
+      .sort((a, b) => a - b);
+    if (sortedIndices.length === 0) return;
     const updated = [...exercises];
-    if (ex.superset_id && ex.superset_id === next.superset_id) {
-      const inGroup = exercises.filter((e) => e.superset_id === ex.superset_id);
-      if (inGroup.length <= 2) {
-        updated[i] = { ...updated[i], superset_id: null };
-        updated[i + 1] = { ...updated[i + 1], superset_id: null };
-      } else {
-        updated[i] = { ...updated[i], superset_id: null };
-      }
-    } else if (ex.superset_id) {
-      updated[i + 1] = { ...updated[i + 1], superset_id: ex.superset_id };
-    } else {
-      const ssId = makeId('ss');
-      updated[i] = { ...updated[i], superset_id: ssId };
-      updated[i + 1] = { ...updated[i + 1], superset_id: ssId };
-    }
+    sortedIndices.forEach((i) => { updated[i] = { ...updated[i], section_start: undefined }; });
+    updated[sortedIndices[0]] = { ...updated[sortedIndices[0]], section_start: name.trim() };
     onChange(updated);
+    clearSelected();
+    setCustomSection('');
   };
 
   const patchOverride = (exerciseIdx: number, blockIndex: number, p: Partial<PTProgrammeExerciseBlockOverride>) => {
     const ex = exercises[exerciseIdx];
     const overrides = [...(ex.week_overrides ?? [])];
-    const idx = overrides.findIndex((o) => o.block_index === blockIndex);
-    if (idx >= 0) {
-      overrides[idx] = { ...overrides[idx], ...p };
-    } else {
-      overrides.push({ block_index: blockIndex, ...p });
-    }
+    const oi = overrides.findIndex((o) => o.block_index === blockIndex);
+    if (oi >= 0) { overrides[oi] = { ...overrides[oi], ...p }; }
+    else { overrides.push({ block_index: blockIndex, ...p }); }
     patch(exerciseIdx, { week_overrides: overrides });
   };
 
   const getSupersetLabel = (ex: PTProgrammeExercise, idx: number): string | null => {
     if (!ex.superset_id) return null;
-    const groupBefore = exercises.slice(0, idx).filter((e) => e.superset_id === ex.superset_id);
-    return String.fromCharCode(65 + groupBefore.length);
+    const before = exercises.slice(0, idx).filter((e) => e.superset_id === ex.superset_id);
+    return String.fromCharCode(65 + before.length);
   };
+
+  const getLibraryMatches = (name: string) =>
+    name.length >= 2
+      ? libraryExercises.filter((e) => e.name.toLowerCase().includes(name.toLowerCase())).slice(0, 6)
+      : [];
+
+  const handleNameChange = (idx: number, value: string) => {
+    patch(idx, { name: value });
+    const matches = getLibraryMatches(value);
+    setAutocompleteFor(matches.length > 0 ? exercises[idx].id : null);
+  };
+
+  const selectFromLibrary = (idx: number, libEx: PTExercise) => {
+    const updated = [...exercises];
+    updated[idx] = {
+      ...updated[idx],
+      exercise_id: libEx.id,
+      name: libEx.name,
+      sets: '2',
+      reps: '8-12',
+      rest: '30 sec',
+      video_url: libEx.video_url,
+      cues: libEx.cues.slice(0, 4),
+      notes: libEx.purpose ?? updated[idx].notes,
+    };
+    onChange(updated);
+    setAutocompleteFor(null);
+  };
+
+  const toggleVideo = (id: string) =>
+    setShowVideoFor((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const anySelected = selected.size > 0;
 
   return (
     <div>
       {/* Block selector */}
       {blocks.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setActiveBlock(-1)}
-            className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === -1 ? 'bg-black text-white border-black' : 'border-black/15 hover:border-black/30'}`}
-          >
+          <button type="button" onClick={() => setActiveBlock(-1)}
+            className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === -1 ? 'bg-black text-white border-black' : 'border-black/15 hover:border-black/30'}`}>
             All
           </button>
           {blocks.map((b) => (
-            <button
-              key={b.blockIndex}
-              type="button"
-              onClick={() => setActiveBlock(b.blockIndex)}
-              className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === b.blockIndex ? 'bg-black text-white border-black' : 'border-black/15 hover:border-black/30'}`}
-            >
+            <button key={b.blockIndex} type="button" onClick={() => setActiveBlock(b.blockIndex)}
+              className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === b.blockIndex ? 'bg-black text-white border-black' : 'border-black/15 hover:border-black/30'}`}>
               {b.label}
             </button>
           ))}
@@ -146,30 +164,58 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
         </div>
       )}
 
-      {/* Header row */}
-      <div className="mb-3 flex items-center justify-between">
+      {/* Header */}
+      <div className="mb-3 flex items-center justify-between min-h-[2rem]">
         <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Exercises</p>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => addSection(exercises.length)}
-            className="border border-black/10 px-2.5 py-1.5 text-xs hover:border-black/30 text-black/50"
-          >
-            + Section
-          </button>
-          <select
-            className="border border-black/10 px-3 py-1.5 text-xs outline-none"
-            defaultValue=""
-            onChange={(e) => { addFromLibrary(e.target.value); e.target.value = ''; }}
-          >
-            <option value="">+ From library</option>
-            {libraryExercises.map((ex) => (
-              <option key={ex.id} value={ex.id}>{ex.name}</option>
-            ))}
-          </select>
-          <button type="button" onClick={addBlank} className="border border-black/10 px-3 py-1.5 text-xs hover:border-black/30">
-            + Custom
-          </button>
+          {anySelected ? (
+            <>
+              {selected.size >= 2 && (
+                <button type="button" onClick={supersetSelected}
+                  className="border border-black/40 px-3 py-1.5 text-xs hover:bg-black hover:text-white hover:border-black transition-colors">
+                  Superset ({selected.size})
+                </button>
+              )}
+              <div className="relative">
+                <button type="button" onClick={() => setShowSectionPicker((v) => !v)}
+                  className="border border-black/40 px-3 py-1.5 text-xs hover:bg-black hover:text-white hover:border-black transition-colors">
+                  + Section
+                </button>
+                {showSectionPicker && (
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-black/20 shadow-sm min-w-[140px]">
+                    {SECTION_NAMES.map((name) => (
+                      <button key={name} type="button" onClick={() => sectionSelected(name)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 transition-colors">
+                        {name}
+                      </button>
+                    ))}
+                    <div className="border-t border-black/10 px-2 py-1.5 flex gap-1">
+                      <input
+                        value={customSection}
+                        onChange={(e) => setCustomSection(e.target.value)}
+                        placeholder="Custom…"
+                        className="flex-1 text-xs outline-none px-1 py-0.5 border-b border-black/15 focus:border-black/40"
+                        onKeyDown={(e) => { if (e.key === 'Enter') sectionSelected(customSection); }}
+                      />
+                      <button type="button" onClick={() => sectionSelected(customSection)}
+                        className="text-xs text-black/50 hover:text-black px-1">
+                        ↵
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button type="button" onClick={clearSelected}
+                className="text-xs text-black/40 hover:text-black transition-colors px-1">
+                Clear
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={addBlank}
+              className="border border-black/10 px-3 py-1.5 text-xs hover:border-black/30">
+              + Add exercise
+            </button>
+          )}
         </div>
       </div>
 
@@ -177,32 +223,36 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
       <div className="space-y-1">
         {exercises.length === 0 && (
           <p className="text-xs text-black/30 py-4 text-center border border-black/8 border-dashed">
-            No exercises yet. Add from the library or create custom.
+            No exercises yet. Click "+ Add exercise" to start.
           </p>
         )}
 
         {exercises.map((ex, idx) => {
           const ssLabel = getSupersetLabel(ex, idx);
-          const isFirstInGroup = ex.superset_id && (idx === 0 || exercises[idx - 1]?.superset_id !== ex.superset_id);
-          const isLastInGroup = ex.superset_id && (idx === exercises.length - 1 || exercises[idx + 1]?.superset_id !== ex.superset_id);
+          const isFirstInGroup = !!ex.superset_id && (idx === 0 || exercises[idx - 1]?.superset_id !== ex.superset_id);
+          const isLastInGroup = !!ex.superset_id && (idx === exercises.length - 1 || exercises[idx + 1]?.superset_id !== ex.superset_id);
           const isInGroup = !!ex.superset_id;
 
-          const overrideForBlock = activeBlock >= 0
-            ? (ex.week_overrides?.find((o) => o.block_index === activeBlock) ?? null)
-            : null;
-
+          const overrideForBlock = activeBlock >= 0 ? (ex.week_overrides?.find((o) => o.block_index === activeBlock) ?? null) : null;
           const displaySets = overrideForBlock?.sets ?? ex.sets;
           const displayReps = overrideForBlock?.reps ?? ex.reps;
           const displayWeightPct = overrideForBlock?.weight_pct ?? '';
           const displayNotes = overrideForBlock?.notes ?? ex.notes;
 
           const isExpanded = expanded.has(ex.id);
+          const isSelected = selected.has(ex.id);
+          const showVideo = showVideoFor.has(ex.id);
+          const autocompleteMatches = autocompleteFor === ex.id ? getLibraryMatches(ex.name) : [];
+
+          const gridCols = activeBlock >= 0
+            ? 'grid-cols-[1.5rem_1fr_4rem_5rem_4rem_5rem_5rem_1.5rem_1.5rem_1.5rem]'
+            : 'grid-cols-[1.5rem_1fr_4rem_5rem_5rem_5rem_1.5rem_1.5rem_1.5rem]';
 
           return (
             <div key={ex.id}>
               {/* Section header */}
               {ex.section_start !== undefined && (
-                <div className="flex items-center gap-2 mt-4 mb-2 group">
+                <div className="flex items-center gap-2 mt-4 mb-1 group">
                   <div className="flex-1 h-px bg-black/10" />
                   <input
                     value={ex.section_start}
@@ -211,112 +261,129 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                     onClick={(e) => e.stopPropagation()}
                   />
                   <div className="flex-1 h-px bg-black/10" />
-                  <button
-                    type="button"
-                    onClick={() => patch(idx, { section_start: undefined })}
-                    className="text-black/20 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    ×
-                  </button>
+                  <button type="button" onClick={() => patch(idx, { section_start: undefined })}
+                    className="text-black/20 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                 </div>
               )}
 
-              {/* Superset bracket top */}
+              {/* Superset top bracket */}
               {isFirstInGroup && (
-                <div className="ml-5 flex items-center gap-1 mt-1">
+                <div className="ml-8 flex items-center gap-1 mt-1">
                   <div className="w-px h-3 bg-black/20 ml-1" />
                   <span className="text-[0.55rem] uppercase tracking-[0.15em] text-black/30">Superset</span>
                 </div>
               )}
 
               <div
-                className={`flex items-stretch gap-1 ${isInGroup ? 'ml-5 border-l-2 border-black/15 pl-2' : ''}`}
+                className={`flex items-stretch gap-1 ${isInGroup ? 'ml-8 border-l-2 border-black/15 pl-2' : ''} ${isSelected ? 'bg-black/[0.03]' : ''}`}
                 draggable
                 onDragStart={() => setDragged(idx)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => drop(idx)}
               >
-                {/* SS label */}
+                {/* Select checkbox */}
+                <button type="button" onClick={() => toggleSelect(ex.id)}
+                  className={`w-7 flex items-center justify-center shrink-0 text-sm transition-colors ${isSelected ? 'text-black' : 'text-black/15 hover:text-black/35'}`}>
+                  {isSelected ? '■' : '□'}
+                </button>
+
                 {ssLabel && (
-                  <div className="w-5 flex items-center justify-center">
+                  <div className="w-5 flex items-center justify-center shrink-0">
                     <span className="text-[0.55rem] font-bold text-black/40">{ssLabel}</span>
                   </div>
                 )}
 
                 <div className="flex-1 border border-black/10 bg-[#fafaf8]">
-                  {/* Main row */}
-                  <div className={`grid gap-2 items-center p-2 ${activeBlock >= 0 ? 'grid-cols-[1.5rem_1fr_4rem_5rem_4rem_5rem_5rem_1.5rem_1.5rem]' : 'grid-cols-[1.5rem_1fr_4rem_5rem_5rem_5rem_1.5rem_1.5rem]'}`}>
+                  <div className={`grid gap-2 items-center p-2 ${gridCols}`}>
                     <span className="text-black/20 text-sm select-none cursor-grab">⠿</span>
-                    <input
-                      value={ex.name}
-                      onChange={(e) => patch(idx, { name: e.target.value })}
-                      placeholder="Exercise name"
-                      className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 bg-white"
-                    />
-                    <input
-                      value={displaySets}
-                      onChange={(e) => {
-                        if (activeBlock >= 0) patchOverride(idx, activeBlock, { sets: e.target.value });
-                        else patch(idx, { sets: e.target.value });
-                      }}
-                      placeholder="Sets"
-                      className={`border px-2 py-1.5 text-sm outline-none text-center bg-white ${activeBlock >= 0 ? 'border-black/30 bg-amber-50' : 'border-black/10 focus:border-black/30'}`}
-                    />
-                    <input
-                      value={displayReps}
-                      onChange={(e) => {
-                        if (activeBlock >= 0) patchOverride(idx, activeBlock, { reps: e.target.value });
-                        else patch(idx, { reps: e.target.value });
-                      }}
-                      placeholder="Reps"
-                      className={`border px-2 py-1.5 text-sm outline-none text-center bg-white ${activeBlock >= 0 ? 'border-black/30 bg-amber-50' : 'border-black/10 focus:border-black/30'}`}
-                    />
-                    {activeBlock >= 0 && (
+
+                    {/* Name with autocomplete */}
+                    <div className="relative">
                       <input
-                        value={displayWeightPct}
+                        value={ex.name}
+                        onChange={(e) => handleNameChange(idx, e.target.value)}
+                        onFocus={() => {
+                          const m = getLibraryMatches(ex.name);
+                          if (m.length > 0) setAutocompleteFor(ex.id);
+                        }}
+                        onBlur={() => setTimeout(() => setAutocompleteFor(null), 150)}
+                        placeholder="Exercise name"
+                        className="w-full border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 bg-white"
+                      />
+                      {autocompleteMatches.length > 0 && (
+                        <div className="absolute left-0 top-full z-30 bg-white border border-black/15 shadow-md w-full max-h-44 overflow-y-auto">
+                          {autocompleteMatches.map((libEx) => (
+                            <button key={libEx.id} type="button"
+                              onMouseDown={() => selectFromLibrary(idx, libEx)}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 flex items-baseline gap-2">
+                              <span>{libEx.name}</span>
+                              {libEx.muscles.length > 0 && (
+                                <span className="text-xs text-black/30">{libEx.muscles.slice(0, 2).join(', ')}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <input value={displaySets}
+                      onChange={(e) => { if (activeBlock >= 0) patchOverride(idx, activeBlock, { sets: e.target.value }); else patch(idx, { sets: e.target.value }); }}
+                      placeholder="Sets"
+                      className={`border px-2 py-1.5 text-sm outline-none text-center bg-white ${activeBlock >= 0 ? 'border-black/30 bg-amber-50' : 'border-black/10 focus:border-black/30'}`} />
+
+                    <input value={displayReps}
+                      onChange={(e) => { if (activeBlock >= 0) patchOverride(idx, activeBlock, { reps: e.target.value }); else patch(idx, { reps: e.target.value }); }}
+                      placeholder="Reps"
+                      className={`border px-2 py-1.5 text-sm outline-none text-center bg-white ${activeBlock >= 0 ? 'border-black/30 bg-amber-50' : 'border-black/10 focus:border-black/30'}`} />
+
+                    {activeBlock >= 0 && (
+                      <input value={displayWeightPct}
                         onChange={(e) => patchOverride(idx, activeBlock, { weight_pct: e.target.value })}
                         placeholder="% 1RM"
-                        className="border border-black/30 bg-amber-50 px-2 py-1.5 text-sm outline-none text-center"
-                      />
+                        className="border border-black/30 bg-amber-50 px-2 py-1.5 text-sm outline-none text-center" />
                     )}
-                    <input
-                      value={ex.rest}
+
+                    <input value={ex.rest}
                       onChange={(e) => patch(idx, { rest: e.target.value })}
                       placeholder="Rest"
-                      className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 text-center bg-white"
-                    />
-                    <input
-                      value={displayNotes}
-                      onChange={(e) => {
-                        if (activeBlock >= 0) patchOverride(idx, activeBlock, { notes: e.target.value });
-                        else patch(idx, { notes: e.target.value });
-                      }}
+                      className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 text-center bg-white" />
+
+                    <input value={displayNotes}
+                      onChange={(e) => { if (activeBlock >= 0) patchOverride(idx, activeBlock, { notes: e.target.value }); else patch(idx, { notes: e.target.value }); }}
                       placeholder="Notes"
-                      className={`border px-2 py-1.5 text-sm outline-none bg-white ${activeBlock >= 0 ? 'border-black/30 bg-amber-50' : 'border-black/10 focus:border-black/30'}`}
-                    />
-                    {/* Overrides toggle */}
-                    {weekBlocks && weekBlocks.length > 0 && (
-                      <button
-                        type="button"
-                        title="Per-block overrides"
-                        onClick={() => setExpanded((s) => {
-                          const n = new Set(s);
-                          n.has(ex.id) ? n.delete(ex.id) : n.add(ex.id);
-                          return n;
-                        })}
-                        className={`text-xs transition-colors ${isExpanded ? 'text-black' : 'text-black/25 hover:text-black/50'}`}
-                      >
-                        ▾
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => remove(idx)}
-                      className="text-black/20 hover:text-red-500 transition-colors text-sm"
-                    >
-                      ×
+                      className={`border px-2 py-1.5 text-sm outline-none bg-white ${activeBlock >= 0 ? 'border-black/30 bg-amber-50' : 'border-black/10 focus:border-black/30'}`} />
+
+                    {/* YouTube toggle */}
+                    <button type="button" onClick={() => toggleVideo(ex.id)} title="YouTube video URL"
+                      className={`text-xs transition-colors ${showVideo || ex.video_url ? 'text-black/60' : 'text-black/20 hover:text-black/40'}`}>
+                      ▶
                     </button>
+
+                    {/* Block overrides toggle */}
+                    {weekBlocks && weekBlocks.length > 0 && (
+                      <button type="button" title="Per-block overrides"
+                        onClick={() => setExpanded((s) => { const n = new Set(s); n.has(ex.id) ? n.delete(ex.id) : n.add(ex.id); return n; })}
+                        className={`text-xs transition-colors ${isExpanded ? 'text-black' : 'text-black/25 hover:text-black/50'}`}>▾</button>
+                    )}
+
+                    <button type="button" onClick={() => remove(idx)}
+                      className="text-black/20 hover:text-red-500 transition-colors text-sm">×</button>
                   </div>
+
+                  {/* YouTube URL field */}
+                  {(showVideo || ex.video_url) && (
+                    <div className="px-2 pb-2 border-t border-black/8">
+                      <input
+                        value={ex.video_url ?? ''}
+                        onChange={(e) => patch(idx, { video_url: e.target.value || null })}
+                        placeholder="https://youtube.com/watch?v=…"
+                        className="w-full border border-black/10 px-2 py-1.5 text-xs outline-none focus:border-black/30 mt-2"
+                      />
+                      {ex.video_url && ex.video_url.includes('youtube') && (
+                        <p className="text-[0.55rem] text-black/30 mt-0.5">YouTube link — visible to client</p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Per-block overrides panel */}
                   {isExpanded && weekBlocks && weekBlocks.length > 0 && (
@@ -328,30 +395,18 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                           return (
                             <div key={b.blockIndex} className="grid grid-cols-[8rem_4rem_5rem_4rem_1fr] gap-1.5 items-center">
                               <span className="text-[0.6rem] text-black/45 truncate">{b.label}</span>
-                              <input
-                                value={ov?.sets ?? ''}
-                                onChange={(e) => patchOverride(idx, b.blockIndex, { sets: e.target.value })}
+                              <input value={ov?.sets ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { sets: e.target.value })}
                                 placeholder={weekBlocks[b.blockIndex]?.sets ?? 'Sets'}
-                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center"
-                              />
-                              <input
-                                value={ov?.reps ?? ''}
-                                onChange={(e) => patchOverride(idx, b.blockIndex, { reps: e.target.value })}
+                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center" />
+                              <input value={ov?.reps ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { reps: e.target.value })}
                                 placeholder={ex.reps || 'Reps'}
-                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center"
-                              />
-                              <input
-                                value={ov?.weight_pct ?? ''}
-                                onChange={(e) => patchOverride(idx, b.blockIndex, { weight_pct: e.target.value })}
+                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center" />
+                              <input value={ov?.weight_pct ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { weight_pct: e.target.value })}
                                 placeholder="% 1RM"
-                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center"
-                              />
-                              <input
-                                value={ov?.notes ?? ''}
-                                onChange={(e) => patchOverride(idx, b.blockIndex, { notes: e.target.value })}
+                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center" />
+                              <input value={ov?.notes ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { notes: e.target.value })}
                                 placeholder="Notes"
-                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30"
-                              />
+                                className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30" />
                             </div>
                           );
                         })}
@@ -361,36 +416,10 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                 </div>
               </div>
 
-              {/* Superset bracket bottom */}
+              {/* Superset bottom bracket */}
               {isLastInGroup && (
-                <div className="ml-5 flex items-center gap-1 mb-1">
+                <div className="ml-8 flex items-center gap-1 mb-1">
                   <div className="w-px h-3 bg-black/20 ml-1" />
-                </div>
-              )}
-
-              {/* Superset link button between exercises */}
-              {idx < exercises.length - 1 && (
-                <div className="flex items-center my-0.5 pl-1">
-                  <button
-                    type="button"
-                    title={ex.superset_id && ex.superset_id === exercises[idx + 1]?.superset_id ? 'Remove superset' : 'Link as superset'}
-                    onClick={() => toggleSuperset(idx)}
-                    className={`text-[0.55rem] uppercase tracking-[0.1em] px-2 py-0.5 border transition-colors ${
-                      ex.superset_id && ex.superset_id === exercises[idx + 1]?.superset_id
-                        ? 'border-black/30 text-black/50 bg-black/5'
-                        : 'border-black/8 text-black/20 hover:border-black/20 hover:text-black/40'
-                    }`}
-                  >
-                    {ex.superset_id && ex.superset_id === exercises[idx + 1]?.superset_id ? '⟂ superset' : '+ superset'}
-                  </button>
-                  <button
-                    type="button"
-                    title="Add section header before next exercise"
-                    onClick={() => addSection(idx + 1)}
-                    className="ml-2 text-[0.55rem] uppercase tracking-[0.1em] px-2 py-0.5 border border-black/8 text-black/20 hover:border-black/20 hover:text-black/40 transition-colors"
-                  >
-                    + section
-                  </button>
                 </div>
               )}
             </div>
