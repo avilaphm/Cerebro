@@ -457,71 +457,106 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                             </button>
                           </div>
 
-                          <div className="space-y-4">
-                            {day.exercises.map((exercise) => {
+                          <div className="space-y-3">
+                            {day.exercises.map((exercise, exIdx) => {
                               const historyKey = exercise.exercise_id ?? exercise.name.toLowerCase();
                               const last = lastWeightByExercise.get(historyKey);
-                              const displaySets = progress
-                                ? getBlockSets(exercise.sets, phase.week_blocks, progress.blockIndex)
-                                : exercise.sets;
-                              return (
-                                <div key={exercise.id} className="border border-black/10 bg-white p-4">
-                                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                                    <div>
-                                      <p className="font-medium">{exercise.name}</p>
-                                      <p className="mt-1 text-xs text-black/45">
-                                        {displaySets || '?'} sets · {exercise.reps || '?'} reps · {exercise.rest || 'Rest as needed'}
-                                      </p>
-                                    </div>
-                                    {last && (
-                                      <p className="text-xs text-black/40">
-                                        Last: {last.weight ?? '-'}kg x {last.reps ?? '-'}
-                                      </p>
-                                    )}
-                                  </div>
-                                  {exercise.video_url && (
-                                    <a href={exercise.video_url} target="_blank" className="mt-3 block text-xs text-black/45 hover:text-black">
-                                      Watch demo
-                                    </a>
-                                  )}
-                                  <ul className="mt-3 grid gap-1 md:grid-cols-2">
-                                    {exercise.cues.slice(0, 4).map((cue) => (
-                                      <li key={cue} className="text-xs leading-relaxed text-black/55">• {cue}</li>
-                                    ))}
-                                  </ul>
-                                  {exercise.notes && <p className="mt-3 text-xs leading-relaxed text-black/45">{exercise.notes}</p>}
+                              const blockIndex = progress?.blockIndex ?? 0;
+                              const vals = getExerciseBlockValues(exercise, phase.week_blocks, blockIndex);
 
-                                  <div className="mt-4 space-y-2">
-                                    {Array.from({ length: parseSets(displaySets) }).map((_, setIndex) => {
-                                      const key = `${phaseIndex}-${dayIndex}-${exercise.id}-${setIndex}`;
-                                      const draft = drafts[key] ?? { reps: '', weight: '', notes: '' };
-                                      return (
-                                        <div key={key} className="grid gap-2 md:grid-cols-[4rem_1fr_1fr_2fr]">
-                                          <div className="border border-black/10 bg-[#fbfbf8] px-2 py-2 text-xs text-black/40">Set {setIndex + 1}</div>
-                                          <input
-                                            value={draft.reps}
-                                            onChange={(event) => updateDraft(key, { reps: event.target.value })}
-                                            className="border border-black/10 px-2 py-2 text-sm"
-                                            placeholder="Reps"
-                                            inputMode="decimal"
-                                          />
-                                          <input
-                                            value={draft.weight}
-                                            onChange={(event) => updateDraft(key, { weight: event.target.value })}
-                                            className="border border-black/10 px-2 py-2 text-sm"
-                                            placeholder="Weight kg"
-                                            inputMode="decimal"
-                                          />
-                                          <input
-                                            value={draft.notes}
-                                            onChange={(event) => updateDraft(key, { notes: event.target.value })}
-                                            className="border border-black/10 px-2 py-2 text-sm"
-                                            placeholder="Notes"
-                                          />
+                              const prevEx = day.exercises[exIdx - 1];
+                              const nextEx = day.exercises[exIdx + 1];
+                              const inSuperset = !!exercise.superset_id;
+                              const isFirstInGroup = inSuperset && prevEx?.superset_id !== exercise.superset_id;
+                              const isLastInGroup = inSuperset && nextEx?.superset_id !== exercise.superset_id;
+
+                              return (
+                                <div key={exercise.id}>
+                                  {/* Section header */}
+                                  {exercise.section_start && (
+                                    <div className="flex items-center gap-3 mt-5 mb-2">
+                                      <div className="flex-1 h-px bg-black/10" />
+                                      <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 font-medium">{exercise.section_start}</p>
+                                      <div className="flex-1 h-px bg-black/10" />
+                                    </div>
+                                  )}
+
+                                  {/* Superset header */}
+                                  {isFirstInGroup && (
+                                    <p className="text-[0.55rem] uppercase tracking-[0.15em] text-black/35 mb-1 ml-2">Superset</p>
+                                  )}
+
+                                  <div className={`border bg-white p-4 ${inSuperset ? 'border-l-2 border-l-black/25 border-black/10 ml-2' : 'border-black/10'}`}>
+                                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          {inSuperset && (
+                                            <span className="text-[0.55rem] font-bold text-black/40 w-4 text-center">
+                                              {String.fromCharCode(65 + day.exercises.slice(0, exIdx).filter((e) => e.superset_id === exercise.superset_id).length)}
+                                            </span>
+                                          )}
+                                          <p className="font-medium">{exercise.name}</p>
                                         </div>
-                                      );
-                                    })}
+                                        <p className="mt-1 text-xs text-black/45">
+                                          {vals.sets || '?'} sets · {vals.reps || '?'} reps · {exercise.rest || 'Rest as needed'}
+                                          {vals.weight_pct && <span className="ml-2 text-amber-600">@ {vals.weight_pct} 1RM</span>}
+                                        </p>
+                                      </div>
+                                      {last && (
+                                        <p className="text-xs text-black/40">
+                                          Last: {last.weight ?? '-'}kg x {last.reps ?? '-'}
+                                        </p>
+                                      )}
+                                    </div>
+                                    {exercise.video_url && (
+                                      <a href={exercise.video_url} target="_blank" className="mt-3 block text-xs text-black/45 hover:text-black">
+                                        Watch demo
+                                      </a>
+                                    )}
+                                    <ul className="mt-3 grid gap-1 md:grid-cols-2">
+                                      {exercise.cues.slice(0, 4).map((cue) => (
+                                        <li key={cue} className="text-xs leading-relaxed text-black/55">• {cue}</li>
+                                      ))}
+                                    </ul>
+                                    {vals.notes && <p className="mt-3 text-xs leading-relaxed text-black/45">{vals.notes}</p>}
+
+                                    <div className="mt-4 space-y-2">
+                                      {Array.from({ length: parseSets(vals.sets) }).map((_, setIndex) => {
+                                        const key = `${phaseIndex}-${dayIndex}-${exercise.id}-${setIndex}`;
+                                        const draft = drafts[key] ?? { reps: '', weight: '', notes: '' };
+                                        return (
+                                          <div key={key} className="grid gap-2 md:grid-cols-[4rem_1fr_1fr_2fr]">
+                                            <div className="border border-black/10 bg-[#fbfbf8] px-2 py-2 text-xs text-black/40">Set {setIndex + 1}</div>
+                                            <input
+                                              value={draft.reps}
+                                              onChange={(event) => updateDraft(key, { reps: event.target.value })}
+                                              className="border border-black/10 px-2 py-2 text-sm"
+                                              placeholder="Reps"
+                                              inputMode="decimal"
+                                            />
+                                            <input
+                                              value={draft.weight}
+                                              onChange={(event) => updateDraft(key, { weight: event.target.value })}
+                                              className="border border-black/10 px-2 py-2 text-sm"
+                                              placeholder="Weight kg"
+                                              inputMode="decimal"
+                                            />
+                                            <input
+                                              value={draft.notes}
+                                              onChange={(event) => updateDraft(key, { notes: event.target.value })}
+                                              className="border border-black/10 px-2 py-2 text-sm"
+                                              placeholder="Notes"
+                                            />
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
+
+                                  {/* Superset connector */}
+                                  {inSuperset && !isLastInGroup && (
+                                    <div className="ml-4 h-3 w-px bg-black/20" />
+                                  )}
                                 </div>
                               );
                             })}
