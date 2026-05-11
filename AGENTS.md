@@ -73,8 +73,9 @@ Full plan at: `../plans/2026-05-leads-dashboard-revamp.md`
 
 **Session start:**
 1. Read `HANDOFF.md` - tells you exactly where to pick up and what's next
-2. Read the active plan at `../plans/2026-05-leads-dashboard-revamp.md`
-3. If "Next task" in HANDOFF.md says PENDING - ask Pedro for Phase scope before writing any code
+2. Read `../session-logs/learning-log.md` - past mistakes by both Claude and Codex. Do not repeat them.
+3. Read the active plan at `../plans/2026-05-leads-dashboard-revamp.md`
+4. If "Next task" in HANDOFF.md says PENDING - ask Pedro for Phase scope before writing any code
 
 **Session end (before stopping):**
 1. Update `HANDOFF.md`: fill in Last updated, Last completed task, Last commit, Current state, Next task
