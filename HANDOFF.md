@@ -1,13 +1,13 @@
 # Handoff
 
 ## Last updated
-2026-05-11 by claude
+2026-05-11 by codex
 
 ## Last completed task
-Phase 1 complete. Pipeline board, QuadProgress, tag system, lead detail view, LeadActions, MilestoneStrip all built and committed.
+PT Dashboard Programming MVP implemented and deployed to Supabase.
 
 ## Last commit
-Run `git log --oneline -1` to get current hash.
+Latest commit is `Build PT dashboard programming MVP`; run `git log --oneline -1` for the exact hash.
 
 ## Current state
 - Pipeline board fully functional: 4 columns (Stage 1, Call Booked, Client, Nurture)
@@ -17,10 +17,15 @@ Run `git log --oneline -1` to get current hash.
 - call_booked tag auto-moves lead to Stage 2 column via webhook
 - Supabase tables: leads + lead_tags (with source field)
 - Session continuity system installed (this file + Stop hook + git tags)
+- PT Dashboard route added at `/dashboard/pt` under Overview
+- Client portal route added at `/client`, with `/client-login` magic-link entry
+- PT Supabase tables created remotely: pt_clients, pt_exercises, pt_program_templates, pt_program_assignments, pt_workout_logs, pt_set_logs, pt_events
+- PT Edge Functions deployed: generate-pt-programme, invite-pt-client, weekly-pt-summary
+- Pedro/admin access is allowed via profiles role or known Pedro emails; clients redirect away from `/dashboard` to `/client`
 
 ## Next task
-PENDING. Pedro has not yet re-briefed Phase 2 scope. Ask Pedro: "What is Phase 2 of the dashboard?" before writing any code.
+Test the PT Dashboard with Pedro logged in, import the first exercise CSV, create a test client, generate a test programme, assign it, and confirm client logging works with a real invited client account.
 
 ## Open issues / blockers
-- Phases 2–6 of leads dashboard revamp have unknown scope (context was lost in a prior session)
-- Pedro must re-brief Phase 2 goal to continue
+- `supabase db push` is blocked because remote migration history contains versions not present locally. The PT schema was applied with `supabase db query --linked -f ...`; do not run migration repair casually.
+- Full repo lint still fails due to older pre-existing issues outside the PT implementation. Targeted PT lint, TypeScript, and build pass.

@@ -7,6 +7,7 @@ import { createClient } from '@/utils/supabase/client';
 
 const NAV = [
   { label: 'Overview',  href: '/dashboard',           icon: '◈' },
+  { label: 'PT Dashboard', href: '/dashboard/pt',      icon: '◐' },
   { label: 'Leads',     href: '/dashboard/leads',     icon: '◎' },
   { label: 'Templates', href: '/dashboard/templates', icon: '✉' },
   { label: 'Bookings',  href: '/dashboard/bookings',  icon: '⌖' },
@@ -22,7 +23,8 @@ export default function DashboardSidebar({ userEmail }: { userEmail: string }) {
 
   // Close drawer on route change (mobile)
   useEffect(() => {
-    setOpen(false);
+    const id = window.setTimeout(() => setOpen(false), 0);
+    return () => window.clearTimeout(id);
   }, [pathname]);
 
   // Lock body scroll when drawer is open on mobile

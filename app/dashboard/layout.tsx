@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
+import { isPedroAdminEmail } from '@/utils/pt/access';
 import DashboardSidebar from './Sidebar';
 
 export default async function DashboardLayout({
@@ -11,6 +12,16 @@ export default async function DashboardLayout({
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) redirect('/login');
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profile?.role !== 'admin' && !isPedroAdminEmail(user.email)) {
+    redirect('/client');
+  }
 
   return (
     <div className="flex min-h-screen bg-white">
