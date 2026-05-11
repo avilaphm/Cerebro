@@ -149,10 +149,9 @@ export default function PTDashboard() {
 
   const deleteClient = async (client: PTClient) => {
     setStatus(`Deleting ${client.name}...`);
-    const { error } = await supabase
-      .from('pt_clients')
-      .delete()
-      .eq('id', client.id);
+    const { error } = await supabase.functions.invoke('delete-pt-client', {
+      body: { client_id: client.id },
+    });
 
     if (error) {
       setStatus(error.message);
