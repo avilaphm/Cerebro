@@ -7,7 +7,7 @@
 Added YouTube demo videos, verbal cues, and previous-weight prefill to client workout logging.
 
 ## Last commit
-PENDING - client exercise video and history UI
+c36547a - feat: add client exercise video cues and history
 
 ## Current state
 
