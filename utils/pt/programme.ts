@@ -97,24 +97,44 @@ function safeWeekBlocks(value: unknown): PTProgrammeWeekBlock[] | undefined {
   return blocks.length > 0 ? blocks : undefined;
 }
 
+function normalizeWordNumbers(text: string): string {
+  const ORDINAL_WEEKS: Record<string, string> = {
+    first: '1', second: '2', third: '3', fourth: '4', fifth: '5',
+    sixth: '6', seventh: '7', eighth: '8', ninth: '9', tenth: '10',
+  };
+  const CARDINALS: Record<string, string> = {
+    one: '1', two: '2', three: '3', four: '4', five: '5',
+    six: '6', seven: '7', eight: '8', nine: '9', ten: '10',
+    eleven: '11', twelve: '12',
+  };
+  // "first week" → "1 week" (ordinal directly before "week", not before a number like "first 2 weeks")
+  let result = text.replace(
+    /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+week\b/gi,
+    (_, ord) => `${ORDINAL_WEEKS[ord.toLowerCase()] ?? ord} week`,
+  );
+  return result.replace(
+    /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/gi,
+    (m) => CARDINALS[m.toLowerCase()] ?? m,
+  );
+}
+
 export function parseWeekBlocks(input: string): PTProgrammeWeekBlock[] {
-  const blocks: PTProgrammeWeekBlock[] = [];
-  // "N sets for [the] [first|next|last] M weeks" — handles natural language ordinals
-  const p1 = /(\d+)\s*sets?[^0-9]*?(\d+)\s*weeks?/gi;
-  let m = p1.exec(input);
-  while (m !== null) {
-    blocks.push({ sets: m[1], weeks: parseInt(m[2], 10) });
-    m = p1.exec(input);
-  }
-  if (blocks.length > 0) return blocks;
-  // "M weeks N sets" or "M weeks, N sets"
-  const p2 = /(\d+)\s*weeks?[,\s]+(\d+)\s*sets?/gi;
-  m = p2.exec(input);
-  while (m !== null) {
-    blocks.push({ sets: m[2], weeks: parseInt(m[1], 10) });
-    m = p2.exec(input);
-  }
-  return blocks;
+  const normalized = normalizeWordNumbers(input);
+
+  // Pattern 1: "N sets [...] M weeks" (typed format: "2 sets for the first 2 weeks")
+  const p1: PTProgrammeWeekBlock[] = [];
+  const re1 = /(\d+)\s*sets?[^0-9]*?(\d+)\s*weeks?/gi;
+  let m = re1.exec(normalized);
+  while (m !== null) { p1.push({ sets: m[1], weeks: parseInt(m[2], 10) }); m = re1.exec(normalized); }
+
+  // Pattern 2: "N weeks [...] M sets" (voice format: "1 week to have 1 set")
+  const p2: PTProgrammeWeekBlock[] = [];
+  const re2 = /(\d+)\s*weeks?[^0-9]*?(\d+)\s*sets?/gi;
+  m = re2.exec(normalized);
+  while (m !== null) { p2.push({ weeks: parseInt(m[1], 10), sets: m[2] }); m = re2.exec(normalized); }
+
+  // Return whichever pattern matched more distinct blocks (avoids cross-block contamination)
+  return p1.length >= p2.length ? p1 : p2;
 }
 
 export function formatWeekBlocks(blocks: PTProgrammeWeekBlock[] | undefined): string {

@@ -45,6 +45,7 @@ export default function PTProgrammeEditView({
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceTranscriptRef = useRef('');
 
   const update = (fn: (p: PTProgramme) => PTProgramme) =>
     setProgramme((cur) => fn(structuredClone(cur)));
@@ -73,33 +74,35 @@ export default function PTProgrammeEditView({
   const startDictationForPhase = (phaseIdx: number) => {
     const SR = getSR();
     if (!SR) return;
+    // Seed transcript from current input or existing blocks
+    voiceTranscriptRef.current = weekBlocksInput[phaseIdx] ?? formatWeekBlocks(programme.phases[phaseIdx]?.week_blocks);
     const r = new SR();
     srPhaseRef.current = r;
-    r.continuous = true; r.interimResults = true; r.lang = 'en-AU';
+    r.continuous = true; r.interimResults = false; r.lang = 'en-AU';
     r.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
         if (result?.isFinal) {
-          const transcript = result[0]?.transcript ?? '';
-          if (transcript) {
-            setWeekBlocksInput((cur) => {
-              const next = (cur[phaseIdx] ? `${cur[phaseIdx]} ${transcript}` : transcript).trim();
-              const parsed = parseWeekBlocks(next);
-              if (parsed.length > 0) {
-                const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
-                patchPhase(phaseIdx, { week_blocks: parsed, weeks: String(totalWeeks) });
-              }
-              return { ...cur, [phaseIdx]: next };
-            });
-          }
+          const t = result[0]?.transcript ?? '';
+          if (t) voiceTranscriptRef.current = (voiceTranscriptRef.current + ' ' + t).trim();
         }
       }
+      // Update visible input only — no parsing until Done is clicked
+      setWeekBlocksInput((cur) => ({ ...cur, [phaseIdx]: voiceTranscriptRef.current }));
     };
     r.onend = () => { setListeningForPhase(null); srPhaseRef.current = null; };
     r.start(); setListeningForPhase(phaseIdx);
   };
 
-  const stopPhraseDictation = () => { srPhaseRef.current?.stop(); };
+  const stopPhraseDictation = () => {
+    srPhaseRef.current?.stop();
+    if (listeningForPhase === null) return;
+    const parsed = parseWeekBlocks(voiceTranscriptRef.current);
+    if (parsed.length > 0) {
+      const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
+      patchPhase(listeningForPhase, { week_blocks: parsed, weeks: String(totalWeeks) });
+    }
+  };
 
   const save = async () => {
     setSaving(true);

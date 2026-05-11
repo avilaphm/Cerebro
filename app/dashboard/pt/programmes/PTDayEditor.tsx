@@ -28,6 +28,24 @@ function calcWeekRanges(blocks: PTProgrammeWeekBlock[]) {
 
 const SECTION_NAMES = ['Warm Up', 'Workout', 'MetCon', 'Stretches', 'Cool Down'];
 
+// Tailwind class strings must be literal (no dynamic construction) for purging to include them
+const SECTION_ROW_BG: Record<string, string> = {
+  'Warm Up':  'bg-blue-50 border-l-2 border-l-blue-300',
+  'Workout':  'bg-stone-50 border-l-2 border-l-stone-400',
+  'MetCon':   'bg-amber-50 border-l-2 border-l-amber-400',
+  'Stretches':'bg-emerald-50 border-l-2 border-l-emerald-400',
+  'Cool Down':'bg-teal-50 border-l-2 border-l-teal-400',
+};
+const SECTION_HEADER_CLS: Record<string, string> = {
+  'Warm Up':  'bg-blue-100 text-blue-700',
+  'Workout':  'bg-stone-100 text-stone-700',
+  'MetCon':   'bg-amber-100 text-amber-800',
+  'Stretches':'bg-emerald-100 text-emerald-800',
+  'Cool Down':'bg-teal-100 text-teal-800',
+};
+const DEFAULT_ROW_BG = 'bg-purple-50 border-l-2 border-l-purple-400';
+const DEFAULT_HEADER_CLS = 'bg-purple-100 text-purple-800';
+
 export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, onChange }: Props) {
   const [dragged, setDragged] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -228,6 +246,13 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
         )}
 
         {exercises.map((ex, idx) => {
+          // Determine which named section this exercise belongs to (scan backwards for section_start)
+          let currentSection: string | null = null;
+          for (let i = idx; i >= 0; i--) {
+            if (exercises[i]?.section_start !== undefined) { currentSection = exercises[i].section_start ?? null; break; }
+          }
+          const rowBg = currentSection ? (SECTION_ROW_BG[currentSection] ?? DEFAULT_ROW_BG) : '';
+          const headerCls = currentSection ? (SECTION_HEADER_CLS[currentSection] ?? DEFAULT_HEADER_CLS) : '';
           const ssLabel = getSupersetLabel(ex, idx);
           const isFirstInGroup = !!ex.superset_id && (idx === 0 || exercises[idx - 1]?.superset_id !== ex.superset_id);
           const isLastInGroup = !!ex.superset_id && (idx === exercises.length - 1 || exercises[idx + 1]?.superset_id !== ex.superset_id);
@@ -250,19 +275,17 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
 
           return (
             <div key={ex.id}>
-              {/* Section header */}
+              {/* Section header banner */}
               {ex.section_start !== undefined && (
-                <div className="flex items-center gap-2 mt-4 mb-1 group">
-                  <div className="flex-1 h-px bg-black/10" />
+                <div className={`flex items-center justify-between px-3 py-1.5 mt-4 mb-0 group ${headerCls || 'bg-black/5 text-black/50'}`}>
                   <input
                     value={ex.section_start}
                     onChange={(e) => patch(idx, { section_start: e.target.value })}
-                    className="text-[0.6rem] uppercase tracking-[0.15em] text-black/50 font-medium bg-transparent border-b border-transparent focus:border-black/20 outline-none px-1 min-w-[80px]"
+                    className="text-[0.6rem] uppercase tracking-[0.2em] font-semibold bg-transparent outline-none flex-1"
                     onClick={(e) => e.stopPropagation()}
                   />
-                  <div className="flex-1 h-px bg-black/10" />
                   <button type="button" onClick={() => patch(idx, { section_start: undefined })}
-                    className="text-black/20 hover:text-red-400 text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                    className="text-current opacity-30 hover:opacity-70 text-xs ml-2 opacity-0 group-hover:opacity-40 transition-opacity">×</button>
                 </div>
               )}
 
@@ -275,7 +298,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
               )}
 
               <div
-                className={`flex items-stretch gap-1 ${isInGroup ? 'ml-8 border-l-2 border-black/15 pl-2' : ''} ${isSelected ? 'bg-black/[0.03]' : ''}`}
+                className={`flex items-stretch gap-1 ${rowBg} ${isInGroup ? 'ml-8 border-l-4 border-l-black/20 pl-2' : ''} ${isSelected ? 'ring-1 ring-inset ring-black/25' : ''}`}
                 draggable
                 onDragStart={() => setDragged(idx)}
                 onDragOver={(e) => e.preventDefault()}
