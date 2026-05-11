@@ -4,12 +4,23 @@
 2026-05-11 by claude
 
 ## Last completed task
-PT Dashboard Revamp complete. Tidy-up: unread message count on overview, deleted PTDashboard.tsx, archived plan.
+Programme progressive overload + workout tracking system (full feature).
 
 ## Last commit
-9f4885e -- tidy-up after Phase 5
+bb17041 -- feat: programme progressive overload + workout done tracking
 
 ## Current state
+
+### Programme progression system (NEW)
+- `PTProgrammePhase.week_blocks` -- per-phase progressive overload blocks: [{weeks, sets}, ...]
+- Wizard step 2 + edit view: text + voice input for week blocks, parsed from natural language, shown as chips
+- `/dashboard/pt/programmes/[id]/edit` -- standalone edit route for any assigned programme
+- "Edit programme" link on client card active assignment
+- "Resend login link" button on client card (was "Send invite")
+- Client portal: "Workout done" button on every day card, green Done badge, progress strip per phase
+- Block auto-advancement: when all days for all weeks in a block are done, auto-advance to next block
+- Sets displayed per exercise dynamically reflect current block
+- DB: current_week, current_block_index on pt_program_assignments; block_index, is_quick_done on pt_workout_logs
 
 ### PT Dashboard (Phases 1-4 complete)
 
@@ -52,7 +63,7 @@ Deleted. No longer exists.
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-PT Dashboard Revamp fully complete and cleaned up. No outstanding work scoped. Pedro to brief next feature.
+Programme progression system complete. Pedro to test and brief next feature.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`
