@@ -7,7 +7,7 @@
 Fixed PT client resend login/setup link flow and client password login.
 
 ## Last commit
-ae3af1b - fix PT client login links
+c480e11 - fix PT client login links
 
 ## Current state
 
