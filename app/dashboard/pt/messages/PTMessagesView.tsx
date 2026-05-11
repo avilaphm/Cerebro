@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTClient } from '@/utils/pt/types';
 
@@ -25,7 +25,7 @@ interface Props {
 }
 
 export default function PTMessagesView({ clients, unreadByClient, lastMessageByClient }: Props) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     clients[0]?.id ?? null,
   );
@@ -38,15 +38,25 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) ?? null;
 
-  const loadMessages = async (clientId: string) => {
-    setLoading(true);
+  const mergeMessages = useCallback((incoming: Message[]) => {
+    setMessages((current) => {
+      const byId = new Map<string, Message>();
+      [...current, ...incoming].forEach((message) => byId.set(message.id, message));
+      return Array.from(byId.values()).sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+    });
+  }, []);
+
+  const loadMessages = useCallback(async (clientId: string, showLoading = true) => {
+    if (showLoading) setLoading(true);
     const { data } = await supabase
       .from('pt_messages')
       .select('*')
       .eq('client_id', clientId)
       .order('created_at', { ascending: true });
-    setMessages((data ?? []) as Message[]);
-    setLoading(false);
+    mergeMessages((data ?? []) as Message[]);
+    if (showLoading) setLoading(false);
 
     await supabase
       .from('pt_messages')
@@ -56,16 +66,24 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
       .is('read_at', null);
 
     setUnread((prev) => ({ ...prev, [clientId]: 0 }));
-  };
+  }, [mergeMessages, supabase]);
 
   useEffect(() => {
     if (!selectedClientId) return;
     void loadMessages(selectedClientId);
-  }, [selectedClientId]);
+  }, [loadMessages, selectedClientId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!selectedClientId) return;
+    const interval = window.setInterval(() => {
+      void loadMessages(selectedClientId, false);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [loadMessages, selectedClientId]);
 
   useEffect(() => {
     const channel = supabase
@@ -76,7 +94,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
         (payload) => {
           const msg = payload.new as Message;
           if (msg.client_id === selectedClientId) {
-            setMessages((prev) => [...prev, msg]);
+            mergeMessages([msg]);
             void supabase
               .from('pt_messages')
               .update({ read_at: new Date().toISOString() })
@@ -89,18 +107,24 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
       .subscribe();
 
     return () => { void supabase.removeChannel(channel); };
-  }, [selectedClientId, supabase]);
+  }, [mergeMessages, selectedClientId, supabase]);
 
   const send = async () => {
     if (!text.trim() || !selectedClientId || sending) return;
     setSending(true);
     const content = text.trim();
     setText('');
-    await supabase.from('pt_messages').insert({
+    const { data: inserted, error } = await supabase.from('pt_messages').insert({
       client_id: selectedClientId,
       sender: 'pt',
       content,
-    });
+    }).select('*').single();
+    if (error) {
+      setText(content);
+      setSending(false);
+      return;
+    }
+    if (inserted) mergeMessages([inserted as Message]);
     setSending(false);
   };
 

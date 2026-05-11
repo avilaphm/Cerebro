@@ -4,12 +4,22 @@
 2026-05-11 by codex
 
 ## Last completed task
-Added YouTube demo videos, verbal cues, and previous-weight prefill to client workout logging.
+Improved mobile client UX and fixed PT chat realtime/latency.
 
 ## Last commit
-c36547a - feat: add client exercise video cues and history
+PENDING - mobile client UX and chat latency fix
 
 ## Current state
+
+### Mobile client UX + chat latency fix (NEW)
+- `/client` workout screens have tighter mobile-first spacing, smaller mobile headings, larger touch targets, safe bottom padding, and phone-friendly set inputs.
+- Client message bubble opens as a native-feeling bottom sheet on phones instead of a small desktop popup.
+- `pt_messages` is now added to the `supabase_realtime` publication on the live Supabase project and `replica identity full` is set.
+- Local migration added: `supabase/migrations/20260511000300_enable_pt_messages_realtime.sql`.
+- Client chat now optimistically renders the message immediately after insert, then invokes note extraction asynchronously.
+- Client chat polls every 2.5s while open and every 10s while closed as a fallback if realtime lags.
+- PT dashboard messages also optimistically render sent messages and poll every 3s for the selected client.
+- Realtime publication verified remotely with `pg_publication_tables`.
 
 ### Client exercise demo + history UI (NEW)
 - Client workout logging cards now show a small YouTube video screen under the exercise name when `video_url` exists.

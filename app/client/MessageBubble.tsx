@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 
 interface Message {
@@ -29,7 +29,7 @@ interface Props {
 }
 
 export default function MessageBubble({ clientId, workoutContext }: Props) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
@@ -37,22 +37,32 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
   const [unread, setUnread] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const loadMessages = async () => {
+  const mergeMessages = useCallback((incoming: Message[]) => {
+    setMessages((current) => {
+      const byId = new Map<string, Message>();
+      [...current, ...incoming].forEach((message) => byId.set(message.id, message));
+      return Array.from(byId.values()).sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+    });
+  }, []);
+
+  const loadMessages = useCallback(async () => {
     const { data } = await supabase
       .from('pt_messages')
       .select('id, sender, content, created_at, context')
       .eq('client_id', clientId)
       .order('created_at', { ascending: true });
-    setMessages((data ?? []) as Message[]);
-  };
+    mergeMessages((data ?? []) as Message[]);
+  }, [clientId, mergeMessages, supabase]);
 
   useEffect(() => {
     void loadMessages();
-  }, [clientId]);
+  }, [loadMessages]);
 
   useEffect(() => {
     if (!open) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: 'auto' });
 
     void supabase
       .from('pt_messages')
@@ -62,7 +72,14 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       .is('read_at', null);
 
     setUnread(0);
-  }, [open, messages.length]);
+  }, [clientId, messages.length, open, supabase]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void loadMessages();
+    }, open ? 2500 : 10000);
+    return () => window.clearInterval(interval);
+  }, [loadMessages, open]);
 
   useEffect(() => {
     const channel = supabase
@@ -72,7 +89,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
         { event: 'INSERT', schema: 'public', table: 'pt_messages', filter: `client_id=eq.${clientId}` },
         (payload) => {
           const msg = payload.new as Message;
-          setMessages((prev) => [...prev, msg]);
+          mergeMessages([msg]);
           if (msg.sender === 'pt' && !open) {
             setUnread((n) => n + 1);
           }
@@ -81,7 +98,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       .subscribe();
 
     return () => { void supabase.removeChannel(channel); };
-  }, [clientId, open, supabase]);
+  }, [clientId, mergeMessages, open, supabase]);
 
   const send = async () => {
     if (!text.trim() || sending) return;
@@ -89,7 +106,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
     const content = text.trim();
     setText('');
 
-    const { data: inserted } = await supabase
+    const { data: inserted, error } = await supabase
       .from('pt_messages')
       .insert({
         client_id: clientId,
@@ -97,18 +114,29 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
         content,
         context: workoutContext ?? null,
       })
-      .select('id')
+      .select('id, sender, content, created_at, context')
       .single();
 
+    if (error) {
+      setText(content);
+      setSending(false);
+      return;
+    }
+
     if (inserted) {
-      await supabase.functions.invoke('extract-client-note', {
+      const message = inserted as Message;
+      mergeMessages([message]);
+      setSending(false);
+
+      void supabase.functions.invoke('extract-client-note', {
         body: {
-          message_id: (inserted as { id: string }).id,
+          message_id: message.id,
           client_id: clientId,
           content,
           context: workoutContext,
         },
       });
+      return;
     }
 
     setSending(false);
@@ -149,7 +177,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       </button>
 
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 sm:w-96 bg-white border border-black/10 shadow-2xl rounded-2xl flex flex-col overflow-hidden" style={{ maxHeight: '70vh' }}>
+        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[82svh] flex-col overflow-hidden rounded-t-2xl border border-black/10 bg-white shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-auto sm:max-h-[70vh] sm:w-96 sm:rounded-2xl">
           <div className="px-4 py-3 border-b border-black/8 flex items-center justify-between shrink-0">
             <div>
               <p className="text-sm font-medium">Message your coach</p>
@@ -166,7 +194,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 min-h-0">
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-3">
             {messages.length === 0 ? (
               <p className="text-xs text-black/30 text-center py-6">
                 Ask your coach anything. Let them know how you feel, if something hurts, or if you need to reschedule.
@@ -198,7 +226,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
             <div ref={bottomRef} />
           </div>
 
-          <div className="border-t border-black/8 px-3 py-3 flex gap-2 shrink-0">
+          <div className="flex shrink-0 gap-2 border-t border-black/8 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}

@@ -536,12 +536,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   };
 
   const renderHeader = () => (
-    <header className="border-b border-black/10 bg-white px-5 py-5 md:px-10">
+    <header className="border-b border-black/10 bg-white px-4 py-4 md:px-10 md:py-5">
       <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Pedro Avila Coaching</p>
       <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Training</h1>
-        <div className="flex items-center gap-4">
-          <p className="text-xs text-black/40">{userEmail}</p>
+        <h1 className="font-display text-2xl font-light tracking-[-0.02em] md:text-3xl">Training</h1>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <p className="max-w-[13rem] truncate text-xs text-black/40 md:max-w-none">{userEmail}</p>
           {isPedro ? (
             <a href="/dashboard" className="text-xs text-black/50 underline hover:text-black">Back to dashboard</a>
           ) : (
@@ -562,8 +562,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     if (!phase.week_blocks || phase.week_blocks.length === 0 || !progress) return null;
 
     return (
-      <div className="mt-5 border border-black/8 bg-[#fbfbf8] px-4 py-3">
-        <div className="mb-2 flex items-center justify-between">
+      <div className="mt-5 border border-black/8 bg-[#fbfbf8] px-3 py-3 md:px-4">
+        <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Progress</p>
           {progress.allBlocksDone ? (
             <span className="text-[0.6rem] uppercase tracking-[0.1em] border border-green-300 bg-green-50 px-2 py-0.5 text-green-700">
@@ -575,14 +575,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             </span>
           )}
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex gap-1">
           {phase.week_blocks.map((block, bi) => {
             const isDone = progress.allBlocksDone || bi < progress.blockIndex;
             const isCurrent = !progress.allBlocksDone && bi === progress.blockIndex;
             return (
               <div
                 key={`${block.sets}-${bi}`}
-                className={`flex-1 py-1.5 text-center text-[0.55rem] uppercase tracking-[0.1em] ${
+                className={`min-w-0 flex-1 py-1.5 text-center text-[0.52rem] uppercase tracking-[0.08em] sm:text-[0.55rem] ${
                   isDone
                     ? 'bg-black text-white'
                     : isCurrent
@@ -614,9 +614,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           Phase {selectedWorkout.phaseIndex + 1}
         </button>
 
-        <section className="border border-black/10 bg-white p-5">
+        <section className="border border-black/10 bg-white p-4 md:p-5">
           <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Workout preview</p>
-          <h2 className="mt-2 font-display text-3xl font-light">{selectedDay.title}</h2>
+          <h2 className="mt-2 font-display text-2xl font-light md:text-3xl">{selectedDay.title}</h2>
           {selectedDay.focus && <p className="mt-2 text-sm leading-relaxed text-black/55">{selectedDay.focus}</p>}
 
           <div className="mt-6 space-y-5">
@@ -660,7 +660,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const sections = getWorkoutSections(selectedDay, selectedPhase, selectedProgress?.blockIndex ?? 0);
 
     return (
-      <div className="mx-auto max-w-3xl pb-24">
+      <div className="mx-auto max-w-3xl pb-28">
         <button
           type="button"
           onClick={() => setSelectedWorkout({ ...selectedWorkout, started: false })}
@@ -672,7 +672,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
         <div className="mb-5">
           <p className="text-[0.65rem] uppercase tracking-[0.18em] text-black/35">Logging</p>
-          <h2 className="mt-1 font-display text-3xl font-light">{selectedDay.title}</h2>
+          <h2 className="mt-1 font-display text-2xl font-light md:text-3xl">{selectedDay.title}</h2>
         </div>
 
         <div className="space-y-4">
@@ -694,7 +694,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 </button>
 
                 {isOpen && (
-                  <div className="border-t border-black/8 px-4 pb-5 pt-1">
+                  <div className="border-t border-black/8 px-3 pb-5 pt-1 md:px-4">
                     <div className="space-y-4">
                       {section.exercises.map(({ exercise, values }) => {
                         const count = setCounts[exercise.id] ?? parseSets(values.sets);
@@ -705,7 +705,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         const cuesAreOpen = openCues[cueKey] ?? false;
 
                         return (
-                          <div key={exercise.id} className="border border-black/8 bg-[#fbfbf8] p-4">
+                          <div key={exercise.id} className="border border-black/8 bg-[#fbfbf8] p-3 md:p-4">
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="font-medium">{exercise.name}</p>
@@ -721,7 +721,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                             </div>
 
                             {(videoId || exercise.cues.length > 0) && (
-                              <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,16rem)_1fr] sm:items-start">
+                              <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,16rem)_1fr] md:items-start">
                                 {videoId ? (
                                   <button
                                     type="button"
@@ -793,19 +793,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                                 const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
                                 const draft = setDrafts[key] ?? { reps: '', weight: '' };
                                 return (
-                                  <div key={key} className="grid grid-cols-[3.5rem_1fr_1fr] gap-2">
-                                    <div className="border border-black/10 bg-white px-2 py-2 text-xs text-black/40">Set {setIndex + 1}</div>
+                                  <div key={key} className="grid grid-cols-[3.25rem_1fr_1fr] gap-2">
+                                    <div className="border border-black/10 bg-white px-2 py-3 text-xs text-black/40">Set {setIndex + 1}</div>
                                     <input
                                       value={draft.weight}
                                       onChange={(event) => updateSetDraft(key, { weight: event.target.value })}
-                                      className="min-w-0 border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                                      className="min-w-0 border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
                                       placeholder="Weight"
                                       inputMode="decimal"
                                     />
                                     <input
                                       value={draft.reps}
                                       onChange={(event) => updateSetDraft(key, { reps: event.target.value })}
-                                      className="min-w-0 border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                                      className="min-w-0 border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
                                       placeholder="Reps"
                                       inputMode="decimal"
                                     />
@@ -872,7 +872,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     <main className="min-h-screen bg-[#f7f7f3] text-black">
       {renderHeader()}
 
-      <div className="p-5 md:p-10">
+      <div className="px-4 py-5 pb-28 md:p-10">
         {status && (
           <div className="mb-5 border border-black/10 bg-white px-4 py-3 text-sm text-black/60">
             {status}
@@ -899,18 +899,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         ) : selectedWorkout ? (
           renderWorkoutPreview()
         ) : (
-          <div className="mx-auto max-w-5xl space-y-6">
-            <section className="border border-black/10 bg-white p-5">
+          <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+            <section className="border border-black/10 bg-white p-4 md:p-5">
               <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
               <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
               {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
             </section>
 
-            <section className="border border-black/10 bg-white p-5">
+            <section className="border border-black/10 bg-white p-4 md:p-5">
               <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Phase {activePhaseIndex + 1}</p>
-                  <h3 className="mt-1 font-display text-3xl font-light">{activePhase.title}</h3>
+                  <h3 className="mt-1 font-display text-2xl font-light md:text-3xl">{activePhase.title}</h3>
                   {activePhase.focus && <p className="mt-2 text-sm text-black/50">{activePhase.focus}</p>}
                 </div>
                 {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
@@ -929,7 +929,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       key={day.id}
                       type="button"
                       onClick={() => openWorkout(activePhaseIndex, dayIndex)}
-                      className={`group border p-4 text-left transition-colors ${
+                      className={`group min-h-[8.5rem] border p-4 text-left transition-colors ${
                         done
                           ? 'border-green-300 bg-green-50/50 hover:border-green-500'
                           : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
