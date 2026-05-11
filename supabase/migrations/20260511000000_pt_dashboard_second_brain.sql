@@ -180,11 +180,11 @@ create policy "pt admins full clients"
   on public.pt_clients for all
   to authenticated
   using (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   )
   with check (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   );
 
@@ -192,11 +192,11 @@ create policy "pt admins full exercises"
   on public.pt_exercises for all
   to authenticated
   using (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   )
   with check (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   );
 
@@ -204,11 +204,11 @@ create policy "pt admins full templates"
   on public.pt_program_templates for all
   to authenticated
   using (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   )
   with check (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   );
 
@@ -216,11 +216,11 @@ create policy "pt admins full assignments"
   on public.pt_program_assignments for all
   to authenticated
   using (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   )
   with check (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   );
 
@@ -228,11 +228,11 @@ create policy "pt admins full workout logs"
   on public.pt_workout_logs for all
   to authenticated
   using (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   )
   with check (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   );
 
@@ -240,11 +240,11 @@ create policy "pt admins full set logs"
   on public.pt_set_logs for all
   to authenticated
   using (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   )
   with check (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   );
 
@@ -252,11 +252,11 @@ create policy "pt admins full events"
   on public.pt_events for all
   to authenticated
   using (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   )
   with check (
-    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com')
+    lower((select auth.jwt() ->> 'email')) in ('pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au')
     or exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
   );
 
