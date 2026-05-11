@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import type { PTClient } from '@/utils/pt/types';
+import type { PTClient, PTGroup } from '@/utils/pt/types';
 
 const STATUS_LABELS: Record<PTClient['status'], string> = {
   invited: 'Invited',
@@ -20,7 +20,7 @@ const STATUS_COLORS: Record<PTClient['status'], string> = {
   archived: 'bg-black/5 text-black/30 border-black/8',
 };
 
-export default function PTClientsView({ initialClients, notesByClient = {} }: { initialClients: PTClient[]; notesByClient?: Record<string, number> }) {
+export default function PTClientsView({ initialClients, notesByClient = {}, groupsByClient = {} }: { initialClients: PTClient[]; notesByClient?: Record<string, number>; groupsByClient?: Record<string, PTGroup[]> }) {
   const supabase = createClient();
   const router = useRouter();
   const [clients, setClients] = useState(initialClients);
@@ -92,6 +92,15 @@ export default function PTClientsView({ initialClients, notesByClient = {} }: { 
               <p className="text-xs text-black/40 mt-0.5 truncate">{client.email}</p>
               {client.goals && (
                 <p className="text-xs text-black/50 mt-2 line-clamp-2">{client.goals}</p>
+              )}
+              {(groupsByClient[client.id] ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {(groupsByClient[client.id] ?? []).map((g) => (
+                    <span key={g.id} className="text-[0.6rem] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-full text-white leading-none" style={{ backgroundColor: g.color }}>
+                      {g.name}
+                    </span>
+                  ))}
+                </div>
               )}
               <div className="mt-3 pt-3 border-t border-black/8 flex items-center justify-between">
                 <span className="text-xs text-black/30">

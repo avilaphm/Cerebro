@@ -1,9 +1,24 @@
-export default function PTGroupsPage() {
-  return (
-    <div className="p-8">
-      <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
-      <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-4">Groups</h1>
-      <p className="text-sm text-black/40">Client grouping coming in Phase 5.</p>
-    </div>
-  );
+import { createClient } from '@/utils/supabase/server';
+import type { PTGroup, PTClient } from '@/utils/pt/types';
+import PTGroupsView from './PTGroupsView';
+
+interface PTGroupMember {
+  group_id: string;
+  client_id: string;
+}
+
+export default async function PTGroupsPage() {
+  const supabase = await createClient();
+
+  const [groupsRes, membersRes, clientsRes] = await Promise.all([
+    supabase.from('pt_groups').select('*').order('name'),
+    supabase.from('pt_group_members').select('group_id, client_id'),
+    supabase.from('pt_clients').select('id, name, email, status').order('name'),
+  ]);
+
+  const groups = (groupsRes.data ?? []) as PTGroup[];
+  const members = (membersRes.data ?? []) as PTGroupMember[];
+  const clients = (clientsRes.data ?? []) as Pick<PTClient, 'id' | 'name' | 'email' | 'status'>[];
+
+  return <PTGroupsView groups={groups} members={members} clients={clients} />;
 }
