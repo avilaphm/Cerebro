@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Check, ChevronLeft, ChevronRight, Minus, Play, Plus, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
@@ -199,7 +198,6 @@ function workoutIsDone(
 
 export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const supabase = createClient();
-  const router = useRouter();
   const isPedro = isPedroAdminEmail(userEmail);
   const [client, setClient] = useState<PTClient | null>(null);
   const [assignments, setAssignments] = useState<PTProgramAssignment[]>([]);
@@ -547,7 +545,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           ) : (
             <button
               type="button"
-              onClick={async () => { await supabase.auth.signOut(); router.push('/client-login'); }}
+              onClick={async () => {
+                await supabase.auth.signOut();
+                window.location.replace('/client-login');
+              }}
               className="text-xs text-black/40 hover:text-black"
             >
               Sign out

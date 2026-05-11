@@ -447,7 +447,7 @@ export default function PTClientDetail({ client: initial, templates, assignments
 
       {status && <p className="text-xs text-black/50 mb-6">{status}</p>}
 
-      <div className="border-t border-black/8 pt-6 flex items-center gap-3">
+      <div className="border-t border-black/8 pt-6 flex flex-wrap items-center gap-3">
         <button
           onClick={sendInvite}
           disabled={inviting}
@@ -455,6 +455,15 @@ export default function PTClientDetail({ client: initial, templates, assignments
         >
           {inviting ? 'Sending...' : client.password_created_at ? 'Resend login link' : 'Resend setup link'}
         </button>
+        {client.password_created_at && (
+          <Link
+            href="/client-login"
+            target="_blank"
+            className="border border-black/20 px-5 py-2 text-sm hover:bg-black hover:text-white transition-colors"
+          >
+            Client login page
+          </Link>
+        )}
         <button
           onClick={() => setPasswordPanelOpen((open) => !open)}
           className="border border-black/20 px-5 py-2 text-sm hover:bg-black hover:text-white transition-colors"

@@ -21,9 +21,13 @@ export default function AuthHashRedirect() {
 
     // Clear hash from URL immediately so it doesn't persist on refresh
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    const next = new URLSearchParams(window.location.search).get('next');
+    const authErrorPath = window.location.pathname.startsWith('/client-login') || next?.startsWith('/client')
+      ? '/client-login'
+      : '/login';
 
     if (errorParam) {
-      router.replace('/login?error=link_expired');
+      router.replace(`${authErrorPath}?error=link_expired`);
       return;
     }
 
@@ -33,10 +37,9 @@ export default function AuthHashRedirect() {
     supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
       .then(({ data, error }) => {
         if (error || !data.session) {
-          router.replace('/login?error=session_failed');
+          router.replace(`${authErrorPath}?error=session_failed`);
           return;
         }
-        const next = new URLSearchParams(window.location.search).get('next');
         if (type === 'recovery') {
           router.replace(`/auth/update-password?next=${encodeURIComponent(next ?? '/dashboard')}`);
         } else if (type === 'invite') {

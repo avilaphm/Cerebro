@@ -4,14 +4,17 @@
 2026-05-11 by codex
 
 ## Last completed task
-Fixed PT client login link redirect regression.
+Fixed client sign-out and stable client login access.
 
 ## Last commit
-Pending commit - fix client auth link redirects
+Pending commit - fix client logout and login page access
 
 ## Current state
 
 ### PT client account status + password controls (NEW)
+- Client sign-out from `/client` now forces the browser to `/client-login`.
+- Expired or already-used client auth hash links now stay on `/client-login?error=...` instead of sending clients to the generic `/login`.
+- PT client detail now shows a separate `Client login page` button next to `Resend login link` for live clients.
 - Follow-up redirect fix: client auth callbacks now normalize nested `next` URLs and route client users to `/client` instead of falling back to the generic Cerebro dashboard login.
 - Legacy implicit auth hash handling now detects client profiles and routes them to `/client`; `/client-login` also mounts that handler.
 - Client login, invite, and password reset links now build callback URLs with `URLSearchParams` so `next=/client` is preserved reliably.
