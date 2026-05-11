@@ -22,11 +22,17 @@ export default function ClientSetupForm({ name, email }: { name: string; email: 
     }
     setLoading(true);
     setError('');
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    const { data: updatedUser, error: updateError } = await supabase.auth.updateUser({ password });
     if (updateError) {
       setError(updateError.message);
       setLoading(false);
     } else {
+      if (updatedUser.user?.email) {
+        await supabase
+          .from('pt_clients')
+          .update({ password_created_at: new Date().toISOString() })
+          .eq('email', updatedUser.user.email.toLowerCase());
+      }
       router.push('/client');
     }
   };

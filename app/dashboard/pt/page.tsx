@@ -1,5 +1,5 @@
-import PTDashboard from './PTDashboard';
+import { redirect } from 'next/navigation';
 
 export default function PTDashboardPage() {
-  return <PTDashboard />;
+  redirect('/dashboard/pt/overview');
 }

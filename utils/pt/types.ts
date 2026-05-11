@@ -18,6 +18,10 @@ export interface PTClient {
   goals: string | null;
   notes: string | null;
   user_id: string | null;
+  sessions_remaining: number;
+  document_url: string | null;
+  password_created_at: string | null;
+  created_at?: string;
 }
 
 export interface PTProgrammeExercise {
@@ -86,5 +90,21 @@ export interface PTSetLog {
   reps: number | null;
   weight: number | null;
   notes: string | null;
+  created_at: string;
+}
+
+export interface PTMessage {
+  id: string;
+  client_id: string;
+  sender: 'pt' | 'client';
+  content: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface PTGroup {
+  id: string;
+  name: string;
+  color: string;
   created_at: string;
 }
