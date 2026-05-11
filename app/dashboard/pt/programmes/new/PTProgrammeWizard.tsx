@@ -11,7 +11,7 @@ import type {
 
 interface SpeechRecognitionLike {
   continuous: boolean; interimResults: boolean; lang: string;
-  onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean } & ArrayLike<{ transcript: string }>> }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
 }
@@ -92,10 +92,15 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     const SR = getSR();
     if (!SR) { setGenStatus('Browser dictation not available. Type instead.'); return; }
     const r = new SR();
-    r.continuous = true; r.interimResults = false; r.lang = 'en-AU';
+    r.continuous = true; r.interimResults = true; r.lang = 'en-AU';
     r.onresult = (e) => {
-      const newText = Array.from(e.results).slice(e.resultIndex).map((res) => res[0]?.transcript ?? '').join(' ');
-      setBrainDump((cur) => (cur ? `${cur} ${newText}` : newText).trim());
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        if (result?.isFinal) {
+          const transcript = result[0]?.transcript ?? '';
+          if (transcript) setBrainDump((cur) => (cur ? `${cur} ${transcript}` : transcript).trim());
+        }
+      }
     };
     r.onend = () => setListening(false);
     r.start(); setListening(true);
