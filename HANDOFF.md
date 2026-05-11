@@ -4,10 +4,10 @@
 2026-05-11 by claude
 
 ## Last completed task
-PT Dashboard Revamp Phases 1-5 complete. Full app: navigation, clients, overview, messaging, programme wizard, groups, settings (exercise library), emails placeholder.
+PT Dashboard Revamp complete. Tidy-up: unread message count on overview, deleted PTDashboard.tsx, archived plan.
 
 ## Last commit
-pt-dashboard-v5 (tag) -- 716a0e7
+9f4885e -- tidy-up after Phase 5
 
 ## Current state
 
@@ -45,18 +45,14 @@ pt-dashboard-v5 (tag) -- 716a0e7
 **Storage pattern:** `document_url` stores the storage PATH (e.g. `{client_id}/{timestamp}-filename.pdf`), NOT a public URL. Signed URLs generated on demand via `supabase.storage.from('pt-client-docs').createSignedUrl(path, seconds)`.
 
 ### Old PTDashboard.tsx
-Still exists at `app/dashboard/pt/PTDashboard.tsx`. No longer rendered. Safe to delete now.
+Deleted. No longer exists.
 
 ### Leads dashboard
 - Phase 1 complete, Phase 2+ pending Pedro re-brief
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-All 5 phases of the PT Dashboard Revamp are complete. Possible next steps:
-
-- Delete `app/dashboard/pt/PTDashboard.tsx` (old file, no longer rendered)
-- Move the plan file to `plans/archived/`
-- Start a new feature (Pedro to brief)
+PT Dashboard Revamp fully complete and cleaned up. No outstanding work scoped. Pedro to brief next feature.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`
