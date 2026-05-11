@@ -79,7 +79,6 @@ Deno.serve(async (req: Request) => {
     if (clientError || !client) return json({ error: 'Client not found.' }, 404);
 
     const documentPath = client.document_url as string | null;
-    let documentContent = '';
 
     if (documentPath) {
       const { data: signedData, error: signedError } = await adminClient.storage
@@ -88,81 +87,113 @@ Deno.serve(async (req: Request) => {
 
       if (!signedError && signedData?.signedUrl) {
         const fileRes = await fetch(signedData.signedUrl);
-        const contentType = fileRes.headers.get('content-type') ?? '';
 
-        if (contentType.includes('pdf') || documentPath.toLowerCase().endsWith('.pdf')) {
-          const fileBytes = await fileRes.arrayBuffer();
+        if (fileRes.ok) {
+          const contentType = fileRes.headers.get('content-type') ?? '';
+          const isPdf = contentType.includes('pdf') || documentPath.toLowerCase().endsWith('.pdf');
 
-          const form = new FormData();
-          form.append('purpose', 'user_data');
-          form.append('file', new Blob([fileBytes], { type: 'application/pdf' }), 'client-profile.pdf');
+          if (isPdf) {
+            // Try PDF path via OpenAI Files + Responses API — fall through on any failure
+            let uploadedFileId: string | null = null;
+            try {
+              const fileBytes = await fileRes.arrayBuffer();
 
-          const uploadRes = await fetch('https://api.openai.com/v1/files', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${openaiKey}` },
-            body: form,
-          });
-          const uploadJson = (await uploadRes.json()) as { id?: string; error?: { message: string } };
+              const form = new FormData();
+              form.append('purpose', 'user_data');
+              form.append('file', new Blob([fileBytes], { type: 'application/pdf' }), 'client-profile.pdf');
 
-          if (uploadJson.id) {
-            const responseRes = await fetch('https://api.openai.com/v1/responses', {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                model: 'gpt-4o',
-                input: [
-                  {
-                    role: 'user',
-                    content: [
-                      { type: 'input_file', file_id: uploadJson.id },
-                      { type: 'input_text', text: SYSTEM_PROMPT },
+              const uploadRes = await fetch('https://api.openai.com/v1/files', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${openaiKey}` },
+                body: form,
+              });
+
+              if (uploadRes.ok) {
+                const uploadJson = (await uploadRes.json()) as { id?: string };
+                uploadedFileId = uploadJson.id ?? null;
+              }
+
+              if (uploadedFileId) {
+                const responseRes = await fetch('https://api.openai.com/v1/responses', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    model: 'gpt-4o',
+                    instructions: SYSTEM_PROMPT,
+                    input: [
+                      {
+                        role: 'user',
+                        content: [
+                          { type: 'input_file', file_id: uploadedFileId },
+                          { type: 'input_text', text: 'Extract the PT programme structure from this client profile document. Return only the JSON schema.' },
+                        ],
+                      },
                     ],
-                  },
-                ],
-              }),
-            });
-            const responseJson = (await responseRes.json()) as { output?: Array<{ content?: Array<{ text?: string }> }> };
-            const rawText = responseJson.output?.[0]?.content?.[0]?.text ?? '';
+                  }),
+                });
 
-            await fetch(`https://api.openai.com/v1/files/${uploadJson.id}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${openaiKey}` },
-            });
-
-            return json(parseJsonResult(rawText));
+                if (responseRes.ok) {
+                  const responseJson = (await responseRes.json()) as { output?: Array<{ content?: Array<{ text?: string }> }> };
+                  const rawText = responseJson.output?.[0]?.content?.[0]?.text ?? '';
+                  if (rawText) {
+                    return json(parseJsonResult(rawText));
+                  }
+                }
+              }
+            } catch {
+              // PDF processing failed — fall through to text fallback
+            } finally {
+              if (uploadedFileId) {
+                await fetch(`https://api.openai.com/v1/files/${uploadedFileId}`, {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${openaiKey}` },
+                }).catch(() => {});
+              }
+            }
+          } else {
+            // Non-PDF: read as text and use chat completions below
+            const documentContent = await fileRes.text();
+            if (documentContent.trim()) {
+              return json(await generateFromText(`Client profile document:\n\n${documentContent}`, openaiKey));
+            }
           }
-        } else {
-          documentContent = await fileRes.text();
         }
       }
     }
 
-    const prompt = documentContent
-      ? `Client profile document:\n\n${documentContent}`
-      : `Client name: ${String(client.name)}\nGoals: ${String(client.goals ?? 'Not specified')}\nNotes: ${String(client.notes ?? 'None')}`;
-
-    const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-4.1',
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-      }),
-    });
-    const chatJson = (await chatRes.json()) as { choices?: Array<{ message: { content: string } }>; error?: { message: string } };
-    if (chatJson.error) return json({ error: chatJson.error.message }, 500);
-    const raw = chatJson.choices?.[0]?.message.content ?? '{}';
-
-    return json(parseJsonResult(raw));
+    // Fallback: use client goals + notes via chat completions
+    const prompt = `Client name: ${String(client.name)}\nGoals: ${String(client.goals ?? 'Not specified')}\nNotes: ${String(client.notes ?? 'None')}`;
+    return json(await generateFromText(prompt, openaiKey));
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Parsing failed.' }, 500);
   }
 });
+
+async function generateFromText(prompt: string, openaiKey: string): Promise<Record<string, unknown>> {
+  const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4.1',
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  if (!chatRes.ok) {
+    const errText = await chatRes.text().catch(() => 'unknown error');
+    return { error: `OpenAI error: ${errText}` };
+  }
+
+  const chatJson = (await chatRes.json()) as { choices?: Array<{ message: { content: string } }>; error?: { message: string } };
+  if (chatJson.error) return { error: chatJson.error.message };
+  const raw = chatJson.choices?.[0]?.message.content ?? '{}';
+  return parseJsonResult(raw);
+}
 
 function parseJsonResult(raw: string): Record<string, unknown> {
   try {
