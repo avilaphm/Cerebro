@@ -7,7 +7,7 @@
 Improved mobile client UX and fixed PT chat realtime/latency.
 
 ## Last commit
-PENDING - mobile client UX and chat latency fix
+cebf43f - fix PT chat realtime and mobile client UX
 
 ## Current state
 
