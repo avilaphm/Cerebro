@@ -187,7 +187,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         ) : !assignment ? (
           <div className="border border-black/10 bg-white p-6">
-            <p className="text-sm text-black/55">No active programme assigned yet.</p>
+            <p className="text-sm font-medium text-black">
+              {client.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
+            </p>
+            <p className="mt-2 text-sm text-black/55">
+              Your programme is being created. It will appear here as soon as it is live.
+            </p>
           </div>
         ) : (
           <div className="space-y-6">

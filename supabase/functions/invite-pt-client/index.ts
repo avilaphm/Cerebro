@@ -48,7 +48,7 @@ Deno.serve(async (req: Request) => {
 
     if (clientError || !ptClient) return json({ error: clientError?.message ?? 'Client not found.' }, 404);
 
-    const redirectTo = `${req.headers.get('Origin') ?? 'https://cerebroai.au'}/auth/callback?next=/client`;
+    const redirectTo = `${req.headers.get('Origin') ?? 'https://cerebroai.au'}/auth/callback?next=/client-setup`;
     const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(ptClient.email, {
       redirectTo,
       data: { full_name: ptClient.name, role: 'client' },
