@@ -10,6 +10,7 @@ interface PTNote {
   is_active: boolean;
   created_at: string;
   source_message_id: string | null;
+  context?: Record<string, unknown>;
 }
 
 interface PTEvent {

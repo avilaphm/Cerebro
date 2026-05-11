@@ -27,6 +27,7 @@ interface PTNote {
   is_active: boolean;
   created_at: string;
   source_message_id: string | null;
+  context?: Record<string, unknown>;
 }
 
 interface Props {
@@ -199,6 +200,27 @@ export default function PTClientDetail({ client: initial, templates, assignments
         : client.status === 'active'
           ? 'Client is active'
           : null;
+
+  const noteFixHref = (note: PTNote) => {
+    const context = note.context ?? {};
+    if (context.source !== 'workout_section' || typeof context.assignment_id !== 'string') return null;
+    const params = new URLSearchParams();
+    params.set('note', note.id);
+    if (typeof context.phase_index === 'number') params.set('phase', String(context.phase_index));
+    if (typeof context.day_index === 'number') params.set('day', String(context.day_index));
+    if (typeof context.section_id === 'string') params.set('section', context.section_id);
+    return `/dashboard/pt/programmes/${context.assignment_id}/edit?${params.toString()}`;
+  };
+
+  const noteContextLabel = (note: PTNote) => {
+    const context = note.context ?? {};
+    if (context.source !== 'workout_section') return null;
+    const phase = typeof context.phase_index === 'number' ? `Phase ${context.phase_index + 1}` : null;
+    const week = typeof context.week_number === 'number' ? `Week ${context.week_number}` : null;
+    const workout = typeof context.workout_title === 'string' ? context.workout_title : null;
+    const section = typeof context.section_title === 'string' ? context.section_title : null;
+    return [phase, week, workout, section].filter(Boolean).join(' / ');
+  };
 
   return (
     <div className="p-8 max-w-3xl">
@@ -387,19 +409,32 @@ export default function PTClientDetail({ client: initial, templates, assignments
               <div key={note.id} className="flex items-start justify-between gap-4 border border-amber-200 bg-amber-50 px-4 py-3">
                 <div>
                   <p className="text-sm text-black/80">{note.content}</p>
+                  {noteContextLabel(note) && (
+                    <p className="mt-1 text-xs text-amber-700">{noteContextLabel(note)}</p>
+                  )}
                   <p className="text-xs text-black/30 mt-1">
                     {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
                 </div>
-                <button
-                  onClick={async () => {
-                    await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', note.id);
-                    setNotes((prev) => prev.filter((n) => n.id !== note.id));
-                  }}
-                  className="text-xs text-black/30 hover:text-black transition-colors shrink-0"
-                >
-                  Dismiss
-                </button>
+                <div className="flex shrink-0 items-center gap-3">
+                  {noteFixHref(note) && (
+                    <Link
+                      href={noteFixHref(note)!}
+                      className="text-xs text-amber-700 underline-offset-2 hover:underline"
+                    >
+                      Open fix
+                    </Link>
+                  )}
+                  <button
+                    onClick={async () => {
+                      await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', note.id);
+                      setNotes((prev) => prev.filter((n) => n.id !== note.id));
+                    }}
+                    className="text-xs text-black/30 hover:text-black transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             ))}
           </div>

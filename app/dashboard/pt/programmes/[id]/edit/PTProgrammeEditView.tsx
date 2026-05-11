@@ -25,9 +25,11 @@ function getSR() {
 export default function PTProgrammeEditView({
   assignment: initial,
   exercises,
+  highlight,
 }: {
   assignment: PTProgramAssignment;
   exercises: PTExercise[];
+  highlight?: { note?: string; phase?: string; day?: string; section?: string };
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -40,8 +42,10 @@ export default function PTProgrammeEditView({
   const [status, setStatus] = useState('');
 
   const [editingPhase, setEditingPhase] = useState<number | null>(null);
-  const [activePhaseTab, setActivePhaseTab] = useState(0);
-  const [activeDay, setActiveDay] = useState<number | null>(null);
+  const highlightedPhase = Number.parseInt(highlight?.phase ?? '', 10);
+  const highlightedDay = Number.parseInt(highlight?.day ?? '', 10);
+  const [activePhaseTab, setActivePhaseTab] = useState(Number.isFinite(highlightedPhase) ? highlightedPhase : 0);
+  const [activeDay, setActiveDay] = useState<number | null>(Number.isFinite(highlightedDay) ? highlightedDay : null);
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
@@ -121,9 +125,19 @@ export default function PTProgrammeEditView({
       setStatus(`Error: ${error.message}`);
       setSaving(false);
     } else {
+      if (highlight?.note) {
+        await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', highlight.note);
+      }
       setStatus('Saved.');
       setTimeout(() => router.push(`/dashboard/pt/clients/${initial.client_id}`), 800);
     }
+  };
+
+  const markNoteDone = async () => {
+    if (!highlight?.note) return;
+    setSaving(true);
+    await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', highlight.note);
+    router.push(`/dashboard/pt/clients/${initial.client_id}`);
   };
 
   const phase = programme.phases[activePhaseTab] ?? null;
@@ -164,6 +178,27 @@ export default function PTProgrammeEditView({
           </button>
         </div>
       </div>
+
+      {highlight?.note && (
+        <div className="mb-6 border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-800">Client note fix</p>
+              <p className="mt-1 text-xs text-black/50">
+                Opened from the client note. Save changes to clear it, or mark done if no programme edit is needed.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void markNoteDone()}
+              disabled={saving}
+              className="shrink-0 border border-amber-300 bg-white px-4 py-2 text-xs text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Phases section */}
       <div className="mb-8">

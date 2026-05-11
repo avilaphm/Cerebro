@@ -4,12 +4,23 @@
 2026-05-11 by codex
 
 ## Last completed task
-Fixed client sign-out and stable client login access.
+Added section note submission and weekly workout progress.
 
 ## Last commit
-Pending commit - fix client logout and login page access
+Pending commit - add workout notes and weekly progress
 
 ## Current state
+
+### Client workout notes + weekly progress (NEW)
+- Each workout section now has a `Submit note` button under `Notes for Pedro`.
+- Client-submitted section notes insert immediately into `pt_client_notes`, so they appear on the PT client profile card.
+- Added `pt_client_notes.context` JSON metadata and a client insert policy for workout section notes.
+- Remote migration applied: `client_workout_notes`.
+- Section notes are cleared on the client side after submit, so they do not keep appearing when the client returns to that workout.
+- Client progress now displays the current block split by weeks, with completed workout count per week.
+- When a client completes all workouts for a week, the assignment `current_week` updates to the next week, not only when the whole block changes.
+- PT client notes now show workout context and an `Open fix` link when the note came from a workout section.
+- Programme edit opened from a note shows a fix banner. Saving changes or clicking `Done` marks the note inactive and removes it from the client card.
 
 ### PT client account status + password controls (NEW)
 - Client sign-out from `/client` now forces the browser to `/client-login`.

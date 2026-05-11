@@ -206,6 +206,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [setDrafts, setSetDrafts] = useState<Record<string, SetDraft>>({});
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
+  const [submittedSectionNotes, setSubmittedSectionNotes] = useState<Record<string, boolean>>({});
+  const [submittingSectionNote, setSubmittingSectionNote] = useState<string | null>(null);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [openCues, setOpenCues] = useState<Record<string, boolean>>({});
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
@@ -411,6 +413,40 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setStatus('');
   };
 
+  const submitSectionNote = async (section: WorkoutSectionView, noteKey: string) => {
+    if (!client || !assignment || !selectedWorkout || !selectedPhase || !selectedDay) return;
+    const note = sectionNotes[noteKey]?.trim();
+    if (!note) return;
+
+    setSubmittingSectionNote(noteKey);
+    setStatus('');
+    const { error } = await supabase.from('pt_client_notes').insert({
+      client_id: client.id,
+      content: note,
+      context: {
+        source: 'workout_section',
+        assignment_id: assignment.id,
+        phase_index: selectedWorkout.phaseIndex,
+        phase_title: selectedPhase.title,
+        day_index: selectedWorkout.dayIndex,
+        workout_title: selectedDay.title,
+        section_id: section.id,
+        section_title: section.title,
+        week_number: selectedProgress?.weekWithinBlock ?? 1,
+        block_index: selectedProgress?.blockIndex ?? 0,
+      },
+    });
+
+    if (error) {
+      setStatus(error.message);
+    } else {
+      setSectionNotes((current) => ({ ...current, [noteKey]: '' }));
+      setSubmittedSectionNotes((current) => ({ ...current, [noteKey]: true }));
+      setStatus('Note sent to Pedro.');
+    }
+    setSubmittingSectionNote(null);
+  };
+
   const finishWorkout = async () => {
     if (!client || !assignment || !selectedWorkout || !selectedPhase || !selectedDay) return;
     setSavingWorkout(true);
@@ -516,7 +552,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         selectedPhase.days.length,
       );
 
-      if (newProgress && newProgress.blockIndex > progress.blockIndex) {
+      if (
+        newProgress &&
+        (newProgress.blockIndex !== progress.blockIndex || newProgress.weekWithinBlock !== progress.weekWithinBlock)
+      ) {
         await supabase
           .from('pt_program_assignments')
           .update({
@@ -577,12 +616,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           )}
         </div>
         <div className="flex gap-1">
-          {phase.week_blocks.map((block, bi) => {
-            const isDone = progress.allBlocksDone || bi < progress.blockIndex;
-            const isCurrent = !progress.allBlocksDone && bi === progress.blockIndex;
+          {Array.from({ length: progress.block?.weeks ?? 0 }).map((_, weekIndex) => {
+            const weekNumber = weekIndex + 1;
+            const logsInWeek = workoutLogs.filter(
+              (log) =>
+                log.phase_index === activePhaseIndex &&
+                log.block_index === progress.blockIndex &&
+                log.week_number === weekNumber,
+            );
+            const doneDays = new Set(logsInWeek.map((log) => log.day_index)).size;
+            const isDone = progress.allBlocksDone || doneDays >= phase.days.length;
+            const isCurrent = !progress.allBlocksDone && weekNumber === progress.weekWithinBlock;
             return (
               <div
-                key={`${block.sets}-${bi}`}
+                key={`week-${weekNumber}`}
                 className={`min-w-0 flex-1 py-1.5 text-center text-[0.52rem] uppercase tracking-[0.08em] sm:text-[0.55rem] ${
                   isDone
                     ? 'bg-black text-white'
@@ -591,7 +638,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     : 'border border-black/8 bg-black/4 text-black/25'
                 }`}
               >
-                {block.sets} sets
+                Week {weekNumber}
+                <span className="block text-[0.48rem] normal-case opacity-70">{doneDays}/{phase.days.length}</span>
               </div>
             );
           })}
@@ -849,6 +897,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         placeholder="Anything that felt off, easy, painful, or worth changing."
                       />
                     </label>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <p className="text-xs text-black/35">
+                        {submittedSectionNotes[noteKey] ? 'Sent to Pedro.' : 'Send this without waiting until the end.'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void submitSectionNote(section, noteKey)}
+                        disabled={submittingSectionNote === noteKey || !sectionNotes[noteKey]?.trim()}
+                        className="border border-black bg-black px-4 py-2 text-xs text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        {submittingSectionNote === noteKey ? 'Sending...' : 'Submit note'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </section>

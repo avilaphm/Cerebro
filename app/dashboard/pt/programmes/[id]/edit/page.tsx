@@ -4,8 +4,15 @@ import { safeProgramme } from '@/utils/pt/programme';
 import type { PTProgramAssignment, PTExercise } from '@/utils/pt/types';
 import PTProgrammeEditView from './PTProgrammeEditView';
 
-export default async function PTProgrammeEditPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PTProgrammeEditPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ note?: string; phase?: string; day?: string; section?: string }>;
+}) {
   const { id } = await params;
+  const highlight = await searchParams;
   const supabase = await createClient();
 
   const [assignmentRes, exercisesRes] = await Promise.all([
@@ -30,6 +37,7 @@ export default async function PTProgrammeEditPage({ params }: { params: Promise<
     <PTProgrammeEditView
       assignment={assignment}
       exercises={(exercisesRes.data ?? []) as PTExercise[]}
+      highlight={highlight}
     />
   );
 }
