@@ -7,7 +7,7 @@
 Rebuilt client workout flow into phase cards, workout preview, and section-based logging.
 
 ## Last commit
-PENDING - client workout flow
+a3a89f9 - feat: rebuild client workout flow
 
 ## Current state
 
