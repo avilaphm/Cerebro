@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme } from '@/utils/pt/programme';
+import { isPedroAdminEmail } from '@/utils/pt/access';
 import type { PTClient, PTProgramAssignment, PTProgrammeExercise, PTSetLog } from '@/utils/pt/types';
 
 interface LogDraft {
@@ -13,6 +15,8 @@ interface LogDraft {
 
 export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const supabase = createClient();
+  const router = useRouter();
+  const isPedro = isPedroAdminEmail(userEmail);
   const [client, setClient] = useState<PTClient | null>(null);
   const [assignments, setAssignments] = useState<PTProgramAssignment[]>([]);
   const [setLogs, setSetLogs] = useState<PTSetLog[]>([]);
@@ -173,7 +177,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Cerebro PT</p>
         <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Your programme</h1>
-          <p className="text-xs text-black/40">{userEmail}</p>
+          <div className="flex items-center gap-4">
+            <p className="text-xs text-black/40">{userEmail}</p>
+            {isPedro ? (
+              <a href="/dashboard" className="text-xs text-black/50 underline hover:text-black">Back to dashboard</a>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => { await supabase.auth.signOut(); router.push('/client-login'); }}
+                className="text-xs text-black/40 hover:text-black"
+              >
+                Sign out
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
