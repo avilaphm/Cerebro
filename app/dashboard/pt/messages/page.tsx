@@ -1,9 +1,47 @@
-export default function PTMessagesPage() {
+import { createClient } from '@/utils/supabase/server';
+import type { PTClient } from '@/utils/pt/types';
+import PTMessagesView from './PTMessagesView';
+
+export default async function PTMessagesPage() {
+  const supabase = await createClient();
+
+  const [clientRes, msgRes] = await Promise.all([
+    supabase.from('pt_clients').select('*').order('name'),
+    supabase
+      .from('pt_messages')
+      .select('client_id, content, sender, read_at, created_at')
+      .order('created_at', { ascending: false }),
+  ]);
+
+  const clients = (clientRes.data ?? []) as PTClient[];
+  const messages = msgRes.data ?? [];
+
+  const unreadByClient: Record<string, number> = {};
+  const lastMessageByClient: Record<string, { content: string; created_at: string; sender: string }> = {};
+
+  for (const m of messages) {
+    if (!lastMessageByClient[m.client_id]) {
+      lastMessageByClient[m.client_id] = { content: m.content, created_at: m.created_at, sender: m.sender };
+    }
+    if (m.sender === 'client' && !m.read_at) {
+      unreadByClient[m.client_id] = (unreadByClient[m.client_id] ?? 0) + 1;
+    }
+  }
+
+  const sortedClients = [...clients].sort((a, b) => {
+    const aUnread = unreadByClient[a.id] ?? 0;
+    const bUnread = unreadByClient[b.id] ?? 0;
+    if (aUnread !== bUnread) return bUnread - aUnread;
+    const aLast = lastMessageByClient[a.id]?.created_at ?? '';
+    const bLast = lastMessageByClient[b.id]?.created_at ?? '';
+    return bLast.localeCompare(aLast);
+  });
+
   return (
-    <div className="p-8">
-      <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
-      <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-4">Messages</h1>
-      <p className="text-sm text-black/40">Client messaging coming in Phase 3.</p>
-    </div>
+    <PTMessagesView
+      clients={sortedClients}
+      unreadByClient={unreadByClient}
+      lastMessageByClient={lastMessageByClient}
+    />
   );
 }

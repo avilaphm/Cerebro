@@ -4,11 +4,26 @@ import type { PTClient, PTProgramTemplate, PTProgramAssignment } from '@/utils/p
 import { safeProgramme } from '@/utils/pt/programme';
 import PTClientDetail from './PTClientDetail';
 
+interface PTNote {
+  id: string;
+  content: string;
+  is_active: boolean;
+  created_at: string;
+  source_message_id: string | null;
+}
+
+interface PTEvent {
+  id: string;
+  event_type: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
 export default async function PTClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -22,6 +37,12 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase
+      .from('pt_client_notes')
+      .select('*')
+      .eq('client_id', id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false }),
   ]);
 
   if (clientRes.error || !clientRes.data) notFound();
@@ -35,7 +56,8 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
     ...a,
     programme: safeProgramme(a.programme),
   }));
-  const events = eventsRes.data ?? [];
+  const events = (eventsRes.data ?? []) as PTEvent[];
+  const notes = (notesRes.data ?? []) as PTNote[];
 
   return (
     <PTClientDetail
@@ -43,6 +65,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       templates={templates}
       assignments={assignments}
       events={events}
+      notes={notes}
     />
   );
 }

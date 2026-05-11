@@ -6,6 +6,7 @@ import { createClient } from '@/utils/supabase/client';
 import { safeProgramme } from '@/utils/pt/programme';
 import { isPedroAdminEmail } from '@/utils/pt/access';
 import type { PTClient, PTProgramAssignment, PTProgrammeExercise, PTSetLog } from '@/utils/pt/types';
+import MessageBubble from './MessageBubble';
 
 interface LogDraft {
   reps: string;
@@ -23,6 +24,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [drafts, setDrafts] = useState<Record<string, LogDraft>>({});
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
+  const [activeContext, setActiveContext] = useState<{
+    phase_index: number; phase_title: string; day_index: number; day_title: string;
+  } | null>(null);
 
   const loadPortal = useCallback(async () => {
     setLoading(true);
@@ -232,7 +236,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
                 <div className="mt-5 grid gap-4 xl:grid-cols-2">
                   {phase.days.map((day, dayIndex) => (
-                    <div key={day.id} className="border border-black/10 bg-[#fbfbf8] p-4">
+                    <div
+                      key={day.id}
+                      className="border border-black/10 bg-[#fbfbf8] p-4"
+                      onFocus={() => setActiveContext({ phase_index: phaseIndex, phase_title: phase.title, day_index: dayIndex, day_title: day.title })}
+                      onPointerDown={() => setActiveContext({ phase_index: phaseIndex, phase_title: phase.title, day_index: dayIndex, day_title: day.title })}
+                    >
                       <div className="mb-4 flex items-start justify-between gap-4">
                         <div>
                           <p className="font-medium">{day.title}</p>
@@ -321,6 +330,24 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         )}
       </div>
+
+      {client && !isPedro && (
+        <MessageBubble
+          clientId={client.id}
+          workoutContext={
+            activeContext && assignment
+              ? {
+                  assignment_id: assignment.id,
+                  assignment_name: assignment.name,
+                  phase_index: activeContext.phase_index,
+                  phase_title: activeContext.phase_title,
+                  day_index: activeContext.day_index,
+                  day_title: activeContext.day_title,
+                }
+              : null
+          }
+        />
+      )}
     </main>
   );
 }

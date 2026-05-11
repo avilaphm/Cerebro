@@ -21,14 +21,23 @@ interface PTEvent {
   metadata: Record<string, unknown>;
 }
 
+interface PTNote {
+  id: string;
+  content: string;
+  is_active: boolean;
+  created_at: string;
+  source_message_id: string | null;
+}
+
 interface Props {
   client: PTClient;
   templates: PTProgramTemplate[];
   assignments: PTProgramAssignment[];
   events: PTEvent[];
+  notes: PTNote[];
 }
 
-export default function PTClientDetail({ client: initial, templates, assignments, events }: Props) {
+export default function PTClientDetail({ client: initial, templates, assignments, events, notes: initialNotes }: Props) {
   const supabase = createClient();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -45,6 +54,7 @@ export default function PTClientDetail({ client: initial, templates, assignments
   const [uploading, setUploading] = useState(false);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
+  const [notes, setNotes] = useState(initialNotes);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -118,7 +128,7 @@ export default function PTClientDetail({ client: initial, templates, assignments
     setInviting(true);
     setStatus('Sending invite…');
     const { error } = await supabase.functions.invoke('invite-pt-client', {
-      body: { clientId: client.id },
+      body: { client_id: client.id },
     });
     setStatus(error ? `Error: ${error.message}` : 'Invite sent.');
     setInviting(false);
@@ -126,7 +136,7 @@ export default function PTClientDetail({ client: initial, templates, assignments
 
   const deleteClient = async () => {
     const { error } = await supabase.functions.invoke('delete-pt-client', {
-      body: { clientId: client.id },
+      body: { client_id: client.id },
     });
     if (!error) {
       router.push('/dashboard/pt/clients');
@@ -305,6 +315,35 @@ export default function PTClientDetail({ client: initial, templates, assignments
           </div>
         )}
       </div>
+
+      {notes.length > 0 && (
+        <div className="border-t border-black/8 pt-6 mb-8">
+          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-amber-600 mb-4">
+            Notes ({notes.length})
+          </h2>
+          <div className="space-y-2">
+            {notes.map((note) => (
+              <div key={note.id} className="flex items-start justify-between gap-4 border border-amber-200 bg-amber-50 px-4 py-3">
+                <div>
+                  <p className="text-sm text-black/80">{note.content}</p>
+                  <p className="text-xs text-black/30 mt-1">
+                    {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <button
+                  onClick={async () => {
+                    await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', note.id);
+                    setNotes((prev) => prev.filter((n) => n.id !== note.id));
+                  }}
+                  className="text-xs text-black/30 hover:text-black transition-colors shrink-0"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Client profile document</h2>

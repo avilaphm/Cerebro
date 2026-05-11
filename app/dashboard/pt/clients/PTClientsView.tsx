@@ -20,7 +20,7 @@ const STATUS_COLORS: Record<PTClient['status'], string> = {
   archived: 'bg-black/5 text-black/30 border-black/8',
 };
 
-export default function PTClientsView({ initialClients }: { initialClients: PTClient[] }) {
+export default function PTClientsView({ initialClients, notesByClient = {} }: { initialClients: PTClient[]; notesByClient?: Record<string, number> }) {
   const supabase = createClient();
   const router = useRouter();
   const [clients, setClients] = useState(initialClients);
@@ -97,9 +97,16 @@ export default function PTClientsView({ initialClients }: { initialClients: PTCl
                 <span className="text-xs text-black/30">
                   {client.sessions_remaining} sessions left
                 </span>
-                <span className={`text-xs ${client.password_created_at ? 'text-green-600' : 'text-black/30'}`}>
-                  {client.password_created_at ? '✓ Account active' : 'Awaiting setup'}
-                </span>
+                <div className="flex items-center gap-2">
+                  {(notesByClient[client.id] ?? 0) > 0 && (
+                    <span className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                      {notesByClient[client.id]} note{notesByClient[client.id] !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  <span className={`text-xs ${client.password_created_at ? 'text-green-600' : 'text-black/30'}`}>
+                    {client.password_created_at ? '✓ Active' : 'Awaiting'}
+                  </span>
+                </div>
               </div>
             </Link>
           ))}

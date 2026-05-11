@@ -4,12 +4,17 @@ import PTClientsView from './PTClientsView';
 
 export default async function PTClientsPage() {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from('pt_clients')
-    .select('*')
-    .order('created_at', { ascending: false });
 
-  const clients = (data ?? []) as PTClient[];
+  const [clientRes, notesRes] = await Promise.all([
+    supabase.from('pt_clients').select('*').order('created_at', { ascending: false }),
+    supabase.from('pt_client_notes').select('client_id').eq('is_active', true),
+  ]);
 
-  return <PTClientsView initialClients={clients} />;
+  const clients = (clientRes.data ?? []) as PTClient[];
+  const notesByClient: Record<string, number> = {};
+  for (const n of notesRes.data ?? []) {
+    notesByClient[n.client_id] = (notesByClient[n.client_id] ?? 0) + 1;
+  }
+
+  return <PTClientsView initialClients={clients} notesByClient={notesByClient} />;
 }
