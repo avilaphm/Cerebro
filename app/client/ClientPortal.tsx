@@ -611,7 +611,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             </span>
           ) : (
             <span className="text-[0.65rem] text-black/50">
-              Block {progress.blockIndex + 1} of {phase.week_blocks.length} · Week {progress.weekWithinBlock} of {progress.block?.weeks ?? '?'} · {progress.block?.sets ?? '?'} sets
+              Block {progress.blockIndex + 1} of {phase.week_blocks.length} · Week {progress.weekWithinBlock} of {progress.block?.weeks ?? '?'} · {progress.block?.sets ? `${progress.block.sets} sets` : progress.block?.weight_pct ?? 'Progression'}
             </span>
           )}
         </div>

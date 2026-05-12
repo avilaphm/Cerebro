@@ -58,6 +58,17 @@ export default function PTProgrammeEditView({
     p.phases[i] = { ...p.phases[i], ...patch }; return p;
   });
 
+  const applyWeekBlocksInput = (phaseIdx: number) => {
+    const val = weekBlocksInput[phaseIdx] ?? formatWeekBlocks(programme.phases[phaseIdx]?.week_blocks);
+    const parsed = parseWeekBlocks(val);
+    if (parsed.length > 0) {
+      const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
+      patchPhase(phaseIdx, { week_blocks: parsed, weeks: String(totalWeeks) });
+    } else if (val.trim() === '') {
+      patchPhase(phaseIdx, { week_blocks: undefined });
+    }
+  };
+
   const addPhase = () => update((p) => {
     p.phases.push({ id: makeId('phase'), title: `Phase ${p.phases.length + 1}`, focus: '', weeks: '4', progression: '', days: [] });
     return p;
@@ -232,9 +243,9 @@ export default function PTProgrammeEditView({
                   </div>
                   <div>
                     <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">
-                      Progressive overload — sets per block
+                      Progressive overload — sets or % per block
                     </label>
-                    <p className="text-[0.6rem] text-black/30 mb-2">e.g. "2 sets for 2 weeks, 3 sets for 3 weeks, 4 sets for 4 weeks"</p>
+                    <p className="text-[0.6rem] text-black/30 mb-2">e.g. "2 sets for 2 weeks..." or "75% for 1 week, 85% for 3 weeks"</p>
                     <div className="flex gap-2">
                       <input
                         value={weekBlocksInput[i] ?? formatWeekBlocks(ph.week_blocks)}
@@ -249,7 +260,7 @@ export default function PTProgrammeEditView({
                             patchPhase(i, { week_blocks: undefined });
                           }
                         }}
-                        placeholder="2 sets for 2 weeks, 3 sets for 3 weeks…"
+                        placeholder="2 sets for 2 weeks... or 75% for 1 week..."
                         className="flex-1 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40"
                       />
                       {listeningForPhase === i ? (
@@ -272,7 +283,7 @@ export default function PTProgrammeEditView({
                         {ph.week_blocks.map((block, bi) => (
                           <span key={bi} className="flex items-center gap-1">
                             <span className="border border-black/15 bg-black/3 px-2.5 py-1 text-[0.6rem] uppercase tracking-[0.1em]">
-                              {block.sets} sets · {block.weeks}w
+                              {block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w
                             </span>
                             {bi < (ph.week_blocks?.length ?? 0) - 1 && (
                               <span className="text-black/25 text-xs">→</span>
@@ -283,7 +294,15 @@ export default function PTProgrammeEditView({
                       </div>
                     )}
                   </div>
-                  <button onClick={() => setEditingPhase(null)} className="text-xs border border-black/15 px-4 py-1.5 hover:bg-black/5">Done</button>
+                  <button
+                    onClick={() => {
+                      applyWeekBlocksInput(i);
+                      setEditingPhase(null);
+                    }}
+                    className="text-xs border border-black/15 px-4 py-1.5 hover:bg-black/5"
+                  >
+                    Done
+                  </button>
                 </div>
               ) : (
                 <div className="border border-black/10 px-5 py-4 flex items-center justify-between hover:border-black/25 transition-colors">
@@ -300,7 +319,7 @@ export default function PTProgrammeEditView({
                         {ph.week_blocks.map((block, bi) => (
                           <span key={bi} className="flex items-center gap-1">
                             <span className="text-[0.55rem] text-black/40 border border-black/10 px-1.5 py-0.5">
-                              {block.sets} sets · {block.weeks}w
+                              {block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w
                             </span>
                             {bi < (ph.week_blocks?.length ?? 0) - 1 && (
                               <span className="text-black/20 text-[0.6rem]">→</span>

@@ -4,12 +4,22 @@
 2026-05-11 by codex
 
 ## Last completed task
-Added section note submission and weekly workout progress.
+Fixed phase progression parsing for all phases.
 
 ## Last commit
-Pending commit - add workout notes and weekly progress
+Pending commit - fix phase progression blocks
 
 ## Current state
+
+### Phase progression block parsing (NEW)
+- Programme edit and new programme wizard now parse both set progressions and percentage progressions.
+- Supported examples:
+  - `2 sets for 2 weeks, 3 sets for 3 weeks, 4 sets for 4 weeks`
+  - `75% for 1 week, 85% for 3 weeks, 90% for 4 weeks`
+- Pressing `Done` on a phase now reapplies/parses the current progression text before closing, so existing text is not ignored.
+- Workout editor block tabs now show either set targets or percentage targets.
+- Exercise rows now inherit block-level `% 1RM` targets the same way they already inherited block-level set targets.
+- Client workout display now shows block-level percentage targets when a phase uses percentage progression.
 
 ### Client workout notes + weekly progress (NEW)
 - Each workout section now has a `Submit note` button under `Notes for Pedro`.

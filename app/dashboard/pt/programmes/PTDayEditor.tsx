@@ -60,7 +60,8 @@ function calcWeekRanges(blocks: PTProgrammeWeekBlock[]) {
   const ranges: Array<{ label: string; blockIndex: number }> = [];
   let week = 1;
   blocks.forEach((b, i) => {
-    ranges.push({ label: `Week ${week}–${week + b.weeks - 1} · ${b.sets} sets`, blockIndex: i });
+    const value = b.sets ? `${b.sets} sets` : b.weight_pct ? b.weight_pct : 'Block';
+    ranges.push({ label: `Week ${week}–${week + b.weeks - 1} · ${value}`, blockIndex: i });
     week += b.weeks;
   });
   return ranges;
@@ -202,9 +203,12 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     const blockDefaultSets = activeBlock >= 0 && weekBlocks
       ? (weekBlocks[Math.min(activeBlock, weekBlocks.length - 1)]?.sets ?? ex.sets)
       : ex.sets;
+    const blockDefaultWeightPct = activeBlock >= 0 && weekBlocks
+      ? (weekBlocks[Math.min(activeBlock, weekBlocks.length - 1)]?.weight_pct ?? '')
+      : '';
     const displaySets = overrideForBlock?.sets ?? blockDefaultSets;
     const displayReps = overrideForBlock?.reps ?? ex.reps;
-    const displayWeightPct = overrideForBlock?.weight_pct ?? '';
+    const displayWeightPct = overrideForBlock?.weight_pct ?? blockDefaultWeightPct;
     const displayNotes = overrideForBlock?.notes ?? ex.notes;
 
     const isExpanded = expanded.has(ex.id);
@@ -336,13 +340,13 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                       <div key={b.blockIndex} className="grid grid-cols-[8rem_4rem_5rem_4rem_1fr] gap-1.5 items-center">
                         <span className="text-[0.6rem] text-black/45 truncate">{b.label}</span>
                         <input value={ov?.sets ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { sets: e.target.value })}
-                          placeholder={weekBlocks[b.blockIndex]?.sets ?? 'Sets'}
+                          placeholder={weekBlocks[b.blockIndex]?.sets ?? ex.sets ?? 'Sets'}
                           className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center" />
                         <input value={ov?.reps ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { reps: e.target.value })}
                           placeholder={ex.reps || 'Reps'}
                           className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center" />
                         <input value={ov?.weight_pct ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { weight_pct: e.target.value })}
-                          placeholder="% 1RM"
+                          placeholder={weekBlocks[b.blockIndex]?.weight_pct ?? '% 1RM'}
                           className="border border-black/10 px-1.5 py-1 text-xs outline-none focus:border-black/30 text-center" />
                         <input value={ov?.notes ?? ''} onChange={(e) => patchOverride(idx, b.blockIndex, { notes: e.target.value })}
                           placeholder="Notes"

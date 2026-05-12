@@ -56,7 +56,8 @@ export interface PTProgrammeDay {
 
 export interface PTProgrammeWeekBlock {
   weeks: number;
-  sets: string;
+  sets?: string;
+  weight_pct?: string;
 }
 
 export interface PTProgrammePhase {

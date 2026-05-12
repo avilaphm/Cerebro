@@ -91,9 +91,10 @@ function safeWeekBlocks(value: unknown): PTProgrammeWeekBlock[] | undefined {
       const block = b as Record<string, unknown>;
       const weeks = typeof block.weeks === 'number' ? block.weeks : parseInt(String(block.weeks), 10);
       const sets = text(block.sets, '');
-      return { weeks, sets };
+      const weight_pct = text(block.weight_pct, '');
+      return { weeks, sets: sets || undefined, weight_pct: weight_pct || undefined };
     })
-    .filter((b) => Number.isFinite(b.weeks) && b.weeks > 0 && b.sets);
+    .filter((b) => Number.isFinite(b.weeks) && b.weeks > 0 && (b.sets || b.weight_pct));
   return blocks.length > 0 ? blocks : undefined;
 }
 
@@ -133,13 +134,28 @@ export function parseWeekBlocks(input: string): PTProgrammeWeekBlock[] {
   m = re2.exec(normalized);
   while (m !== null) { p2.push({ weeks: parseInt(m[1], 10), sets: m[2] }); m = re2.exec(normalized); }
 
-  // Return whichever pattern matched more distinct blocks (avoids cross-block contamination)
-  return p1.length >= p2.length ? p1 : p2;
+  // Pattern 3: "75% [...] 1 week" (typed format: "75% for 1 week, 85% for 3 weeks")
+  const p3: PTProgrammeWeekBlock[] = [];
+  const re3 = /(\d+(?:\.\d+)?)\s*%[^0-9]*?(\d+)\s*weeks?/gi;
+  m = re3.exec(normalized);
+  while (m !== null) { p3.push({ weight_pct: `${m[1]}%`, weeks: parseInt(m[2], 10) }); m = re3.exec(normalized); }
+
+  // Pattern 4: "1 week [...] 75%" (voice format)
+  const p4: PTProgrammeWeekBlock[] = [];
+  const re4 = /(\d+)\s*weeks?[^0-9]*?(\d+(?:\.\d+)?)\s*%/gi;
+  m = re4.exec(normalized);
+  while (m !== null) { p4.push({ weeks: parseInt(m[1], 10), weight_pct: `${m[2]}%` }); m = re4.exec(normalized); }
+
+  const candidates = [p1, p2, p3, p4].filter((blocks) => blocks.length > 0);
+  return candidates.sort((a, b) => b.length - a.length)[0] ?? [];
 }
 
 export function formatWeekBlocks(blocks: PTProgrammeWeekBlock[] | undefined): string {
   if (!blocks || blocks.length === 0) return '';
-  return blocks.map((b) => `${b.sets} sets for ${b.weeks} weeks`).join(', ');
+  return blocks.map((b) => {
+    const value = b.sets ? `${b.sets} sets` : b.weight_pct ? b.weight_pct : '';
+    return `${value} for ${b.weeks} weeks`;
+  }).join(', ');
 }
 
 export function getBlockSets(
@@ -161,10 +177,13 @@ export function getExerciseBlockValues(
   const blockSets = weekBlocks
     ? (weekBlocks[Math.min(blockIndex, weekBlocks.length - 1)]?.sets ?? exercise.sets)
     : exercise.sets;
+  const blockWeightPct = weekBlocks
+    ? (weekBlocks[Math.min(blockIndex, weekBlocks.length - 1)]?.weight_pct ?? '')
+    : '';
   return {
     sets: override?.sets ?? blockSets,
     reps: override?.reps ?? exercise.reps,
-    weight_pct: override?.weight_pct ?? '',
+    weight_pct: override?.weight_pct ?? blockWeightPct,
     notes: override?.notes ?? exercise.notes,
   };
 }
