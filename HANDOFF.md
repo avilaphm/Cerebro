@@ -4,10 +4,10 @@
 2026-05-12 by codex
 
 ## Last completed task
-Completed Cerebro Site Fitness Pivot Phase 4 (Site Architecture - 3 Doors).
+Removed the Finance and Operators nav links from the root landing page only.
 
 ## Last commit
-add finance and operators landing pages
+hide finance and operators nav links on root
 
 ## Current state
 
@@ -35,6 +35,7 @@ add finance and operators landing pages
   - `/finance` intentionally uses a direct email CTA instead of the current chatbot because the chatbot is still fitness-specific
   - footer is now shared across public marketing routes
   - this phase was completed out of sequence; fitness pivot Phases 1-3 are still open in the plan
+  - follow-up tweak: root nav now hides `Finance` and `Operators`; those links still appear on the sub-pages themselves
 
 ### Client Lifestyle Coaching OS Phase 3 (NEW)
 - Added local migration `20260512080406_client_lifestyle_phase_3_reviews_progress.sql`.

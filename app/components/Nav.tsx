@@ -54,6 +54,11 @@ export default function Nav() {
       ? "Start the conversation"
       : "Free operations audit";
 
+  const visibleNavLinks =
+    pathname === "/"
+      ? NAV_LINKS.filter((link) => link.href === "/blog")
+      : NAV_LINKS;
+
   return (
     <>
       <nav
@@ -71,7 +76,7 @@ export default function Nav() {
 
         {/* Desktop nav — md and up */}
         <div className="hidden md:flex items-center gap-6">
-          {NAV_LINKS.map((link) => (
+          {visibleNavLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
@@ -121,7 +126,7 @@ export default function Nav() {
       >
         <div className="flex flex-col h-full px-6 pt-10 pb-10">
           <nav className="flex flex-col gap-7">
-            {NAV_LINKS.map((link) => (
+            {visibleNavLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
