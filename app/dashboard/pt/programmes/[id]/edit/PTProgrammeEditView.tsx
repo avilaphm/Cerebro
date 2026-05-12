@@ -1,10 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks } from '@/utils/pt/programme';
+import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme } from '@/utils/pt/programme';
 import type {
   PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramAssignment,
 } from '@/utils/pt/types';
@@ -17,6 +17,16 @@ interface SpeechRecognitionLike {
   start: () => void;
   stop: () => void;
 }
+
+interface ProgrammingAgentDraft {
+  mode?: 'new_programme' | 'revise_programme';
+  assignment_id?: string | null;
+  name?: string;
+  goal?: string;
+  change_summary?: string;
+  programme?: unknown;
+}
+
 function getSR() {
   const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
@@ -48,11 +58,34 @@ export default function PTProgrammeEditView({
   const [activeDay, setActiveDay] = useState<number | null>(Number.isFinite(highlightedDay) ? highlightedDay : null);
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
+  const [agentDraftSummary, setAgentDraftSummary] = useState('');
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
 
   const update = (fn: (p: PTProgramme) => PTProgramme) =>
     setProgramme((cur) => fn(structuredClone(cur)));
+
+  useEffect(() => {
+    const draftKey = new URLSearchParams(window.location.search).get('draftKey');
+    if (!draftKey) return;
+
+    const raw = sessionStorage.getItem(draftKey);
+    if (!raw) return;
+
+    try {
+      const draft = JSON.parse(raw) as ProgrammingAgentDraft;
+      if (draft.mode !== 'revise_programme') return;
+      if (draft.assignment_id && draft.assignment_id !== initial.id) return;
+
+      if (typeof draft.name === 'string') setProgName(draft.name);
+      if (typeof draft.goal === 'string') setProgGoal(draft.goal);
+      setProgramme(safeProgramme(draft.programme));
+      setAgentDraftSummary(draft.change_summary ?? 'AI revision draft loaded. Review before saving.');
+      setStatus('AI draft loaded.');
+    } catch {
+      setStatus('Could not load AI draft.');
+    }
+  }, [initial.id]);
 
   const patchPhase = (i: number, patch: Partial<PTProgrammePhase>) => update((p) => {
     p.phases[i] = { ...p.phases[i], ...patch }; return p;
@@ -208,6 +241,13 @@ export default function PTProgrammeEditView({
               Done
             </button>
           </div>
+        </div>
+      )}
+
+      {agentDraftSummary && (
+        <div className="mb-6 border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium text-amber-800">Programming agent draft</p>
+          <p className="mt-1 text-xs leading-relaxed text-black/55">{agentDraftSummary}</p>
         </div>
       )}
 

@@ -38,10 +38,38 @@ interface Props {
   notes: PTNote[];
 }
 
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean } & ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface ProgrammingAgentResponse {
+  ok?: boolean;
+  error?: string;
+  mode?: 'new_programme' | 'revise_programme';
+  client_id?: string;
+  assignment_id?: string | null;
+  name?: string;
+  goal?: string;
+  change_summary?: string;
+  programme?: unknown;
+}
+
+function getSR() {
+  const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 export default function PTClientDetail({ client: initial, templates, assignments, events, notes: initialNotes }: Props) {
   const supabase = createClient();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const agentSpeechRef = useRef<SpeechRecognitionLike | null>(null);
 
   const [client, setClient] = useState(initial);
   const [editing, setEditing] = useState(false);
@@ -61,6 +89,10 @@ export default function PTClientDetail({ client: initial, templates, assignments
   const [notes, setNotes] = useState(initialNotes);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [status, setStatus] = useState('');
+  const [agentInstructions, setAgentInstructions] = useState('');
+  const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
+  const [agentListening, setAgentListening] = useState(false);
+  const [agentStatus, setAgentStatus] = useState('');
 
   const save = async () => {
     setSaving(true);
@@ -220,6 +252,74 @@ export default function PTClientDetail({ client: initial, templates, assignments
     const workout = typeof context.workout_title === 'string' ? context.workout_title : null;
     const section = typeof context.section_title === 'string' ? context.section_title : null;
     return [phase, week, workout, section].filter(Boolean).join(' / ');
+  };
+
+  const startAgentDictation = () => {
+    const SR = getSR();
+    if (!SR) {
+      setAgentStatus('Browser dictation is not available. Type the instruction instead.');
+      return;
+    }
+
+    const recognition = new SR();
+    agentSpeechRef.current = recognition;
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-AU';
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result?.isFinal) {
+          const transcript = result[0]?.transcript ?? '';
+          if (transcript) {
+            setAgentInstructions((current) => (current ? `${current} ${transcript}` : transcript).trim());
+          }
+        }
+      }
+    };
+    recognition.onend = () => {
+      setAgentListening(false);
+      agentSpeechRef.current = null;
+    };
+    recognition.start();
+    setAgentListening(true);
+    setAgentStatus('');
+  };
+
+  const stopAgentDictation = () => {
+    agentSpeechRef.current?.stop();
+  };
+
+  const runProgrammingAgent = async (mode: 'new_programme' | 'revise_programme') => {
+    if (mode === 'revise_programme' && !activeAssignment) return;
+
+    setAgentBusy(mode);
+    setAgentStatus(mode === 'new_programme' ? 'Drafting programme...' : 'Drafting revision...');
+
+    const { data, error } = await supabase.functions.invoke<ProgrammingAgentResponse>('pt-programming-agent', {
+      body: {
+        client_id: client.id,
+        assignment_id: mode === 'revise_programme' ? activeAssignment?.id : undefined,
+        mode,
+        instructions: agentInstructions.trim() || undefined,
+      },
+    });
+
+    if (error || data?.error || !data?.programme) {
+      setAgentStatus(`Error: ${data?.error ?? error?.message ?? 'The programming agent did not return a draft.'}`);
+      setAgentBusy(null);
+      return;
+    }
+
+    const draftKey = `pt-programming-agent:${mode}:${mode === 'revise_programme' ? activeAssignment?.id : client.id}:${Date.now()}`;
+    sessionStorage.setItem(draftKey, JSON.stringify({ ...data, created_at: new Date().toISOString() }));
+
+    const params = new URLSearchParams({ draftKey });
+    if (mode === 'new_programme') {
+      router.push(`/dashboard/pt/programmes/new?${params.toString()}`);
+    } else if (activeAssignment) {
+      router.push(`/dashboard/pt/programmes/${activeAssignment.id}/edit?${params.toString()}`);
+    }
   };
 
   return (
@@ -397,6 +497,57 @@ export default function PTClientDetail({ client: initial, templates, assignments
             )}
           </div>
         )}
+      </div>
+
+      <div className="border-t border-black/8 pt-6 mb-8">
+        <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programming Agent</h2>
+        <div className="border border-black/10 bg-[#fbfbf8] px-5 py-4">
+          <p className="text-sm text-black/55">
+            Drafts from this client's document, notes, feedback, training logs, current programme, and exercise library. Nothing is saved until you review and press Create or Save.
+          </p>
+          <textarea
+            value={agentInstructions}
+            onChange={(event) => setAgentInstructions(event.target.value)}
+            rows={3}
+            placeholder={activeAssignment ? 'Optional instruction for the revision...' : 'Optional instruction for the new programme...'}
+            className="mt-4 w-full resize-none border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {agentListening ? (
+              <>
+                <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">Recording</span>
+                <button
+                  type="button"
+                  onClick={stopAgentDictation}
+                  className="border border-black bg-black px-4 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black"
+                >
+                  Done
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={startAgentDictation}
+                className="border border-black/15 px-4 py-2 text-xs transition-colors hover:border-black/30"
+              >
+                Voice
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void runProgrammingAgent(activeAssignment ? 'revise_programme' : 'new_programme')}
+              disabled={agentBusy !== null}
+              className="border border-black bg-black px-5 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-40"
+            >
+              {agentBusy
+                ? 'Drafting...'
+                : activeAssignment
+                  ? 'Draft revision'
+                  : 'Draft programme'}
+            </button>
+          </div>
+          {agentStatus && <p className="mt-3 text-xs text-black/45">{agentStatus}</p>}
+        </div>
       </div>
 
       {notes.length > 0 && (

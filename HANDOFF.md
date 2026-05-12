@@ -4,12 +4,25 @@
 2026-05-12 by codex
 
 ## Last completed task
-Verified phase progression parsing for all phases.
+Added draft-only PT Programming Agent.
 
 ## Last commit
-effaa53 fix phase progression blocks
+add PT programming agent
 
 ## Current state
+
+### PT Programming Agent (NEW)
+- Client profile now has a `Programming Agent` panel.
+- For clients without an active programme, Pedro can draft a new programme from the client profile.
+- For clients with an active programme, Pedro can draft a revision.
+- The panel accepts optional text or voice instructions.
+- New Supabase Edge Function deployed: `pt-programming-agent` version 2 on project `otcnrkfvgyvwolironoz`.
+- The agent gathers client profile data, uploaded document, active feedback notes, recent messages, workout logs, set logs, active assignment, exercise library, and Pedro programming principles.
+- Agent outputs are draft-only and stored in browser `sessionStorage`.
+- New programme drafts open the existing new programme wizard prefilled for review.
+- Revision drafts open the existing programme edit route with unsaved generated changes loaded.
+- Existing Create/Save buttons remain the only points where programme assignments are written.
+- Local verification: `npm run build` passed. Browser smoke test reached `/dashboard/pt/clients` and redirected to login without client-side console errors.
 
 ### Phase progression block parsing (NEW)
 - Programme edit and new programme wizard now parse both set progressions and percentage progressions.

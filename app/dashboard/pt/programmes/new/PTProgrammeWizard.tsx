@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
@@ -17,6 +17,16 @@ interface SpeechRecognitionLike {
   start: () => void;
   stop: () => void;
 }
+
+interface ProgrammingAgentDraft {
+  mode?: 'new_programme' | 'revise_programme';
+  client_id?: string;
+  name?: string;
+  goal?: string;
+  change_summary?: string;
+  programme?: unknown;
+}
+
 function getSR() {
   const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
@@ -43,6 +53,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [saving, setSaving] = useState(false);
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
+  const [agentDraftSummary, setAgentDraftSummary] = useState('');
 
   const srRef = useRef<SpeechRecognitionLike | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
@@ -52,6 +63,28 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
   const update = (fn: (p: PTProgramme) => PTProgramme) =>
     setProgramme((cur) => fn(structuredClone(cur)));
+
+  useEffect(() => {
+    const draftKey = new URLSearchParams(window.location.search).get('draftKey');
+    if (!draftKey) return;
+
+    const raw = sessionStorage.getItem(draftKey);
+    if (!raw) return;
+
+    try {
+      const draft = JSON.parse(raw) as ProgrammingAgentDraft;
+      if (draft.mode !== 'new_programme') return;
+
+      if (typeof draft.client_id === 'string') setClientId(draft.client_id);
+      if (typeof draft.name === 'string') setProgName(draft.name);
+      if (typeof draft.goal === 'string') setProgGoal(draft.goal);
+      setProgramme(safeProgramme(draft.programme));
+      setAgentDraftSummary(draft.change_summary ?? 'AI draft loaded. Review and edit before creating.');
+      setStep(2);
+    } catch {
+      setGenStatus('Could not load the programming agent draft.');
+    }
+  }, []);
 
   const generateFromDocument = async () => {
     if (!clientId) return;
@@ -236,6 +269,13 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
           {step === 1 ? 'Select client & generate' : step === 2 ? 'Edit phases' : step === 3 ? 'Build workouts' : 'Save & assign'}
         </span>
       </div>
+
+      {agentDraftSummary && (
+        <div className="mb-6 border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium text-amber-800">Programming agent draft</p>
+          <p className="mt-1 text-xs leading-relaxed text-black/55">{agentDraftSummary}</p>
+        </div>
+      )}
 
       {step === 1 && (
         <div className="space-y-6">
