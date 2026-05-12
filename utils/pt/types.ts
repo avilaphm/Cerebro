@@ -153,6 +153,52 @@ export interface PTWeeklyCheckin {
   updated_at?: string;
 }
 
+export type PTWeeklyPlanStatus = 'draft' | 'published' | 'archived';
+export type PTWeeklyPlanItemType =
+  | 'pt_session'
+  | 'solo_strength'
+  | 'run'
+  | 'golf_mobility'
+  | 'recovery'
+  | 'nutrition'
+  | 'check_in';
+export type PTWeeklyPlanItemStatus = 'planned' | 'done' | 'skipped' | 'moved';
+export type PTWeeklyPlanConfirmationStatus = 'none' | 'needs_confirmation' | 'confirmed' | 'moved' | 'cancelled';
+export type PTWeeklyPlanSlotStatus = 'unconfirmed' | 'confirmed' | 'moved' | 'cancelled';
+
+export interface PTWeeklyPlan {
+  id: string;
+  client_id: string;
+  week_start: string;
+  status: PTWeeklyPlanStatus;
+  coach_summary: string | null;
+  client_note: string | null;
+  regular_slot: string | null;
+  regular_slot_status: PTWeeklyPlanSlotStatus;
+  published_at: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PTWeeklyPlanItem {
+  id: string;
+  plan_id: string;
+  client_id: string;
+  item_type: PTWeeklyPlanItemType;
+  scheduled_date: string | null;
+  title: string;
+  details: string | null;
+  linked_assignment_id: string | null;
+  linked_phase_index: number | null;
+  linked_day_index: number | null;
+  status: PTWeeklyPlanItemStatus;
+  confirmation_status: PTWeeklyPlanConfirmationStatus;
+  sort_order: number;
+  completed_at: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface PTClientMetric {
   id: string;
   client_id: string;

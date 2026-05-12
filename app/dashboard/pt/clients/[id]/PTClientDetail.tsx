@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
@@ -11,6 +11,12 @@ import type {
   PTCoachingTask,
   PTProgramAssignment,
   PTProgramTemplate,
+  PTWeeklyPlan,
+  PTWeeklyPlanConfirmationStatus,
+  PTWeeklyPlanItem,
+  PTWeeklyPlanItemStatus,
+  PTWeeklyPlanItemType,
+  PTWeeklyPlanSlotStatus,
   PTWeeklyCheckin,
 } from '@/utils/pt/types';
 
@@ -20,6 +26,40 @@ const STATUS_COLORS: Record<PTClient['status'], string> = {
   active: 'bg-green-50 text-green-700 border-green-200',
   paused: 'bg-black/5 text-black/50 border-black/10',
   archived: 'bg-black/5 text-black/30 border-black/8',
+};
+
+const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
+  pt_session: 'PT session',
+  solo_strength: 'Solo strength',
+  run: 'Run',
+  golf_mobility: 'Golf mobility',
+  recovery: 'Recovery',
+  nutrition: 'Nutrition',
+  check_in: 'Check-in',
+};
+
+const PLAN_ITEM_TYPES = Object.keys(PLAN_ITEM_LABELS) as PTWeeklyPlanItemType[];
+
+const SLOT_STATUS_LABELS: Record<PTWeeklyPlanSlotStatus, string> = {
+  unconfirmed: 'Unconfirmed',
+  confirmed: 'Confirmed',
+  moved: 'Moved',
+  cancelled: 'Cancelled',
+};
+
+const CONFIRMATION_LABELS: Record<PTWeeklyPlanConfirmationStatus, string> = {
+  none: 'No confirmation',
+  needs_confirmation: 'Needs confirmation',
+  confirmed: 'Confirmed',
+  moved: 'Moved',
+  cancelled: 'Cancelled',
+};
+
+const ITEM_STATUS_LABELS: Record<PTWeeklyPlanItemStatus, string> = {
+  planned: 'Planned',
+  done: 'Done',
+  skipped: 'Skipped',
+  moved: 'Moved',
 };
 
 interface PTEvent {
@@ -45,6 +85,8 @@ interface Props {
   events: PTEvent[];
   notes: PTNote[];
   weeklyCheckins: PTWeeklyCheckin[];
+  weeklyPlans: PTWeeklyPlan[];
+  weeklyPlanItems: PTWeeklyPlanItem[];
   metrics: PTClientMetric[];
   goals: PTClientGoal[];
   coachingTasks: PTCoachingTask[];
@@ -72,6 +114,45 @@ interface ProgrammingAgentResponse {
   programme?: unknown;
 }
 
+interface PlanItemDraft {
+  local_id: string;
+  item_type: PTWeeklyPlanItemType;
+  scheduled_date: string;
+  title: string;
+  details: string;
+  status: PTWeeklyPlanItemStatus;
+  confirmation_status: PTWeeklyPlanConfirmationStatus;
+  linked_assignment_id: string;
+  linked_phase_index: string;
+  linked_day_index: string;
+}
+
+interface WeeklyPlanDraft {
+  coach_summary: string;
+  client_note: string;
+  regular_slot: string;
+  regular_slot_status: PTWeeklyPlanSlotStatus;
+  items: PlanItemDraft[];
+}
+
+interface WeeklyPlanAgentResponse {
+  error?: string;
+  coach_summary?: string;
+  client_note?: string;
+  regular_slot?: string | null;
+  regular_slot_status?: PTWeeklyPlanSlotStatus;
+  items?: Array<{
+    item_type?: PTWeeklyPlanItemType;
+    scheduled_date?: string | null;
+    title?: string;
+    details?: string | null;
+    confirmation_status?: PTWeeklyPlanConfirmationStatus;
+    linked_assignment_id?: string | null;
+    linked_phase_index?: number | null;
+    linked_day_index?: number | null;
+  }>;
+}
+
 function getSR() {
   const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
@@ -90,6 +171,95 @@ function scoreLabel(value: number | null) {
   return value === null || value === undefined ? '-' : `${value}/5`;
 }
 
+function weekStartInputValue(date = new Date()) {
+  const next = new Date(date);
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  return dateInputValue(next);
+}
+
+function addDays(date: string, days: number) {
+  const next = new Date(`${date}T00:00:00`);
+  next.setDate(next.getDate() + days);
+  return dateInputValue(next);
+}
+
+function dateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatWeekRange(weekStart: string) {
+  return `${formatDate(weekStart)} - ${formatDate(addDays(weekStart, 6))}`;
+}
+
+function planItemId() {
+  return `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function dateForSlot(weekStart: string, slot: string | null | undefined) {
+  const normalised = slot?.toLowerCase() ?? '';
+  const days = [
+    ['monday', 0],
+    ['tuesday', 1],
+    ['wednesday', 2],
+    ['thursday', 3],
+    ['friday', 4],
+    ['saturday', 5],
+    ['sunday', 6],
+  ] as const;
+  const match = days.find(([day]) => normalised.includes(day));
+  return match ? addDays(weekStart, match[1]) : weekStart;
+}
+
+function emptyPlanDraft(client: PTClient, weekStart: string): WeeklyPlanDraft {
+  return {
+    coach_summary: '',
+    client_note: '',
+    regular_slot: client.regular_training_slot ?? '',
+    regular_slot_status: client.regular_training_slot ? 'confirmed' : 'unconfirmed',
+    items: client.regular_training_slot
+      ? [{
+          local_id: planItemId(),
+          item_type: 'pt_session',
+          scheduled_date: dateForSlot(weekStart, client.regular_training_slot),
+          title: 'In-person PT session',
+          details: client.regular_training_slot,
+          status: 'planned',
+          confirmation_status: 'confirmed',
+          linked_assignment_id: '',
+          linked_phase_index: '',
+          linked_day_index: '',
+        }]
+      : [],
+  };
+}
+
+function draftFromPlan(plan: PTWeeklyPlan | null, items: PTWeeklyPlanItem[], client: PTClient, weekStart: string): WeeklyPlanDraft {
+  if (!plan) return emptyPlanDraft(client, weekStart);
+  return {
+    coach_summary: plan.coach_summary ?? '',
+    client_note: plan.client_note ?? '',
+    regular_slot: plan.regular_slot ?? '',
+    regular_slot_status: plan.regular_slot_status,
+    items: items.map((item) => ({
+      local_id: item.id,
+      item_type: item.item_type,
+      scheduled_date: item.scheduled_date ?? '',
+      title: item.title,
+      details: item.details ?? '',
+      status: item.status,
+      confirmation_status: item.confirmation_status,
+      linked_assignment_id: item.linked_assignment_id ?? '',
+      linked_phase_index: item.linked_phase_index === null ? '' : String(item.linked_phase_index),
+      linked_day_index: item.linked_day_index === null ? '' : String(item.linked_day_index),
+    })),
+  };
+}
+
 export default function PTClientDetail({
   client: initial,
   templates,
@@ -97,6 +267,8 @@ export default function PTClientDetail({
   events,
   notes: initialNotes,
   weeklyCheckins: initialWeeklyCheckins,
+  weeklyPlans: initialWeeklyPlans,
+  weeklyPlanItems: initialWeeklyPlanItems,
   metrics: initialMetrics,
   goals: initialGoals,
   coachingTasks: initialCoachingTasks,
@@ -127,6 +299,12 @@ export default function PTClientDetail({
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [notes, setNotes] = useState(initialNotes);
   const [weeklyCheckins, setWeeklyCheckins] = useState(initialWeeklyCheckins);
+  const [weeklyPlans, setWeeklyPlans] = useState(initialWeeklyPlans);
+  const [weeklyPlanItems, setWeeklyPlanItems] = useState(initialWeeklyPlanItems);
+  const [selectedWeekStart, setSelectedWeekStart] = useState(weekStartInputValue());
+  const [planDraft, setPlanDraft] = useState<WeeklyPlanDraft>(() => emptyPlanDraft(initial, weekStartInputValue()));
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [draftingPlan, setDraftingPlan] = useState(false);
   const [metrics, setMetrics] = useState(initialMetrics);
   const [goals, setGoals] = useState(initialGoals);
   const [coachingTasks, setCoachingTasks] = useState(initialCoachingTasks);
@@ -289,6 +467,45 @@ export default function PTClientDetail({
           ? 'Client is active'
           : null;
 
+  const latestCheckin = weeklyCheckins[0] ?? null;
+  const latestMetric = metrics[0] ?? null;
+  const activeGoals = goals.filter((goal) => goal.status === 'active');
+  const currentPlan = weeklyPlans.find((plan) => plan.week_start === selectedWeekStart) ?? null;
+  const currentPlanItems = useMemo(
+    () => weeklyPlanItems
+      .filter((item) => item.plan_id === currentPlan?.id)
+      .sort((a, b) => {
+        const dateCompare = (a.scheduled_date ?? '').localeCompare(b.scheduled_date ?? '');
+        if (dateCompare !== 0) return dateCompare;
+        return a.sort_order - b.sort_order;
+      }),
+    [currentPlan?.id, weeklyPlanItems],
+  );
+  const checkinForSelectedWeek = weeklyCheckins.find((checkin) => checkin.week_start === selectedWeekStart) ?? latestCheckin;
+  const activeWorkoutOptions = activeAssignment
+    ? activeAssignment.programme.phases.flatMap((phase, phaseIndex) =>
+        phase.days.map((day, dayIndex) => ({
+          value: `${phaseIndex}:${dayIndex}`,
+          label: `${phase.title} / ${day.title}`,
+        })),
+      )
+    : [];
+
+  const planningSignals = [
+    !currentPlan ? 'No plan exists for this week.' : null,
+    currentPlan?.status === 'draft' ? 'Plan is still draft.' : null,
+    !planDraft.items.some((item) => item.item_type === 'pt_session') ? 'No in-person PT session in this plan.' : null,
+    !planDraft.regular_slot ? 'Regular slot is missing.' : null,
+    planDraft.regular_slot_status !== 'confirmed' ? `Regular slot is ${SLOT_STATUS_LABELS[planDraft.regular_slot_status].toLowerCase()}.` : null,
+    checkinForSelectedWeek?.status === 'submitted' ? 'Weekly reset is waiting for review.' : null,
+    checkinForSelectedWeek?.travel ? `Travel/schedule note: ${checkinForSelectedWeek.travel}` : null,
+    checkinForSelectedWeek?.injuries ? `Pain/injury note: ${checkinForSelectedWeek.injuries}` : null,
+  ].filter((item): item is string => Boolean(item));
+
+  useEffect(() => {
+    setPlanDraft(draftFromPlan(currentPlan, currentPlanItems, client, selectedWeekStart));
+  }, [client, currentPlan, currentPlanItems, selectedWeekStart]);
+
   const noteFixHref = (note: PTNote) => {
     const context = note.context ?? {};
     if (context.source !== 'workout_section' || typeof context.assignment_id !== 'string') return null;
@@ -310,10 +527,6 @@ export default function PTClientDetail({
     return [phase, week, workout, section].filter(Boolean).join(' / ');
   };
 
-  const latestCheckin = weeklyCheckins[0] ?? null;
-  const latestMetric = metrics[0] ?? null;
-  const activeGoals = goals.filter((goal) => goal.status === 'active');
-
   const markTaskDone = async (taskId: string) => {
     await supabase
       .from('pt_coaching_tasks')
@@ -329,6 +542,466 @@ export default function PTClientDetail({
       .eq('id', checkinId);
     setWeeklyCheckins((current) => current.map((item) => item.id === checkinId ? { ...item, status: 'reviewed' } : item));
   };
+
+  const patchPlanItem = (localId: string, patch: Partial<PlanItemDraft>) => {
+    setPlanDraft((current) => ({
+      ...current,
+      items: current.items.map((item) => (item.local_id === localId ? { ...item, ...patch } : item)),
+    }));
+  };
+
+  const addPlanItem = (type: PTWeeklyPlanItemType = 'solo_strength') => {
+    setPlanDraft((current) => ({
+      ...current,
+      items: [
+        ...current.items,
+        {
+          local_id: planItemId(),
+          item_type: type,
+          scheduled_date: selectedWeekStart,
+          title: PLAN_ITEM_LABELS[type],
+          details: '',
+          status: 'planned',
+          confirmation_status: type === 'pt_session' ? 'needs_confirmation' : 'none',
+          linked_assignment_id: '',
+          linked_phase_index: '',
+          linked_day_index: '',
+        },
+      ],
+    }));
+  };
+
+  const removePlanItem = (localId: string) => {
+    setPlanDraft((current) => ({
+      ...current,
+      items: current.items.filter((item) => item.local_id !== localId),
+    }));
+  };
+
+  const buildFallbackPlan = () => {
+    const items: PlanItemDraft[] = [];
+    const add = (item: Omit<PlanItemDraft, 'local_id' | 'status'>) => {
+      items.push({ ...item, local_id: planItemId(), status: 'planned' });
+    };
+
+    if (client.regular_training_slot) {
+      add({
+        item_type: 'pt_session',
+        scheduled_date: dateForSlot(selectedWeekStart, client.regular_training_slot),
+        title: 'In-person PT session',
+        details: client.regular_training_slot,
+        confirmation_status: checkinForSelectedWeek?.travel ? 'needs_confirmation' : 'confirmed',
+        linked_assignment_id: '',
+        linked_phase_index: '',
+        linked_day_index: '',
+      });
+    }
+
+    if (activeAssignment && activeAssignment.programme.phases[0]?.days[0]) {
+      add({
+        item_type: 'solo_strength',
+        scheduled_date: addDays(selectedWeekStart, 2),
+        title: activeAssignment.programme.phases[0].days[0].title || 'Solo strength',
+        details: activeAssignment.programme.phases[0].days[0].focus || 'Complete the programmed solo session.',
+        confirmation_status: 'none',
+        linked_assignment_id: activeAssignment.id,
+        linked_phase_index: '0',
+        linked_day_index: '0',
+      });
+    }
+
+    if (checkinForSelectedWeek?.run_days || client.event_goal) {
+      add({
+        item_type: 'run',
+        scheduled_date: addDays(selectedWeekStart, 4),
+        title: 'Easy run',
+        details: checkinForSelectedWeek?.run_days || client.event_goal || '',
+        confirmation_status: 'none',
+        linked_assignment_id: '',
+        linked_phase_index: '',
+        linked_day_index: '',
+      });
+    }
+
+    if (checkinForSelectedWeek?.golf_days || client.lifestyle_context?.toLowerCase().includes('golf')) {
+      add({
+        item_type: 'golf_mobility',
+        scheduled_date: addDays(selectedWeekStart, 1),
+        title: 'Golf mobility prep',
+        details: checkinForSelectedWeek?.golf_days || 'Hip and thoracic rotation before golf.',
+        confirmation_status: 'none',
+        linked_assignment_id: '',
+        linked_phase_index: '',
+        linked_day_index: '',
+      });
+    }
+
+    add({
+      item_type: 'nutrition',
+      scheduled_date: '',
+      title: 'Nutrition focus',
+      details: checkinForSelectedWeek?.nutrition_focus || client.coaching_focus || 'Keep the week simple and track the main nutrition target.',
+      confirmation_status: 'none',
+      linked_assignment_id: '',
+      linked_phase_index: '',
+      linked_day_index: '',
+    });
+
+    add({
+      item_type: 'check_in',
+      scheduled_date: addDays(selectedWeekStart, 6),
+      title: 'Weekly check-in',
+      details: 'Send Pedro notes on what got done, what moved, and what needs changing next week.',
+      confirmation_status: 'none',
+      linked_assignment_id: '',
+      linked_phase_index: '',
+      linked_day_index: '',
+    });
+
+    setPlanDraft({
+      coach_summary: checkinForSelectedWeek?.client_focus || client.coaching_focus || 'Review and adjust the weekly plan.',
+      client_note: 'Here is the shape of the week. Message Pedro if anything changes.',
+      regular_slot: client.regular_training_slot ?? '',
+      regular_slot_status: client.regular_training_slot && !checkinForSelectedWeek?.travel ? 'confirmed' : 'unconfirmed',
+      items,
+    });
+  };
+
+  const draftWeeklyPlan = async () => {
+    setDraftingPlan(true);
+    setStatus('Drafting weekly plan...');
+    const { data, error } = await supabase.functions.invoke<WeeklyPlanAgentResponse>('draft-weekly-plan', {
+      body: { client_id: client.id, week_start: selectedWeekStart },
+    });
+
+    if (error || data?.error || !data) {
+      buildFallbackPlan();
+      setStatus(`AI draft unavailable. A reset-based draft was created instead${error?.message || data?.error ? `: ${error?.message ?? data?.error}` : '.'}`);
+      setDraftingPlan(false);
+      return;
+    }
+
+    setPlanDraft({
+      coach_summary: data.coach_summary ?? '',
+      client_note: data.client_note ?? '',
+      regular_slot: data.regular_slot ?? client.regular_training_slot ?? '',
+      regular_slot_status: data.regular_slot_status ?? (client.regular_training_slot ? 'confirmed' : 'unconfirmed'),
+      items: (data.items ?? []).map((item) => ({
+        local_id: planItemId(),
+        item_type: item.item_type ?? 'solo_strength',
+        scheduled_date: item.scheduled_date ?? '',
+        title: item.title ?? PLAN_ITEM_LABELS[item.item_type ?? 'solo_strength'],
+        details: item.details ?? '',
+        status: 'planned',
+        confirmation_status: item.confirmation_status ?? 'none',
+        linked_assignment_id: item.linked_assignment_id ?? '',
+        linked_phase_index: item.linked_phase_index === null || item.linked_phase_index === undefined ? '' : String(item.linked_phase_index),
+        linked_day_index: item.linked_day_index === null || item.linked_day_index === undefined ? '' : String(item.linked_day_index),
+      })),
+    });
+    setStatus('AI draft ready. Review before publishing.');
+    setDraftingPlan(false);
+  };
+
+  const saveWeeklyPlan = async (publish: boolean) => {
+    setSavingPlan(true);
+    setStatus(publish ? 'Publishing weekly plan...' : 'Saving weekly plan...');
+
+    const now = new Date().toISOString();
+    const { data: savedPlan, error: planError } = await supabase
+      .from('pt_weekly_plans')
+      .upsert({
+        id: currentPlan?.id,
+        client_id: client.id,
+        week_start: selectedWeekStart,
+        status: publish ? 'published' : 'draft',
+        coach_summary: planDraft.coach_summary.trim() || null,
+        client_note: planDraft.client_note.trim() || null,
+        regular_slot: planDraft.regular_slot.trim() || null,
+        regular_slot_status: planDraft.regular_slot_status,
+        published_at: publish ? now : currentPlan?.published_at ?? null,
+        updated_at: now,
+      }, { onConflict: 'client_id,week_start' })
+      .select('*')
+      .single();
+
+    if (planError || !savedPlan) {
+      setStatus(planError?.message ?? 'Could not save weekly plan.');
+      setSavingPlan(false);
+      return;
+    }
+
+    const plan = savedPlan as PTWeeklyPlan;
+    if (currentPlan?.id) {
+      const { error: deleteError } = await supabase.from('pt_weekly_plan_items').delete().eq('plan_id', currentPlan.id);
+      if (deleteError) {
+        setStatus(deleteError.message);
+        setSavingPlan(false);
+        return;
+      }
+    }
+
+    const rows = planDraft.items
+      .filter((item) => item.title.trim())
+      .map((item, index) => ({
+        plan_id: plan.id,
+        client_id: client.id,
+        item_type: item.item_type,
+        scheduled_date: item.scheduled_date || null,
+        title: item.title.trim(),
+        details: item.details.trim() || null,
+        linked_assignment_id: item.linked_assignment_id || null,
+        linked_phase_index: item.linked_phase_index === '' ? null : Number(item.linked_phase_index),
+        linked_day_index: item.linked_day_index === '' ? null : Number(item.linked_day_index),
+        status: item.status,
+        confirmation_status: item.confirmation_status,
+        sort_order: index,
+        completed_at: item.status === 'done' ? now : null,
+        updated_at: now,
+      }));
+
+    const { data: savedItems, error: itemError } = rows.length > 0
+      ? await supabase.from('pt_weekly_plan_items').insert(rows).select('*')
+      : { data: [], error: null };
+
+    if (itemError) {
+      setStatus(itemError.message);
+      setSavingPlan(false);
+      return;
+    }
+
+    setWeeklyPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id && item.week_start !== plan.week_start)]);
+    setWeeklyPlanItems((current) => [
+      ...((savedItems ?? []) as PTWeeklyPlanItem[]),
+      ...current.filter((item) => item.plan_id !== plan.id),
+    ]);
+
+    if (publish && checkinForSelectedWeek?.status === 'submitted') {
+      await markCheckinReviewed(checkinForSelectedWeek.id);
+    }
+
+    setStatus(publish ? 'Weekly plan published to the client.' : 'Weekly plan saved as draft.');
+    setSavingPlan(false);
+  };
+
+  const renderWeeklyPlanBuilder = () => (
+    <div className="mt-4 border border-black/10 px-5 py-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Weekly plan</p>
+          <h3 className="mt-1 text-lg font-medium">{formatWeekRange(selectedWeekStart)}</h3>
+          <p className="mt-1 text-xs text-black/40">
+            {currentPlan ? `${currentPlan.status.charAt(0).toUpperCase()}${currentPlan.status.slice(1)}` : 'No plan yet'}
+            {currentPlan?.published_at ? ` / Published ${new Date(currentPlan.published_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}` : ''}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={selectedWeekStart}
+            onChange={(event) => setSelectedWeekStart(event.target.value)}
+            className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
+          />
+          <button
+            type="button"
+            onClick={() => void draftWeeklyPlan()}
+            disabled={draftingPlan}
+            className="border border-black/15 px-4 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-40"
+          >
+            {draftingPlan ? 'Drafting...' : 'AI draft'}
+          </button>
+        </div>
+      </div>
+
+      {planningSignals.length > 0 && (
+        <div className="mt-4 border border-amber-200 bg-amber-50 px-3 py-3">
+          <p className="text-[0.6rem] uppercase tracking-[0.14em] text-amber-700">Planning signals</p>
+          <div className="mt-2 space-y-1">
+            {planningSignals.slice(0, 5).map((signal) => (
+              <p key={signal} className="text-xs leading-relaxed text-black/55">{signal}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-[1fr_0.75fr_10rem]">
+        <label className="block">
+          <span className="text-xs text-black/45">Client note</span>
+          <textarea
+            value={planDraft.client_note}
+            onChange={(event) => setPlanDraft((current) => ({ ...current, client_note: event.target.value }))}
+            rows={3}
+            className="mt-1 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
+            placeholder="What the client should see at the top of the week."
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-black/45">Coach summary</span>
+          <textarea
+            value={planDraft.coach_summary}
+            onChange={(event) => setPlanDraft((current) => ({ ...current, coach_summary: event.target.value }))}
+            rows={3}
+            className="mt-1 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
+            placeholder="Private planning context."
+          />
+        </label>
+        <div className="grid gap-2">
+          <label className="block">
+            <span className="text-xs text-black/45">Regular slot</span>
+            <input
+              value={planDraft.regular_slot}
+              onChange={(event) => setPlanDraft((current) => ({ ...current, regular_slot: event.target.value }))}
+              className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
+              placeholder="Tue 7am"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs text-black/45">Slot status</span>
+            <select
+              value={planDraft.regular_slot_status}
+              onChange={(event) => setPlanDraft((current) => ({ ...current, regular_slot_status: event.target.value as PTWeeklyPlanSlotStatus }))}
+              className="mt-1 w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+            >
+              {(Object.keys(SLOT_STATUS_LABELS) as PTWeeklyPlanSlotStatus[]).map((value) => (
+                <option key={value} value={value}>{SLOT_STATUS_LABELS[value]}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Plan items</p>
+        <button
+          type="button"
+          onClick={() => addPlanItem()}
+          className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
+        >
+          Add item
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-3">
+        {planDraft.items.length === 0 ? (
+          <p className="border border-dashed border-black/10 px-4 py-5 text-sm text-black/35">No plan items yet.</p>
+        ) : (
+          planDraft.items.map((item) => {
+            const linkedValue = item.linked_phase_index !== '' && item.linked_day_index !== ''
+              ? `${item.linked_phase_index}:${item.linked_day_index}`
+              : '';
+            return (
+              <div key={item.local_id} className="border border-black/8 bg-[#fbfbf8] p-3">
+                <div className="grid gap-2 md:grid-cols-[9rem_9rem_1fr_8rem]">
+                  <select
+                    value={item.item_type}
+                    onChange={(event) => {
+                      const type = event.target.value as PTWeeklyPlanItemType;
+                      patchPlanItem(item.local_id, {
+                        item_type: type,
+                        title: item.title || PLAN_ITEM_LABELS[type],
+                        confirmation_status: type === 'pt_session' ? 'needs_confirmation' : 'none',
+                      });
+                    }}
+                    className="border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                  >
+                    {PLAN_ITEM_TYPES.map((type) => (
+                      <option key={type} value={type}>{PLAN_ITEM_LABELS[type]}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="date"
+                    value={item.scheduled_date}
+                    onChange={(event) => patchPlanItem(item.local_id, { scheduled_date: event.target.value })}
+                    className="border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                  />
+                  <input
+                    value={item.title}
+                    onChange={(event) => patchPlanItem(item.local_id, { title: event.target.value })}
+                    className="min-w-0 border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                    placeholder="Item title"
+                  />
+                  <select
+                    value={item.status}
+                    onChange={(event) => patchPlanItem(item.local_id, { status: event.target.value as PTWeeklyPlanItemStatus })}
+                    className="border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                  >
+                    {(Object.keys(ITEM_STATUS_LABELS) as PTWeeklyPlanItemStatus[]).map((value) => (
+                      <option key={value} value={value}>{ITEM_STATUS_LABELS[value]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="mt-2 grid gap-2 md:grid-cols-[1fr_12rem_12rem_4rem]">
+                  <textarea
+                    value={item.details}
+                    onChange={(event) => patchPlanItem(item.local_id, { details: event.target.value })}
+                    rows={2}
+                    className="min-w-0 resize-none border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                    placeholder="Details"
+                  />
+                  <select
+                    value={item.confirmation_status}
+                    onChange={(event) => patchPlanItem(item.local_id, { confirmation_status: event.target.value as PTWeeklyPlanConfirmationStatus })}
+                    className="border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                  >
+                    {(Object.keys(CONFIRMATION_LABELS) as PTWeeklyPlanConfirmationStatus[]).map((value) => (
+                      <option key={value} value={value}>{CONFIRMATION_LABELS[value]}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={linkedValue}
+                    onChange={(event) => {
+                      if (!event.target.value || !activeAssignment) {
+                        patchPlanItem(item.local_id, { linked_assignment_id: '', linked_phase_index: '', linked_day_index: '' });
+                        return;
+                      }
+                      const [phaseIndex, dayIndex] = event.target.value.split(':');
+                      patchPlanItem(item.local_id, {
+                        linked_assignment_id: activeAssignment.id,
+                        linked_phase_index: phaseIndex,
+                        linked_day_index: dayIndex,
+                      });
+                    }}
+                    className="border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                  >
+                    <option value="">No workout link</option>
+                    {activeWorkoutOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => removePlanItem(item.local_id)}
+                    className="border border-black/10 bg-white px-3 py-2 text-xs text-black/40 transition-colors hover:border-red-300 hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void saveWeeklyPlan(false)}
+          disabled={savingPlan}
+          className="border border-black/20 px-4 py-2 text-sm transition-colors hover:bg-black hover:text-white disabled:opacity-40"
+        >
+          Save draft
+        </button>
+        <button
+          type="button"
+          onClick={() => void saveWeeklyPlan(true)}
+          disabled={savingPlan || planDraft.items.length === 0}
+          className="border border-black bg-black px-5 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-40"
+        >
+          Publish to client
+        </button>
+      </div>
+    </div>
+  );
 
   const addGoal = async () => {
     if (!newGoal.title.trim()) return;
@@ -719,6 +1392,8 @@ export default function PTClientDetail({
             </div>
           </div>
         </div>
+
+        {renderWeeklyPlanBuilder()}
 
         <div className="mt-4 border border-black/10 px-5 py-4">
           <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Goals</p>

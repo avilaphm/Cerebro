@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
-import type { PTClient } from '@/utils/pt/types';
+import type { PTClient, PTClientMetric, PTWeeklyCheckin, PTWeeklyPlan } from '@/utils/pt/types';
 
 interface PTEvent {
   id: string;
@@ -27,13 +27,25 @@ function formatEvent(e: PTEvent): string {
   }
 }
 
+function weekStartInputValue(date = new Date()) {
+  const next = new Date(date);
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  const year = next.getFullYear();
+  const month = String(next.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(next.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayOfMonth}`;
+}
+
 export default async function PTOverviewPage() {
   const supabase = await createClient();
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const currentWeekStart = weekStartInputValue();
 
-  const [clientRes, assignmentRes, workoutRes, eventRes, unreadRes] = await Promise.all([
+  const [clientRes, assignmentRes, workoutRes, eventRes, unreadRes, checkinRes, planRes, coachingTaskRes, metricRes] = await Promise.all([
     supabase.from('pt_clients').select('*').order('created_at', { ascending: false }),
     supabase.from('pt_program_assignments').select('client_id, status').eq('status', 'active'),
     supabase
@@ -51,6 +63,24 @@ export default async function PTOverviewPage() {
       .select('id', { count: 'exact', head: true })
       .eq('sender', 'client')
       .is('read_at', null),
+    supabase
+      .from('pt_weekly_checkins')
+      .select('*')
+      .eq('status', 'submitted')
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('pt_weekly_plans')
+      .select('*')
+      .eq('week_start', currentWeekStart),
+    supabase
+      .from('pt_coaching_tasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open'),
+    supabase
+      .from('pt_client_metrics')
+      .select('*')
+      .order('measured_at', { ascending: false })
+      .order('created_at', { ascending: false }),
   ]);
 
   const clients = (clientRes.data ?? []) as PTClient[];
@@ -58,9 +88,27 @@ export default async function PTOverviewPage() {
   const recentWorkouts = workoutRes.data ?? [];
   const events = (eventRes.data ?? []) as PTEvent[];
   const unreadMessages = unreadRes.count ?? 0;
+  const waitingCheckins = (checkinRes.data ?? []) as PTWeeklyCheckin[];
+  const currentPlans = (planRes.data ?? []) as PTWeeklyPlan[];
+  const openCoachingTasks = coachingTaskRes.count ?? 0;
+  const metrics = (metricRes.data ?? []) as PTClientMetric[];
 
   const activeAssignedClientIds = new Set(activeAssignments.map((a) => a.client_id));
   const needsProgramming = clients.filter((c) => !activeAssignedClientIds.has(c.id));
+  const activeClients = clients.filter((c) => c.status !== 'archived');
+  const publishedPlanClientIds = new Set(currentPlans.filter((plan) => plan.status === 'published').map((plan) => plan.client_id));
+  const draftPlanClientIds = new Set(currentPlans.filter((plan) => plan.status === 'draft').map((plan) => plan.client_id));
+  const plansNotPublished = activeClients.filter((c) => !publishedPlanClientIds.has(c.id));
+  const noPlanThisWeek = activeClients.filter((c) => !publishedPlanClientIds.has(c.id) && !draftPlanClientIds.has(c.id));
+  const latestMetricByClient = new Map<string, PTClientMetric>();
+  metrics.forEach((metric) => {
+    if (!latestMetricByClient.has(metric.client_id)) latestMetricByClient.set(metric.client_id, metric);
+  });
+  const metricDueCutoff = fourteenDaysAgo.slice(0, 10);
+  const metricsDue = activeClients.filter((c) => {
+    const metric = latestMetricByClient.get(c.id);
+    return !metric || metric.measured_at < metricDueCutoff;
+  });
 
   const recentWorkoutClientIds = new Set(
     recentWorkouts.filter((w) => w.completed_at > sevenDaysAgo).map((w) => w.client_id),
@@ -111,6 +159,66 @@ export default async function PTOverviewPage() {
           )
         ))}
       </div>
+
+      <section className="mb-10">
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Coaching operations</p>
+            <h2 className="mt-1 text-lg font-medium">Week of {new Date(`${currentWeekStart}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</h2>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          {[
+            { label: 'Resets waiting', value: waitingCheckins.length, alert: waitingCheckins.length > 0 },
+            { label: 'Plans not published', value: plansNotPublished.length, alert: plansNotPublished.length > 0 },
+            { label: 'No plan this week', value: noPlanThisWeek.length, alert: noPlanThisWeek.length > 0 },
+            { label: 'Open loops', value: openCoachingTasks, alert: openCoachingTasks > 0 },
+            { label: 'Metrics due', value: metricsDue.length, alert: metricsDue.length > 0 },
+          ].map((item) => (
+            <div key={item.label} className={`border p-4 ${item.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10 bg-white'}`}>
+              <p className={`text-2xl font-light ${item.alert ? 'text-amber-700' : 'text-black'}`}>{item.value}</p>
+              <p className={`mt-1 text-[0.6rem] uppercase tracking-[0.12em] ${item.alert ? 'text-amber-700' : 'text-black/35'}`}>{item.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {(waitingCheckins.length > 0 || plansNotPublished.length > 0) && (
+          <div className="mt-5 grid gap-5 md:grid-cols-2">
+            {waitingCheckins.length > 0 && (
+              <div>
+                <h3 className="mb-3 text-[0.6rem] uppercase tracking-[0.18em] text-amber-600">Reset review</h3>
+                <div className="space-y-2">
+                  {waitingCheckins.slice(0, 5).map((checkin) => {
+                    const client = clients.find((c) => c.id === checkin.client_id);
+                    return (
+                      <Link key={checkin.id} href={`/dashboard/pt/clients/${checkin.client_id}`} className="block border border-amber-200 bg-amber-50/60 px-4 py-3 transition-colors hover:border-amber-400">
+                        <p className="text-sm font-medium">{client?.name ?? 'Client'}</p>
+                        <p className="mt-1 line-clamp-1 text-xs text-black/45">{checkin.client_focus || checkin.availability || 'Weekly reset submitted.'}</p>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {plansNotPublished.length > 0 && (
+              <div>
+                <h3 className="mb-3 text-[0.6rem] uppercase tracking-[0.18em] text-black/40">Planning queue</h3>
+                <div className="space-y-2">
+                  {plansNotPublished.slice(0, 5).map((client) => (
+                    <Link key={client.id} href={`/dashboard/pt/clients/${client.id}`} className="flex items-center justify-between border border-black/8 px-4 py-3 transition-colors hover:border-black/25">
+                      <div>
+                        <p className="text-sm font-medium">{client.name}</p>
+                        <p className="text-xs text-black/40">{draftPlanClientIds.has(client.id) ? 'Draft waiting to publish' : 'No plan created'}</p>
+                      </div>
+                      <span className="text-xs text-black/35">Plan</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       <div className="grid md:grid-cols-2 gap-8 mb-8">
         {needsAttention.length > 0 && (

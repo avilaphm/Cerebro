@@ -4,12 +4,53 @@
 2026-05-12 by codex
 
 ## Last completed task
-Completed Client Lifestyle Coaching OS Phase 1.
+Completed Client Lifestyle Coaching OS Phase 2.
 
 ## Last commit
-client lifestyle phase 1
+client lifestyle phase 2 weekly plans
 
 ## Current state
+
+### Client Lifestyle Coaching OS Phase 2 (NEW)
+- Added local migration `20260512070331_client_lifestyle_phase_2_weekly_plans.sql`.
+- Applied the Phase 2 schema remotely with `supabase db query --linked -f ...`; did not run `supabase db push`.
+- New DB tables: `pt_weekly_plans`, `pt_weekly_plan_items`.
+- New Edge Function deployed: `draft-weekly-plan` version 1 on project `otcnrkfvgyvwolironoz`.
+- `/dashboard/pt/clients/[id]` Coaching panel now includes a weekly plan builder:
+  - week picker
+  - manual plan drafting
+  - AI weekly draft generation from client context, latest reset, goals, metrics, notes, and active programme
+  - regular slot tracking and slot confirmation state
+  - plan item linking to programme days
+  - draft save and client publish actions
+- Supported weekly plan item types:
+  - `pt_session`
+  - `solo_strength`
+  - `run`
+  - `golf_mobility`
+  - `recovery`
+  - `nutrition`
+  - `check_in`
+- `/client` now shows the published weekly plan:
+  - client-facing week note
+  - due today / next item summary
+  - full plan list
+  - mark-done / skip for non-workout items
+  - linked workout items open the existing workout flow
+  - finishing a linked workout auto-completes the matching plan item
+- `/dashboard/pt/overview` now includes coaching operations widgets:
+  - weekly resets waiting
+  - plans not published
+  - clients with no plan this week
+  - open loops
+  - metrics due
+- Focused advisor rerun for `pt_weekly_plans` and `pt_weekly_plan_items` returned clean after consolidating overlapping RLS policies.
+- Verification:
+  - `npm run build` passed
+  - remote tables confirmed with `supabase db query`
+  - `supabase functions list` shows `draft-weekly-plan` active
+  - browser smoke test on a local dev server confirmed `/client` redirects to `/client-login` and `/dashboard/pt/clients` redirects to `/login`
+  - Playwright console errors on local dev were HMR websocket handshake noise, not app logic errors
 
 ### Client Lifestyle Coaching OS Phase 1 (NEW)
 - Added local migration `20260512034559_client_lifestyle_phase_1.sql`.
@@ -178,7 +219,7 @@ Deleted. No longer exists.
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-Client Lifestyle Coaching OS Phase 1 is complete. Next continuation point is Phase 2 from `plans/2026-05-client-lifestyle-coaching-os.md` after Pedro tests the weekly reset and coaching panel.
+Client Lifestyle Coaching OS Phases 1-2 are complete. Next continuation point is Phase 3 from `plans/2026-05-client-lifestyle-coaching-os.md`: progress tracking, planned-vs-completed review, and Pedro weekly/monthly review summaries.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`

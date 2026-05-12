@@ -7,6 +7,8 @@ import type {
   PTCoachingTask,
   PTProgramAssignment,
   PTProgramTemplate,
+  PTWeeklyPlan,
+  PTWeeklyPlanItem,
   PTWeeklyCheckin,
 } from '@/utils/pt/types';
 import { safeProgramme } from '@/utils/pt/programme';
@@ -32,7 +34,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const supabase = await createClient();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, metricsRes, goalsRes, tasksRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -58,6 +60,18 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .order('week_start', { ascending: false })
       .limit(8),
+    supabase
+      .from('pt_weekly_plans')
+      .select('*')
+      .eq('client_id', id)
+      .order('week_start', { ascending: false })
+      .limit(12),
+    supabase
+      .from('pt_weekly_plan_items')
+      .select('*')
+      .eq('client_id', id)
+      .order('scheduled_date', { ascending: true })
+      .order('sort_order', { ascending: true }),
     supabase
       .from('pt_client_metrics')
       .select('*')
@@ -93,6 +107,8 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const events = (eventsRes.data ?? []) as PTEvent[];
   const notes = (notesRes.data ?? []) as PTNote[];
   const weeklyCheckins = (checkinsRes.data ?? []) as PTWeeklyCheckin[];
+  const weeklyPlans = (plansRes.data ?? []) as PTWeeklyPlan[];
+  const weeklyPlanItems = (planItemsRes.data ?? []) as PTWeeklyPlanItem[];
   const metrics = (metricsRes.data ?? []) as PTClientMetric[];
   const goals = (goalsRes.data ?? []) as PTClientGoal[];
   const coachingTasks = (tasksRes.data ?? []) as PTCoachingTask[];
@@ -105,6 +121,8 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       events={events}
       notes={notes}
       weeklyCheckins={weeklyCheckins}
+      weeklyPlans={weeklyPlans}
+      weeklyPlanItems={weeklyPlanItems}
       metrics={metrics}
       goals={goals}
       coachingTasks={coachingTasks}

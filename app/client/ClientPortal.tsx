@@ -16,9 +16,22 @@ import type {
   PTProgrammePhase,
   PTProgrammeWeekBlock,
   PTSetLog,
+  PTWeeklyPlan,
+  PTWeeklyPlanItem,
+  PTWeeklyPlanItemType,
   PTWeeklyCheckin,
 } from '@/utils/pt/types';
 import MessageBubble from './MessageBubble';
+
+const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
+  pt_session: 'PT session',
+  solo_strength: 'Solo strength',
+  run: 'Run',
+  golf_mobility: 'Golf mobility',
+  recovery: 'Recovery',
+  nutrition: 'Nutrition',
+  check_in: 'Check-in',
+};
 
 interface SetDraft {
   reps: string;
@@ -286,6 +299,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [setLogs, setSetLogs] = useState<PTSetLog[]>([]);
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
   const [weeklyCheckins, setWeeklyCheckins] = useState<PTWeeklyCheckin[]>([]);
+  const [weeklyPlans, setWeeklyPlans] = useState<PTWeeklyPlan[]>([]);
+  const [weeklyPlanItems, setWeeklyPlanItems] = useState<PTWeeklyPlanItem[]>([]);
   const [metrics, setMetrics] = useState<PTClientMetric[]>([]);
   const [goals, setGoals] = useState<PTClientGoal[]>([]);
   const [resetDraft, setResetDraft] = useState<WeeklyResetDraft>(emptyWeeklyReset);
@@ -332,7 +347,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return;
     }
 
-    const [assignmentRes, logsRes, workoutLogsRes, checkinsRes, metricsRes, goalsRes] = await Promise.all([
+    const [assignmentRes, logsRes, workoutLogsRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes] = await Promise.all([
       supabase
         .from('pt_program_assignments')
         .select('*')
@@ -356,6 +371,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         .eq('client_id', currentClient.id)
         .order('week_start', { ascending: false })
         .limit(6),
+      supabase
+        .from('pt_weekly_plans')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .eq('status', 'published')
+        .order('week_start', { ascending: false })
+        .limit(4),
+      supabase
+        .from('pt_weekly_plan_items')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .order('scheduled_date', { ascending: true })
+        .order('sort_order', { ascending: true }),
       supabase
         .from('pt_client_metrics')
         .select('*')
@@ -381,6 +409,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setSetLogs((logsRes.data ?? []) as PTSetLog[]);
     setWorkoutLogs((workoutLogsRes.data ?? []) as WorkoutLog[]);
     setWeeklyCheckins((checkinsRes.data ?? []) as PTWeeklyCheckin[]);
+    setWeeklyPlans((plansRes.data ?? []) as PTWeeklyPlan[]);
+    setWeeklyPlanItems((planItemsRes.data ?? []) as PTWeeklyPlanItem[]);
     setMetrics((metricsRes.data ?? []) as PTClientMetric[]);
     setGoals((goalsRes.data ?? []) as PTClientGoal[]);
     setLoading(false);
@@ -437,6 +467,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const currentWeekStart = weekStartInputValue();
   const latestCheckin = weeklyCheckins[0] ?? null;
   const latestMetric = metrics[0] ?? null;
+  const currentWeeklyPlan = weeklyPlans.find((plan) => plan.week_start === currentWeekStart)
+    ?? weeklyPlans.find((plan) => plan.week_start > currentWeekStart)
+    ?? null;
+  const currentWeeklyPlanItems = weeklyPlanItems
+    .filter((item) => item.plan_id === currentWeeklyPlan?.id)
+    .sort((a, b) => {
+      const dateCompare = (a.scheduled_date ?? '').localeCompare(b.scheduled_date ?? '');
+      if (dateCompare !== 0) return dateCompare;
+      return a.sort_order - b.sort_order;
+    });
+  const dueTodayItems = currentWeeklyPlanItems.filter((item) => item.scheduled_date === todayInputValue() && item.status === 'planned');
+  const nextPlanItem = currentWeeklyPlanItems.find((item) => item.status === 'planned') ?? null;
 
   const lastSetsByExercise = useMemo(() => {
     const map = new Map<string, PTSetLog[]>();
@@ -702,6 +744,40 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setSubmittingMetric(false);
   };
 
+  const markPlanItemStatus = async (item: PTWeeklyPlanItem, nextStatus: 'done' | 'skipped') => {
+    const completedAt = nextStatus === 'done' ? new Date().toISOString() : null;
+    const { error } = await supabase
+      .from('pt_weekly_plan_items')
+      .update({
+        status: nextStatus,
+        completed_at: completedAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', item.id);
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    setWeeklyPlanItems((current) => current.map((planItem) => (
+      planItem.id === item.id
+        ? { ...planItem, status: nextStatus, completed_at: completedAt }
+        : planItem
+    )));
+  };
+
+  const openLinkedPlanWorkout = (item: PTWeeklyPlanItem) => {
+    if (
+      !assignment ||
+      item.linked_assignment_id !== assignment.id ||
+      item.linked_phase_index === null ||
+      item.linked_day_index === null
+    ) return;
+
+    openWorkout(item.linked_phase_index, item.linked_day_index);
+  };
+
   const finishWorkout = async () => {
     if (!client || !assignment || !selectedWorkout || !selectedPhase || !selectedDay) return;
     setSavingWorkout(true);
@@ -787,6 +863,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         section_notes: notes,
       },
     });
+
+    const linkedPlanItem = currentWeeklyPlanItems.find((item) =>
+      item.linked_assignment_id === assignment.id &&
+      item.linked_phase_index === selectedWorkout.phaseIndex &&
+      item.linked_day_index === selectedWorkout.dayIndex &&
+      item.status === 'planned'
+    );
+    if (linkedPlanItem) {
+      await supabase
+        .from('pt_weekly_plan_items')
+        .update({ status: 'done', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', linkedPlanItem.id);
+    }
 
     if (progress && !progress.allBlocksDone && selectedPhase) {
       const newLogs: WorkoutLog[] = [
@@ -909,14 +998,51 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week</p>
-            <h2 className="mt-2 font-display text-2xl font-light">{formatWeekRange(currentWeekStart)}</h2>
-            <p className="mt-2 text-sm leading-relaxed text-black/55">
-              Send Pedro the shape of your week before he adjusts training, running, mobility, and nutrition.
-            </p>
+            <h2 className="mt-2 font-display text-2xl font-light">
+              {formatWeekRange(currentWeeklyPlan?.week_start ?? currentWeekStart)}
+            </h2>
+            {currentWeeklyPlan ? (
+              <>
+                {currentWeeklyPlan.client_note && (
+                  <p className="mt-2 text-sm leading-relaxed text-black/60">{currentWeeklyPlan.client_note}</p>
+                )}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="border border-black/10 bg-[#fbfbf8] px-3 py-1.5 text-xs text-black/55">
+                    Slot: {currentWeeklyPlan.regular_slot || 'Not set'}
+                  </span>
+                  <span className={`border px-3 py-1.5 text-xs ${
+                    currentWeeklyPlan.regular_slot_status === 'confirmed'
+                      ? 'border-green-200 bg-green-50 text-green-700'
+                      : 'border-amber-200 bg-amber-50 text-amber-700'
+                  }`}>
+                    {currentWeeklyPlan.regular_slot_status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="mt-2 text-sm leading-relaxed text-black/55">
+                Send Pedro the shape of your week before he adjusts training, running, mobility, and nutrition.
+              </p>
+            )}
           </div>
           <div className="border border-black/8 bg-[#fbfbf8] p-3">
-            <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest reset</p>
-            {latestCheckin ? (
+            <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">
+              {dueTodayItems.length > 0 ? 'Due today' : 'Next'}
+            </p>
+            {dueTodayItems.length > 0 ? (
+              <div className="mt-2 space-y-2">
+                {dueTodayItems.slice(0, 2).map((item) => (
+                  <p key={item.id} className="text-sm font-medium">{item.title}</p>
+                ))}
+              </div>
+            ) : nextPlanItem ? (
+              <>
+                <p className="mt-2 text-sm font-medium">{nextPlanItem.title}</p>
+                <p className="mt-1 text-xs text-black/45">
+                  {nextPlanItem.scheduled_date ? formatDate(nextPlanItem.scheduled_date) : PLAN_ITEM_LABELS[nextPlanItem.item_type]}
+                </p>
+              </>
+            ) : latestCheckin ? (
               <>
                 <p className="mt-2 text-sm font-medium">Week of {formatDate(latestCheckin.week_start)}</p>
                 <p className="mt-1 text-xs leading-relaxed text-black/50">
@@ -929,6 +1055,89 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         </div>
       </section>
+
+      {currentWeeklyPlan && (
+        <section className="border border-black/10 bg-white p-4 md:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Plan</p>
+            <p className="text-xs text-black/35">
+              {currentWeeklyPlanItems.filter((item) => item.status === 'done').length}/{currentWeeklyPlanItems.length} done
+            </p>
+          </div>
+          {currentWeeklyPlanItems.length === 0 ? (
+            <p className="mt-3 text-sm text-black/45">Pedro has published the week, but no items are listed yet.</p>
+          ) : (
+            <div className="mt-4 grid gap-2">
+              {currentWeeklyPlanItems.map((item) => {
+                const isLinkedWorkout = Boolean(
+                  assignment &&
+                  item.linked_assignment_id === assignment.id &&
+                  item.linked_phase_index !== null &&
+                  item.linked_day_index !== null,
+                );
+                return (
+                  <div key={item.id} className={`border px-3 py-3 ${
+                    item.status === 'done'
+                      ? 'border-green-200 bg-green-50/60'
+                      : item.status === 'skipped'
+                      ? 'border-black/8 bg-black/3 opacity-70'
+                      : 'border-black/8 bg-[#fbfbf8]'
+                  }`}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">
+                            {PLAN_ITEM_LABELS[item.item_type]}
+                          </span>
+                          {item.scheduled_date && <span className="text-xs text-black/35">{formatDate(item.scheduled_date)}</span>}
+                          {item.confirmation_status !== 'none' && (
+                            <span className="border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.08em] text-amber-700">
+                              {item.confirmation_status.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-sm font-medium text-black">{item.title}</p>
+                        {item.details && <p className="mt-1 text-xs leading-relaxed text-black/50">{item.details}</p>}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {isLinkedWorkout && item.status !== 'done' && (
+                          <button
+                            type="button"
+                            onClick={() => openLinkedPlanWorkout(item)}
+                            className="border border-black bg-black px-3 py-2 text-xs text-white transition-opacity hover:opacity-80"
+                          >
+                            Open workout
+                          </button>
+                        )}
+                        {item.status === 'planned' && !isLinkedWorkout && (
+                          <button
+                            type="button"
+                            onClick={() => void markPlanItemStatus(item, 'done')}
+                            className="border border-black/15 bg-white px-3 py-2 text-xs text-black/55 transition-colors hover:border-black hover:text-black"
+                          >
+                            Mark done
+                          </button>
+                        )}
+                        {item.status === 'planned' && (
+                          <button
+                            type="button"
+                            onClick={() => void markPlanItemStatus(item, 'skipped')}
+                            className="text-xs text-black/35 underline-offset-2 hover:text-black hover:underline"
+                          >
+                            Skip
+                          </button>
+                        )}
+                        {item.status === 'done' && <span className="text-xs font-medium text-green-700">Done</span>}
+                        {item.status === 'skipped' && <span className="text-xs text-black/35">Skipped</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="border border-black/10 bg-white p-4 md:p-5">
