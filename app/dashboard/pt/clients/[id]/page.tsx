@@ -1,6 +1,14 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
-import type { PTClient, PTProgramTemplate, PTProgramAssignment } from '@/utils/pt/types';
+import type {
+  PTClient,
+  PTClientGoal,
+  PTClientMetric,
+  PTCoachingTask,
+  PTProgramAssignment,
+  PTProgramTemplate,
+  PTWeeklyCheckin,
+} from '@/utils/pt/types';
 import { safeProgramme } from '@/utils/pt/programme';
 import PTClientDetail from './PTClientDetail';
 
@@ -24,7 +32,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const supabase = await createClient();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, metricsRes, goalsRes, tasksRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -44,6 +52,31 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .eq('is_active', true)
       .order('created_at', { ascending: false }),
+    supabase
+      .from('pt_weekly_checkins')
+      .select('*')
+      .eq('client_id', id)
+      .order('week_start', { ascending: false })
+      .limit(8),
+    supabase
+      .from('pt_client_metrics')
+      .select('*')
+      .eq('client_id', id)
+      .order('measured_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(12),
+    supabase
+      .from('pt_client_goals')
+      .select('*')
+      .eq('client_id', id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('pt_coaching_tasks')
+      .select('*')
+      .eq('client_id', id)
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .limit(20),
   ]);
 
   if (clientRes.error || !clientRes.data) notFound();
@@ -59,6 +92,10 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   }));
   const events = (eventsRes.data ?? []) as PTEvent[];
   const notes = (notesRes.data ?? []) as PTNote[];
+  const weeklyCheckins = (checkinsRes.data ?? []) as PTWeeklyCheckin[];
+  const metrics = (metricsRes.data ?? []) as PTClientMetric[];
+  const goals = (goalsRes.data ?? []) as PTClientGoal[];
+  const coachingTasks = (tasksRes.data ?? []) as PTCoachingTask[];
 
   return (
     <PTClientDetail
@@ -67,6 +104,10 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       assignments={assignments}
       events={events}
       notes={notes}
+      weeklyCheckins={weeklyCheckins}
+      metrics={metrics}
+      goals={goals}
+      coachingTasks={coachingTasks}
     />
   );
 }

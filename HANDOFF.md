@@ -4,12 +4,34 @@
 2026-05-12 by codex
 
 ## Last completed task
-Added draft-only PT Programming Agent.
+Completed Client Lifestyle Coaching OS Phase 1.
 
 ## Last commit
-add PT programming agent
+client lifestyle phase 1
 
 ## Current state
+
+### Client Lifestyle Coaching OS Phase 1 (NEW)
+- Added local migration `20260512034559_client_lifestyle_phase_1.sql`.
+- Applied migration remotely with `supabase db query --linked -f ...`; did not run `supabase db push`.
+- New DB tables: `pt_weekly_checkins`, `pt_client_metrics`, `pt_client_goals`, `pt_coaching_tasks`.
+- Extended `pt_clients` with `lifestyle_context`, `regular_training_slot`, `coaching_focus`, and `event_goal`.
+- `/client` now has a coaching home above Training:
+  - This Week overview
+  - Weekly Reset form
+  - Body metrics entry
+  - Active goals display
+- Weekly reset submissions create open `pt_coaching_tasks` for Pedro.
+- Metric submissions create open `pt_coaching_tasks` for Pedro.
+- `/dashboard/pt/clients/[id]` now has a Coaching panel:
+  - Client 360 fields
+  - latest weekly reset summary
+  - energy/soreness/sleep/stress scores
+  - latest metrics
+  - active goals
+  - open coaching tasks with Done action
+- Pedro can add goals and mark weekly resets reviewed from the client detail page.
+- Verification: `npm run build` passed. Remote schema verified with `supabase db query`. Supabase advisors have no warnings for the four new Phase 1 tables. Browser smoke checked `/client` and a real `/dashboard/pt/clients/[id]` route.
 
 ### PT Programming Agent (NEW)
 - Client profile now has a `Programming Agent` panel.
@@ -156,7 +178,7 @@ Deleted. No longer exists.
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-PT client password controls complete. Pedro to test on the live dashboard and brief next feature.
+Client Lifestyle Coaching OS Phase 1 is complete. Next continuation point is Phase 2 from `plans/2026-05-client-lifestyle-coaching-os.md` after Pedro tests the weekly reset and coaching panel.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`

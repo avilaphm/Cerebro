@@ -21,6 +21,10 @@ export interface PTClient {
   sessions_remaining: number;
   document_url: string | null;
   password_created_at: string | null;
+  lifestyle_context: string | null;
+  regular_training_slot: string | null;
+  coaching_focus: string | null;
+  event_goal: string | null;
   created_at?: string;
 }
 
@@ -126,4 +130,68 @@ export interface PTGroup {
   name: string;
   color: string;
   created_at: string;
+}
+
+export interface PTWeeklyCheckin {
+  id: string;
+  client_id: string;
+  week_start: string;
+  availability: string | null;
+  golf_days: string | null;
+  run_days: string | null;
+  energy: number | null;
+  soreness: number | null;
+  sleep: number | null;
+  stress: number | null;
+  travel: string | null;
+  injuries: string | null;
+  nutrition_focus: string | null;
+  nutrition_obstacles: string | null;
+  client_focus: string | null;
+  status: 'submitted' | 'reviewed' | 'archived';
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PTClientMetric {
+  id: string;
+  client_id: string;
+  measured_at: string;
+  weight_kg: number | null;
+  waist_cm: number | null;
+  body_fat_pct: number | null;
+  muscle_mass_kg: number | null;
+  source: 'manual' | 'scale' | 'coach';
+  notes: string | null;
+  created_at: string;
+}
+
+export interface PTClientGoal {
+  id: string;
+  client_id: string;
+  goal_type: string;
+  title: string;
+  target_value: number | null;
+  current_value: number | null;
+  unit: string | null;
+  target_date: string | null;
+  status: 'active' | 'paused' | 'completed' | 'archived';
+  notes: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PTCoachingTask {
+  id: string;
+  client_id: string;
+  source_type: string;
+  source_id: string | null;
+  title: string;
+  details: string | null;
+  priority: 'low' | 'normal' | 'high';
+  status: 'open' | 'done' | 'archived';
+  due_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at?: string;
 }

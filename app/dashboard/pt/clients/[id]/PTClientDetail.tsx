@@ -4,7 +4,15 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import type { PTClient, PTProgramTemplate, PTProgramAssignment } from '@/utils/pt/types';
+import type {
+  PTClient,
+  PTClientGoal,
+  PTClientMetric,
+  PTCoachingTask,
+  PTProgramAssignment,
+  PTProgramTemplate,
+  PTWeeklyCheckin,
+} from '@/utils/pt/types';
 
 const STATUS_OPTIONS: PTClient['status'][] = ['invited', 'active', 'paused', 'archived'];
 const STATUS_COLORS: Record<PTClient['status'], string> = {
@@ -36,6 +44,10 @@ interface Props {
   assignments: PTProgramAssignment[];
   events: PTEvent[];
   notes: PTNote[];
+  weeklyCheckins: PTWeeklyCheckin[];
+  metrics: PTClientMetric[];
+  goals: PTClientGoal[];
+  coachingTasks: PTCoachingTask[];
 }
 
 interface SpeechRecognitionLike {
@@ -65,7 +77,30 @@ function getSR() {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-export default function PTClientDetail({ client: initial, templates, assignments, events, notes: initialNotes }: Props) {
+function formatDate(value: string | null | undefined) {
+  if (!value) return '-';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+
+function metricValue(value: number | null, unit: string) {
+  return value === null || value === undefined ? '-' : `${Number(value).toLocaleString('en-AU')} ${unit}`;
+}
+
+function scoreLabel(value: number | null) {
+  return value === null || value === undefined ? '-' : `${value}/5`;
+}
+
+export default function PTClientDetail({
+  client: initial,
+  templates,
+  assignments,
+  events,
+  notes: initialNotes,
+  weeklyCheckins: initialWeeklyCheckins,
+  metrics: initialMetrics,
+  goals: initialGoals,
+  coachingTasks: initialCoachingTasks,
+}: Props) {
   const supabase = createClient();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -78,6 +113,10 @@ export default function PTClientDetail({ client: initial, templates, assignments
     goals: initial.goals ?? '',
     notes: initial.notes ?? '',
     sessions_remaining: initial.sessions_remaining,
+    lifestyle_context: initial.lifestyle_context ?? '',
+    regular_training_slot: initial.regular_training_slot ?? '',
+    coaching_focus: initial.coaching_focus ?? '',
+    event_goal: initial.event_goal ?? '',
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -87,12 +126,25 @@ export default function PTClientDetail({ client: initial, templates, assignments
   const [passwordPanelOpen, setPasswordPanelOpen] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [notes, setNotes] = useState(initialNotes);
+  const [weeklyCheckins, setWeeklyCheckins] = useState(initialWeeklyCheckins);
+  const [metrics, setMetrics] = useState(initialMetrics);
+  const [goals, setGoals] = useState(initialGoals);
+  const [coachingTasks, setCoachingTasks] = useState(initialCoachingTasks);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [status, setStatus] = useState('');
   const [agentInstructions, setAgentInstructions] = useState('');
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
   const [agentListening, setAgentListening] = useState(false);
   const [agentStatus, setAgentStatus] = useState('');
+  const [newGoal, setNewGoal] = useState({
+    goal_type: 'general',
+    title: '',
+    target_value: '',
+    current_value: '',
+    unit: '',
+    target_date: '',
+    notes: '',
+  });
 
   const save = async () => {
     setSaving(true);
@@ -103,6 +155,10 @@ export default function PTClientDetail({ client: initial, templates, assignments
         goals: form.goals.trim() || null,
         notes: form.notes.trim() || null,
         sessions_remaining: form.sessions_remaining,
+        lifestyle_context: form.lifestyle_context.trim() || null,
+        regular_training_slot: form.regular_training_slot.trim() || null,
+        coaching_focus: form.coaching_focus.trim() || null,
+        event_goal: form.event_goal.trim() || null,
       })
       .eq('id', client.id)
       .select()
@@ -252,6 +308,54 @@ export default function PTClientDetail({ client: initial, templates, assignments
     const workout = typeof context.workout_title === 'string' ? context.workout_title : null;
     const section = typeof context.section_title === 'string' ? context.section_title : null;
     return [phase, week, workout, section].filter(Boolean).join(' / ');
+  };
+
+  const latestCheckin = weeklyCheckins[0] ?? null;
+  const latestMetric = metrics[0] ?? null;
+  const activeGoals = goals.filter((goal) => goal.status === 'active');
+
+  const markTaskDone = async (taskId: string) => {
+    await supabase
+      .from('pt_coaching_tasks')
+      .update({ status: 'done', completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', taskId);
+    setCoachingTasks((current) => current.filter((task) => task.id !== taskId));
+  };
+
+  const markCheckinReviewed = async (checkinId: string) => {
+    await supabase
+      .from('pt_weekly_checkins')
+      .update({ status: 'reviewed', updated_at: new Date().toISOString() })
+      .eq('id', checkinId);
+    setWeeklyCheckins((current) => current.map((item) => item.id === checkinId ? { ...item, status: 'reviewed' } : item));
+  };
+
+  const addGoal = async () => {
+    if (!newGoal.title.trim()) return;
+    const { data, error } = await supabase
+      .from('pt_client_goals')
+      .insert({
+        client_id: client.id,
+        goal_type: newGoal.goal_type.trim() || 'general',
+        title: newGoal.title.trim(),
+        target_value: newGoal.target_value ? Number(newGoal.target_value) : null,
+        current_value: newGoal.current_value ? Number(newGoal.current_value) : null,
+        unit: newGoal.unit.trim() || null,
+        target_date: newGoal.target_date || null,
+        notes: newGoal.notes.trim() || null,
+        status: 'active',
+      })
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      setStatus(error?.message ?? 'Could not add goal.');
+      return;
+    }
+
+    setGoals((current) => [data as PTClientGoal, ...current]);
+    setNewGoal({ goal_type: 'general', title: '', target_value: '', current_value: '', unit: '', target_date: '', notes: '' });
+    setStatus('Goal added.');
   };
 
   const startAgentDictation = () => {
@@ -441,6 +545,49 @@ export default function PTClientDetail({ client: initial, templates, assignments
       </div>
 
       {editing && (
+        <div className="grid md:grid-cols-2 gap-5 mb-8">
+          <div>
+            <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Regular slot</label>
+            <input
+              value={form.regular_training_slot}
+              onChange={(e) => setForm((f) => ({ ...f, regular_training_slot: e.target.value }))}
+              className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
+              placeholder="e.g. Tuesday 7am"
+            />
+          </div>
+          <div>
+            <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Event goal</label>
+            <input
+              value={form.event_goal}
+              onChange={(e) => setForm((f) => ({ ...f, event_goal: e.target.value }))}
+              className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
+              placeholder="e.g. Coastal Classic"
+            />
+          </div>
+          <div>
+            <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Coaching focus</label>
+            <textarea
+              value={form.coaching_focus}
+              onChange={(e) => setForm((f) => ({ ...f, coaching_focus: e.target.value }))}
+              rows={3}
+              className="w-full resize-none border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
+              placeholder="The current lifestyle coaching priority."
+            />
+          </div>
+          <div>
+            <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Lifestyle context</label>
+            <textarea
+              value={form.lifestyle_context}
+              onChange={(e) => setForm((f) => ({ ...f, lifestyle_context: e.target.value }))}
+              rows={3}
+              className="w-full resize-none border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
+              placeholder="Golf, running, work rhythm, nutrition, travel, recovery."
+            />
+          </div>
+        </div>
+      )}
+
+      {editing && (
         <div className="flex gap-3 mb-8">
           <button onClick={() => setEditing(false)} className="border border-black/20 px-5 py-2 text-sm hover:bg-black/5 transition-colors">
             Cancel
@@ -450,6 +597,163 @@ export default function PTClientDetail({ client: initial, templates, assignments
           </button>
         </div>
       )}
+
+      <div className="border-t border-black/8 pt-6 mb-8">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Coaching</h2>
+          {coachingTasks.length > 0 && (
+            <span className="border border-amber-200 bg-amber-50 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-amber-700">
+              {coachingTasks.length} open
+            </span>
+          )}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-4">
+            <div className="border border-black/10 bg-[#fbfbf8] px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Client 360</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-black/35">Regular slot</p>
+                  <p className="mt-1 text-sm text-black/70">{client.regular_training_slot || 'Not set'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-black/35">Event goal</p>
+                  <p className="mt-1 text-sm text-black/70">{client.event_goal || 'Not set'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-black/35">Coaching focus</p>
+                  <p className="mt-1 text-sm leading-relaxed text-black/70">{client.coaching_focus || 'Not set'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-black/35">Lifestyle context</p>
+                  <p className="mt-1 text-sm leading-relaxed text-black/70">{client.lifestyle_context || 'Not set'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-black/10 px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest weekly reset</p>
+                  {latestCheckin ? (
+                    <p className="mt-2 text-sm font-medium">Week of {formatDate(latestCheckin.week_start)}</p>
+                  ) : (
+                    <p className="mt-2 text-sm text-black/45">No weekly reset yet.</p>
+                  )}
+                </div>
+                {latestCheckin && latestCheckin.status === 'submitted' && (
+                  <button
+                    type="button"
+                    onClick={() => void markCheckinReviewed(latestCheckin.id)}
+                    className="shrink-0 border border-black/15 px-3 py-1.5 text-xs text-black/50 transition-colors hover:border-black hover:text-black"
+                  >
+                    Mark reviewed
+                  </button>
+                )}
+              </div>
+              {latestCheckin && (
+                <div className="mt-4 space-y-3">
+                  <p className="text-sm leading-relaxed text-black/75">{latestCheckin.client_focus || 'No focus written.'}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <p className="text-xs text-black/45"><span className="text-black/70">Availability:</span> {latestCheckin.availability || '-'}</p>
+                    <p className="text-xs text-black/45"><span className="text-black/70">Golf:</span> {latestCheckin.golf_days || '-'}</p>
+                    <p className="text-xs text-black/45"><span className="text-black/70">Runs:</span> {latestCheckin.run_days || '-'}</p>
+                    <p className="text-xs text-black/45"><span className="text-black/70">Travel:</span> {latestCheckin.travel || '-'}</p>
+                    <p className="text-xs text-black/45"><span className="text-black/70">Injuries:</span> {latestCheckin.injuries || '-'}</p>
+                    <p className="text-xs text-black/45"><span className="text-black/70">Nutrition:</span> {latestCheckin.nutrition_focus || '-'}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Energy {scoreLabel(latestCheckin.energy)}</span>
+                    <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Soreness {scoreLabel(latestCheckin.soreness)}</span>
+                    <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Sleep {scoreLabel(latestCheckin.sleep)}</span>
+                    <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Stress {scoreLabel(latestCheckin.stress)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="border border-black/10 px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Open loops</p>
+              {coachingTasks.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {coachingTasks.map((task) => (
+                    <div key={task.id} className="flex items-start justify-between gap-3 border border-amber-200 bg-amber-50 px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium text-black/80">{task.title}</p>
+                        {task.details && <p className="mt-1 text-xs leading-relaxed text-black/50">{task.details}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void markTaskDone(task.id)}
+                        className="shrink-0 text-xs text-amber-700 underline-offset-2 hover:underline"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-black/45">No coaching tasks open.</p>
+              )}
+            </div>
+
+            <div className="border border-black/10 px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest metrics</p>
+              {latestMetric ? (
+                <div className="mt-3">
+                  <p className="text-sm font-medium">{formatDate(latestMetric.measured_at)}</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <p className="text-xs text-black/45">Weight <span className="block text-sm text-black/70">{metricValue(latestMetric.weight_kg, 'kg')}</span></p>
+                    <p className="text-xs text-black/45">Waist <span className="block text-sm text-black/70">{metricValue(latestMetric.waist_cm, 'cm')}</span></p>
+                    <p className="text-xs text-black/45">Body fat <span className="block text-sm text-black/70">{metricValue(latestMetric.body_fat_pct, '%')}</span></p>
+                    <p className="text-xs text-black/45">Muscle <span className="block text-sm text-black/70">{metricValue(latestMetric.muscle_mass_kg, 'kg')}</span></p>
+                  </div>
+                  {latestMetric.notes && <p className="mt-2 text-xs leading-relaxed text-black/45">{latestMetric.notes}</p>}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-black/45">No metrics logged yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 border border-black/10 px-5 py-4">
+          <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Goals</p>
+          {activeGoals.length > 0 && (
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {activeGoals.map((goal) => (
+                <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                  <p className="text-sm font-medium">{goal.title}</p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {[goal.current_value !== null ? `Now ${goal.current_value}${goal.unit ?? ''}` : null, goal.target_value !== null ? `Target ${goal.target_value}${goal.unit ?? ''}` : null, goal.target_date ? `By ${formatDate(goal.target_date)}` : null].filter(Boolean).join(' / ') || goal.notes || 'Active goal'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_6rem_6rem_5rem_9rem]">
+            <input value={newGoal.title} onChange={(event) => setNewGoal((current) => ({ ...current, title: event.target.value }))}
+              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Goal title" />
+            <input value={newGoal.current_value} onChange={(event) => setNewGoal((current) => ({ ...current, current_value: event.target.value }))}
+              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Now" inputMode="decimal" />
+            <input value={newGoal.target_value} onChange={(event) => setNewGoal((current) => ({ ...current, target_value: event.target.value }))}
+              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Target" inputMode="decimal" />
+            <input value={newGoal.unit} onChange={(event) => setNewGoal((current) => ({ ...current, unit: event.target.value }))}
+              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Unit" />
+            <input type="date" value={newGoal.target_date} onChange={(event) => setNewGoal((current) => ({ ...current, target_date: event.target.value }))}
+              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" />
+          </div>
+          <textarea value={newGoal.notes} onChange={(event) => setNewGoal((current) => ({ ...current, notes: event.target.value }))}
+            rows={2} className="mt-2 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Goal notes or plain-English definition." />
+          <button type="button" onClick={() => void addGoal()} disabled={!newGoal.title.trim()}
+            className="mt-2 border border-black bg-black px-4 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30">
+            Add goal
+          </button>
+        </div>
+      </div>
 
       <div className="border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programme</h2>

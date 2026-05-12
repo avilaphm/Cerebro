@@ -7,12 +7,16 @@ import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from 
 import { isPedroAdminEmail } from '@/utils/pt/access';
 import type {
   PTClient,
+  PTClientGoal,
+  PTClientMetric,
+  PTCoachingTask,
   PTProgramAssignment,
   PTProgrammeDay,
   PTProgrammeExercise,
   PTProgrammePhase,
   PTProgrammeWeekBlock,
   PTSetLog,
+  PTWeeklyCheckin,
 } from '@/utils/pt/types';
 import MessageBubble from './MessageBubble';
 
@@ -58,6 +62,46 @@ interface VideoState {
   id: string;
   title: string;
 }
+
+interface WeeklyResetDraft {
+  availability: string;
+  golf_days: string;
+  run_days: string;
+  energy: string;
+  soreness: string;
+  sleep: string;
+  stress: string;
+  travel: string;
+  injuries: string;
+  nutrition_focus: string;
+  nutrition_obstacles: string;
+  client_focus: string;
+}
+
+interface MetricDraft {
+  measured_at: string;
+  weight_kg: string;
+  waist_cm: string;
+  body_fat_pct: string;
+  muscle_mass_kg: string;
+  source: 'manual' | 'scale';
+  notes: string;
+}
+
+const emptyWeeklyReset: WeeklyResetDraft = {
+  availability: '',
+  golf_days: '',
+  run_days: '',
+  energy: '',
+  soreness: '',
+  sleep: '',
+  stress: '',
+  travel: '',
+  injuries: '',
+  nutrition_focus: '',
+  nutrition_obstacles: '',
+  client_focus: '',
+};
 
 function calcPhaseProgress(
   logs: WorkoutLog[],
@@ -110,6 +154,44 @@ function toNullableNumber(value: string | undefined) {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function todayInputValue() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function weekStartInputValue(date = new Date()) {
+  const next = new Date(date);
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  const year = next.getFullYear();
+  const month = String(next.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(next.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayOfMonth}`;
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return '-';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+function formatWeekRange(weekStart: string) {
+  const start = new Date(`${weekStart}T00:00:00`);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return `${start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`;
+}
+
+function formatMetric(value: number | null, suffix: string) {
+  return value === null || value === undefined ? '-' : `${Number(value).toLocaleString('en-AU')} ${suffix}`;
 }
 
 function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
@@ -203,6 +285,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [assignments, setAssignments] = useState<PTProgramAssignment[]>([]);
   const [setLogs, setSetLogs] = useState<PTSetLog[]>([]);
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
+  const [weeklyCheckins, setWeeklyCheckins] = useState<PTWeeklyCheckin[]>([]);
+  const [metrics, setMetrics] = useState<PTClientMetric[]>([]);
+  const [goals, setGoals] = useState<PTClientGoal[]>([]);
+  const [resetDraft, setResetDraft] = useState<WeeklyResetDraft>(emptyWeeklyReset);
+  const [metricDraft, setMetricDraft] = useState<MetricDraft>({
+    measured_at: todayInputValue(),
+    weight_kg: '',
+    waist_cm: '',
+    body_fat_pct: '',
+    muscle_mass_kg: '',
+    source: 'scale',
+    notes: '',
+  });
   const [setDrafts, setSetDrafts] = useState<Record<string, SetDraft>>({});
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
@@ -215,6 +310,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingWorkout, setSavingWorkout] = useState(false);
+  const [submittingReset, setSubmittingReset] = useState(false);
+  const [submittingMetric, setSubmittingMetric] = useState(false);
   const [activeContext, setActiveContext] = useState<{
     phase_index: number; phase_title: string; day_index: number; day_title: string;
   } | null>(null);
@@ -235,7 +332,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return;
     }
 
-    const [assignmentRes, logsRes, workoutLogsRes] = await Promise.all([
+    const [assignmentRes, logsRes, workoutLogsRes, checkinsRes, metricsRes, goalsRes] = await Promise.all([
       supabase
         .from('pt_program_assignments')
         .select('*')
@@ -253,6 +350,26 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         .select('id, phase_index, day_index, week_number, block_index, is_quick_done')
         .eq('client_id', currentClient.id)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('pt_weekly_checkins')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .order('week_start', { ascending: false })
+        .limit(6),
+      supabase
+        .from('pt_client_metrics')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .order('measured_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(12),
+      supabase
+        .from('pt_client_goals')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(8),
     ]);
 
     setAssignments(((assignmentRes.data ?? []) as PTProgramAssignment[]).map((row) => ({
@@ -263,6 +380,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     })));
     setSetLogs((logsRes.data ?? []) as PTSetLog[]);
     setWorkoutLogs((workoutLogsRes.data ?? []) as WorkoutLog[]);
+    setWeeklyCheckins((checkinsRes.data ?? []) as PTWeeklyCheckin[]);
+    setMetrics((metricsRes.data ?? []) as PTClientMetric[]);
+    setGoals((goalsRes.data ?? []) as PTClientGoal[]);
     setLoading(false);
   }, [supabase]);
 
@@ -314,6 +434,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const selectedProgress = selectedWorkout
     ? phaseProgress[selectedWorkout.phaseIndex] ?? null
     : null;
+  const currentWeekStart = weekStartInputValue();
+  const latestCheckin = weeklyCheckins[0] ?? null;
+  const latestMetric = metrics[0] ?? null;
 
   const lastSetsByExercise = useMemo(() => {
     const map = new Map<string, PTSetLog[]>();
@@ -445,6 +568,138 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       setStatus('Note sent to Pedro.');
     }
     setSubmittingSectionNote(null);
+  };
+
+  const patchResetDraft = (patch: Partial<WeeklyResetDraft>) => {
+    setResetDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const patchMetricDraft = (patch: Partial<MetricDraft>) => {
+    setMetricDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const submitWeeklyReset = async () => {
+    if (!client || submittingReset) return;
+
+    setSubmittingReset(true);
+    setStatus('Submitting weekly reset...');
+
+    const { data, error } = await supabase
+      .from('pt_weekly_checkins')
+      .insert({
+        client_id: client.id,
+        week_start: currentWeekStart,
+        availability: resetDraft.availability.trim() || null,
+        golf_days: resetDraft.golf_days.trim() || null,
+        run_days: resetDraft.run_days.trim() || null,
+        energy: toNullableNumber(resetDraft.energy),
+        soreness: toNullableNumber(resetDraft.soreness),
+        sleep: toNullableNumber(resetDraft.sleep),
+        stress: toNullableNumber(resetDraft.stress),
+        travel: resetDraft.travel.trim() || null,
+        injuries: resetDraft.injuries.trim() || null,
+        nutrition_focus: resetDraft.nutrition_focus.trim() || null,
+        nutrition_obstacles: resetDraft.nutrition_obstacles.trim() || null,
+        client_focus: resetDraft.client_focus.trim() || null,
+      })
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      setStatus(error?.message ?? 'Could not submit weekly reset.');
+      setSubmittingReset(false);
+      return;
+    }
+
+    const checkin = data as PTWeeklyCheckin;
+    const task: Omit<PTCoachingTask, 'id' | 'created_at' | 'updated_at' | 'completed_at'> = {
+      client_id: client.id,
+      source_type: 'weekly_checkin',
+      source_id: checkin.id,
+      title: 'Review weekly reset',
+      details: checkin.client_focus || checkin.availability || 'Weekly reset submitted.',
+      priority: checkin.injuries || checkin.travel ? 'high' : 'normal',
+      status: 'open',
+      due_at: new Date().toISOString(),
+    };
+    const { error: taskError } = await supabase.from('pt_coaching_tasks').insert(task);
+
+    setWeeklyCheckins((current) => [checkin, ...current.filter((item) => item.id !== checkin.id)]);
+    setResetDraft(emptyWeeklyReset);
+    setStatus(taskError ? `Weekly reset saved, but Pedro task failed: ${taskError.message}` : 'Weekly reset sent to Pedro.');
+    setSubmittingReset(false);
+  };
+
+  const submitMetric = async () => {
+    if (!client || submittingMetric) return;
+
+    const hasValue = [
+      metricDraft.weight_kg,
+      metricDraft.waist_cm,
+      metricDraft.body_fat_pct,
+      metricDraft.muscle_mass_kg,
+      metricDraft.notes,
+    ].some((value) => value.trim());
+    if (!hasValue) {
+      setStatus('Add at least one metric or note.');
+      return;
+    }
+
+    setSubmittingMetric(true);
+    setStatus('Saving metrics...');
+
+    const { data, error } = await supabase
+      .from('pt_client_metrics')
+      .insert({
+        client_id: client.id,
+        measured_at: metricDraft.measured_at,
+        weight_kg: toNullableNumber(metricDraft.weight_kg),
+        waist_cm: toNullableNumber(metricDraft.waist_cm),
+        body_fat_pct: toNullableNumber(metricDraft.body_fat_pct),
+        muscle_mass_kg: toNullableNumber(metricDraft.muscle_mass_kg),
+        source: metricDraft.source,
+        notes: metricDraft.notes.trim() || null,
+      })
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      setStatus(error?.message ?? 'Could not save metrics.');
+      setSubmittingMetric(false);
+      return;
+    }
+
+    const metric = data as PTClientMetric;
+    const details = [
+      metric.weight_kg !== null ? `Weight ${metric.weight_kg}kg` : null,
+      metric.waist_cm !== null ? `Waist ${metric.waist_cm}cm` : null,
+      metric.body_fat_pct !== null ? `Body fat ${metric.body_fat_pct}%` : null,
+      metric.muscle_mass_kg !== null ? `Muscle ${metric.muscle_mass_kg}kg` : null,
+      metric.notes,
+    ].filter(Boolean).join(' / ');
+    const { error: taskError } = await supabase.from('pt_coaching_tasks').insert({
+      client_id: client.id,
+      source_type: 'metric_update',
+      source_id: metric.id,
+      title: 'Review body metrics',
+      details: details || 'Metric update submitted.',
+      priority: 'normal',
+      status: 'open',
+      due_at: new Date().toISOString(),
+    });
+
+    setMetrics((current) => [metric, ...current.filter((item) => item.id !== metric.id)]);
+    setMetricDraft({
+      measured_at: todayInputValue(),
+      weight_kg: '',
+      waist_cm: '',
+      body_fat_pct: '',
+      muscle_mass_kg: '',
+      source: 'scale',
+      notes: '',
+    });
+    setStatus(taskError ? `Metrics saved, but Pedro task failed: ${taskError.message}` : 'Metrics sent to Pedro.');
+    setSubmittingMetric(false);
   };
 
   const finishWorkout = async () => {
@@ -647,6 +902,166 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       </div>
     );
   };
+
+  const renderCoachingHome = () => (
+    <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+      <section className="border border-black/10 bg-white p-4 md:p-5">
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week</p>
+            <h2 className="mt-2 font-display text-2xl font-light">{formatWeekRange(currentWeekStart)}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-black/55">
+              Send Pedro the shape of your week before he adjusts training, running, mobility, and nutrition.
+            </p>
+          </div>
+          <div className="border border-black/8 bg-[#fbfbf8] p-3">
+            <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest reset</p>
+            {latestCheckin ? (
+              <>
+                <p className="mt-2 text-sm font-medium">Week of {formatDate(latestCheckin.week_start)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-black/50">
+                  {latestCheckin.client_focus || latestCheckin.availability || 'Pedro has your reset.'}
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-black/45">No weekly reset sent yet.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="border border-black/10 bg-white p-4 md:p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Weekly Reset</p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <label className="block">
+              <span className="text-xs text-black/45">Availability</span>
+              <textarea value={resetDraft.availability} onChange={(event) => patchResetDraft({ availability: event.target.value })}
+                rows={3} className="mt-1 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
+                placeholder="Days, times, work constraints." />
+            </label>
+            <label className="block">
+              <span className="text-xs text-black/45">What do you want help with?</span>
+              <textarea value={resetDraft.client_focus} onChange={(event) => patchResetDraft({ client_focus: event.target.value })}
+                rows={3} className="mt-1 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
+                placeholder="The thing Pedro should solve this week." />
+            </label>
+            <label className="block">
+              <span className="text-xs text-black/45">Golf days</span>
+              <input value={resetDraft.golf_days} onChange={(event) => patchResetDraft({ golf_days: event.target.value })}
+                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="e.g. Tue, Sat" />
+            </label>
+            <label className="block">
+              <span className="text-xs text-black/45">Runs or desired runs</span>
+              <input value={resetDraft.run_days} onChange={(event) => patchResetDraft({ run_days: event.target.value })}
+                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="e.g. 2 easy runs" />
+            </label>
+            <label className="block">
+              <span className="text-xs text-black/45">Travel or schedule changes</span>
+              <input value={resetDraft.travel} onChange={(event) => patchResetDraft({ travel: event.target.value })}
+                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Travel, late nights, busy days." />
+            </label>
+            <label className="block">
+              <span className="text-xs text-black/45">Injuries, pain, soreness</span>
+              <input value={resetDraft.injuries} onChange={(event) => patchResetDraft({ injuries: event.target.value })}
+                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Anything Pedro needs to know." />
+            </label>
+            <label className="block">
+              <span className="text-xs text-black/45">Nutrition focus</span>
+              <input value={resetDraft.nutrition_focus} onChange={(event) => patchResetDraft({ nutrition_focus: event.target.value })}
+                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Protein, alcohol, meals, weekends." />
+            </label>
+            <label className="block">
+              <span className="text-xs text-black/45">Nutrition obstacles</span>
+              <input value={resetDraft.nutrition_obstacles} onChange={(event) => patchResetDraft({ nutrition_obstacles: event.target.value })}
+                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Work lunches, travel, social plans." />
+            </label>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {([
+              ['Energy', 'energy'],
+              ['Soreness', 'soreness'],
+              ['Sleep', 'sleep'],
+              ['Stress', 'stress'],
+            ] as Array<[string, keyof WeeklyResetDraft]>).map(([label, key]) => (
+              <label key={key} className="block">
+                <span className="text-xs text-black/45">{label}</span>
+                <select value={resetDraft[key]} onChange={(event) => patchResetDraft({ [key]: event.target.value })}
+                  className="mt-1 w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35">
+                  <option value="">-</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                </select>
+              </label>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void submitWeeklyReset()}
+            disabled={submittingReset}
+            className="mt-5 w-full bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-black/80 disabled:opacity-40 md:w-auto"
+          >
+            {submittingReset ? 'Sending...' : 'Send weekly reset'}
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="border border-black/10 bg-white p-4 md:p-5">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Body Metrics</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <input type="date" value={metricDraft.measured_at} onChange={(event) => patchMetricDraft({ measured_at: event.target.value })}
+                className="col-span-2 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" />
+              <input value={metricDraft.weight_kg} onChange={(event) => patchMetricDraft({ weight_kg: event.target.value })}
+                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Weight kg" />
+              <input value={metricDraft.waist_cm} onChange={(event) => patchMetricDraft({ waist_cm: event.target.value })}
+                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Waist cm" />
+              <input value={metricDraft.body_fat_pct} onChange={(event) => patchMetricDraft({ body_fat_pct: event.target.value })}
+                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Body fat %" />
+              <input value={metricDraft.muscle_mass_kg} onChange={(event) => patchMetricDraft({ muscle_mass_kg: event.target.value })}
+                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Muscle kg" />
+              <textarea value={metricDraft.notes} onChange={(event) => patchMetricDraft({ notes: event.target.value })}
+                rows={2} className="col-span-2 resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Scale notes or context." />
+            </div>
+            <button type="button" onClick={() => void submitMetric()} disabled={submittingMetric}
+              className="mt-3 w-full border border-black bg-black px-4 py-2 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40">
+              {submittingMetric ? 'Saving...' : 'Send metrics'}
+            </button>
+            {latestMetric && (
+              <div className="mt-4 border-t border-black/8 pt-3">
+                <p className="text-xs text-black/35">Latest: {formatDate(latestMetric.measured_at)}</p>
+                <p className="mt-1 text-sm text-black/60">
+                  {formatMetric(latestMetric.weight_kg, 'kg')} · {formatMetric(latestMetric.waist_cm, 'cm')} · {formatMetric(latestMetric.body_fat_pct, '%')}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="border border-black/10 bg-white p-4 md:p-5">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
+            {goals.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {goals.slice(0, 4).map((goal) => (
+                  <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                    <p className="text-sm font-medium">{goal.title}</p>
+                    <p className="mt-1 text-xs text-black/45">
+                      {[goal.current_value !== null ? `Now ${goal.current_value}${goal.unit ?? ''}` : null, goal.target_value !== null ? `Target ${goal.target_value}${goal.unit ?? ''}` : null, goal.target_date ? `By ${formatDate(goal.target_date)}` : null].filter(Boolean).join(' / ') || goal.notes || 'Pedro is tracking this.'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 
   const renderWorkoutPreview = () => {
     if (!selectedWorkout || !selectedPhase || !selectedDay) return null;
@@ -947,79 +1362,85 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <div className="border border-black/10 bg-white p-6">
             <p className="text-sm text-black/55">No client profile is linked to this login yet. Ask Pedro to send a fresh invite.</p>
           </div>
-        ) : !assignment || !activePhase ? (
-          <div className="border border-black/10 bg-white p-6">
-            <p className="text-sm font-medium text-black">
-              {client.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
-            </p>
-            <p className="mt-2 text-sm text-black/55">
-              Your programme is being created. It will appear here as soon as it is live.
-            </p>
-          </div>
         ) : selectedWorkout?.started ? (
           renderWorkoutLogger()
         ) : selectedWorkout ? (
           renderWorkoutPreview()
         ) : (
-          <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-            <section className="border border-black/10 bg-white p-4 md:p-5">
-              <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
-              <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
-              {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
-            </section>
+          <div className="space-y-4 md:space-y-6">
+            {renderCoachingHome()}
 
-            <section className="border border-black/10 bg-white p-4 md:p-5">
-              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Phase {activePhaseIndex + 1}</p>
-                  <h3 className="mt-1 font-display text-2xl font-light md:text-3xl">{activePhase.title}</h3>
-                  {activePhase.focus && <p className="mt-2 text-sm text-black/50">{activePhase.focus}</p>}
-                </div>
-                {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
+            {!assignment || !activePhase ? (
+              <div className="mx-auto max-w-5xl border border-black/10 bg-white p-6">
+                <p className="text-sm font-medium text-black">
+                  {client.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
+                </p>
+                <p className="mt-2 text-sm text-black/55">
+                  Your programme is being created. It will appear here as soon as it is live.
+                </p>
               </div>
+            ) : (
+              <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+                <section className="border border-black/10 bg-white p-4 md:p-5">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
+                  <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
+                  {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
+                </section>
 
-              {renderProgress(activePhase, activeProgress)}
+                <section className="border border-black/10 bg-white p-4 md:p-5">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Phase {activePhaseIndex + 1}</p>
+                      <h3 className="mt-1 font-display text-2xl font-light md:text-3xl">{activePhase.title}</h3>
+                      {activePhase.focus && <p className="mt-2 text-sm text-black/50">{activePhase.focus}</p>}
+                    </div>
+                    {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
+                  </div>
 
-              <div className="mt-6 grid gap-3 md:grid-cols-3">
-                {activePhase.days.map((day, dayIndex) => {
-                  const done = workoutIsDone(workoutLogs, activePhaseIndex, dayIndex, activeProgress);
-                  const sections = getWorkoutSections(day, activePhase, activeProgress?.blockIndex ?? 0);
-                  const exerciseCount = day.exercises.length;
+                  {renderProgress(activePhase, activeProgress)}
 
-                  return (
-                    <button
-                      key={day.id}
-                      type="button"
-                      onClick={() => openWorkout(activePhaseIndex, dayIndex)}
-                      className={`group min-h-[8.5rem] border p-4 text-left transition-colors ${
-                        done
-                          ? 'border-green-300 bg-green-50/50 hover:border-green-500'
-                          : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Workout {dayIndex + 1}</p>
-                          <h4 className="mt-2 text-lg font-medium">{day.title}</h4>
-                        </div>
-                        {done ? (
-                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white">
-                            <Check className="h-4 w-4" />
-                          </span>
-                        ) : (
-                          <ChevronRight className="mt-1 h-5 w-5 text-black/25 transition-transform group-hover:translate-x-0.5 group-hover:text-black" />
-                        )}
-                      </div>
-                      {day.focus && <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-black/50">{day.focus}</p>}
-                      <div className="mt-4 flex items-center justify-between text-xs text-black/35">
-                        <span>{exerciseCount} exercise{exerciseCount === 1 ? '' : 's'}</span>
-                        <span>{sections.length} section{sections.length === 1 ? '' : 's'}</span>
-                      </div>
-                    </button>
-                  );
-                })}
+                  <div className="mt-6 grid gap-3 md:grid-cols-3">
+                    {activePhase.days.map((day, dayIndex) => {
+                      const done = workoutIsDone(workoutLogs, activePhaseIndex, dayIndex, activeProgress);
+                      const sections = getWorkoutSections(day, activePhase, activeProgress?.blockIndex ?? 0);
+                      const exerciseCount = day.exercises.length;
+
+                      return (
+                        <button
+                          key={day.id}
+                          type="button"
+                          onClick={() => openWorkout(activePhaseIndex, dayIndex)}
+                          className={`group min-h-[8.5rem] border p-4 text-left transition-colors ${
+                            done
+                              ? 'border-green-300 bg-green-50/50 hover:border-green-500'
+                              : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Workout {dayIndex + 1}</p>
+                              <h4 className="mt-2 text-lg font-medium">{day.title}</h4>
+                            </div>
+                            {done ? (
+                              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white">
+                                <Check className="h-4 w-4" />
+                              </span>
+                            ) : (
+                              <ChevronRight className="mt-1 h-5 w-5 text-black/25 transition-transform group-hover:translate-x-0.5 group-hover:text-black" />
+                            )}
+                          </div>
+                          {day.focus && <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-black/50">{day.focus}</p>}
+                          <div className="mt-4 flex items-center justify-between text-xs text-black/35">
+                            <span>{exerciseCount} exercise{exerciseCount === 1 ? '' : 's'}</span>
+                            <span>{sections.length} section{sections.length === 1 ? '' : 's'}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
               </div>
-            </section>
+            )}
           </div>
         )}
       </div>
