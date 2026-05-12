@@ -1,15 +1,40 @@
 # Handoff
 
 ## Last updated
-2026-05-12 by codex
+2026-05-13 by codex
 
 ## Last completed task
-Removed the Finance and Operators nav links from the root landing page only.
+Built Booking System Phase 1 internal cockpit.
 
 ## Last commit
-hide finance and operators nav links on root
+add booking cockpit
 
 ## Current state
+
+### Booking System Phase 1 (NEW)
+- Added booking plan at `plans/2026-05-booking-system.md`; Phase 1 is complete and Phase 2 public slot picker is next.
+- Added local migration `20260512234057_booking_phase_1.sql`.
+- Applied the booking schema remotely with `supabase db query --linked -f ...`; did not run `supabase db push`.
+- New DB tables:
+  - `booking_settings`
+  - `booking_availability_windows`
+  - `booking_appointments`
+- Booking tables have RLS enabled and are currently admin/Pedro-only.
+- Replaced `/dashboard/bookings` placeholder with a working internal cockpit:
+  - weekly appointment view
+  - booking metrics
+  - manual appointment creation
+  - lead linking
+  - automatic `call_booked` lead tag upsert when a linked appointment is created
+  - appointment status controls
+  - availability window management
+  - booking defaults/settings
+- Added booking TypeScript types in `utils/bookings/types.ts`.
+- Verification:
+  - `npm run build` passed
+  - remote tables confirmed with `supabase db query`
+  - Supabase security advisors returned only existing warnings: `pg_net` in public, `blog-headers` bucket listing, leaked password protection disabled
+  - browser smoke checked `/dashboard/bookings` on desktop and mobile with no console warnings/errors
 
 ### Cerebro Site Fitness Pivot Phase 4 (NEW)
 - Added two new public routes:
@@ -273,7 +298,7 @@ Deleted. No longer exists.
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-If continuing the fitness pivot plan, next continuation point is Phase 5 from `plans/2026-05-cerebro-site-fitness-pivot.md`: blog infrastructure with fitness/finance/operators tagging and fitness as the default category. If Pedro wants sequential cleanup instead, return to Phases 1-3 of that same plan before Phase 5.
+If continuing booking, next continuation point is Phase 2 from `plans/2026-05-booking-system.md`: public slot picker using the new booking settings, availability windows, and appointments tables. If returning to the fitness pivot, next continuation point is Phase 5 from `plans/2026-05-cerebro-site-fitness-pivot.md`: blog infrastructure with fitness/finance/operators tagging and fitness as the default category.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`
