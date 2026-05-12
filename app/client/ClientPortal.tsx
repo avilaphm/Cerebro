@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Minus, Play, Plus, X } from 'lucide-react';
+import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
 import { isPedroAdminEmail } from '@/utils/pt/access';
@@ -9,6 +10,7 @@ import type {
   PTClient,
   PTClientGoal,
   PTClientMetric,
+  PTCoachingReview,
   PTCoachingTask,
   PTProgramAssignment,
   PTProgrammeDay,
@@ -303,6 +305,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [weeklyPlanItems, setWeeklyPlanItems] = useState<PTWeeklyPlanItem[]>([]);
   const [metrics, setMetrics] = useState<PTClientMetric[]>([]);
   const [goals, setGoals] = useState<PTClientGoal[]>([]);
+  const [reviews, setReviews] = useState<PTCoachingReview[]>([]);
   const [resetDraft, setResetDraft] = useState<WeeklyResetDraft>(emptyWeeklyReset);
   const [metricDraft, setMetricDraft] = useState<MetricDraft>({
     measured_at: todayInputValue(),
@@ -347,7 +350,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return;
     }
 
-    const [assignmentRes, logsRes, workoutLogsRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes] = await Promise.all([
+    const [assignmentRes, logsRes, workoutLogsRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, reviewsRes] = await Promise.all([
       supabase
         .from('pt_program_assignments')
         .select('*')
@@ -398,6 +401,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(8),
+      supabase
+        .from('pt_coaching_reviews')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .eq('review_type', 'monthly')
+        .eq('status', 'final')
+        .order('period_start', { ascending: false })
+        .limit(3),
     ]);
 
     setAssignments(((assignmentRes.data ?? []) as PTProgramAssignment[]).map((row) => ({
@@ -413,6 +424,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setWeeklyPlanItems((planItemsRes.data ?? []) as PTWeeklyPlanItem[]);
     setMetrics((metricsRes.data ?? []) as PTClientMetric[]);
     setGoals((goalsRes.data ?? []) as PTClientGoal[]);
+    setReviews((reviewsRes.data ?? []) as PTCoachingReview[]);
     setLoading(false);
   }, [supabase]);
 
@@ -467,6 +479,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const currentWeekStart = weekStartInputValue();
   const latestCheckin = weeklyCheckins[0] ?? null;
   const latestMetric = metrics[0] ?? null;
+  const monthlyReview = reviews[0] ?? null;
+  const weightPair = latestMetricPair(metrics, 'weight_kg');
+  const waistPair = latestMetricPair(metrics, 'waist_cm');
+  const monthlyAdherence = computeAdherenceSnapshot(
+    weeklyPlanItems,
+    weeklyPlans,
+    monthStartInputValue(currentWeekStart),
+    monthEndInputValue(currentWeekStart),
+  );
   const currentWeeklyPlan = weeklyPlans.find((plan) => plan.week_start === currentWeekStart)
     ?? weeklyPlans.find((plan) => plan.week_start > currentWeekStart)
     ?? null;
@@ -479,6 +500,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     });
   const dueTodayItems = currentWeeklyPlanItems.filter((item) => item.scheduled_date === todayInputValue() && item.status === 'planned');
   const nextPlanItem = currentWeeklyPlanItems.find((item) => item.status === 'planned') ?? null;
+
+  const renderDelta = (current: number | null | undefined, previous: number | null | undefined, unit: string) => {
+    if (current === null || current === undefined) return 'No reading yet';
+    if (previous === null || previous === undefined) return `Latest ${current}${unit}`;
+    const delta = Number((Number(current) - Number(previous)).toFixed(1));
+    if (delta === 0) return `Holding at ${current}${unit}`;
+    return `${current}${unit} (${delta > 0 ? '+' : ''}${delta}${unit})`;
+  };
 
   const lastSetsByExercise = useMemo(() => {
     const map = new Map<string, PTSetLog[]>();
@@ -1258,13 +1287,49 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
                     <p className="text-sm font-medium">{goal.title}</p>
                     <p className="mt-1 text-xs text-black/45">
-                      {[goal.current_value !== null ? `Now ${goal.current_value}${goal.unit ?? ''}` : null, goal.target_value !== null ? `Target ${goal.target_value}${goal.unit ?? ''}` : null, goal.target_date ? `By ${formatDate(goal.target_date)}` : null].filter(Boolean).join(' / ') || goal.notes || 'Pedro is tracking this.'}
+                      {getGoalProgressLabel(goal, metrics)}
                     </p>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
+            )}
+          </div>
+
+          <div className="border border-black/10 bg-white p-4 md:p-5">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Progress</p>
+            <div className="mt-3 space-y-2">
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                <p className="text-xs text-black/35">Weight</p>
+                <p className="mt-1 text-sm text-black/65">{renderDelta(weightPair.current?.weight_kg, weightPair.previous?.weight_kg, 'kg')}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                <p className="text-xs text-black/35">Waist</p>
+                <p className="mt-1 text-sm text-black/65">{renderDelta(waistPair.current?.waist_cm, waistPair.previous?.waist_cm, 'cm')}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                <p className="text-xs text-black/35">Monthly adherence</p>
+                <p className="mt-1 text-sm text-black/65">
+                  {monthlyAdherence.adherencePct === null
+                    ? 'No monthly plan yet'
+                    : `${monthlyAdherence.adherencePct}% with ${monthlyAdherence.done}/${monthlyAdherence.total} items done`}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-black/10 bg-white p-4 md:p-5">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Monthly Review</p>
+            {monthlyReview ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-black/35">
+                  {formatDate(monthlyReview.period_start)} - {formatDate(monthlyReview.period_end)}
+                </p>
+                <p className="text-sm leading-relaxed text-black/65">{monthlyReview.client_summary}</p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-black/45">Pedro will share a monthly review here once it is ready.</p>
             )}
           </div>
         </div>

@@ -4,12 +4,40 @@
 2026-05-12 by codex
 
 ## Last completed task
-Completed Client Lifestyle Coaching OS Phase 2.
+Completed Client Lifestyle Coaching OS Phase 3.
 
 ## Last commit
-client lifestyle phase 2 weekly plans
+client lifestyle phase 3 reviews progress
 
 ## Current state
+
+### Client Lifestyle Coaching OS Phase 3 (NEW)
+- Added local migration `20260512080406_client_lifestyle_phase_3_reviews_progress.sql`.
+- Applied the Phase 3 schema remotely with `supabase db query --linked -f ...`; did not run `supabase db push`.
+- New DB table: `pt_coaching_reviews`.
+- Extended `pt_client_metrics` with `photo_urls`.
+- New Edge Function deployed: `generate-pt-review` version 1 on project `otcnrkfvgyvwolironoz`.
+- `/dashboard/pt/clients/[id]` Coaching panel now includes:
+  - derived weekly and monthly adherence cards
+  - metric delta snapshot cards
+  - goal progress labels tied to the latest metrics where relevant
+  - per-goal status control
+  - weekly review generation
+  - monthly client summary generation
+- `/client` now shows:
+  - goal progress in plain language
+  - simple progress snapshot cards for weight, waist, and monthly adherence
+  - latest published monthly review summary from Pedro
+- Remote verification:
+  - `npm run build` passed
+  - `supabase functions list` shows `generate-pt-review` active
+  - `supabase db query` confirmed `pt_coaching_reviews` columns and `pt_client_metrics.photo_urls`
+- Security advisor state:
+  - no new Phase 3-specific warnings surfaced
+  - existing project warnings remain for `pg_net` in `public`, `blog-headers` public bucket listing, and leaked password protection disabled
+- Notes:
+  - review generation saves weekly reviews as `draft` and monthly reviews as `final`
+  - metric photo support is schema-ready; no dedicated upload UI has been added yet
 
 ### Client Lifestyle Coaching OS Phase 2 (NEW)
 - Added local migration `20260512070331_client_lifestyle_phase_2_weekly_plans.sql`.
@@ -219,7 +247,7 @@ Deleted. No longer exists.
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-Client Lifestyle Coaching OS Phases 1-2 are complete. Next continuation point is Phase 3 from `plans/2026-05-client-lifestyle-coaching-os.md`: progress tracking, planned-vs-completed review, and Pedro weekly/monthly review summaries.
+Client Lifestyle Coaching OS Phases 1-3 are complete. Next continuation point is Phase 4 from `plans/2026-05-client-lifestyle-coaching-os.md`: mobility, golf, running, and nutrition modules that Pedro can assign inside the weekly plan.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`

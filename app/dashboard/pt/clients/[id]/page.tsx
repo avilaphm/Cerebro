@@ -4,6 +4,7 @@ import type {
   PTClient,
   PTClientGoal,
   PTClientMetric,
+  PTCoachingReview,
   PTCoachingTask,
   PTProgramAssignment,
   PTProgramTemplate,
@@ -34,7 +35,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const supabase = await createClient();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -91,6 +92,12 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase
+      .from('pt_coaching_reviews')
+      .select('*')
+      .eq('client_id', id)
+      .order('period_start', { ascending: false })
+      .limit(12),
   ]);
 
   if (clientRes.error || !clientRes.data) notFound();
@@ -112,6 +119,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const metrics = (metricsRes.data ?? []) as PTClientMetric[];
   const goals = (goalsRes.data ?? []) as PTClientGoal[];
   const coachingTasks = (tasksRes.data ?? []) as PTCoachingTask[];
+  const reviews = (reviewsRes.data ?? []) as PTCoachingReview[];
 
   return (
     <PTClientDetail
@@ -126,6 +134,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       metrics={metrics}
       goals={goals}
       coachingTasks={coachingTasks}
+      reviews={reviews}
     />
   );
 }

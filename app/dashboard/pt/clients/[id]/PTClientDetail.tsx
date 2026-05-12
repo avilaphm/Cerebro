@@ -4,10 +4,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
+import {
+  computeAdherenceSnapshot,
+  getGoalProgressLabel,
+  latestMetricPair,
+  latestReviewByType,
+  monthEndInputValue,
+  monthStartInputValue,
+} from '@/utils/pt/coaching';
 import type {
   PTClient,
   PTClientGoal,
   PTClientMetric,
+  PTCoachingReview,
   PTCoachingTask,
   PTProgramAssignment,
   PTProgramTemplate,
@@ -62,6 +71,18 @@ const ITEM_STATUS_LABELS: Record<PTWeeklyPlanItemStatus, string> = {
   moved: 'Moved',
 };
 
+const GOAL_TYPE_OPTIONS = [
+  { value: 'general', label: 'General' },
+  { value: 'weight', label: 'Weight' },
+  { value: 'waist', label: 'Waist' },
+  { value: 'body_fat', label: 'Body fat' },
+  { value: 'muscle_mass', label: 'Muscle' },
+  { value: 'strength', label: 'Strength' },
+  { value: 'running', label: 'Running' },
+  { value: 'mobility', label: 'Mobility' },
+  { value: 'event', label: 'Event' },
+] as const;
+
 interface PTEvent {
   id: string;
   event_type: string;
@@ -90,6 +111,7 @@ interface Props {
   metrics: PTClientMetric[];
   goals: PTClientGoal[];
   coachingTasks: PTCoachingTask[];
+  reviews: PTCoachingReview[];
 }
 
 interface SpeechRecognitionLike {
@@ -151,6 +173,27 @@ interface WeeklyPlanAgentResponse {
     linked_phase_index?: number | null;
     linked_day_index?: number | null;
   }>;
+}
+
+interface ReviewAgentResponse {
+  error?: string;
+  review_type: 'weekly' | 'monthly';
+  period_start: string;
+  period_end: string;
+  total_items: number;
+  completed_items: number;
+  skipped_items: number;
+  adherence_pct: number | null;
+  metrics_summary: string;
+  performance_summary: string;
+  client_feedback: string;
+  what_got_done: string;
+  what_was_missed: string;
+  suggested_changes: string;
+  pedro_summary: string;
+  client_summary: string;
+  body_snapshot: Record<string, unknown>;
+  performance_snapshot: Record<string, unknown>;
 }
 
 function getSR() {
@@ -272,6 +315,7 @@ export default function PTClientDetail({
   metrics: initialMetrics,
   goals: initialGoals,
   coachingTasks: initialCoachingTasks,
+  reviews: initialReviews,
 }: Props) {
   const supabase = createClient();
   const router = useRouter();
@@ -308,8 +352,10 @@ export default function PTClientDetail({
   const [metrics, setMetrics] = useState(initialMetrics);
   const [goals, setGoals] = useState(initialGoals);
   const [coachingTasks, setCoachingTasks] = useState(initialCoachingTasks);
+  const [reviews, setReviews] = useState(initialReviews);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [status, setStatus] = useState('');
+  const [reviewBusy, setReviewBusy] = useState<'weekly' | 'monthly' | null>(null);
   const [agentInstructions, setAgentInstructions] = useState('');
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
   const [agentListening, setAgentListening] = useState(false);
@@ -470,6 +516,8 @@ export default function PTClientDetail({
   const latestCheckin = weeklyCheckins[0] ?? null;
   const latestMetric = metrics[0] ?? null;
   const activeGoals = goals.filter((goal) => goal.status === 'active');
+  const selectedMonthStart = monthStartInputValue(selectedWeekStart);
+  const selectedMonthEnd = monthEndInputValue(selectedWeekStart);
   const currentPlan = weeklyPlans.find((plan) => plan.week_start === selectedWeekStart) ?? null;
   const currentPlanItems = useMemo(
     () => weeklyPlanItems
@@ -482,6 +530,16 @@ export default function PTClientDetail({
     [currentPlan?.id, weeklyPlanItems],
   );
   const checkinForSelectedWeek = weeklyCheckins.find((checkin) => checkin.week_start === selectedWeekStart) ?? latestCheckin;
+  const weeklyAdherence = computeAdherenceSnapshot(weeklyPlanItems, weeklyPlans, selectedWeekStart, addDays(selectedWeekStart, 6));
+  const monthlyAdherence = computeAdherenceSnapshot(weeklyPlanItems, weeklyPlans, selectedMonthStart, selectedMonthEnd);
+  const selectedWeeklyReview = reviews.find((review) => review.review_type === 'weekly' && review.period_start === selectedWeekStart)
+    ?? latestReviewByType(reviews, 'weekly');
+  const selectedMonthlyReview = reviews.find((review) => review.review_type === 'monthly' && review.period_start === selectedMonthStart)
+    ?? latestReviewByType(reviews, 'monthly');
+  const weightPair = latestMetricPair(metrics, 'weight_kg');
+  const waistPair = latestMetricPair(metrics, 'waist_cm');
+  const bodyFatPair = latestMetricPair(metrics, 'body_fat_pct');
+  const musclePair = latestMetricPair(metrics, 'muscle_mass_kg');
   const activeWorkoutOptions = activeAssignment
     ? activeAssignment.programme.phases.flatMap((phase, phaseIndex) =>
         phase.days.map((day, dayIndex) => ({
@@ -1031,6 +1089,110 @@ export default function PTClientDetail({
     setStatus('Goal added.');
   };
 
+  const updateGoalStatus = async (goalId: string, nextStatus: PTClientGoal['status']) => {
+    const { error } = await supabase
+      .from('pt_client_goals')
+      .update({ status: nextStatus, updated_at: new Date().toISOString() })
+      .eq('id', goalId);
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    setGoals((current) => current.map((goal) => (goal.id === goalId ? { ...goal, status: nextStatus } : goal)));
+  };
+
+  const generateReview = async (reviewType: 'weekly' | 'monthly') => {
+    setReviewBusy(reviewType);
+    setStatus(reviewType === 'weekly' ? 'Generating weekly review...' : 'Generating monthly summary...');
+
+    const periodStart = reviewType === 'weekly' ? selectedWeekStart : selectedMonthStart;
+    const periodEnd = reviewType === 'weekly' ? addDays(selectedWeekStart, 6) : selectedMonthEnd;
+
+    const { data, error } = await supabase.functions.invoke<ReviewAgentResponse>('generate-pt-review', {
+      body: {
+        client_id: client.id,
+        review_type: reviewType,
+        period_start: periodStart,
+      },
+    });
+
+    if (error || data?.error || !data) {
+      setStatus(error?.message ?? data?.error ?? 'Could not generate review.');
+      setReviewBusy(null);
+      return;
+    }
+
+    const { data: savedReview, error: saveError } = await supabase
+      .from('pt_coaching_reviews')
+      .upsert({
+        client_id: client.id,
+        review_type: reviewType,
+        status: reviewType === 'monthly' ? 'final' : 'draft',
+        period_start: data.period_start,
+        period_end: data.period_end,
+        total_items: data.total_items,
+        completed_items: data.completed_items,
+        skipped_items: data.skipped_items,
+        adherence_pct: data.adherence_pct,
+        metrics_summary: data.metrics_summary,
+        performance_summary: data.performance_summary,
+        client_feedback: data.client_feedback,
+        what_got_done: data.what_got_done,
+        what_was_missed: data.what_was_missed,
+        suggested_changes: data.suggested_changes,
+        pedro_summary: data.pedro_summary,
+        client_summary: data.client_summary,
+        body_snapshot: data.body_snapshot,
+        performance_snapshot: data.performance_snapshot,
+        generated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'client_id,review_type,period_start' })
+      .select('*')
+      .single();
+
+    if (saveError || !savedReview) {
+      setStatus(saveError?.message ?? 'Review was generated but could not be saved.');
+      setReviewBusy(null);
+      return;
+    }
+
+    setReviews((current) => [
+      savedReview as PTCoachingReview,
+      ...current.filter((review) => (
+        !(review.review_type === reviewType && review.period_start === data.period_start)
+      )),
+    ]);
+    setStatus(reviewType === 'weekly' ? 'Weekly review saved.' : 'Monthly summary saved.');
+    setReviewBusy(null);
+  };
+
+  const renderMetricDelta = (
+    label: string,
+    current: number | null | undefined,
+    previous: number | null | undefined,
+    unit: string,
+  ) => {
+    const delta = current !== null && current !== undefined && previous !== null && previous !== undefined
+      ? Number((Number(current) - Number(previous)).toFixed(1))
+      : null;
+
+    return (
+      <div className="border border-black/8 bg-white px-3 py-3">
+        <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">{label}</p>
+        <p className="mt-2 text-lg font-medium text-black">{metricValue(current ?? null, unit)}</p>
+        <p className="mt-1 text-xs text-black/45">
+          {delta === null
+            ? 'Need one more check-in'
+            : delta === 0
+              ? 'No change'
+              : `${delta > 0 ? '+' : ''}${delta}${unit}`}
+        </p>
+      </div>
+    );
+  };
+
   const startAgentDictation = () => {
     const SR = getSR();
     if (!SR) {
@@ -1390,10 +1552,104 @@ export default function PTClientDetail({
                 <p className="mt-3 text-sm text-black/45">No metrics logged yet.</p>
               )}
             </div>
+
+            <div className="border border-black/10 px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Progress snapshot</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {renderMetricDelta('Weight', weightPair.current?.weight_kg, weightPair.previous?.weight_kg, 'kg')}
+                {renderMetricDelta('Waist', waistPair.current?.waist_cm, waistPair.previous?.waist_cm, 'cm')}
+                {renderMetricDelta('Body fat', bodyFatPair.current?.body_fat_pct, bodyFatPair.previous?.body_fat_pct, '%')}
+                {renderMetricDelta('Muscle', musclePair.current?.muscle_mass_kg, musclePair.previous?.muscle_mass_kg, 'kg')}
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                  <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">This week</p>
+                  <p className="mt-2 text-lg font-medium">
+                    {weeklyAdherence.adherencePct === null ? '-' : `${weeklyAdherence.adherencePct}%`}
+                  </p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {weeklyAdherence.done}/{weeklyAdherence.total} items done
+                  </p>
+                </div>
+                <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                  <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">This month</p>
+                  <p className="mt-2 text-lg font-medium">
+                    {monthlyAdherence.adherencePct === null ? '-' : `${monthlyAdherence.adherencePct}%`}
+                  </p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {monthlyAdherence.done}/{monthlyAdherence.total} items done
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         {renderWeeklyPlanBuilder()}
+
+        <div className="mt-4 border border-black/10 px-5 py-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Review loop</p>
+              <p className="mt-1 text-sm text-black/45">
+                Generate a coach-facing weekly review or a client-facing monthly summary from adherence, metrics, notes, resets, and messages.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void generateReview('weekly')}
+                disabled={reviewBusy !== null}
+                className="border border-black/20 px-4 py-2 text-xs transition-colors hover:bg-black hover:text-white disabled:opacity-40"
+              >
+                {reviewBusy === 'weekly' ? 'Generating...' : 'Generate weekly review'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void generateReview('monthly')}
+                disabled={reviewBusy !== null}
+                className="border border-black bg-black px-4 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:opacity-40"
+              >
+                {reviewBusy === 'monthly' ? 'Generating...' : 'Generate monthly summary'}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="border border-black/8 bg-[#fbfbf8] px-4 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Weekly review</p>
+              <p className="mt-1 text-xs text-black/35">{formatWeekRange(selectedWeekStart)}</p>
+              {selectedWeeklyReview ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-sm leading-relaxed text-black/75">{selectedWeeklyReview.pedro_summary || selectedWeeklyReview.performance_summary}</p>
+                  <p className="text-xs text-black/45">{selectedWeeklyReview.metrics_summary}</p>
+                  <p className="text-xs text-black/45"><span className="text-black/70">Done:</span> {selectedWeeklyReview.what_got_done || '-'}</p>
+                  <p className="text-xs text-black/45"><span className="text-black/70">Missed:</span> {selectedWeeklyReview.what_was_missed || '-'}</p>
+                  <p className="text-xs text-black/45"><span className="text-black/70">Next:</span> {selectedWeeklyReview.suggested_changes || '-'}</p>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-black/45">No weekly review generated yet.</p>
+              )}
+            </div>
+
+            <div className="border border-black/8 bg-[#fbfbf8] px-4 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Monthly summary</p>
+              <p className="mt-1 text-xs text-black/35">
+                {formatDate(selectedMonthStart)} - {formatDate(selectedMonthEnd)}
+              </p>
+              {selectedMonthlyReview ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-sm leading-relaxed text-black/75">{selectedMonthlyReview.client_summary || selectedMonthlyReview.pedro_summary}</p>
+                  <p className="text-xs text-black/45">{selectedMonthlyReview.metrics_summary}</p>
+                  <p className="text-xs text-black/45">{selectedMonthlyReview.performance_summary}</p>
+                  <p className="text-xs text-black/45"><span className="text-black/70">Feedback:</span> {selectedMonthlyReview.client_feedback || '-'}</p>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-black/45">No monthly summary generated yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
 
         <div className="mt-4 border border-black/10 px-5 py-4">
           <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Goals</p>
@@ -1401,15 +1657,35 @@ export default function PTClientDetail({
             <div className="mt-3 grid gap-2 md:grid-cols-2">
               {activeGoals.map((goal) => (
                 <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                  <p className="text-sm font-medium">{goal.title}</p>
-                  <p className="mt-1 text-xs text-black/45">
-                    {[goal.current_value !== null ? `Now ${goal.current_value}${goal.unit ?? ''}` : null, goal.target_value !== null ? `Target ${goal.target_value}${goal.unit ?? ''}` : null, goal.target_date ? `By ${formatDate(goal.target_date)}` : null].filter(Boolean).join(' / ') || goal.notes || 'Active goal'}
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">{goal.title}</p>
+                      <p className="mt-1 text-xs text-black/45">
+                        {getGoalProgressLabel(goal, metrics)}
+                      </p>
+                    </div>
+                    <select
+                      value={goal.status}
+                      onChange={(event) => void updateGoalStatus(goal.id, event.target.value as PTClientGoal['status'])}
+                      className="border border-black/10 bg-white px-2 py-1 text-[0.65rem] uppercase tracking-[0.08em] text-black/55 outline-none focus:border-black/35"
+                    >
+                      <option value="active">Active</option>
+                      <option value="paused">Paused</option>
+                      <option value="completed">Completed</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </div>
                 </div>
               ))}
             </div>
           )}
-          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_6rem_6rem_5rem_9rem]">
+          <div className="mt-4 grid gap-2 md:grid-cols-[10rem_1fr_6rem_6rem_5rem_9rem]">
+            <select value={newGoal.goal_type} onChange={(event) => setNewGoal((current) => ({ ...current, goal_type: event.target.value }))}
+              className="border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35">
+              {GOAL_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
             <input value={newGoal.title} onChange={(event) => setNewGoal((current) => ({ ...current, title: event.target.value }))}
               className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Goal title" />
             <input value={newGoal.current_value} onChange={(event) => setNewGoal((current) => ({ ...current, current_value: event.target.value }))}

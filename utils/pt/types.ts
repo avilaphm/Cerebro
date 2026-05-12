@@ -208,6 +208,7 @@ export interface PTClientMetric {
   body_fat_pct: number | null;
   muscle_mass_kg: number | null;
   source: 'manual' | 'scale' | 'coach';
+  photo_urls?: string[];
   notes: string | null;
   created_at: string;
 }
@@ -238,6 +239,32 @@ export interface PTCoachingTask {
   status: 'open' | 'done' | 'archived';
   due_at: string | null;
   completed_at: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PTCoachingReview {
+  id: string;
+  client_id: string;
+  review_type: 'weekly' | 'monthly';
+  status: 'draft' | 'final' | 'archived';
+  period_start: string;
+  period_end: string;
+  total_items: number;
+  completed_items: number;
+  skipped_items: number;
+  adherence_pct: number | null;
+  metrics_summary: string | null;
+  performance_summary: string | null;
+  client_feedback: string | null;
+  what_got_done: string | null;
+  what_was_missed: string | null;
+  suggested_changes: string | null;
+  pedro_summary: string | null;
+  client_summary: string | null;
+  body_snapshot: Record<string, unknown>;
+  performance_snapshot: Record<string, unknown>;
+  generated_at: string | null;
   created_at: string;
   updated_at?: string;
 }
