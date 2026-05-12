@@ -18,9 +18,12 @@ const syne = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Cerebro. Bespoke systems for small businesses.",
+  title: {
+    default: "Cerebro",
+    template: "%s | Cerebro",
+  },
   description:
-    "Cerebro builds bespoke systems that handle the busywork behind small businesses, so owners can do the work that actually grows them.",
+    "Cerebro builds operational systems for fitness operators, finance teams, and founder-led service businesses.",
 };
 
 export default function RootLayout({

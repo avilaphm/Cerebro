@@ -1,4 +1,4 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import Nav from "./components/Nav";
 import FadeIn from "./components/FadeIn";
 import { AnimatedHero } from "@/components/ui/animated-hero";
@@ -10,6 +10,13 @@ import WhoItsForSection from "./components/WhoItsForSection";
 import WhyCerebroSection from "./components/WhyCerebroSection";
 import WhatHappensNextSection from "./components/WhatHappensNextSection";
 import GetInTouchSection from "./components/GetInTouchSection";
+import SiteFooter from "./components/SiteFooter";
+
+export const metadata: Metadata = {
+  title: "Fitness Operations Systems",
+  description:
+    "Automation systems for gyms, studios, and PTs in Australia and New Zealand. Lead replies, billing recovery, retention flags, and admin clarity without replacing your stack.",
+};
 
 export default function Home() {
   return (
@@ -69,22 +76,7 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="flex items-center justify-between px-6 md:px-12 py-8 border-t border-black">
-        <span className="font-display text-sm font-medium tracking-[0.1em] uppercase text-black">
-          Cerebro
-        </span>
-        <div className="flex items-center gap-5">
-          <Link href="/privacy" className="text-[0.6rem] font-light text-black/25 hover:text-black/50 transition-colors">
-            Privacy
-          </Link>
-          <Link href="/terms" className="text-[0.6rem] font-light text-black/25 hover:text-black/50 transition-colors">
-            Terms
-          </Link>
-          <span className="text-xs font-light text-black/30">
-            &copy; 2026 Cerebro
-          </span>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }

@@ -4,12 +4,37 @@
 2026-05-12 by codex
 
 ## Last completed task
-Completed Client Lifestyle Coaching OS Phase 3.
+Completed Cerebro Site Fitness Pivot Phase 4 (Site Architecture - 3 Doors).
 
 ## Last commit
-client lifestyle phase 3 reviews progress
+add finance and operators landing pages
 
 ## Current state
+
+### Cerebro Site Fitness Pivot Phase 4 (NEW)
+- Added two new public routes:
+  - `/finance` for finance and M&A conversations
+  - `/operators` for broader founder-led service operator conversations
+- Added shared marketing scaffolding:
+  - `app/components/VerticalPage.tsx`
+  - `app/components/MarketingDoors.tsx`
+  - `app/components/SiteFooter.tsx`
+- Updated `Nav` so public navigation now exposes `Finance`, `Operators`, and `Blog`.
+- Nav CTA is now route-aware:
+  - `/` keeps `Free operations audit` and anchors to the fitness chatbot
+  - `/finance` and `/operators` use `Start the conversation` and anchor to local contact sections
+- Added route-specific metadata:
+  - `/` now has fitness-specific title/description
+  - `/finance` and `/operators` each have their own metadata
+- Root layout metadata is now umbrella-brand level instead of the old generic small-business message.
+- Verification:
+  - `npm run build` passed
+  - browser smoke checked `/`, `/finance`, and `/operators`
+  - finance CTA correctly anchors to `#contact`
+- Notes:
+  - `/finance` intentionally uses a direct email CTA instead of the current chatbot because the chatbot is still fitness-specific
+  - footer is now shared across public marketing routes
+  - this phase was completed out of sequence; fitness pivot Phases 1-3 are still open in the plan
 
 ### Client Lifestyle Coaching OS Phase 3 (NEW)
 - Added local migration `20260512080406_client_lifestyle_phase_3_reviews_progress.sql`.
@@ -247,7 +272,7 @@ Deleted. No longer exists.
 - Pipeline at `/dashboard/leads`
 
 ## Next task
-Client Lifestyle Coaching OS Phases 1-3 are complete. Next continuation point is Phase 4 from `plans/2026-05-client-lifestyle-coaching-os.md`: mobility, golf, running, and nutrition modules that Pedro can assign inside the weekly plan.
+If continuing the fitness pivot plan, next continuation point is Phase 5 from `plans/2026-05-cerebro-site-fitness-pivot.md`: blog infrastructure with fitness/finance/operators tagging and fitness as the default category. If Pedro wants sequential cleanup instead, return to Phases 1-3 of that same plan before Phase 5.
 
 ## Known issues / notes
 - Do NOT run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP `apply_migration`

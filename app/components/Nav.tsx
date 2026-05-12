@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 
 // Add new pages here. They'll appear in both desktop nav and mobile menu.
 const NAV_LINKS: { href: string; label: string }[] = [
+  { href: "/finance", label: "Finance" },
+  { href: "/operators", label: "Operators" },
   { href: "/blog", label: "Blog" },
 ];
 
@@ -40,6 +42,18 @@ export default function Nav() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname?.startsWith(href) ?? false;
 
+  const ctaHref =
+    pathname === "/"
+      ? "#start"
+      : pathname?.startsWith("/finance") || pathname?.startsWith("/operators")
+        ? "#contact"
+        : "/#start";
+
+  const ctaLabel =
+    pathname?.startsWith("/finance") || pathname?.startsWith("/operators")
+      ? "Start the conversation"
+      : "Free operations audit";
+
   return (
     <>
       <nav
@@ -69,10 +83,10 @@ export default function Nav() {
             </Link>
           ))}
           <a
-            href="/#start"
+            href={ctaHref}
             className="text-[0.7rem] font-medium tracking-[0.12em] uppercase text-black border border-black px-5 py-2.5 no-underline transition-[background,color] duration-200 hover:bg-black hover:text-white"
           >
-            Free operations audit
+            {ctaLabel}
           </a>
         </div>
 
@@ -121,11 +135,11 @@ export default function Nav() {
           </nav>
 
           <a
-            href="/#start"
+            href={ctaHref}
             onClick={() => setOpen(false)}
             className="mt-auto inline-flex justify-center items-center text-[0.75rem] font-medium tracking-[0.14em] uppercase text-white bg-black px-6 py-4 no-underline"
           >
-            Free operations audit
+            {ctaLabel}
           </a>
         </div>
       </div>
