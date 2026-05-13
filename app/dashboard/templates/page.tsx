@@ -8,8 +8,7 @@ export default function TemplatesPage() {
         Email Templates
       </h1>
       <p className="text-sm text-black/50 max-w-xl leading-relaxed">
-        Slot-based template builder lands in Phase 2: edit subject and HTML, define
-        AI-personalized slots, preview against any lead, and send a test before going live.
+        No tracked template phase is outstanding right now.
       </p>
     </div>
   );

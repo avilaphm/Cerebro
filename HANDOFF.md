@@ -26,6 +26,7 @@ Recent shipped surfaces include:
 - `/dashboard/leads` lead pipeline and tag-based stage tracking.
 - `/dashboard/pt` PT dashboard, client portal, programme, messaging, coaching, and review workflows.
 - Public marketing routes including `/`, `/finance`, `/operators`, `/blog`, `/privacy`, and `/terms`.
+- No outstanding tracked phases remain in the repo right now.
 
 ## Clean Slate Rules
 - There are no active saved phase lists.
