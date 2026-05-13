@@ -436,27 +436,42 @@ function formatDateTime(date: Date) {
 async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointment: AppointmentRow; client: PTClientRow | null }) {
   const webhook = Deno.env.get('GOOGLE_CALENDAR_SYNC_URL');
   if (webhook) {
-    await fetch(webhook, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...input }),
-    });
-    return null;
+    try {
+      const response = await fetch(webhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...input }),
+      });
+      if (!response.ok) {
+        console.error('Google Calendar sync webhook failed:', response.status, response.statusText);
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) return null;
+
+      const payload = (await response.json()) as { id?: string; event_id?: string; google_calendar_event_id?: string };
+      return payload.id ?? payload.event_id ?? payload.google_calendar_event_id ?? null;
+    } catch (error) {
+      console.error('Google Calendar sync webhook error:', error);
+      return null;
+    }
   }
 
   const accessToken = Deno.env.get('GOOGLE_CALENDAR_ACCESS_TOKEN');
   const calendarId = Deno.env.get('GOOGLE_CALENDAR_ID') ?? 'primary';
   if (!accessToken) return null;
 
-  if (action === 'cancel' && input.appointment.google_calendar_event_id) {
-    await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.appointment.google_calendar_event_id)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    return null;
-  }
+  try {
+    if (action === 'cancel') {
+      if (!input.appointment.google_calendar_event_id) return null;
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.appointment.google_calendar_event_id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      return null;
+    }
 
-  if (action === 'create') {
     const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
       method: 'POST',
       headers: {
@@ -471,12 +486,17 @@ async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointm
         attendees: input.client?.email ? [{ email: input.client.email }] : [],
       }),
     });
-    if (!res.ok) return null;
-    const data = await res.json() as { id?: string };
-    return data.id ?? null;
-  }
+    if (!res.ok) {
+      console.error('Google Calendar sync API failed:', res.status, res.statusText);
+      return null;
+    }
 
-  return null;
+    const data = (await res.json()) as { id?: string };
+    return data.id ?? null;
+  } catch (error) {
+    console.error('Google Calendar sync API error:', error);
+    return null;
+  }
 }
 
 async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, type: 'booking_confirmation' | 'booking_cancelled', client: PTClientRow, appointment: AppointmentRow) {

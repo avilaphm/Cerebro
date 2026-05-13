@@ -4,14 +4,14 @@
 2026-05-13 by codex
 
 ## Last completed task
-Implemented client-facing PT booking system.
+Hardened PT booking calendar sync.
 
 ## Last commit
-implement pt client booking system
+harden pt booking calendar sync
 
 ## Current state
 
-Client booking system has been added across Supabase, PT dashboard, and client portal.
+PT booking flow is live and calendar sync is now non-blocking.
 
 Shipped in this session:
 - New PT booking tables for availability, appointments, public-safe busy blocks, session ledger, cancellation requests, and notification logs.
@@ -19,6 +19,7 @@ Shipped in this session:
 - New `/dashboard/pt/bookings` cockpit for Pedro to manage availability, add packs, manually book sessions, complete sessions, cancel sessions, and review late cancellation requests.
 - Client `/client` portal now opens on Overview, moves workouts behind a bottom Workout tab, and adds a Tools tab for booking Pedro.
 - Client booking rules are server-side: 7 days minimum notice, 28 day horizon, recurring bookings inside the horizon, credit holds for future bookings, cancellation request inside 24 hours.
+- Google Calendar sync on booking create/cancel now fails soft and preserves the booking flow if the external sync endpoint or Google API is down.
 
 Recent shipped surfaces include:
 - `/dashboard/bookings` internal booking cockpit backed by Supabase booking tables.
