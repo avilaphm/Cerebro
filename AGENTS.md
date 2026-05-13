@@ -16,7 +16,7 @@ Cerebro is Pedro Avila's AI automation consultancy. This is a Next.js + Supabase
 
 ---
 
-## Leads Dashboard - Current State (Phase 1 complete)
+## Leads Dashboard - Current State
 
 ### Files
 ```
@@ -60,12 +60,8 @@ utils/leads/tags.ts           - Full tag system: TAG constants, STAGE1_QUARTERS,
 
 ---
 
-## Active plan
-Full plan at: `../plans/2026-05-leads-dashboard-revamp.md`
-- Phase 1: COMPLETE (foundation, pipeline, tag system, QuadProgress, detail view)
-- Phase 2+: Pedro will brief scope at session start
-
-**Before writing any code:** ask Pedro what Phase 2 goal is if it is not already stated in the task.
+## Active Plan
+No active plan file, saved phase list, or stored todo list is currently maintained. Treat new work as a clean slate and use Pedro's current brief.
 
 ---
 
@@ -74,17 +70,9 @@ Full plan at: `../plans/2026-05-leads-dashboard-revamp.md`
 **Session start:**
 1. Read `HANDOFF.md` - tells you exactly where to pick up and what's next
 2. Read `../session-logs/learning-log.md` - past mistakes by both Claude and Codex. Do not repeat them.
-3. Read the active plan at `../plans/2026-05-leads-dashboard-revamp.md`
-4. If "Next task" in HANDOFF.md says PENDING - ask Pedro for Phase scope before writing any code
 
 **Session end (before stopping):**
-1. Update `HANDOFF.md`: fill in Last updated, Last completed task, Last commit, Current state, Next task
+1. Update `HANDOFF.md`: fill in Last updated, Last completed task, Last commit, and current state
 2. `git add -A && git commit -m "[description]" && git push`
-3. If a phase just completed: `git tag dashboard-v[N] && git push --tags`
 
 **Never stop a session with uncommitted changes or a stale HANDOFF.md.**
-
-**Git tag convention:**
-- `dashboard-v1` = Phase 1 complete (already tagged)
-- `dashboard-v2` = Phase 2 complete, etc.
-- To roll back to a phase checkpoint: `git checkout dashboard-v[N]`
