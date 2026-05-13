@@ -4,16 +4,22 @@
 2026-05-13 by codex
 
 ## Last completed task
-Restored Google Calendar-style booking views.
+Refined coach PT dashboard mobile UX.
 
 ## Last commit
-refine premium client dashboard ux
+coach pt dashboard mobile ux
 
 ## Current state
 
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped in this session:
+- Audited the coach PT dashboard mobile experience across Overview, Messages, Bookings, Clients, Groups, Programmes, Emails, Settings, client detail, and programme editor/create flows.
+- Fixed the shared PT layout so the PT nav becomes a horizontal scroll rail on mobile and remains a sidebar on desktop.
+- Added `min-w-0` to dashboard shells to prevent nested content from squeezing or causing hidden horizontal overflow.
+- Reworked PT Overview mobile spacing: one-column metrics on narrow phones, stacked list rows, smaller page padding, and responsive operations grids.
+- Reworked coach Messages so message loading scrolls only the message pane instead of pushing the whole dashboard upward.
+- Adjusted coach Bookings, Clients, Groups, Programmes, Emails, Settings, client detail, and programme editor/create pages with responsive padding, stacked headers, full-width mobile actions, and scroll-safe modals.
 - Restored the client booking calendar as a true visual calendar instead of a compact slot list.
 - Client Tools now uses Google Calendar-style day/week time grids with a left time rail, hour lines, and positioned Available/Busy/Yours blocks.
 - Client monthly view now shows compact event bars inside day cells, with day/week/month toggles above the calendar.

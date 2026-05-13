@@ -86,7 +86,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
   );
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
       <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-8">Settings</h1>
 
@@ -96,11 +96,11 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
           CSV columns: <span className="font-mono text-black/60">name, muscles, purpose, equipment, video_url, cue_1, cue_2, cue_3, cue_4, tags</span>
           <br />Upserts on name — re-importing the same file updates existing exercises.
         </p>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
             onClick={() => fileRef.current?.click()}
             disabled={importing}
-            className="border border-black bg-black text-white px-5 py-2.5 text-sm disabled:opacity-40 hover:bg-white hover:text-black transition-colors"
+            className="w-full border border-black bg-black px-5 py-3 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-40 sm:w-auto sm:py-2.5"
           >
             {importing ? 'Importing…' : 'Import CSV'}
           </button>
@@ -116,20 +116,20 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
       </section>
 
       <section>
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">
             Exercise library ({exercises.length})
           </h2>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search exercises…"
-              className="border border-black/15 px-3 py-1.5 text-sm outline-none focus:border-black/40 w-56"
+              className="w-full border border-black/15 px-3 py-2.5 text-sm outline-none focus:border-black/40 sm:w-56 sm:py-1.5"
             />
             <button
               onClick={() => setShowAddModal(true)}
-              className="border border-black bg-black text-white px-4 py-1.5 text-sm hover:bg-white hover:text-black transition-colors"
+              className="w-full border border-black bg-black px-4 py-2.5 text-sm text-white transition-colors hover:bg-white hover:text-black sm:w-auto sm:py-1.5"
             >
               + Add exercise
             </button>
@@ -170,7 +170,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
       {/* Add Exercise Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white w-full max-w-lg border border-black/20 p-6 space-y-4">
+          <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg space-y-4 overflow-y-auto border border-black/20 bg-white p-4 sm:p-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-display text-lg font-light">Add exercise</h3>
               <button onClick={() => setShowAddModal(false)} className="text-black/30 hover:text-black text-xl leading-none">×</button>
@@ -187,7 +187,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Muscles</label>
                 <input
@@ -231,7 +231,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-2 sm:grid-cols-2">
               {(['cue_1', 'cue_2', 'cue_3', 'cue_4'] as const).map((key, idx) => (
                 <div key={key}>
                   <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Cue {idx + 1}</label>
@@ -245,7 +245,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
               ))}
             </div>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col gap-3 pt-2 sm:flex-row">
               <button onClick={() => setShowAddModal(false)} className="border border-black/15 px-5 py-2.5 text-sm hover:bg-black/5">
                 Cancel
               </button>

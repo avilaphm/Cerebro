@@ -76,22 +76,22 @@ export default function PTGroupsView({ groups: initialGroups, members: initialMe
   const groupClientIds = activeGroup ? groupMembers(activeGroup.id) : [];
 
   return (
-    <div className="p-8">
-      <div className="flex items-start justify-between mb-8">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
           <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Groups</h1>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="border border-black bg-black text-white px-5 py-2.5 text-sm hover:bg-white hover:text-black transition-colors"
+          className="w-full border border-black bg-black px-5 py-3 text-sm text-white transition-colors hover:bg-white hover:text-black sm:w-auto sm:py-2.5"
         >
           + New group
         </button>
       </div>
 
       {showCreate && (
-        <div className="border border-black/15 p-5 mb-8 max-w-sm space-y-4">
+        <div className="mb-8 max-w-sm space-y-4 border border-black/15 p-4 sm:p-5">
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">New group</p>
           <div>
             <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Name</label>
@@ -131,7 +131,7 @@ export default function PTGroupsView({ groups: initialGroups, members: initialMe
         </div>
       )}
 
-      <div className="grid lg:grid-cols-[280px_1fr] gap-8">
+      <div className="grid gap-6 lg:grid-cols-[280px_1fr] lg:gap-8">
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">
             {groups.length} group{groups.length !== 1 ? 's' : ''}
@@ -166,8 +166,8 @@ export default function PTGroupsView({ groups: initialGroups, members: initialMe
 
         {activeGroup && (
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <span className="w-3 h-3 rounded-full" style={{ backgroundColor: activeGroup.color }} />
                 <p className="font-medium">{activeGroup.name}</p>
                 <span className="text-xs text-black/35">{groupClientIds.length} member{groupClientIds.length !== 1 ? 's' : ''}</span>
@@ -186,8 +186,8 @@ export default function PTGroupsView({ groups: initialGroups, members: initialMe
               {clients.map((c) => {
                 const isMember = groupClientIds.includes(c.id);
                 return (
-                  <div key={c.id} className="flex items-center justify-between px-4 py-3 border border-black/8 hover:border-black/20 transition-colors">
-                    <div>
+                  <div key={c.id} className="flex flex-col gap-3 border border-black/8 px-3 py-3 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                    <div className="min-w-0">
                       <Link href={`/dashboard/pt/clients/${c.id}`} className="text-sm font-medium hover:underline">
                         {c.name}
                       </Link>

@@ -35,6 +35,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) ?? null;
 
@@ -74,7 +75,9 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
   }, [loadMessages, selectedClientId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
@@ -144,8 +147,8 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
   let lastDay = '';
 
   return (
-    <div className="flex h-screen">
-      <aside className="w-64 shrink-0 border-r border-black/8 flex flex-col bg-white">
+    <div className="flex h-[calc(100dvh-7rem)] min-h-[42rem] flex-col overflow-hidden lg:h-[calc(100vh-1.5rem)] lg:flex-row">
+      <aside className="flex max-h-64 w-full shrink-0 flex-col border-b border-black/8 bg-white lg:max-h-none lg:w-64 lg:border-b-0 lg:border-r">
         <div className="px-5 py-5 border-b border-black/8">
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
           <h1 className="font-display text-xl font-light">Messages</h1>
@@ -189,19 +192,19 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-h-0 bg-[#fafaf8]">
+      <div className="flex min-h-0 flex-1 flex-col bg-[#fafaf8]">
         {!selectedClient ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-sm text-black/30">Select a client to start chatting.</p>
           </div>
         ) : (
           <>
-            <div className="border-b border-black/8 bg-white px-6 py-4 shrink-0">
+            <div className="shrink-0 border-b border-black/8 bg-white px-4 py-4 sm:px-6">
               <p className="font-medium text-sm">{selectedClient.name}</p>
               <p className="text-xs text-black/40">{selectedClient.email}</p>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-1">
+            <div ref={messagesRef} className="flex-1 space-y-1 overflow-y-auto px-4 py-5 sm:px-6">
               {loading ? (
                 <p className="text-xs text-black/30 text-center py-8">Loading messages...</p>
               ) : messages.length === 0 ? (
@@ -224,7 +227,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
                         </div>
                       )}
                       <div className={`flex ${isPT ? 'justify-end' : 'justify-start'} mb-1`}>
-                        <div className={`max-w-[70%] ${isPT ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
+                        <div className={`max-w-[86%] sm:max-w-[70%] ${isPT ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
                           {m.context?.day_title && (
                             <span className={`text-[0.6rem] uppercase tracking-[0.12em] px-2 py-0.5 rounded ${
                               isPT ? 'text-black/30 self-end' : 'bg-black/6 text-black/40 self-start'
@@ -249,7 +252,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
               <div ref={bottomRef} />
             </div>
 
-            <div className="border-t border-black/8 bg-white px-4 py-3 shrink-0 flex gap-2">
+            <div className="flex shrink-0 gap-2 border-t border-black/8 bg-white px-3 py-3 sm:px-4">
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}

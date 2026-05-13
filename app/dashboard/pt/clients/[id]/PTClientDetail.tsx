@@ -1262,15 +1262,15 @@ export default function PTClientDetail({
   };
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="max-w-3xl p-4 sm:p-6 lg:p-8">
       <div className="flex items-center gap-3 mb-8">
         <Link href="/dashboard/pt/clients" className="text-black/30 hover:text-black text-sm transition-colors">
           ← Clients
         </Link>
       </div>
 
-      <div className="flex items-start justify-between mb-8">
-        <div className="flex items-center gap-4">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
           <div className="w-14 h-14 rounded-full bg-black/8 flex items-center justify-center text-xl font-medium text-black/50">
             {client.name.charAt(0).toUpperCase()}
           </div>
@@ -1287,7 +1287,7 @@ export default function PTClientDetail({
             <p className="text-sm text-black/40 mt-0.5">{client.email}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <select
             value={client.status}
             onChange={async (e) => {
@@ -1309,7 +1309,7 @@ export default function PTClientDetail({
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-3 mb-8">
+      <div className="mb-8 grid gap-3 sm:grid-cols-3">
         <div className="border border-black/8 px-4 py-4">
           <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Account</p>
           <p className="text-sm font-medium">

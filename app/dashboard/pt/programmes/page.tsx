@@ -24,15 +24,15 @@ export default async function PTProgrammesPage() {
   }));
 
   return (
-    <div className="p-8">
-      <div className="flex items-start justify-between mb-8">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
           <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Programmes</h1>
         </div>
         <Link
           href="/dashboard/pt/programmes/new"
-          className="border border-black bg-black text-white px-5 py-2.5 text-sm hover:bg-white hover:text-black transition-colors"
+          className="w-full border border-black bg-black px-5 py-3 text-center text-sm text-white transition-colors hover:bg-white hover:text-black sm:w-auto sm:py-2.5"
         >
           + New programme
         </Link>
@@ -41,7 +41,7 @@ export default async function PTProgrammesPage() {
       {templates.length > 0 && (
         <section className="mb-10">
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Templates</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
             {templates.map((t) => (
               <div key={t.id} className="border border-black/10 p-5">
                 <p className="font-medium text-sm">{t.name}</p>
@@ -63,7 +63,7 @@ export default async function PTProgrammesPage() {
       {assignments.length > 0 && (
         <section>
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Client assignments</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
             {assignments.map((a) => {
               const cl = a.pt_clients as { name: string; email: string } | null;
               return (

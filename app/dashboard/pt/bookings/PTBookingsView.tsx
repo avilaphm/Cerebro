@@ -364,21 +364,21 @@ export default function PTBookingsView() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f7f7f3] p-6 md:p-8">
+    <div className="min-h-screen bg-[#f7f7f3] p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl">
         <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">PT Dashboard</p>
             <h1 className="mt-1 font-display text-3xl font-light tracking-[-0.02em]">Bookings</h1>
           </div>
-          <button type="button" onClick={() => void loadData()} className="inline-flex items-center gap-2 border border-black/10 bg-white px-3 py-2 text-xs text-black/55 hover:border-black/30">
+          <button type="button" onClick={() => void loadData()} className="inline-flex w-full items-center justify-center gap-2 border border-black/10 bg-white px-3 py-3 text-xs text-black/55 hover:border-black/30 sm:w-auto sm:py-2">
             <RefreshCw size={14} />
             Refresh
           </button>
         </div>
 
         {status && (
-          <div className="mb-5 flex items-center justify-between border border-black/10 bg-white px-4 py-3 text-sm text-black/60">
+          <div className="mb-5 flex flex-col gap-3 border border-black/10 bg-white px-4 py-3 text-sm text-black/60 sm:flex-row sm:items-center sm:justify-between">
             <span>{status}</span>
             <button type="button" onClick={() => setStatus('')} className="text-black/35 hover:text-black" aria-label="Dismiss status">
               <X size={16} />
@@ -390,7 +390,7 @@ export default function PTBookingsView() {
           <p className="text-sm text-black/40">Loading bookings...</p>
         ) : (
           <>
-            <div className="mb-6 grid gap-3 md:grid-cols-4">
+            <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Metric label="Upcoming" value={String(nextAppointments.length)} />
               <Metric label="Pending cancels" value={String(requests.length)} alert={requests.length > 0} />
               <Metric label="Low credits" value={String(lowCreditClients.length)} alert={lowCreditClients.length > 0} />
@@ -406,7 +406,7 @@ export default function PTBookingsView() {
                       <h2 className="mt-1 text-lg font-medium">{calendarTitle}</h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="inline-grid grid-cols-3 border border-black/10 bg-[#fbfbf8] p-1">
+                      <div className="grid w-full grid-cols-3 border border-black/10 bg-[#fbfbf8] p-1 sm:w-auto">
                         {(['day', 'week', 'month'] as BookingCalendarView[]).map((view) => (
                           <button
                             key={view}
@@ -448,7 +448,7 @@ export default function PTBookingsView() {
                         const dayAppointments = appointmentsByDate.get(key) ?? [];
                         const inMonth = day.getMonth() === calendarMonth.getMonth();
                         return (
-                          <div key={key} className={`min-h-32 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
+                          <div key={key} className={`min-h-24 border-b border-r border-black/10 p-1.5 sm:min-h-32 sm:p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
                             <div className="mb-2 flex items-center justify-between">
                               <span className="text-xs font-medium">{day.getDate()}</span>
                               {dayAppointments.length > 0 && <Clock size={13} className="text-black/35" />}
@@ -570,7 +570,7 @@ export default function PTBookingsView() {
                 </Panel>
 
                 <Panel title="Availability" eyebrow="Weekly windows">
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
 	                    <select value={windowDraft.day_of_week} onChange={(event) => setWindowDraft((current) => ({ ...current, day_of_week: event.target.value }))} className={FIELD_CLASS}>
 	                      {DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
 	                    </select>
@@ -587,8 +587,8 @@ export default function PTBookingsView() {
                   </button>
                   <div className="mt-4 space-y-2">
                     {availability.map((row) => (
-                      <div key={row.id} className="flex items-center justify-between gap-3 border border-black/8 px-3 py-2">
-	                        <div>
+                      <div key={row.id} className="flex flex-col gap-3 border border-black/8 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+	                        <div className="min-w-0">
 	                          <p className="text-sm font-medium">{DAYS[row.day_of_week]} · {row.start_time.slice(0, 5)}-{row.end_time.slice(0, 5)}</p>
 	                          <p className="text-xs text-black/35">{row.label || row.location || `${row.session_duration_minutes ?? 45}m session · ${row.buffer_minutes ?? 5}m buffer`}</p>
 	                        </div>

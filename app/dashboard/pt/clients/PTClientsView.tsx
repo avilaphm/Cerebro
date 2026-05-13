@@ -56,15 +56,15 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
   };
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
           <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Clients</h1>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="border border-black bg-black text-white px-5 py-2.5 text-sm hover:bg-white hover:text-black transition-colors"
+          className="w-full border border-black bg-black px-5 py-3 text-sm text-white transition-colors hover:bg-white hover:text-black sm:w-auto sm:py-2.5"
         >
           + Add client
         </button>
@@ -124,7 +124,7 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
 
       {showAdd && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md border border-black/10">
+            <div className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto border border-black/10 bg-white">
             <div className="px-6 py-5 border-b border-black/8">
               <h2 className="font-display text-lg font-light">Add client</h2>
             </div>
@@ -168,7 +168,7 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
                 />
               </div>
               {error && <p className="text-xs text-red-600">{error}</p>}
-              <div className="flex gap-3 pt-1">
+              <div className="flex flex-col gap-3 pt-1 sm:flex-row">
                 <button
                   type="button"
                   onClick={() => setShowAdd(false)}

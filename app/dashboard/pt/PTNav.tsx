@@ -17,18 +17,18 @@ const NAV = [
 export default function PTNav() {
   const pathname = usePathname();
   return (
-    <aside className="pt-glass-nav w-48 shrink-0 border border-black/8 flex flex-col min-h-full rounded-[20px]">
-      <div className="px-5 py-5 border-b border-black/8">
+    <aside className="pt-glass-nav flex w-full shrink-0 flex-col overflow-hidden border border-black/8 rounded-[20px] md:min-h-full md:w-48">
+      <div className="hidden border-b border-black/8 px-5 py-5 md:block">
         <p className="text-[0.6rem] uppercase tracking-[0.22em] text-black/35 font-medium">PT</p>
       </div>
-      <nav className="flex-1 px-2 py-3 space-y-0.5">
+      <nav className="flex gap-1 overflow-x-auto px-2 py-2 md:flex-1 md:flex-col md:space-y-0.5 md:overflow-visible md:py-3">
         {NAV.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`block px-3 py-2 text-sm transition-colors ${
+              className={`block whitespace-nowrap px-3 py-2 text-sm transition-colors ${
                 active
                   ? 'border border-black/15 bg-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.24)]'
                   : 'border border-transparent text-black/50 hover:border-black/10 hover:bg-black/5 hover:text-black'

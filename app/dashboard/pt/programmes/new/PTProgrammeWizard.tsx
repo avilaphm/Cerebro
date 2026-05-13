@@ -241,8 +241,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const currentDay = phase && activeDay !== null ? phase.days[activeDay] ?? null : null;
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="flex items-center gap-3 mb-6">
+    <div className="max-w-4xl p-4 sm:p-6 lg:p-8">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <Link href="/dashboard/pt/programmes" className="text-black/30 hover:text-black text-sm transition-colors">
           ← Programmes
         </Link>
@@ -250,7 +250,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         <span className="text-sm text-black/50">New programme</span>
       </div>
 
-      <div className="flex items-center gap-2 mb-8">
+      <div className="mb-8 flex flex-wrap items-center gap-2">
         {([1, 2, 3, 4] as const).map((s) => (
           <div key={s} className="flex items-center gap-2">
             <button
@@ -284,7 +284,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="w-full max-w-sm border border-black/15 px-3 py-2.5 text-sm outline-none focus:border-black/40"
+              className="w-full max-w-sm border border-black/15 px-3 py-3 text-sm outline-none focus:border-black/40 sm:py-2.5"
             >
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
@@ -318,7 +318,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
             <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">
               {selectedClient?.document_url ? 'Or brain dump manually' : 'Brain dump'}
             </p>
-            <div className="flex gap-3 max-w-2xl">
+            <div className="flex max-w-2xl flex-col gap-3 sm:flex-row">
               <textarea
                 value={brainDump}
                 onChange={(e) => setBrainDump(e.target.value)}
@@ -326,7 +326,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                 rows={5}
                 className="flex-1 border border-black/15 px-4 py-3 text-sm outline-none focus:border-black/40 resize-none"
               />
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 sm:w-32">
                 {listening ? (
                   <div className="flex flex-col gap-1">
                     <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600 text-center">● Recording</span>
@@ -370,7 +370,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               <div key={ph.id}>
                 {editingPhase === i ? (
                   <div className="border border-black/20 p-5 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <div>
                         <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Phase name</label>
                         <input value={ph.title} onChange={(e) => patchPhase(i, { title: e.target.value })}
@@ -399,7 +399,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                       <p className="text-[0.6rem] text-black/30 mb-2">
                         e.g. "2 sets for 2 weeks..." or "75% for 1 week, 85% for 3 weeks"
                       </p>
-                      <div className="flex gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <input
                           value={weekBlocksInput[i] ?? formatWeekBlocks(ph.week_blocks)}
                           onChange={(e) => {
@@ -458,7 +458,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                     </button>
                   </div>
                 ) : (
-                  <div className="border border-black/10 px-5 py-4 flex items-center justify-between hover:border-black/25 transition-colors">
+                  <div className="flex flex-col gap-3 border border-black/10 px-4 py-4 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                     <button type="button" className="flex-1 text-left" onClick={() => setEditingPhase(i)}>
                       <div className="flex items-center gap-2">
                         <span className="text-[0.55rem] text-black/30">☰</span>
@@ -482,7 +482,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                         </div>
                       )}
                     </button>
-                    <div className="flex items-center gap-3 ml-4">
+                    <div className="flex flex-wrap items-center gap-3 sm:ml-4">
                       <button type="button" onClick={() => setEditingPhase(i)}
                         className="text-xs text-black/40 hover:text-black border border-black/15 px-3 py-1 hover:bg-black/5 transition-colors">Edit</button>
                       <button type="button" onClick={(e) => { e.stopPropagation(); removePhase(i); }}

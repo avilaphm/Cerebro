@@ -24,9 +24,9 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="liquid-dashboard flex min-h-screen p-3">
+    <div className="liquid-dashboard flex min-h-screen min-w-0 p-3">
       <DashboardSidebar userEmail={user.email ?? ''} />
-      <main className="min-h-[calc(100vh-1.5rem)] flex-1 overflow-y-auto pt-16 md:ml-[15.25rem] md:pt-0">
+      <main className="min-h-[calc(100vh-1.5rem)] min-w-0 flex-1 overflow-y-auto pt-16 md:ml-[15.25rem] md:pt-0">
         {children}
       </main>
     </div>
