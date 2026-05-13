@@ -1,11 +1,27 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Minus, Play, Plus, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
 import { isPedroAdminEmail } from '@/utils/pt/access';
+import {
+  ACTIVE_BOOKING_STATUSES,
+  PT_BOOKING_HORIZON_DAYS,
+  PT_BOOKING_MIN_NOTICE_DAYS,
+  activeBookingHoldCount,
+  addDays,
+  availableSessionCredits,
+  formatBookingDate,
+  formatBookingTime,
+  overlaps,
+  type PTBookableSlot,
+  type PTBookingAppointment,
+  type PTBookingAvailability,
+  type PTBookingBlock,
+  type PTBookingCancellationRequest,
+} from '@/utils/pt/bookings';
 import type {
   PTClient,
   PTClientGoal,
@@ -102,6 +118,8 @@ interface MetricDraft {
   source: 'manual' | 'scale';
   notes: string;
 }
+
+type ClientScreen = 'overview' | 'workout' | 'tools';
 
 const emptyWeeklyReset: WeeklyResetDraft = {
   availability: '',
@@ -209,6 +227,55 @@ function formatMetric(value: number | null, suffix: string) {
   return value === null || value === undefined ? '-' : `${Number(value).toLocaleString('en-AU')} ${suffix}`;
 }
 
+function timeToMinutes(value: string) {
+  const [hour, minute] = value.slice(0, 5).split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function generateBookableSlots(
+  availability: PTBookingAvailability[],
+  blocks: PTBookingBlock[],
+  ownBookings: PTBookingAppointment[],
+  canBook: boolean,
+): PTBookableSlot[] {
+  const now = new Date();
+  const minDate = addDays(now, PT_BOOKING_MIN_NOTICE_DAYS);
+  const maxDate = addDays(now, PT_BOOKING_HORIZON_DAYS);
+  const slots: PTBookableSlot[] = [];
+
+  for (let offset = PT_BOOKING_MIN_NOTICE_DAYS; offset <= PT_BOOKING_HORIZON_DAYS; offset++) {
+    const day = addDays(now, offset);
+    const windows = availability.filter((window) => window.day_of_week === day.getDay() && window.is_active);
+    windows.forEach((window) => {
+      const duration = window.slot_duration_minutes;
+      for (
+        let minute = timeToMinutes(window.start_time);
+        minute + duration <= timeToMinutes(window.end_time);
+        minute += duration
+      ) {
+        const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minute / 60), minute % 60);
+        const end = new Date(start.getTime() + duration * 60000);
+        if (start < minDate || start > maxDate) continue;
+        const taken = blocks.some((block) => overlaps(start, end, block.start_at, block.end_at));
+        const own = ownBookings.some((booking) =>
+          ACTIVE_BOOKING_STATUSES.includes(booking.status) && overlaps(start, end, booking.start_at, booking.end_at),
+        );
+        slots.push({
+          start_at: start.toISOString(),
+          end_at: end.toISOString(),
+          label: `${formatBookingDate(start)} · ${formatBookingTime(start)}`,
+          available: canBook && !taken && !own,
+          reason: !canBook ? 'No sessions available' : own ? 'You booked this' : taken ? 'Taken' : undefined,
+          availability_id: window.id,
+          location: window.location,
+        });
+      }
+    });
+  }
+
+  return slots;
+}
+
 function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
   return exercise.exercise_id ?? exercise.name.toLowerCase();
 }
@@ -296,6 +363,7 @@ function workoutIsDone(
 export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const supabase = createClient();
   const isPedro = isPedroAdminEmail(userEmail);
+  const [activeScreen, setActiveScreen] = useState<ClientScreen>('overview');
   const [client, setClient] = useState<PTClient | null>(null);
   const [assignments, setAssignments] = useState<PTProgramAssignment[]>([]);
   const [setLogs, setSetLogs] = useState<PTSetLog[]>([]);
@@ -306,6 +374,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [metrics, setMetrics] = useState<PTClientMetric[]>([]);
   const [goals, setGoals] = useState<PTClientGoal[]>([]);
   const [reviews, setReviews] = useState<PTCoachingReview[]>([]);
+  const [bookingAvailability, setBookingAvailability] = useState<PTBookingAvailability[]>([]);
+  const [bookings, setBookings] = useState<PTBookingAppointment[]>([]);
+  const [bookingBlocks, setBookingBlocks] = useState<PTBookingBlock[]>([]);
+  const [cancellationRequests, setCancellationRequests] = useState<PTBookingCancellationRequest[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<PTBookableSlot | null>(null);
+  const [recurringWeeks, setRecurringWeeks] = useState('1');
+  const [bookingReason, setBookingReason] = useState('');
+  const [bookingBusy, setBookingBusy] = useState(false);
   const [resetDraft, setResetDraft] = useState<WeeklyResetDraft>(emptyWeeklyReset);
   const [metricDraft, setMetricDraft] = useState<MetricDraft>({
     measured_at: todayInputValue(),
@@ -350,7 +426,23 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return;
     }
 
-    const [assignmentRes, logsRes, workoutLogsRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, reviewsRes] = await Promise.all([
+    const bookingRangeStart = new Date().toISOString();
+    const bookingRangeEnd = addDays(new Date(), PT_BOOKING_HORIZON_DAYS + 7).toISOString();
+    const [
+      assignmentRes,
+      logsRes,
+      workoutLogsRes,
+      checkinsRes,
+      plansRes,
+      planItemsRes,
+      metricsRes,
+      goalsRes,
+      reviewsRes,
+      availabilityRes,
+      bookingRes,
+      blockRes,
+      cancellationRes,
+    ] = await Promise.all([
       supabase
         .from('pt_program_assignments')
         .select('*')
@@ -409,6 +501,31 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         .eq('status', 'final')
         .order('period_start', { ascending: false })
         .limit(3),
+      supabase
+        .from('pt_booking_availability')
+        .select('*')
+        .eq('is_active', true)
+        .order('day_of_week', { ascending: true })
+        .order('start_time', { ascending: true }),
+      supabase
+        .from('pt_booking_appointments')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .gte('start_at', bookingRangeStart)
+        .lt('start_at', bookingRangeEnd)
+        .order('start_at', { ascending: true }),
+      supabase
+        .from('pt_booking_blocks')
+        .select('*')
+        .eq('status', 'active')
+        .gte('end_at', bookingRangeStart)
+        .lt('start_at', bookingRangeEnd)
+        .order('start_at', { ascending: true }),
+      supabase
+        .from('pt_booking_cancellation_requests')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .order('created_at', { ascending: false }),
     ]);
 
     setAssignments(((assignmentRes.data ?? []) as PTProgramAssignment[]).map((row) => ({
@@ -425,6 +542,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setMetrics((metricsRes.data ?? []) as PTClientMetric[]);
     setGoals((goalsRes.data ?? []) as PTClientGoal[]);
     setReviews((reviewsRes.data ?? []) as PTCoachingReview[]);
+    setBookingAvailability((availabilityRes.data ?? []) as PTBookingAvailability[]);
+    setBookings((bookingRes.data ?? []) as PTBookingAppointment[]);
+    setBookingBlocks((blockRes.data ?? []) as PTBookingBlock[]);
+    setCancellationRequests((cancellationRes.data ?? []) as PTBookingCancellationRequest[]);
     setLoading(false);
   }, [supabase]);
 
@@ -500,6 +621,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     });
   const dueTodayItems = currentWeeklyPlanItems.filter((item) => item.scheduled_date === todayInputValue() && item.status === 'planned');
   const nextPlanItem = currentWeeklyPlanItems.find((item) => item.status === 'planned') ?? null;
+  const activeBookings = bookings.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(booking.status));
+  const nextBooking = activeBookings.find((booking) => new Date(booking.start_at).getTime() > Date.now()) ?? null;
+  const heldCredits = activeBookingHoldCount(bookings);
+  const availableCredits = availableSessionCredits(client, bookings);
+  const bookableSlots = useMemo(
+    () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, availableCredits > 0),
+    [availableCredits, bookingAvailability, bookingBlocks, bookings],
+  );
+  const availableSlots = bookableSlots.filter((slot) => slot.available);
+  const pendingCancellationIds = new Set(
+    cancellationRequests
+      .filter((request) => request.status === 'pending')
+      .map((request) => request.appointment_id),
+  );
 
   const renderDelta = (current: number | null | undefined, previous: number | null | undefined, unit: string) => {
     if (current === null || current === undefined) return 'No reading yet';
@@ -794,6 +929,56 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         ? { ...planItem, status: nextStatus, completed_at: completedAt }
         : planItem
     )));
+  };
+
+  const bookSelectedSlot = async () => {
+    if (!selectedSlot || bookingBusy) return;
+    setBookingBusy(true);
+    setStatus('Booking session...');
+    const { data, error } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
+      body: {
+        action: 'create',
+        start_at: selectedSlot.start_at,
+        recurring_weeks: Number(recurringWeeks),
+      },
+    });
+
+    if (error || data?.error) {
+      setStatus(error?.message ?? data?.error ?? 'Could not book session.');
+    } else {
+      setStatus('Session booked. Check your email for the confirmation.');
+      setSelectedSlot(null);
+      await loadPortal();
+    }
+    setBookingBusy(false);
+  };
+
+  const cancelBooking = async (booking: PTBookingAppointment) => {
+    if (bookingBusy) return;
+    const startsWithin24Hours = new Date(booking.start_at).getTime() - Date.now() < 24 * 60 * 60 * 1000;
+    if (startsWithin24Hours && !bookingReason.trim()) {
+      setStatus('Add a reason so Pedro can review the late cancellation.');
+      return;
+    }
+
+    setBookingBusy(true);
+    setStatus(startsWithin24Hours ? 'Sending cancellation request...' : 'Cancelling booking...');
+    const { data, error } = await supabase.functions.invoke<{ error?: string; status?: string }>('manage-pt-booking', {
+      body: {
+        action: 'cancel',
+        appointment_id: booking.id,
+        reason: startsWithin24Hours ? bookingReason.trim() : 'Cancelled by client.',
+      },
+    });
+
+    if (error || data?.error) {
+      setStatus(error?.message ?? data?.error ?? 'Could not cancel booking.');
+    } else {
+      setBookingReason('');
+      setStatus(data?.status === 'cancellation_requested' ? 'Pedro has received your cancellation request.' : 'Booking cancelled.');
+      await loadPortal();
+    }
+    setBookingBusy(false);
   };
 
   const openLinkedPlanWorkout = (item: PTWeeklyPlanItem) => {
@@ -1619,11 +1804,263 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     );
   };
 
+  const renderOverviewScreen = () => (
+    <div className="space-y-4 md:space-y-6">
+      <div className="mx-auto max-w-5xl">
+        <section className="border border-black/10 bg-white p-4 md:p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Overview</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+              <p className="text-xs text-black/35">Sessions left</p>
+              <p className="mt-1 text-2xl font-light">{client?.sessions_remaining ?? 0}</p>
+              <p className="mt-1 text-xs text-black/40">{heldCredits} held by future bookings</p>
+            </div>
+            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+              <p className="text-xs text-black/35">Next session</p>
+              <p className="mt-1 text-sm font-medium">{nextBooking ? formatBookingDate(nextBooking.start_at) : 'Not booked'}</p>
+              <p className="mt-1 text-xs text-black/40">{nextBooking ? formatBookingTime(nextBooking.start_at) : 'Use Tools to book'}</p>
+            </div>
+            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+              <p className="text-xs text-black/35">Today</p>
+              <p className="mt-1 text-sm font-medium">{dueTodayItems.length > 0 ? `${dueTodayItems.length} item${dueTodayItems.length === 1 ? '' : 's'}` : 'Clear'}</p>
+              <p className="mt-1 text-xs text-black/40">{nextPlanItem?.title ?? 'Follow the week plan'}</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {renderCoachingHome()}
+
+      <div className="mx-auto max-w-5xl">
+        <button
+          type="button"
+          onClick={() => setActiveScreen('workout')}
+          className="group w-full border border-black bg-black p-4 text-left text-white transition-colors hover:bg-white hover:text-black md:p-5"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.18em] opacity-60">Workout</p>
+              <h2 className="mt-2 font-display text-2xl font-light">{assignment?.name ?? 'Training programme'}</h2>
+              <p className="mt-2 text-sm opacity-65">
+                {activePhase ? `Phase ${activePhaseIndex + 1}: ${activePhase.title}` : 'Your programme appears here when Pedro publishes it.'}
+              </p>
+            </div>
+            <Dumbbell className="h-7 w-7 shrink-0 opacity-75 transition-transform group-hover:translate-x-0.5" />
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderWorkoutHome = () => (
+    <div className="space-y-4 md:space-y-6">
+      {!assignment || !activePhase ? (
+        <div className="mx-auto max-w-5xl border border-black/10 bg-white p-6">
+          <p className="text-sm font-medium text-black">
+            {client?.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
+          </p>
+          <p className="mt-2 text-sm text-black/55">
+            Your programme is being created. It will appear here as soon as it is live.
+          </p>
+        </div>
+      ) : (
+        <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+          <section className="border border-black/10 bg-white p-4 md:p-5">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
+            <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
+            {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
+          </section>
+
+          <section className="border border-black/10 bg-white p-4 md:p-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Phase {activePhaseIndex + 1}</p>
+                <h3 className="mt-1 font-display text-2xl font-light md:text-3xl">{activePhase.title}</h3>
+                {activePhase.focus && <p className="mt-2 text-sm text-black/50">{activePhase.focus}</p>}
+              </div>
+              {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
+            </div>
+
+            {renderProgress(activePhase, activeProgress)}
+
+            <div className="mt-6 grid gap-3 md:grid-cols-3">
+              {activePhase.days.map((day, dayIndex) => {
+                const done = workoutIsDone(workoutLogs, activePhaseIndex, dayIndex, activeProgress);
+                const sections = getWorkoutSections(day, activePhase, activeProgress?.blockIndex ?? 0);
+                const exerciseCount = day.exercises.length;
+
+                return (
+                  <button
+                    key={day.id}
+                    type="button"
+                    onClick={() => openWorkout(activePhaseIndex, dayIndex)}
+                    className={`group min-h-[8.5rem] border p-4 text-left transition-colors ${
+                      done
+                        ? 'border-green-300 bg-green-50/50 hover:border-green-500'
+                        : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Workout {dayIndex + 1}</p>
+                        <h4 className="mt-2 text-lg font-medium">{day.title}</h4>
+                      </div>
+                      {done ? (
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white">
+                          <Check className="h-4 w-4" />
+                        </span>
+                      ) : (
+                        <ChevronRight className="mt-1 h-5 w-5 text-black/25 transition-transform group-hover:translate-x-0.5 group-hover:text-black" />
+                      )}
+                    </div>
+                    {day.focus && <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-black/50">{day.focus}</p>}
+                    <div className="mt-4 flex items-center justify-between text-xs text-black/35">
+                      <span>{exerciseCount} exercise{exerciseCount === 1 ? '' : 's'}</span>
+                      <span>{sections.length} section{sections.length === 1 ? '' : 's'}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderToolsScreen = () => (
+    <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+      <section className="border border-black/10 bg-white p-4 md:p-5">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Session credits</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+            <p className="text-xs text-black/35">Pack balance</p>
+            <p className="mt-1 text-2xl font-light">{client?.sessions_remaining ?? 0}</p>
+          </div>
+          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+            <p className="text-xs text-black/35">Held</p>
+            <p className="mt-1 text-2xl font-light">{heldCredits}</p>
+          </div>
+          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+            <p className="text-xs text-black/35">Available to book</p>
+            <p className={`mt-1 text-2xl font-light ${availableCredits === 0 ? 'text-red-600' : ''}`}>{availableCredits}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="border border-black/10 bg-white p-4 md:p-5">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Book Pedro</p>
+            <h2 className="mt-1 font-display text-2xl font-light">Available slots</h2>
+          </div>
+          <p className="text-xs text-black/40">7 to 28 days ahead</p>
+        </div>
+
+        {availableSlots.length === 0 ? (
+          <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
+            {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
+          </p>
+        ) : (
+          <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {availableSlots.slice(0, 24).map((slot) => (
+              <button
+                key={slot.start_at}
+                type="button"
+                onClick={() => setSelectedSlot(slot)}
+                className={`border px-3 py-3 text-left transition-colors ${
+                  selectedSlot?.start_at === slot.start_at
+                    ? 'border-black bg-black text-white'
+                    : 'border-black/10 bg-[#fbfbf8] text-black hover:border-black/30 hover:bg-white'
+                }`}
+              >
+                <p className="text-sm font-medium">{formatBookingDate(slot.start_at)}</p>
+                <p className="mt-1 text-xs opacity-65">{formatBookingTime(slot.start_at)}{slot.location ? ` · ${slot.location}` : ''}</p>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedSlot && (
+          <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
+            <p className="text-sm font-medium">{selectedSlot.label}</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+              <label className="block">
+                <span className="mb-1 block text-xs text-black/45">Repeat weekly</span>
+                <select value={recurringWeeks} onChange={(event) => setRecurringWeeks(event.target.value)} className="w-full border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35">
+                  <option value="1">One session</option>
+                  <option value="2">2 weeks</option>
+                  <option value="3">3 weeks</option>
+                  <option value="4">4 weeks</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => void bookSelectedSlot()}
+                disabled={bookingBusy}
+                className="inline-flex items-center justify-center gap-2 border border-black bg-black px-5 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40"
+              >
+                <CalendarDays className="h-4 w-4" />
+                {bookingBusy ? 'Booking...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="border border-black/10 bg-white p-4 md:p-5">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Upcoming sessions</p>
+        <div className="mt-4 space-y-2">
+          {activeBookings.length === 0 ? (
+            <p className="text-sm text-black/40">No upcoming sessions booked.</p>
+          ) : activeBookings.map((booking) => {
+            const startsWithin24Hours = new Date(booking.start_at).getTime() - Date.now() < 24 * 60 * 60 * 1000;
+            return (
+              <div key={booking.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium">{formatBookingDate(booking.start_at)} · {formatBookingTime(booking.start_at)}</p>
+                    <p className="mt-1 text-xs text-black/40">{pendingCancellationIds.has(booking.id) ? 'Waiting for Pedro to review cancellation' : booking.status.replace(/_/g, ' ')}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void cancelBooking(booking)}
+                    disabled={bookingBusy || pendingCancellationIds.has(booking.id)}
+                    className="border border-black/10 bg-white px-3 py-2 text-xs text-black/55 hover:border-red-300 hover:text-red-700 disabled:opacity-30"
+                  >
+                    {startsWithin24Hours ? 'Request cancel' : 'Cancel'}
+                  </button>
+                </div>
+                {startsWithin24Hours && !pendingCancellationIds.has(booking.id) && (
+                  <textarea
+                    value={bookingReason}
+                    onChange={(event) => setBookingReason(event.target.value)}
+                    rows={2}
+                    className="mt-3 w-full resize-none border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                    placeholder="Reason for late cancellation."
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+
+  const renderActiveScreen = () => {
+    if (selectedWorkout?.started) return renderWorkoutLogger();
+    if (selectedWorkout) return renderWorkoutPreview();
+    if (activeScreen === 'workout') return renderWorkoutHome();
+    if (activeScreen === 'tools') return renderToolsScreen();
+    return renderOverviewScreen();
+  };
+
   return (
-    <main className="min-h-screen bg-[#f7f7f3] text-black">
+    <main className="flex h-screen flex-col overflow-hidden bg-[#f7f7f3] text-black">
       {renderHeader()}
 
-      <div className="px-4 py-5 pb-28 md:p-10">
+      <div className="flex-1 overflow-y-auto px-4 py-5 pb-28 md:p-10">
         {status && (
           <div className="mb-5 border border-black/10 bg-white px-4 py-3 text-sm text-black/60">
             {status}
@@ -1636,88 +2073,39 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <div className="border border-black/10 bg-white p-6">
             <p className="text-sm text-black/55">No client profile is linked to this login yet. Ask Pedro to send a fresh invite.</p>
           </div>
-        ) : selectedWorkout?.started ? (
-          renderWorkoutLogger()
-        ) : selectedWorkout ? (
-          renderWorkoutPreview()
         ) : (
-          <div className="space-y-4 md:space-y-6">
-            {renderCoachingHome()}
-
-            {!assignment || !activePhase ? (
-              <div className="mx-auto max-w-5xl border border-black/10 bg-white p-6">
-                <p className="text-sm font-medium text-black">
-                  {client.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
-                </p>
-                <p className="mt-2 text-sm text-black/55">
-                  Your programme is being created. It will appear here as soon as it is live.
-                </p>
-              </div>
-            ) : (
-              <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-                <section className="border border-black/10 bg-white p-4 md:p-5">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
-                  <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
-                  {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
-                </section>
-
-                <section className="border border-black/10 bg-white p-4 md:p-5">
-                  <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Phase {activePhaseIndex + 1}</p>
-                      <h3 className="mt-1 font-display text-2xl font-light md:text-3xl">{activePhase.title}</h3>
-                      {activePhase.focus && <p className="mt-2 text-sm text-black/50">{activePhase.focus}</p>}
-                    </div>
-                    {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
-                  </div>
-
-                  {renderProgress(activePhase, activeProgress)}
-
-                  <div className="mt-6 grid gap-3 md:grid-cols-3">
-                    {activePhase.days.map((day, dayIndex) => {
-                      const done = workoutIsDone(workoutLogs, activePhaseIndex, dayIndex, activeProgress);
-                      const sections = getWorkoutSections(day, activePhase, activeProgress?.blockIndex ?? 0);
-                      const exerciseCount = day.exercises.length;
-
-                      return (
-                        <button
-                          key={day.id}
-                          type="button"
-                          onClick={() => openWorkout(activePhaseIndex, dayIndex)}
-                          className={`group min-h-[8.5rem] border p-4 text-left transition-colors ${
-                            done
-                              ? 'border-green-300 bg-green-50/50 hover:border-green-500'
-                              : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Workout {dayIndex + 1}</p>
-                              <h4 className="mt-2 text-lg font-medium">{day.title}</h4>
-                            </div>
-                            {done ? (
-                              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white">
-                                <Check className="h-4 w-4" />
-                              </span>
-                            ) : (
-                              <ChevronRight className="mt-1 h-5 w-5 text-black/25 transition-transform group-hover:translate-x-0.5 group-hover:text-black" />
-                            )}
-                          </div>
-                          {day.focus && <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-black/50">{day.focus}</p>}
-                          <div className="mt-4 flex items-center justify-between text-xs text-black/35">
-                            <span>{exerciseCount} exercise{exerciseCount === 1 ? '' : 's'}</span>
-                            <span>{sections.length} section{sections.length === 1 ? '' : 's'}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              </div>
-            )}
-          </div>
+          renderActiveScreen()
         )}
       </div>
+
+      {client && (
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-black/10 bg-white/95 px-4 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur">
+          <div className="mx-auto grid max-w-sm grid-cols-3 gap-2">
+            {([
+              ['overview', Home, 'Overview'],
+              ['workout', Dumbbell, 'Workout'],
+              ['tools', Wrench, 'Tools'],
+            ] as const).map(([screen, Icon, label]) => (
+              <button
+                key={screen}
+                type="button"
+                onClick={() => {
+                  setSelectedWorkout(null);
+                  setActiveScreen(screen);
+                }}
+                className={`flex h-14 flex-col items-center justify-center gap-1 border text-[0.62rem] uppercase tracking-[0.08em] transition-colors ${
+                  activeScreen === screen
+                    ? 'border-black bg-black text-white'
+                    : 'border-transparent text-black/40 hover:border-black/10 hover:text-black'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
 
       {activeVideo && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/95 p-4">

@@ -1,0 +1,538 @@
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au'];
+const TIMEZONE = 'Australia/Sydney';
+const MIN_NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
+const HORIZON_MS = 28 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type Action = 'create' | 'cancel' | 'complete' | 'review_cancellation';
+type BookingStatus = 'scheduled' | 'confirmed' | 'cancellation_requested' | 'completed' | 'cancelled' | 'no_show';
+
+interface RequestBody {
+  action?: Action;
+  client_id?: string;
+  appointment_id?: string;
+  start_at?: string;
+  recurring_weeks?: number;
+  reason?: string;
+  approved?: boolean;
+  review_note?: string;
+  notes?: string;
+}
+
+interface PTClientRow {
+  id: string;
+  name: string;
+  email: string;
+  user_id: string | null;
+  sessions_remaining: number;
+}
+
+interface AvailabilityRow {
+  id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  slot_duration_minutes: number;
+  location: string | null;
+  label: string | null;
+}
+
+interface AppointmentRow {
+  id: string;
+  client_id: string;
+  start_at: string;
+  end_at: string;
+  timezone: string;
+  status: BookingStatus;
+  google_calendar_event_id: string | null;
+  location: string | null;
+  pt_clients?: PTClientRow | null;
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return json({ error: 'Missing authorization.' }, 401);
+
+    const url = Deno.env.get('SUPABASE_URL')!;
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
+    const adminClient = createClient(url, serviceKey);
+
+    const { data: authData, error: authError } = await userClient.auth.getUser();
+    if (authError || !authData.user) return json({ error: 'Unauthorized.' }, 401);
+
+    const requesterEmail = authData.user.email?.toLowerCase() ?? '';
+    const { data: requesterProfile } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', authData.user.id)
+      .maybeSingle();
+    const isAdmin = requesterProfile?.role === 'admin' || PEDRO_EMAILS.includes(requesterEmail);
+
+    const body = (await req.json()) as RequestBody;
+    if (!body.action) return json({ error: 'Missing action.' }, 400);
+
+    if (body.action === 'create') {
+      return await createBooking(adminClient, authData.user.id, isAdmin, body);
+    }
+
+    if (body.action === 'cancel') {
+      return await cancelBooking(adminClient, authData.user.id, isAdmin, body);
+    }
+
+    if (body.action === 'complete') {
+      if (!isAdmin) return json({ error: 'Only Pedro can complete sessions.' }, 403);
+      return await completeBooking(adminClient, authData.user.id, body);
+    }
+
+    if (body.action === 'review_cancellation') {
+      if (!isAdmin) return json({ error: 'Only Pedro can review cancellations.' }, 403);
+      return await reviewCancellation(adminClient, authData.user.id, body);
+    }
+
+    return json({ error: 'Unknown action.' }, 400);
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Booking action failed.' }, 500);
+  }
+});
+
+async function createBooking(adminClient: ReturnType<typeof createClient>, userId: string, isAdmin: boolean, body: RequestBody) {
+  if (!body.start_at) return json({ error: 'Missing start_at.' }, 400);
+
+  const client = await getClientForRequest(adminClient, userId, isAdmin, body.client_id);
+  if (!client) return json({ error: 'Client not found.' }, 404);
+
+  const firstStart = new Date(body.start_at);
+  if (!Number.isFinite(firstStart.getTime())) return json({ error: 'Invalid start_at.' }, 400);
+
+  const requestedRepeats = Math.max(1, Math.min(Number(body.recurring_weeks ?? 1), 4));
+  const starts = Array.from({ length: requestedRepeats }, (_, index) => new Date(firstStart.getTime() + index * 7 * DAY_MS))
+    .filter((date) => date.getTime() <= Date.now() + HORIZON_MS);
+
+  if (starts.length === 0) return json({ error: 'No valid booking dates in the 28 day window.' }, 400);
+
+  const [{ data: availabilityRows }, { data: activeBookings }] = await Promise.all([
+    adminClient.from('pt_booking_availability').select('*').eq('is_active', true),
+    adminClient
+      .from('pt_booking_appointments')
+      .select('id, start_at, status')
+      .eq('client_id', client.id)
+      .in('status', ['scheduled', 'confirmed', 'cancellation_requested'])
+      .gt('start_at', new Date().toISOString()),
+  ]);
+
+  const availability = (availabilityRows ?? []) as AvailabilityRow[];
+  const activeHoldCount = (activeBookings ?? []).length;
+  if (client.sessions_remaining - activeHoldCount < starts.length) {
+    return json({ error: 'Not enough sessions left to book those slots.' }, 400);
+  }
+
+  const occurrences: Array<{ start: Date; end: Date; availability: AvailabilityRow }> = [];
+  for (const start of starts) {
+    validateBookingWindow(start);
+    const matching = matchingAvailability(start, availability);
+    if (!matching) return json({ error: `No availability for ${formatDateTime(start)}.` }, 400);
+    const end = new Date(start.getTime() + matching.slot_duration_minutes * 60000);
+    if (!slotFitsWindow(start, end, matching)) return json({ error: `Selected slot is outside Pedro's availability on ${formatDateTime(start)}.` }, 400);
+    occurrences.push({ start, end, availability: matching });
+  }
+
+  const rangeStart = new Date(Math.min(...occurrences.map((item) => item.start.getTime()))).toISOString();
+  const rangeEnd = new Date(Math.max(...occurrences.map((item) => item.end.getTime()))).toISOString();
+  const { data: blocks } = await adminClient
+    .from('pt_booking_blocks')
+    .select('start_at, end_at, status')
+    .eq('status', 'active')
+    .lt('start_at', rangeEnd)
+    .gt('end_at', rangeStart);
+
+  for (const occurrence of occurrences) {
+    const clash = (blocks ?? []).some((block: { start_at: string; end_at: string }) =>
+      occurrence.start.getTime() < new Date(block.end_at).getTime() && occurrence.end.getTime() > new Date(block.start_at).getTime(),
+    );
+    if (clash) return json({ error: `That slot is already taken: ${formatDateTime(occurrence.start)}.` }, 409);
+  }
+
+  const recurringGroupId = occurrences.length > 1 ? crypto.randomUUID() : null;
+  const created: AppointmentRow[] = [];
+  for (const occurrence of occurrences) {
+    const { data: appointment, error } = await adminClient
+      .from('pt_booking_appointments')
+      .insert({
+        client_id: client.id,
+        start_at: occurrence.start.toISOString(),
+        end_at: occurrence.end.toISOString(),
+        timezone: TIMEZONE,
+        status: 'confirmed',
+        source: recurringGroupId ? 'recurring' : isAdmin ? 'coach' : 'client',
+        recurring_group_id: recurringGroupId,
+        location: occurrence.availability.location,
+        confirmed_at: new Date().toISOString(),
+        created_by: userId,
+      })
+      .select('*')
+      .single();
+
+    if (error || !appointment) return json({ error: error?.message ?? 'Could not create booking.' }, 400);
+    const row = appointment as AppointmentRow;
+    created.push(row);
+
+    await adminClient.from('pt_booking_blocks').insert({
+      appointment_id: row.id,
+      start_at: row.start_at,
+      end_at: row.end_at,
+      status: 'active',
+    });
+    await adminClient.from('pt_session_ledger').insert({
+      client_id: client.id,
+      appointment_id: row.id,
+      entry_type: 'booking_hold',
+      quantity: -1,
+      balance_after: client.sessions_remaining,
+      notes: 'Credit held for future booking.',
+      created_by: userId,
+    });
+
+    const googleId = await syncGoogleCalendar('create', { appointment: row, client });
+    if (googleId) {
+      await adminClient.from('pt_booking_appointments').update({ google_calendar_event_id: googleId }).eq('id', row.id);
+      row.google_calendar_event_id = googleId;
+    }
+    await sendBookingEmail(adminClient, 'booking_confirmation', client, row);
+  }
+
+  await adminClient.from('pt_events').insert({
+    client_id: client.id,
+    event_type: 'session_booked',
+    metadata: {
+      count: created.length,
+      recurring_group_id: recurringGroupId,
+      first_start_at: created[0]?.start_at,
+    },
+  });
+
+  return json({ ok: true, appointments: created });
+}
+
+async function cancelBooking(adminClient: ReturnType<typeof createClient>, userId: string, isAdmin: boolean, body: RequestBody) {
+  if (!body.appointment_id) return json({ error: 'Missing appointment_id.' }, 400);
+  const appointment = await getAppointment(adminClient, body.appointment_id);
+  if (!appointment) return json({ error: 'Booking not found.' }, 404);
+
+  const client = appointment.pt_clients;
+  if (!client) return json({ error: 'Client not found.' }, 404);
+  if (!isAdmin && client.user_id !== userId) return json({ error: 'You cannot cancel this booking.' }, 403);
+
+  const startsWithin24Hours = new Date(appointment.start_at).getTime() - Date.now() < DAY_MS;
+  if (!isAdmin && startsWithin24Hours) {
+    if (!body.reason?.trim()) return json({ error: 'Cancellation reason is required inside 24 hours.' }, 400);
+    await adminClient.from('pt_booking_cancellation_requests').insert({
+      appointment_id: appointment.id,
+      client_id: appointment.client_id,
+      reason: body.reason.trim(),
+    });
+    await adminClient.from('pt_booking_appointments').update({
+      status: 'cancellation_requested',
+      cancel_reason: body.reason.trim(),
+      cancellation_requested_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', appointment.id);
+    await sendPedroNotice('Late cancellation request', `${client.name} requested to cancel ${formatDateTime(new Date(appointment.start_at))}.\n\nReason: ${body.reason.trim()}`);
+    return json({ ok: true, status: 'cancellation_requested' });
+  }
+
+  await applyCancellation(adminClient, userId, appointment, body.reason ?? (isAdmin ? 'Cancelled by Pedro.' : 'Cancelled by client.'));
+  await sendBookingEmail(adminClient, 'booking_cancelled', client, appointment);
+  return json({ ok: true, status: 'cancelled' });
+}
+
+async function completeBooking(adminClient: ReturnType<typeof createClient>, userId: string, body: RequestBody) {
+  if (!body.appointment_id) return json({ error: 'Missing appointment_id.' }, 400);
+  const appointment = await getAppointment(adminClient, body.appointment_id);
+  if (!appointment) return json({ error: 'Booking not found.' }, 404);
+  if (appointment.status === 'completed') return json({ ok: true, status: 'completed' });
+  const client = appointment.pt_clients;
+  if (!client) return json({ error: 'Client not found.' }, 404);
+
+  const nextBalance = Math.max(0, client.sessions_remaining - 1);
+  await adminClient.from('pt_booking_appointments').update({
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+    completed_by: userId,
+    notes: body.notes?.trim() || appointment.location,
+    updated_at: new Date().toISOString(),
+  }).eq('id', appointment.id);
+  await adminClient.from('pt_booking_blocks').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('appointment_id', appointment.id);
+  await adminClient.from('pt_clients').update({ sessions_remaining: nextBalance, updated_at: new Date().toISOString() }).eq('id', client.id);
+  await adminClient.from('pt_session_ledger').insert({
+    client_id: client.id,
+    appointment_id: appointment.id,
+    entry_type: 'session_completed',
+    quantity: -1,
+    balance_after: nextBalance,
+    notes: 'Session completed by Pedro.',
+    created_by: userId,
+  });
+  await adminClient.from('pt_events').insert({
+    client_id: client.id,
+    event_type: 'pt_session_completed',
+    metadata: { appointment_id: appointment.id, start_at: appointment.start_at, balance_after: nextBalance },
+  });
+
+  if ([2, 1, 0].includes(nextBalance)) {
+    await sendCreditEmail(adminClient, client, nextBalance);
+  }
+
+  return json({ ok: true, status: 'completed', sessions_remaining: nextBalance });
+}
+
+async function reviewCancellation(adminClient: ReturnType<typeof createClient>, userId: string, body: RequestBody) {
+  if (!body.appointment_id) return json({ error: 'Missing appointment_id.' }, 400);
+  const appointment = await getAppointment(adminClient, body.appointment_id);
+  if (!appointment) return json({ error: 'Booking not found.' }, 404);
+
+  const { data: request } = await adminClient
+    .from('pt_booking_cancellation_requests')
+    .select('*')
+    .eq('appointment_id', appointment.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!request) return json({ error: 'No pending cancellation request.' }, 404);
+
+  if (body.approved) {
+    await adminClient.from('pt_booking_cancellation_requests').update({
+      status: 'approved',
+      reviewed_by: userId,
+      reviewed_at: new Date().toISOString(),
+      review_note: body.review_note?.trim() || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', request.id);
+    await applyCancellation(adminClient, userId, appointment, request.reason);
+    if (appointment.pt_clients) await sendBookingEmail(adminClient, 'booking_cancelled', appointment.pt_clients, appointment);
+    return json({ ok: true, status: 'approved' });
+  }
+
+  await adminClient.from('pt_booking_cancellation_requests').update({
+    status: 'rejected',
+    reviewed_by: userId,
+    reviewed_at: new Date().toISOString(),
+    review_note: body.review_note?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', request.id);
+  await adminClient.from('pt_booking_appointments').update({
+    status: 'confirmed',
+    updated_at: new Date().toISOString(),
+  }).eq('id', appointment.id);
+  return json({ ok: true, status: 'rejected' });
+}
+
+async function applyCancellation(adminClient: ReturnType<typeof createClient>, userId: string, appointment: AppointmentRow, reason: string) {
+  await adminClient.from('pt_booking_appointments').update({
+    status: 'cancelled',
+    cancel_reason: reason,
+    cancelled_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('id', appointment.id);
+  await adminClient.from('pt_booking_blocks').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('appointment_id', appointment.id);
+  await adminClient.from('pt_session_ledger').insert({
+    client_id: appointment.client_id,
+    appointment_id: appointment.id,
+    entry_type: 'hold_released',
+    quantity: 1,
+    balance_after: appointment.pt_clients?.sessions_remaining ?? null,
+    notes: 'Future booking hold released.',
+    created_by: userId,
+  });
+  await syncGoogleCalendar('cancel', { appointment, client: appointment.pt_clients ?? null });
+}
+
+async function getClientForRequest(adminClient: ReturnType<typeof createClient>, userId: string, isAdmin: boolean, requestedClientId?: string) {
+  let query = adminClient.from('pt_clients').select('id, name, email, user_id, sessions_remaining').neq('status', 'archived');
+  query = isAdmin && requestedClientId ? query.eq('id', requestedClientId) : query.eq('user_id', userId);
+  const { data } = await query.limit(1).maybeSingle();
+  return data as PTClientRow | null;
+}
+
+async function getAppointment(adminClient: ReturnType<typeof createClient>, appointmentId: string) {
+  const { data } = await adminClient
+    .from('pt_booking_appointments')
+    .select('*, pt_clients(id, name, email, user_id, sessions_remaining)')
+    .eq('id', appointmentId)
+    .maybeSingle();
+  return data as AppointmentRow | null;
+}
+
+function validateBookingWindow(start: Date) {
+  const now = Date.now();
+  if (start.getTime() < now + MIN_NOTICE_MS) throw new Error('Bookings need at least 7 days notice.');
+  if (start.getTime() > now + HORIZON_MS) throw new Error('Bookings can only be made up to 28 days ahead.');
+}
+
+function matchingAvailability(start: Date, availability: AvailabilityRow[]) {
+  const local = localParts(start);
+  return availability.find((window) =>
+    window.day_of_week === local.dayOfWeek &&
+    local.minutes >= timeToMinutes(window.start_time) &&
+    local.minutes + window.slot_duration_minutes <= timeToMinutes(window.end_time),
+  );
+}
+
+function slotFitsWindow(start: Date, end: Date, window: AvailabilityRow) {
+  const startLocal = localParts(start);
+  const endLocal = localParts(end);
+  return startLocal.dayOfWeek === window.day_of_week &&
+    endLocal.dayOfWeek === window.day_of_week &&
+    startLocal.minutes >= timeToMinutes(window.start_time) &&
+    endLocal.minutes <= timeToMinutes(window.end_time);
+}
+
+function localParts(date: Date) {
+  const formatter = new Intl.DateTimeFormat('en-AU', {
+    timeZone: TIMEZONE,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const weekday = parts.find((part) => part.type === 'weekday')?.value ?? 'Mon';
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return { dayOfWeek: dayMap[weekday] ?? 1, minutes: hour * 60 + minute };
+}
+
+function timeToMinutes(value: string) {
+  const [hour, minute] = value.slice(0, 5).split(':').map(Number);
+  return hour * 60 + minute;
+}
+
+function formatDateTime(date: Date) {
+  return date.toLocaleString('en-AU', {
+    timeZone: TIMEZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointment: AppointmentRow; client: PTClientRow | null }) {
+  const webhook = Deno.env.get('GOOGLE_CALENDAR_SYNC_URL');
+  if (webhook) {
+    await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...input }),
+    });
+    return null;
+  }
+
+  const accessToken = Deno.env.get('GOOGLE_CALENDAR_ACCESS_TOKEN');
+  const calendarId = Deno.env.get('GOOGLE_CALENDAR_ID') ?? 'primary';
+  if (!accessToken) return null;
+
+  if (action === 'cancel' && input.appointment.google_calendar_event_id) {
+    await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.appointment.google_calendar_event_id)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return null;
+  }
+
+  if (action === 'create') {
+    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        summary: `PT Session - ${input.client?.name ?? 'Client'}`,
+        description: `Booked through Pedro Avila Coaching.${input.appointment.location ? `\nLocation: ${input.appointment.location}` : ''}`,
+        start: { dateTime: input.appointment.start_at, timeZone: TIMEZONE },
+        end: { dateTime: input.appointment.end_at, timeZone: TIMEZONE },
+        attendees: input.client?.email ? [{ email: input.client.email }] : [],
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { id?: string };
+    return data.id ?? null;
+  }
+
+  return null;
+}
+
+async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, type: 'booking_confirmation' | 'booking_cancelled', client: PTClientRow, appointment: AppointmentRow) {
+  const subject = type === 'booking_confirmation' ? 'Your PT session is booked' : 'Your PT session was cancelled';
+  const text = type === 'booking_confirmation'
+    ? `Hi ${client.name},\n\nYour session with Pedro is booked for ${formatDateTime(new Date(appointment.start_at))}.\n\nPedro`
+    : `Hi ${client.name},\n\nYour session with Pedro on ${formatDateTime(new Date(appointment.start_at))} has been cancelled.\n\nPedro`;
+  await sendEmail(client.email, subject, text);
+  await adminClient.from('pt_notification_log').insert({
+    client_id: client.id,
+    appointment_id: appointment.id,
+    notification_type: type,
+    recipient_email: client.email,
+    subject,
+  });
+}
+
+async function sendCreditEmail(adminClient: ReturnType<typeof createClient>, client: PTClientRow, balance: number) {
+  const subject = balance === 0 ? 'You have no PT sessions left' : `You have ${balance} PT session${balance === 1 ? '' : 's'} left`;
+  const text = balance === 0
+    ? `Hi ${client.name},\n\nYou have no PT sessions left with Pedro. Bookings are paused until another pack is added.\n\nPedro`
+    : `Hi ${client.name},\n\nYou have ${balance} PT session${balance === 1 ? '' : 's'} left with Pedro.\n\nPedro`;
+  await sendEmail(client.email, subject, text);
+  await adminClient.from('pt_notification_log').insert({
+    client_id: client.id,
+    notification_type: `sessions_left_${balance}`,
+    recipient_email: client.email,
+    subject,
+  });
+}
+
+async function sendPedroNotice(subject: string, text: string) {
+  await sendEmail(Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com', subject, text);
+}
+
+async function sendEmail(to: string, subject: string, text: string) {
+  const resendKey = Deno.env.get('RESEND_API_KEY');
+  if (!resendKey) return;
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ?? 'Pedro Avila Coaching <onboarding@resend.dev>',
+      to,
+      subject,
+      text,
+    }),
+  });
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}

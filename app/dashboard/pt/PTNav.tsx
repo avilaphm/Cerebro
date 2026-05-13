@@ -8,6 +8,7 @@ const NAV = [
   { label: 'Messages',    href: '/dashboard/pt/messages' },
   { label: 'Groups',      href: '/dashboard/pt/groups' },
   { label: 'Clients',     href: '/dashboard/pt/clients' },
+  { label: 'Bookings',    href: '/dashboard/pt/bookings' },
   { label: 'Programmes',  href: '/dashboard/pt/programmes' },
   { label: 'Emails',      href: '/dashboard/pt/emails' },
   { label: 'Settings',    href: '/dashboard/pt/settings' },
