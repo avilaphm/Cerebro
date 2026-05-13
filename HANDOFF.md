@@ -4,7 +4,7 @@
 2026-05-13 by codex
 
 ## Last completed task
-Refined premium client dashboard UX and booking calendar.
+Restored Google Calendar-style booking views.
 
 ## Last commit
 refine premium client dashboard ux
@@ -14,6 +14,10 @@ refine premium client dashboard ux
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped in this session:
+- Restored the client booking calendar as a true visual calendar instead of a compact slot list.
+- Client Tools now uses Google Calendar-style day/week time grids with a left time rail, hour lines, and positioned Available/Busy/Yours blocks.
+- Client monthly view now shows compact event bars inside day cells, with day/week/month toggles above the calendar.
+- Coach `/dashboard/pt/bookings` now uses the same day/week/month calendar language, with client names visible on appointment blocks and a selected appointment action panel.
 - Installed two UI/UX Codex skills from GitHub for future sessions: `ui-design` and `ui-ux-design-pro`. Restart Codex before relying on them as named skills.
 - Fixed the client portal scroll shell by using a stable viewport-height app container, an internal scroll pane, and extra bottom padding above the floating nav.
 - Raised the client footer nav off the bottom safe area and moved the client message bubble to the top right.

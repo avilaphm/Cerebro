@@ -121,6 +121,9 @@ interface MetricDraft {
 
 type ClientScreen = 'overview' | 'workout' | 'tools';
 type BookingCalendarView = 'day' | 'week' | 'month';
+const BOOKING_CALENDAR_START_HOUR = 6;
+const BOOKING_CALENDAR_END_HOUR = 14;
+const BOOKING_HOUR_HEIGHT = 72;
 
 const emptyWeeklyReset: WeeklyResetDraft = {
   availability: '',
@@ -255,6 +258,11 @@ function startOfWeek(date: Date) {
 
 function bookingWithin24Hours(booking: PTBookingAppointment) {
   return new Date(booking.start_at).getTime() - Date.now() < 24 * 60 * 60 * 1000;
+}
+
+function calendarOffsetMinutes(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return (date.getHours() - BOOKING_CALENDAR_START_HOUR) * 60 + date.getMinutes();
 }
 
 function generateBookableSlots(
@@ -691,15 +699,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const bookingById = useMemo(() => {
     const map = new Map<string, PTBookingAppointment>();
     activeBookings.forEach((booking) => map.set(booking.id, booking));
-    return map;
-  }, [activeBookings]);
-  const bookingsByDate = useMemo(() => {
-    const map = new Map<string, PTBookingAppointment[]>();
-    activeBookings.forEach((booking) => {
-      const key = calendarDateKey(booking.start_at);
-      map.set(key, [...(map.get(key) ?? []), booking]);
-    });
-    map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
     return map;
   }, [activeBookings]);
   const pendingCancellationIds = new Set(
@@ -2041,26 +2040,113 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       setBookingDate((current) => addDays(current, bookingView === 'week' ? direction * 7 : direction));
     };
 
-    const renderSlotButton = (slot: PTBookableSlot) => (
-      <button
-        key={slot.start_at}
-        type="button"
-        onClick={() => openBookingSlot(slot)}
-        disabled={!slot.available && slot.reason !== 'You booked this'}
-        className={`flex min-h-11 items-center justify-between gap-3 border px-3 py-2 text-left text-sm transition-colors ${
-          selectedSlot?.start_at === slot.start_at
-            ? 'border-black bg-black text-white'
-            : slot.reason === 'You booked this'
-              ? 'border-black bg-black text-white hover:bg-black/80'
-              : slot.available
-                ? 'border-black/10 bg-white text-black hover:border-black/35'
-                : 'border-black/5 bg-black/[0.035] text-black/30'
-        }`}
-      >
-        <span className="font-medium">{formatBookingTime(slot.start_at)}</span>
-        <span className="text-xs opacity-70">{slot.available ? 'Available' : slot.reason === 'You booked this' ? 'Yours' : 'Busy'}</span>
-      </button>
+    const renderCalendarSlot = (slot: PTBookableSlot, compact = false) => {
+      const duration = Math.max(25, (new Date(slot.end_at).getTime() - new Date(slot.start_at).getTime()) / 60000);
+      const top = Math.max(0, (calendarOffsetMinutes(slot.start_at) / 60) * BOOKING_HOUR_HEIGHT);
+      const height = Math.max(34, (duration / 60) * BOOKING_HOUR_HEIGHT);
+      const isOwn = slot.reason === 'You booked this';
+      const isSelected = selectedSlot?.start_at === slot.start_at || selectedBooking?.id === slot.booking_id;
+
+      return (
+        <button
+          key={slot.start_at}
+          type="button"
+          onClick={() => openBookingSlot(slot)}
+          disabled={!slot.available && !isOwn}
+          style={{ top, height }}
+          className={`absolute inset-x-1 overflow-hidden border px-2 py-1 text-left transition-colors ${
+            isSelected
+              ? 'border-black bg-black text-white'
+              : isOwn
+                ? 'border-black bg-black text-white hover:bg-black/80'
+                : slot.available
+                  ? 'border-black/12 bg-white text-black shadow-[0_12px_22px_-20px_rgba(0,0,0,0.55)] hover:border-black/35'
+                  : 'border-black/6 bg-black/[0.08] text-black/35'
+          }`}
+        >
+          <span className={`block truncate font-medium ${compact ? 'text-[0.72rem]' : 'text-sm'}`}>
+            {isOwn ? 'Yours' : slot.available ? 'Available' : 'Busy'}
+          </span>
+          {!compact && (
+            <span className="mt-0.5 block truncate text-xs opacity-70">
+              {formatBookingTime(slot.start_at)} - {formatBookingTime(slot.end_at)}
+            </span>
+          )}
+        </button>
+      );
+    };
+
+    const renderCalendarRail = (days: Date[]) => (
+      <div className="mt-5 overflow-x-auto border border-black/10 bg-white">
+        <div className="min-w-[44rem]">
+          <div className="grid border-b border-black/10" style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}>
+            <div className="bg-[#fbfbf8]" />
+            {days.map((day) => {
+              const isToday = calendarDateKey(day) === todayInputValue();
+              return (
+                <div key={calendarDateKey(day)} className="border-l border-black/10 bg-[#fbfbf8] px-3 py-3 text-center">
+                  <p className="text-[0.65rem] uppercase tracking-[0.12em] text-black/35">{day.toLocaleDateString('en-AU', { weekday: 'short' })}</p>
+                  <p className={`mx-auto mt-1 flex h-8 w-8 items-center justify-center rounded-full text-lg font-light ${isToday ? 'bg-black text-white' : 'text-black/70'}`}>
+                    {day.getDate()}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))`,
+              height: (BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR) * BOOKING_HOUR_HEIGHT,
+            }}
+          >
+            <div className="relative bg-white">
+              {Array.from({ length: BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR + 1 }, (_, index) => {
+                const hour = BOOKING_CALENDAR_START_HOUR + index;
+                return (
+                  <div key={hour} className="absolute right-2 -translate-y-1/2 text-xs text-black/35" style={{ top: index * BOOKING_HOUR_HEIGHT }}>
+                    {new Date(2026, 0, 1, hour).toLocaleTimeString('en-AU', { hour: 'numeric' })}
+                  </div>
+                );
+              })}
+            </div>
+            {days.map((day) => {
+              const key = calendarDateKey(day);
+              const daySlots = slotsByDate.get(key) ?? [];
+              return (
+                <div key={key} className="relative border-l border-black/10">
+                  {Array.from({ length: BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR + 1 }, (_, index) => (
+                    <div key={index} className="absolute inset-x-0 border-t border-black/10" style={{ top: index * BOOKING_HOUR_HEIGHT }} />
+                  ))}
+                  {daySlots.map((slot) => renderCalendarSlot(slot, days.length > 1))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     );
+
+    const renderMonthSlot = (slot: PTBookableSlot) => {
+      const isOwn = slot.reason === 'You booked this';
+      return (
+        <button
+          key={slot.start_at}
+          type="button"
+          onClick={() => openBookingSlot(slot)}
+          disabled={!slot.available && !isOwn}
+          className={`w-full truncate px-2 py-1 text-left text-[0.68rem] font-medium ${
+            isOwn
+              ? 'bg-black text-white'
+              : slot.available
+                ? 'bg-white text-black'
+                : 'bg-black/[0.08] text-black/35'
+          }`}
+        >
+          {formatBookingTime(slot.start_at)} {isOwn ? 'Yours' : slot.available ? 'Open' : 'Busy'}
+        </button>
+      );
+    };
 
     return (
       <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
@@ -2143,35 +2229,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
             </p>
           ) : bookingView === 'day' ? (
-            <div className="mt-5 grid gap-2">
-              {selectedDaySlots.length > 0 ? selectedDaySlots.map(renderSlotButton) : (
-                <p className="border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
-                  No bookable windows on this day.
-                </p>
-              )}
-            </div>
+            selectedDaySlots.length > 0 ? renderCalendarRail([bookingDate]) : (
+              <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
+                No bookable windows on this day.
+              </p>
+            )
           ) : bookingView === 'week' ? (
-            <div className="mt-5 grid gap-3 md:grid-cols-7">
-              {bookingWeekDays.map((day) => {
-                const key = calendarDateKey(day);
-                const daySlots = slotsByDate.get(key) ?? [];
-                return (
-                  <div key={key} className="border border-black/10 bg-[#fbfbf8] p-2">
-                    <div className="mb-2">
-                      <p className="text-[0.62rem] uppercase tracking-[0.12em] text-black/35">
-                        {day.toLocaleDateString('en-AU', { weekday: 'short' })}
-                      </p>
-                      <p className="text-sm font-medium">{day.getDate()}</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      {daySlots.length > 0 ? daySlots.map(renderSlotButton) : (
-                        <p className="py-4 text-xs text-black/30">No slots</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            renderCalendarRail(bookingWeekDays)
           ) : (
             <div className="mt-5 grid grid-cols-7 border-l border-t border-black/10 bg-white">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
@@ -2182,25 +2246,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               {calendarDays.map((day) => {
                 const key = calendarDateKey(day);
                 const inMonth = day.getMonth() === bookingMonth.getMonth();
-                const dayBookings = bookingsByDate.get(key) ?? [];
+                const daySlots = slotsByDate.get(key) ?? [];
                 return (
-                  <div key={key} className={`min-h-20 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
+                  <div key={key} className={`min-h-28 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
                     <span className="text-xs font-medium">{day.getDate()}</span>
                     <div className="mt-2 space-y-1">
-                      {dayBookings.map((booking) => (
-                        <button
-                          key={booking.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedBooking(booking);
-                            setSelectedSlot(null);
-                            setBookingReason('');
-                          }}
-                          className="w-full truncate border border-black bg-black px-2 py-1 text-left text-[0.68rem] text-white"
-                        >
-                          {formatBookingTime(booking.start_at)}
-                        </button>
-                      ))}
+                      {daySlots.slice(0, 4).map(renderMonthSlot)}
+                      {daySlots.length > 4 && <p className="text-[0.65rem] text-black/35">+{daySlots.length - 4} more</p>}
                     </div>
                   </div>
                 );

@@ -15,6 +15,10 @@ import { formatBookingDate, formatBookingTime } from '@/utils/pt/bookings';
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const FIELD_CLASS = 'w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-black/35 disabled:opacity-40';
 const ACTIVE_STATUSES: PTBookingStatus[] = ['scheduled', 'confirmed', 'cancellation_requested'];
+type BookingCalendarView = 'day' | 'week' | 'month';
+const COACH_CALENDAR_START_HOUR = 6;
+const COACH_CALENDAR_END_HOUR = 18;
+const COACH_HOUR_HEIGHT = 72;
 
 function todayInputValue() {
   const now = new Date();
@@ -27,9 +31,27 @@ function addDaysInput(days: number) {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
 }
 
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
 function dateKey(value: Date | string) {
   const date = typeof value === 'string' ? new Date(value) : value;
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function startOfWeek(date: Date) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  value.setDate(value.getDate() - value.getDay());
+  return value;
+}
+
+function calendarOffsetMinutes(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return (date.getHours() - COACH_CALENDAR_START_HOUR) * 60 + date.getMinutes();
 }
 
 export default function PTBookingsView() {
@@ -56,6 +78,9 @@ export default function PTBookingsView() {
     date.setDate(1);
     return date;
   });
+  const [calendarView, setCalendarView] = useState<BookingCalendarView>('week');
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
+  const [selectedAppointment, setSelectedAppointment] = useState<PTBookingAppointment | null>(null);
   const [bookingDraft, setBookingDraft] = useState({
     client_id: '',
     start_at: `${addDaysInput(2)}T07:00`,
@@ -130,6 +155,10 @@ export default function PTBookingsView() {
       return date;
     });
   }, [calendarMonth]);
+  const calendarWeekDays = useMemo(() => {
+    const start = startOfWeek(calendarDate);
+    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  }, [calendarDate]);
   const lowCreditClients = clients.filter((client) => client.sessions_remaining <= 2).sort((a, b) => a.sessions_remaining - b.sessions_remaining);
 
   const addAvailability = async () => {
@@ -235,6 +264,105 @@ export default function PTBookingsView() {
     setBusy(null);
   };
 
+  const moveCalendar = (direction: -1 | 1) => {
+    setSelectedAppointment(null);
+    if (calendarView === 'month') {
+      setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
+      return;
+    }
+    setCalendarDate((current) => addDays(current, calendarView === 'week' ? direction * 7 : direction));
+  };
+
+  const calendarTitle =
+    calendarView === 'day'
+      ? calendarDate.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })
+      : calendarView === 'week'
+        ? `${formatBookingDate(calendarWeekDays[0])} - ${formatBookingDate(calendarWeekDays[6])}`
+        : calendarMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+
+  const renderAppointmentBlock = (appointment: PTBookingAppointment, compact = false) => {
+    const duration = Math.max(25, (new Date(appointment.end_at).getTime() - new Date(appointment.start_at).getTime()) / 60000);
+    const top = Math.max(0, (calendarOffsetMinutes(appointment.start_at) / 60) * COACH_HOUR_HEIGHT);
+    const height = Math.max(36, (duration / 60) * COACH_HOUR_HEIGHT);
+    const isRequest = appointment.status === 'cancellation_requested';
+
+    return (
+      <button
+        key={appointment.id}
+        type="button"
+        onClick={() => setSelectedAppointment(appointment)}
+        style={{ top, height }}
+        className={`absolute inset-x-1 overflow-hidden border px-2 py-1 text-left transition-colors ${
+          selectedAppointment?.id === appointment.id
+            ? 'border-black bg-black text-white'
+            : isRequest
+              ? 'border-amber-300 bg-amber-100 text-amber-900'
+              : 'border-black/10 bg-white text-black shadow-[0_12px_22px_-20px_rgba(0,0,0,0.55)] hover:border-black/35'
+        }`}
+      >
+        <span className={`block truncate font-medium ${compact ? 'text-[0.72rem]' : 'text-sm'}`}>
+          {appointment.pt_clients?.name ?? 'Client'}
+        </span>
+        {!compact && (
+          <span className="mt-0.5 block truncate text-xs opacity-70">
+            {formatBookingTime(appointment.start_at)} - {formatBookingTime(appointment.end_at)}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const renderCoachCalendarRail = (days: Date[]) => (
+    <div className="mt-5 overflow-x-auto border border-black/10 bg-white">
+      <div className="min-w-[48rem]">
+        <div className="grid border-b border-black/10" style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}>
+          <div className="bg-[#fbfbf8]" />
+          {days.map((day) => {
+            const isToday = dateKey(day) === todayInputValue();
+            return (
+              <div key={dateKey(day)} className="border-l border-black/10 bg-[#fbfbf8] px-3 py-3 text-center">
+                <p className="text-[0.65rem] uppercase tracking-[0.12em] text-black/35">{day.toLocaleDateString('en-AU', { weekday: 'short' })}</p>
+                <p className={`mx-auto mt-1 flex h-8 w-8 items-center justify-center rounded-full text-lg font-light ${isToday ? 'bg-black text-white' : 'text-black/70'}`}>
+                  {day.getDate()}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        <div
+          className="grid"
+          style={{
+            gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))`,
+            height: (COACH_CALENDAR_END_HOUR - COACH_CALENDAR_START_HOUR) * COACH_HOUR_HEIGHT,
+          }}
+        >
+          <div className="relative bg-white">
+            {Array.from({ length: COACH_CALENDAR_END_HOUR - COACH_CALENDAR_START_HOUR + 1 }, (_, index) => {
+              const hour = COACH_CALENDAR_START_HOUR + index;
+              return (
+                <div key={hour} className="absolute right-2 -translate-y-1/2 text-xs text-black/35" style={{ top: index * COACH_HOUR_HEIGHT }}>
+                  {new Date(2026, 0, 1, hour).toLocaleTimeString('en-AU', { hour: 'numeric' })}
+                </div>
+              );
+            })}
+          </div>
+          {days.map((day) => {
+            const key = dateKey(day);
+            const dayAppointments = appointmentsByDate.get(key) ?? [];
+            return (
+              <div key={key} className="relative border-l border-black/10">
+                {Array.from({ length: COACH_CALENDAR_END_HOUR - COACH_CALENDAR_START_HOUR + 1 }, (_, index) => (
+                  <div key={index} className="absolute inset-x-0 border-t border-black/10" style={{ top: index * COACH_HOUR_HEIGHT }} />
+                ))}
+                {dayAppointments.map((appointment) => renderAppointmentBlock(appointment, days.length > 1))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[#f7f7f3] p-6 md:p-8">
       <div className="max-w-7xl">
@@ -271,59 +399,110 @@ export default function PTBookingsView() {
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
               <section className="space-y-6">
-	                <div className="border border-black/10 bg-white p-4">
-	                  <div className="mb-4 flex items-center justify-between">
-	                    <div>
-	                      <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Calendar</p>
-	                      <h2 className="mt-1 text-lg font-medium">{calendarMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}</h2>
-	                    </div>
-	                    <div className="flex items-center gap-2">
-	                      <button type="button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} className="inline-flex h-9 w-9 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black" aria-label="Previous month">
-	                        <ChevronLeft size={16} />
-	                      </button>
-	                      <button type="button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} className="inline-flex h-9 w-9 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black" aria-label="Next month">
-	                        <ChevronRight size={16} />
-	                      </button>
-	                    </div>
-	                  </div>
-	                  <div className="grid grid-cols-7 border-l border-t border-black/10">
-	                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-	                      <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
-	                        {day}
-	                      </div>
-	                    ))}
-	                    {calendarDays.map((day) => {
-	                      const key = dateKey(day);
-	                      const dayAppointments = appointmentsByDate.get(key) ?? [];
-	                      const inMonth = day.getMonth() === calendarMonth.getMonth();
-	                      return (
-	                        <div key={key} className={`min-h-32 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
-	                          <div className="mb-2 flex items-center justify-between">
-	                            <span className="text-xs font-medium">{day.getDate()}</span>
-	                            {dayAppointments.length > 0 && <Clock size={13} className="text-black/35" />}
-	                          </div>
-	                          <div className="space-y-1">
-	                            {dayAppointments.slice(0, 4).map((appointment) => (
-	                              <div key={appointment.id} className="border border-black/10 bg-white px-2 py-1.5">
-	                                <p className="truncate text-[0.68rem] font-medium">{formatBookingTime(appointment.start_at)} · {appointment.pt_clients?.name ?? 'Client'}</p>
-	                                <p className="truncate text-[0.62rem] text-black/35">{appointment.status.replace(/_/g, ' ')}{appointment.location ? ` · ${appointment.location}` : ''}</p>
-	                                <div className="mt-1 flex gap-1">
-	                                  <button type="button" onClick={() => void completeAppointment(appointment.id)} disabled={busy === appointment.id} className="border border-black bg-black px-1.5 py-1 text-[0.58rem] text-white disabled:opacity-40">
-	                                    Done
-	                                  </button>
-	                                  <button type="button" onClick={() => void cancelAppointment(appointment.id)} disabled={busy === appointment.id} className="border border-black/10 px-1.5 py-1 text-[0.58rem] text-black/45 hover:text-red-700 disabled:opacity-40">
-	                                    Cancel
-	                                  </button>
-	                                </div>
-	                              </div>
-	                            ))}
-	                            {dayAppointments.length > 4 && <p className="text-[0.65rem] text-black/35">+{dayAppointments.length - 4} more</p>}
-	                          </div>
-	                        </div>
-	                      );
-	                    })}
-	                  </div>
-	                </div>
+                <div className="border border-black/10 bg-white p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div>
+                      <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Calendar</p>
+                      <h2 className="mt-1 text-lg font-medium">{calendarTitle}</h2>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-grid grid-cols-3 border border-black/10 bg-[#fbfbf8] p-1">
+                        {(['day', 'week', 'month'] as BookingCalendarView[]).map((view) => (
+                          <button
+                            key={view}
+                            type="button"
+                            onClick={() => {
+                              setCalendarView(view);
+                              setSelectedAppointment(null);
+                            }}
+                            className={`px-3 py-2 text-xs font-medium uppercase tracking-[0.08em] transition-colors ${
+                              calendarView === view ? 'bg-black text-white' : 'text-black/45 hover:text-black'
+                            }`}
+                          >
+                            {view}
+                          </button>
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => moveCalendar(-1)} className="inline-flex h-10 w-10 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black" aria-label="Previous calendar range">
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button type="button" onClick={() => moveCalendar(1)} className="inline-flex h-10 w-10 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black" aria-label="Next calendar range">
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {calendarView === 'day' ? (
+                    renderCoachCalendarRail([calendarDate])
+                  ) : calendarView === 'week' ? (
+                    renderCoachCalendarRail(calendarWeekDays)
+                  ) : (
+                    <div className="mt-5 grid grid-cols-7 border-l border-t border-black/10">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                        <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
+                          {day}
+                        </div>
+                      ))}
+                      {calendarDays.map((day) => {
+                        const key = dateKey(day);
+                        const dayAppointments = appointmentsByDate.get(key) ?? [];
+                        const inMonth = day.getMonth() === calendarMonth.getMonth();
+                        return (
+                          <div key={key} className={`min-h-32 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
+                            <div className="mb-2 flex items-center justify-between">
+                              <span className="text-xs font-medium">{day.getDate()}</span>
+                              {dayAppointments.length > 0 && <Clock size={13} className="text-black/35" />}
+                            </div>
+                            <div className="space-y-1">
+                              {dayAppointments.slice(0, 5).map((appointment) => (
+                                <button
+                                  key={appointment.id}
+                                  type="button"
+                                  onClick={() => setSelectedAppointment(appointment)}
+                                  className={`w-full truncate px-2 py-1 text-left text-[0.68rem] font-medium ${
+                                    appointment.status === 'cancellation_requested'
+                                      ? 'bg-amber-100 text-amber-900'
+                                      : 'bg-white text-black'
+                                  }`}
+                                >
+                                  {formatBookingTime(appointment.start_at)} · {appointment.pt_clients?.name ?? 'Client'}
+                                </button>
+                              ))}
+                              {dayAppointments.length > 5 && <p className="text-[0.65rem] text-black/35">+{dayAppointments.length - 5} more</p>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {selectedAppointment && (
+                    <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{selectedAppointment.pt_clients?.name ?? 'Client'}</p>
+                          <p className="mt-1 text-xs text-black/45">
+                            {formatBookingDate(selectedAppointment.start_at)} · {formatBookingTime(selectedAppointment.start_at)} - {formatBookingTime(selectedAppointment.end_at)}
+                          </p>
+                          <p className="mt-1 text-xs text-black/45">
+                            {selectedAppointment.status.replace(/_/g, ' ')}{selectedAppointment.location ? ` · ${selectedAppointment.location}` : ''}
+                          </p>
+                        </div>
+                        <button type="button" onClick={() => setSelectedAppointment(null)} className="text-xs text-black/35 underline-offset-2 hover:text-black hover:underline">
+                          Close
+                        </button>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <button type="button" onClick={() => void completeAppointment(selectedAppointment.id)} disabled={busy === selectedAppointment.id} className="border border-black bg-black px-3 py-2 text-xs text-white hover:bg-white hover:text-black disabled:opacity-40">
+                          Mark done
+                        </button>
+                        <button type="button" onClick={() => void cancelAppointment(selectedAppointment.id)} disabled={busy === selectedAppointment.id} className="border border-black/10 bg-white px-3 py-2 text-xs text-black/55 hover:border-red-300 hover:text-red-700 disabled:opacity-40">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {requests.length > 0 && (
                   <div className="border border-amber-200 bg-amber-50 p-4">
