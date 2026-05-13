@@ -18,6 +18,8 @@ export interface PTBookingAvailability {
   start_time: string;
   end_time: string;
   slot_duration_minutes: number;
+  session_duration_minutes: number;
+  buffer_minutes: number;
   location: string | null;
   label: string | null;
   is_active: boolean;
@@ -104,8 +106,10 @@ export interface PTBookableSlot {
 }
 
 export const PT_BOOKING_TIMEZONE = 'Australia/Sydney';
-export const PT_BOOKING_MIN_NOTICE_DAYS = 7;
+export const PT_BOOKING_MIN_NOTICE_HOURS = 48;
 export const PT_BOOKING_HORIZON_DAYS = 28;
+export const PT_BOOKING_SESSION_MINUTES = 45;
+export const PT_BOOKING_BUFFER_MINUTES = 5;
 
 export const ACTIVE_BOOKING_STATUSES: PTBookingStatus[] = ['scheduled', 'confirmed', 'cancellation_requested'];
 

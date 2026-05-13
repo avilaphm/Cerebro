@@ -9,7 +9,7 @@ import { isPedroAdminEmail } from '@/utils/pt/access';
 import {
   ACTIVE_BOOKING_STATUSES,
   PT_BOOKING_HORIZON_DAYS,
-  PT_BOOKING_MIN_NOTICE_DAYS,
+  PT_BOOKING_MIN_NOTICE_HOURS,
   activeBookingHoldCount,
   addDays,
   availableSessionCredits,
@@ -232,6 +232,19 @@ function timeToMinutes(value: string) {
   return hour * 60 + minute;
 }
 
+function slotSessionMinutes(window: PTBookingAvailability) {
+  return Number(window.session_duration_minutes ?? 45);
+}
+
+function slotStepMinutes(window: PTBookingAvailability) {
+  return slotSessionMinutes(window) + Number(window.buffer_minutes ?? Math.max(0, window.slot_duration_minutes - slotSessionMinutes(window)));
+}
+
+function calendarDateKey(date: Date | string) {
+  const value = typeof date === 'string' ? new Date(date) : date;
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
 function generateBookableSlots(
   availability: PTBookingAvailability[],
   blocks: PTBookingBlock[],
@@ -239,19 +252,20 @@ function generateBookableSlots(
   canBook: boolean,
 ): PTBookableSlot[] {
   const now = new Date();
-  const minDate = addDays(now, PT_BOOKING_MIN_NOTICE_DAYS);
+  const minDate = new Date(now.getTime() + PT_BOOKING_MIN_NOTICE_HOURS * 60 * 60 * 1000);
   const maxDate = addDays(now, PT_BOOKING_HORIZON_DAYS);
   const slots: PTBookableSlot[] = [];
 
-  for (let offset = PT_BOOKING_MIN_NOTICE_DAYS; offset <= PT_BOOKING_HORIZON_DAYS; offset++) {
+  for (let offset = 0; offset <= PT_BOOKING_HORIZON_DAYS; offset++) {
     const day = addDays(now, offset);
     const windows = availability.filter((window) => window.day_of_week === day.getDay() && window.is_active);
     windows.forEach((window) => {
-      const duration = window.slot_duration_minutes;
+      const duration = slotSessionMinutes(window);
+      const step = slotStepMinutes(window);
       for (
         let minute = timeToMinutes(window.start_time);
         minute + duration <= timeToMinutes(window.end_time);
-        minute += duration
+        minute += step
       ) {
         const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minute / 60), minute % 60);
         const end = new Date(start.getTime() + duration * 60000);
@@ -379,6 +393,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [bookingBlocks, setBookingBlocks] = useState<PTBookingBlock[]>([]);
   const [cancellationRequests, setCancellationRequests] = useState<PTBookingCancellationRequest[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<PTBookableSlot | null>(null);
+  const [bookingMonth, setBookingMonth] = useState(() => {
+    const date = new Date();
+    date.setDate(1);
+    return date;
+  });
   const [recurringWeeks, setRecurringWeeks] = useState('1');
   const [bookingReason, setBookingReason] = useState('');
   const [bookingBusy, setBookingBusy] = useState(false);
@@ -629,7 +648,25 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, availableCredits > 0),
     [availableCredits, bookingAvailability, bookingBlocks, bookings],
   );
-  const availableSlots = bookableSlots.filter((slot) => slot.available);
+  const slotsByDate = useMemo(() => {
+    const map = new Map<string, PTBookableSlot[]>();
+    bookableSlots.forEach((slot) => {
+      const key = calendarDateKey(slot.start_at);
+      map.set(key, [...(map.get(key) ?? []), slot]);
+    });
+    map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
+    return map;
+  }, [bookableSlots]);
+  const calendarDays = useMemo(() => {
+    const first = new Date(bookingMonth.getFullYear(), bookingMonth.getMonth(), 1);
+    const start = new Date(first);
+    start.setDate(first.getDate() - first.getDay());
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      return date;
+    });
+  }, [bookingMonth]);
   const pendingCancellationIds = new Set(
     cancellationRequests
       .filter((request) => request.status === 'pending')
@@ -1952,32 +1989,80 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Book Pedro</p>
-            <h2 className="mt-1 font-display text-2xl font-light">Available slots</h2>
+            <h2 className="mt-1 font-display text-2xl font-light">Calendar</h2>
           </div>
-          <p className="text-xs text-black/40">7 to 28 days ahead</p>
+          <p className="text-xs text-black/40">48 hours to 28 days ahead</p>
         </div>
 
-        {availableSlots.length === 0 ? (
+        {bookableSlots.length === 0 ? (
           <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
             {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
           </p>
         ) : (
-          <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {availableSlots.slice(0, 24).map((slot) => (
+          <div className="mt-5">
+            <div className="mb-3 flex items-center justify-between">
               <button
-                key={slot.start_at}
                 type="button"
-                onClick={() => setSelectedSlot(slot)}
-                className={`border px-3 py-3 text-left transition-colors ${
-                  selectedSlot?.start_at === slot.start_at
-                    ? 'border-black bg-black text-white'
-                    : 'border-black/10 bg-[#fbfbf8] text-black hover:border-black/30 hover:bg-white'
-                }`}
+                onClick={() => setBookingMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
+                className="inline-flex h-9 w-9 items-center justify-center border border-black/10 bg-white text-black/45 hover:border-black/30 hover:text-black"
+                aria-label="Previous month"
               >
-                <p className="text-sm font-medium">{formatBookingDate(slot.start_at)}</p>
-                <p className="mt-1 text-xs opacity-65">{formatBookingTime(slot.start_at)}{slot.location ? ` · ${slot.location}` : ''}</p>
+                <ChevronLeft className="h-4 w-4" />
               </button>
-            ))}
+              <p className="text-sm font-medium">
+                {bookingMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+              </p>
+              <button
+                type="button"
+                onClick={() => setBookingMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
+                className="inline-flex h-9 w-9 items-center justify-center border border-black/10 bg-white text-black/45 hover:border-black/30 hover:text-black"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-7 border-l border-t border-black/10 bg-white">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
+                  {day}
+                </div>
+              ))}
+              {calendarDays.map((day) => {
+                const key = calendarDateKey(day);
+                const daySlots = slotsByDate.get(key) ?? [];
+                const inMonth = day.getMonth() === bookingMonth.getMonth();
+                return (
+                  <div key={key} className={`min-h-28 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-medium">{day.getDate()}</span>
+                      {daySlots.some((slot) => slot.available) && <span className="h-1.5 w-1.5 rounded-full bg-green-600" />}
+                    </div>
+                    <div className="space-y-1">
+                      {daySlots.slice(0, 4).map((slot) => (
+                        <button
+                          key={slot.start_at}
+                          type="button"
+                          onClick={() => slot.available && setSelectedSlot(slot)}
+                          disabled={!slot.available}
+                          className={`w-full truncate border px-2 py-1 text-left text-[0.68rem] transition-colors ${
+                            selectedSlot?.start_at === slot.start_at
+                              ? 'border-black bg-black text-white'
+                              : slot.available
+                                ? 'border-green-200 bg-white text-black hover:border-black/30'
+                                : slot.reason === 'You booked this'
+                                  ? 'border-black/10 bg-black text-white'
+                                  : 'border-black/5 bg-black/[0.04] text-black/30'
+                          }`}
+                        >
+                          {formatBookingTime(slot.start_at)} {slot.available ? '' : slot.reason === 'You booked this' ? 'Yours' : 'Busy'}
+                        </button>
+                      ))}
+                      {daySlots.length > 4 && <p className="text-[0.65rem] text-black/35">+{daySlots.length - 4} more</p>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

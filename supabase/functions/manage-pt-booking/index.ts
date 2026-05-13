@@ -8,11 +8,12 @@ const corsHeaders = {
 
 const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au'];
 const TIMEZONE = 'Australia/Sydney';
-const MIN_NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
+const INTERNAL_SECRET_FALLBACK = 'cerebro-cron-2026';
+const MIN_NOTICE_MS = 48 * 60 * 60 * 1000;
 const HORIZON_MS = 28 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type Action = 'create' | 'cancel' | 'complete' | 'review_cancellation';
+type Action = 'create' | 'cancel' | 'complete' | 'review_cancellation' | 'send_weekly_reminders';
 type BookingStatus = 'scheduled' | 'confirmed' | 'cancellation_requested' | 'completed' | 'cancelled' | 'no_show';
 
 interface RequestBody {
@@ -41,6 +42,8 @@ interface AvailabilityRow {
   start_time: string;
   end_time: string;
   slot_duration_minutes: number;
+  session_duration_minutes?: number;
+  buffer_minutes?: number;
   location: string | null;
   label: string | null;
 }
@@ -62,13 +65,21 @@ Deno.serve(async (req: Request) => {
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return json({ error: 'Missing authorization.' }, 401);
-
     const url = Deno.env.get('SUPABASE_URL')!;
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
     const adminClient = createClient(url, serviceKey);
+    const body = (await req.json()) as RequestBody;
+    if (!body.action) return json({ error: 'Missing action.' }, 400);
+
+    const internalSecret = Deno.env.get('CEREBRO_INTERNAL_SECRET') ?? INTERNAL_SECRET_FALLBACK;
+    const bearer = authHeader?.replace(/^Bearer\s+/i, '') ?? '';
+    if (body.action === 'send_weekly_reminders' && bearer && bearer === internalSecret) {
+      return await sendWeeklyBookingReminders(adminClient);
+    }
+
+    if (!authHeader) return json({ error: 'Missing authorization.' }, 401);
+    const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
 
     const { data: authData, error: authError } = await userClient.auth.getUser();
     if (authError || !authData.user) return json({ error: 'Unauthorized.' }, 401);
@@ -80,9 +91,6 @@ Deno.serve(async (req: Request) => {
       .eq('id', authData.user.id)
       .maybeSingle();
     const isAdmin = requesterProfile?.role === 'admin' || PEDRO_EMAILS.includes(requesterEmail);
-
-    const body = (await req.json()) as RequestBody;
-    if (!body.action) return json({ error: 'Missing action.' }, 400);
 
     if (body.action === 'create') {
       return await createBooking(adminClient, authData.user.id, isAdmin, body);
@@ -100,6 +108,11 @@ Deno.serve(async (req: Request) => {
     if (body.action === 'review_cancellation') {
       if (!isAdmin) return json({ error: 'Only Pedro can review cancellations.' }, 403);
       return await reviewCancellation(adminClient, authData.user.id, body);
+    }
+
+    if (body.action === 'send_weekly_reminders') {
+      if (!isAdmin) return json({ error: 'Only Pedro can send booking reminders.' }, 403);
+      return await sendWeeklyBookingReminders(adminClient);
     }
 
     return json({ error: 'Unknown action.' }, 400);
@@ -144,13 +157,14 @@ async function createBooking(adminClient: ReturnType<typeof createClient>, userI
     validateBookingWindow(start);
     const matching = matchingAvailability(start, availability);
     if (!matching) return json({ error: `No availability for ${formatDateTime(start)}.` }, 400);
-    const end = new Date(start.getTime() + matching.slot_duration_minutes * 60000);
+    const sessionMinutes = sessionDurationMinutes(matching);
+    const end = new Date(start.getTime() + sessionMinutes * 60000);
     if (!slotFitsWindow(start, end, matching)) return json({ error: `Selected slot is outside Pedro's availability on ${formatDateTime(start)}.` }, 400);
     occurrences.push({ start, end, availability: matching });
   }
 
   const rangeStart = new Date(Math.min(...occurrences.map((item) => item.start.getTime()))).toISOString();
-  const rangeEnd = new Date(Math.max(...occurrences.map((item) => item.end.getTime()))).toISOString();
+  const rangeEnd = new Date(Math.max(...occurrences.map((item) => item.end.getTime() + bufferMinutes(item.availability) * 60000))).toISOString();
   const { data: blocks } = await adminClient
     .from('pt_booking_blocks')
     .select('start_at, end_at, status')
@@ -192,7 +206,7 @@ async function createBooking(adminClient: ReturnType<typeof createClient>, userI
     await adminClient.from('pt_booking_blocks').insert({
       appointment_id: row.id,
       start_at: row.start_at,
-      end_at: row.end_at,
+      end_at: new Date(occurrence.end.getTime() + bufferMinutes(occurrence.availability) * 60000).toISOString(),
       status: 'active',
     });
     await adminClient.from('pt_session_ledger').insert({
@@ -341,6 +355,63 @@ async function reviewCancellation(adminClient: ReturnType<typeof createClient>, 
   return json({ ok: true, status: 'rejected' });
 }
 
+async function sendWeeklyBookingReminders(adminClient: ReturnType<typeof createClient>) {
+  const weekStart = nextMondayInputValue();
+  const weekEnd = addDaysInputValue(weekStart, 7);
+  const rangeStart = `${weekStart}T00:00:00+10:00`;
+  const rangeEnd = `${weekEnd}T00:00:00+10:00`;
+
+  const { data: clients, error: clientError } = await adminClient
+    .from('pt_clients')
+    .select('id, name, email, user_id, sessions_remaining')
+    .neq('status', 'archived')
+    .gt('sessions_remaining', 0);
+
+  if (clientError) return json({ error: clientError.message }, 500);
+
+  let sent = 0;
+  let skipped = 0;
+
+  for (const client of (clients ?? []) as PTClientRow[]) {
+    const [{ data: appointments }, { data: existingLog }] = await Promise.all([
+      adminClient
+        .from('pt_booking_appointments')
+        .select('id')
+        .eq('client_id', client.id)
+        .in('status', ['scheduled', 'confirmed', 'cancellation_requested'])
+        .gte('start_at', rangeStart)
+        .lt('start_at', rangeEnd)
+        .limit(1),
+      adminClient
+        .from('pt_notification_log')
+        .select('id')
+        .eq('client_id', client.id)
+        .eq('notification_type', 'weekly_booking_reminder')
+        .eq('metadata->>week_start', weekStart)
+        .limit(1),
+    ]);
+
+    if ((appointments ?? []).length > 0 || (existingLog ?? []).length > 0) {
+      skipped += 1;
+      continue;
+    }
+
+    const subject = 'Book your PT session for next week';
+    const text = `Hi ${client.name},\n\nYou do not have a PT session booked with Pedro for next week yet. Jump into your client dashboard and pick one of the available morning slots.\n\nPedro`;
+    await sendEmail(client.email, subject, text);
+    await adminClient.from('pt_notification_log').insert({
+      client_id: client.id,
+      notification_type: 'weekly_booking_reminder',
+      recipient_email: client.email,
+      subject,
+      metadata: { week_start: weekStart },
+    });
+    sent += 1;
+  }
+
+  return json({ ok: true, week_start: weekStart, sent, skipped });
+}
+
 async function applyCancellation(adminClient: ReturnType<typeof createClient>, userId: string, appointment: AppointmentRow, reason: string) {
   await adminClient.from('pt_booking_appointments').update({
     status: 'cancelled',
@@ -379,7 +450,7 @@ async function getAppointment(adminClient: ReturnType<typeof createClient>, appo
 
 function validateBookingWindow(start: Date) {
   const now = Date.now();
-  if (start.getTime() < now + MIN_NOTICE_MS) throw new Error('Bookings need at least 7 days notice.');
+  if (start.getTime() < now + MIN_NOTICE_MS) throw new Error('Bookings need at least 48 hours notice.');
   if (start.getTime() > now + HORIZON_MS) throw new Error('Bookings can only be made up to 28 days ahead.');
 }
 
@@ -388,7 +459,7 @@ function matchingAvailability(start: Date, availability: AvailabilityRow[]) {
   return availability.find((window) =>
     window.day_of_week === local.dayOfWeek &&
     local.minutes >= timeToMinutes(window.start_time) &&
-    local.minutes + window.slot_duration_minutes <= timeToMinutes(window.end_time),
+    local.minutes + sessionDurationMinutes(window) <= timeToMinutes(window.end_time),
   );
 }
 
@@ -422,6 +493,14 @@ function timeToMinutes(value: string) {
   return hour * 60 + minute;
 }
 
+function sessionDurationMinutes(window: AvailabilityRow) {
+  return Number(window.session_duration_minutes ?? 45);
+}
+
+function bufferMinutes(window: AvailabilityRow) {
+  return Number(window.buffer_minutes ?? Math.max(0, Number(window.slot_duration_minutes ?? 50) - sessionDurationMinutes(window)));
+}
+
 function formatDateTime(date: Date) {
   return date.toLocaleString('en-AU', {
     timeZone: TIMEZONE,
@@ -431,6 +510,36 @@ function formatDateTime(date: Date) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function nextMondayInputValue() {
+  const now = new Date();
+  const local = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+  }).formatToParts(now);
+  const year = Number(local.find((part) => part.type === 'year')?.value ?? now.getUTCFullYear());
+  const month = Number(local.find((part) => part.type === 'month')?.value ?? now.getUTCMonth() + 1);
+  const day = Number(local.find((part) => part.type === 'day')?.value ?? now.getUTCDate());
+  const weekday = local.find((part) => part.type === 'weekday')?.value ?? 'Mon';
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const currentDay = dayMap[weekday] ?? 1;
+  const daysUntilNextMonday = ((8 - currentDay) % 7) || 7;
+  const date = new Date(Date.UTC(year, month - 1, day + daysUntilNextMonday));
+  return dateInputValue(date);
+}
+
+function addDaysInputValue(input: string, days: number) {
+  const date = new Date(`${input}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return dateInputValue(date);
+}
+
+function dateInputValue(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointment: AppointmentRow; client: PTClientRow | null }) {

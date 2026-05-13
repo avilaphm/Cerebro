@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, Clock, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTClient } from '@/utils/pt/types';
 import type {
@@ -27,6 +27,11 @@ function addDaysInput(days: number) {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
 }
 
+function dateKey(value: Date | string) {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export default function PTBookingsView() {
   const supabase = createClient();
   const [clients, setClients] = useState<PTClient[]>([]);
@@ -39,14 +44,21 @@ export default function PTBookingsView() {
   const [windowDraft, setWindowDraft] = useState({
     day_of_week: '1',
     start_time: '06:00',
-    end_time: '12:00',
-    slot_duration_minutes: '60',
+    end_time: '13:00',
+    slot_duration_minutes: '50',
+    session_duration_minutes: '45',
+    buffer_minutes: '5',
     location: '',
     label: '',
   });
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const date = new Date();
+    date.setDate(1);
+    return date;
+  });
   const [bookingDraft, setBookingDraft] = useState({
     client_id: '',
-    start_at: `${addDaysInput(7)}T07:00`,
+    start_at: `${addDaysInput(2)}T07:00`,
     recurring_weeks: '1',
   });
   const [packDraft, setPackDraft] = useState({
@@ -97,6 +109,27 @@ export default function PTBookingsView() {
     () => appointments.filter((appointment) => ACTIVE_STATUSES.includes(appointment.status)).slice(0, 12),
     [appointments],
   );
+  const appointmentsByDate = useMemo(() => {
+    const map = new Map<string, PTBookingAppointment[]>();
+    appointments
+      .filter((appointment) => ACTIVE_STATUSES.includes(appointment.status))
+      .forEach((appointment) => {
+        const key = dateKey(appointment.start_at);
+        map.set(key, [...(map.get(key) ?? []), appointment]);
+      });
+    map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
+    return map;
+  }, [appointments]);
+  const calendarDays = useMemo(() => {
+    const first = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+    const start = new Date(first);
+    start.setDate(first.getDate() - first.getDay());
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      return date;
+    });
+  }, [calendarMonth]);
   const lowCreditClients = clients.filter((client) => client.sessions_remaining <= 2).sort((a, b) => a.sessions_remaining - b.sessions_remaining);
 
   const addAvailability = async () => {
@@ -106,6 +139,8 @@ export default function PTBookingsView() {
       start_time: windowDraft.start_time,
       end_time: windowDraft.end_time,
       slot_duration_minutes: Number(windowDraft.slot_duration_minutes),
+      session_duration_minutes: Number(windowDraft.session_duration_minutes),
+      buffer_minutes: Number(windowDraft.buffer_minutes),
       location: windowDraft.location.trim() || null,
       label: windowDraft.label.trim() || null,
       is_active: true,
@@ -236,51 +271,59 @@ export default function PTBookingsView() {
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
               <section className="space-y-6">
-                <div className="border border-black/10 bg-white p-4">
-                  <div className="mb-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Calendar</p>
-                      <h2 className="mt-1 text-lg font-medium">Upcoming sessions</h2>
-                    </div>
-                    <Clock size={17} className="text-black/30" />
-                  </div>
-                  <div className="space-y-2">
-                    {nextAppointments.length === 0 ? (
-                      <p className="border border-dashed border-black/10 py-8 text-center text-sm text-black/35">No sessions booked.</p>
-                    ) : nextAppointments.map((appointment) => (
-                      <div key={appointment.id} className="flex flex-col gap-3 border border-black/8 bg-[#fbfbf8] px-4 py-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{appointment.pt_clients?.name ?? 'Client'}</p>
-                          <p className="mt-1 text-xs text-black/45">
-                            {formatBookingDate(appointment.start_at)} · {formatBookingTime(appointment.start_at)}
-                            {appointment.location ? ` · ${appointment.location}` : ''}
-                          </p>
-                          <p className="mt-1 text-[0.62rem] uppercase tracking-[0.12em] text-black/30">{appointment.status.replace(/_/g, ' ')}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void completeAppointment(appointment.id)}
-                            disabled={busy === appointment.id}
-                            className="inline-flex items-center gap-1.5 border border-black bg-black px-3 py-2 text-xs text-white hover:bg-white hover:text-black disabled:opacity-40"
-                          >
-                            <Check size={13} />
-                            Complete
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void cancelAppointment(appointment.id)}
-                            disabled={busy === appointment.id}
-                            className="inline-flex items-center gap-1.5 border border-black/10 bg-white px-3 py-2 text-xs text-black/55 hover:border-red-300 hover:text-red-700 disabled:opacity-40"
-                          >
-                            <Trash2 size={13} />
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+	                <div className="border border-black/10 bg-white p-4">
+	                  <div className="mb-4 flex items-center justify-between">
+	                    <div>
+	                      <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Calendar</p>
+	                      <h2 className="mt-1 text-lg font-medium">{calendarMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}</h2>
+	                    </div>
+	                    <div className="flex items-center gap-2">
+	                      <button type="button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} className="inline-flex h-9 w-9 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black" aria-label="Previous month">
+	                        <ChevronLeft size={16} />
+	                      </button>
+	                      <button type="button" onClick={() => setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} className="inline-flex h-9 w-9 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black" aria-label="Next month">
+	                        <ChevronRight size={16} />
+	                      </button>
+	                    </div>
+	                  </div>
+	                  <div className="grid grid-cols-7 border-l border-t border-black/10">
+	                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+	                      <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
+	                        {day}
+	                      </div>
+	                    ))}
+	                    {calendarDays.map((day) => {
+	                      const key = dateKey(day);
+	                      const dayAppointments = appointmentsByDate.get(key) ?? [];
+	                      const inMonth = day.getMonth() === calendarMonth.getMonth();
+	                      return (
+	                        <div key={key} className={`min-h-32 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
+	                          <div className="mb-2 flex items-center justify-between">
+	                            <span className="text-xs font-medium">{day.getDate()}</span>
+	                            {dayAppointments.length > 0 && <Clock size={13} className="text-black/35" />}
+	                          </div>
+	                          <div className="space-y-1">
+	                            {dayAppointments.slice(0, 4).map((appointment) => (
+	                              <div key={appointment.id} className="border border-black/10 bg-white px-2 py-1.5">
+	                                <p className="truncate text-[0.68rem] font-medium">{formatBookingTime(appointment.start_at)} · {appointment.pt_clients?.name ?? 'Client'}</p>
+	                                <p className="truncate text-[0.62rem] text-black/35">{appointment.status.replace(/_/g, ' ')}{appointment.location ? ` · ${appointment.location}` : ''}</p>
+	                                <div className="mt-1 flex gap-1">
+	                                  <button type="button" onClick={() => void completeAppointment(appointment.id)} disabled={busy === appointment.id} className="border border-black bg-black px-1.5 py-1 text-[0.58rem] text-white disabled:opacity-40">
+	                                    Done
+	                                  </button>
+	                                  <button type="button" onClick={() => void cancelAppointment(appointment.id)} disabled={busy === appointment.id} className="border border-black/10 px-1.5 py-1 text-[0.58rem] text-black/45 hover:text-red-700 disabled:opacity-40">
+	                                    Cancel
+	                                  </button>
+	                                </div>
+	                              </div>
+	                            ))}
+	                            {dayAppointments.length > 4 && <p className="text-[0.65rem] text-black/35">+{dayAppointments.length - 4} more</p>}
+	                          </div>
+	                        </div>
+	                      );
+	                    })}
+	                  </div>
+	                </div>
 
                 {requests.length > 0 && (
                   <div className="border border-amber-200 bg-amber-50 p-4">
@@ -349,14 +392,16 @@ export default function PTBookingsView() {
 
                 <Panel title="Availability" eyebrow="Weekly windows">
                   <div className="grid grid-cols-2 gap-2">
-                    <select value={windowDraft.day_of_week} onChange={(event) => setWindowDraft((current) => ({ ...current, day_of_week: event.target.value }))} className={FIELD_CLASS}>
-                      {DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
-                    </select>
-                    <input type="number" min="15" step="15" value={windowDraft.slot_duration_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, slot_duration_minutes: event.target.value }))} className={FIELD_CLASS} />
-                    <input type="time" value={windowDraft.start_time} onChange={(event) => setWindowDraft((current) => ({ ...current, start_time: event.target.value }))} className={FIELD_CLASS} />
-                    <input type="time" value={windowDraft.end_time} onChange={(event) => setWindowDraft((current) => ({ ...current, end_time: event.target.value }))} className={FIELD_CLASS} />
-                    <input value={windowDraft.location} onChange={(event) => setWindowDraft((current) => ({ ...current, location: event.target.value }))} placeholder="Location" className={`${FIELD_CLASS} col-span-2`} />
-                    <input value={windowDraft.label} onChange={(event) => setWindowDraft((current) => ({ ...current, label: event.target.value }))} placeholder="Label" className={`${FIELD_CLASS} col-span-2`} />
+	                    <select value={windowDraft.day_of_week} onChange={(event) => setWindowDraft((current) => ({ ...current, day_of_week: event.target.value }))} className={FIELD_CLASS}>
+	                      {DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
+	                    </select>
+	                    <input type="number" min="15" step="5" value={windowDraft.session_duration_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, session_duration_minutes: event.target.value, slot_duration_minutes: String(Number(event.target.value) + Number(current.buffer_minutes || 0)) }))} className={FIELD_CLASS} aria-label="Session minutes" />
+	                    <input type="time" value={windowDraft.start_time} onChange={(event) => setWindowDraft((current) => ({ ...current, start_time: event.target.value }))} className={FIELD_CLASS} />
+	                    <input type="time" value={windowDraft.end_time} onChange={(event) => setWindowDraft((current) => ({ ...current, end_time: event.target.value }))} className={FIELD_CLASS} />
+	                    <input type="number" min="0" step="5" value={windowDraft.buffer_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, buffer_minutes: event.target.value, slot_duration_minutes: String(Number(current.session_duration_minutes || 0) + Number(event.target.value)) }))} className={FIELD_CLASS} aria-label="Buffer minutes" />
+	                    <input type="number" min="15" step="5" value={windowDraft.slot_duration_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, slot_duration_minutes: event.target.value }))} className={FIELD_CLASS} aria-label="Slot cadence minutes" />
+	                    <input value={windowDraft.location} onChange={(event) => setWindowDraft((current) => ({ ...current, location: event.target.value }))} placeholder="Location" className={`${FIELD_CLASS} col-span-2`} />
+	                    <input value={windowDraft.label} onChange={(event) => setWindowDraft((current) => ({ ...current, label: event.target.value }))} placeholder="Label" className={`${FIELD_CLASS} col-span-2`} />
                   </div>
                   <button type="button" onClick={() => void addAvailability()} disabled={busy === 'availability'} className="mt-3 w-full border border-black bg-black px-4 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40">
                     Add availability
@@ -364,10 +409,10 @@ export default function PTBookingsView() {
                   <div className="mt-4 space-y-2">
                     {availability.map((row) => (
                       <div key={row.id} className="flex items-center justify-between gap-3 border border-black/8 px-3 py-2">
-                        <div>
-                          <p className="text-sm font-medium">{DAYS[row.day_of_week]} · {row.start_time.slice(0, 5)}-{row.end_time.slice(0, 5)}</p>
-                          <p className="text-xs text-black/35">{row.label || row.location || `${row.slot_duration_minutes}m slots`}</p>
-                        </div>
+	                        <div>
+	                          <p className="text-sm font-medium">{DAYS[row.day_of_week]} · {row.start_time.slice(0, 5)}-{row.end_time.slice(0, 5)}</p>
+	                          <p className="text-xs text-black/35">{row.label || row.location || `${row.session_duration_minutes ?? 45}m session · ${row.buffer_minutes ?? 5}m buffer`}</p>
+	                        </div>
                         <div className="flex gap-2">
                           <button type="button" onClick={() => void toggleAvailability(row)} className="text-xs text-black/40 hover:text-black">
                             {row.is_active ? 'Disable' : 'Enable'}
