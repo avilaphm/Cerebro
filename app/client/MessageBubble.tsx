@@ -157,7 +157,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-black text-white shadow-lg flex items-center justify-center hover:scale-105 transition-transform"
+        className="fixed right-4 top-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-[0_18px_40px_-22px_rgba(0,0,0,0.8)] transition-transform hover:scale-105 md:right-6 md:top-6"
         aria-label="Open messages"
       >
         {open ? (
@@ -177,7 +177,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       </button>
 
       {open && (
-        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[82svh] flex-col overflow-hidden rounded-t-2xl border border-black/10 bg-white shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-auto sm:max-h-[70vh] sm:w-96 sm:rounded-2xl">
+        <div className="fixed inset-x-3 top-20 z-50 flex max-h-[calc(100dvh-6rem)] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl sm:inset-auto sm:right-6 sm:top-24 sm:h-auto sm:max-h-[70vh] sm:w-96">
           <div className="px-4 py-3 border-b border-black/8 flex items-center justify-between shrink-0">
             <div>
               <p className="text-sm font-medium">Message your coach</p>

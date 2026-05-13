@@ -100,6 +100,7 @@ export interface PTBookableSlot {
   end_at: string;
   label: string;
   available: boolean;
+  booking_id?: string;
   reason?: string;
   availability_id?: string;
   location?: string | null;

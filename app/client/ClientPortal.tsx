@@ -120,6 +120,7 @@ interface MetricDraft {
 }
 
 type ClientScreen = 'overview' | 'workout' | 'tools';
+type BookingCalendarView = 'day' | 'week' | 'month';
 
 const emptyWeeklyReset: WeeklyResetDraft = {
   availability: '',
@@ -245,6 +246,17 @@ function calendarDateKey(date: Date | string) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 }
 
+function startOfWeek(date: Date) {
+  const value = new Date(date);
+  value.setHours(0, 0, 0, 0);
+  value.setDate(value.getDate() - value.getDay());
+  return value;
+}
+
+function bookingWithin24Hours(booking: PTBookingAppointment) {
+  return new Date(booking.start_at).getTime() - Date.now() < 24 * 60 * 60 * 1000;
+}
+
 function generateBookableSlots(
   availability: PTBookingAvailability[],
   blocks: PTBookingBlock[],
@@ -271,15 +283,16 @@ function generateBookableSlots(
         const end = new Date(start.getTime() + duration * 60000);
         if (start < minDate || start > maxDate) continue;
         const taken = blocks.some((block) => overlaps(start, end, block.start_at, block.end_at));
-        const own = ownBookings.some((booking) =>
+        const ownBooking = ownBookings.find((booking) =>
           ACTIVE_BOOKING_STATUSES.includes(booking.status) && overlaps(start, end, booking.start_at, booking.end_at),
         );
         slots.push({
           start_at: start.toISOString(),
           end_at: end.toISOString(),
           label: `${formatBookingDate(start)} · ${formatBookingTime(start)}`,
-          available: canBook && !taken && !own,
-          reason: !canBook ? 'No sessions available' : own ? 'You booked this' : taken ? 'Taken' : undefined,
+          available: canBook && !taken && !ownBooking,
+          booking_id: ownBooking?.id,
+          reason: !canBook ? 'No sessions available' : ownBooking ? 'You booked this' : taken ? 'Taken' : undefined,
           availability_id: window.id,
           location: window.location,
         });
@@ -393,6 +406,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [bookingBlocks, setBookingBlocks] = useState<PTBookingBlock[]>([]);
   const [cancellationRequests, setCancellationRequests] = useState<PTBookingCancellationRequest[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<PTBookableSlot | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<PTBookingAppointment | null>(null);
+  const [bookingView, setBookingView] = useState<BookingCalendarView>('week');
+  const [bookingDate, setBookingDate] = useState(() => new Date());
   const [bookingMonth, setBookingMonth] = useState(() => {
     const date = new Date();
     date.setDate(1);
@@ -667,6 +683,25 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return date;
     });
   }, [bookingMonth]);
+  const bookingWeekDays = useMemo(() => {
+    const start = startOfWeek(bookingDate);
+    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  }, [bookingDate]);
+  const selectedDaySlots = slotsByDate.get(calendarDateKey(bookingDate)) ?? [];
+  const bookingById = useMemo(() => {
+    const map = new Map<string, PTBookingAppointment>();
+    activeBookings.forEach((booking) => map.set(booking.id, booking));
+    return map;
+  }, [activeBookings]);
+  const bookingsByDate = useMemo(() => {
+    const map = new Map<string, PTBookingAppointment[]>();
+    activeBookings.forEach((booking) => {
+      const key = calendarDateKey(booking.start_at);
+      map.set(key, [...(map.get(key) ?? []), booking]);
+    });
+    map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
+    return map;
+  }, [activeBookings]);
   const pendingCancellationIds = new Set(
     cancellationRequests
       .filter((request) => request.status === 'pending')
@@ -990,9 +1025,23 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setBookingBusy(false);
   };
 
+  const openBookingSlot = (slot: PTBookableSlot) => {
+    if (slot.booking_id) {
+      setSelectedBooking(bookingById.get(slot.booking_id) ?? null);
+      setSelectedSlot(null);
+      setBookingReason('');
+      return;
+    }
+
+    if (!slot.available) return;
+    setSelectedSlot(slot);
+    setSelectedBooking(null);
+    setBookingReason('');
+  };
+
   const cancelBooking = async (booking: PTBookingAppointment) => {
     if (bookingBusy) return;
-    const startsWithin24Hours = new Date(booking.start_at).getTime() - Date.now() < 24 * 60 * 60 * 1000;
+    const startsWithin24Hours = bookingWithin24Hours(booking);
     if (startsWithin24Hours && !bookingReason.trim()) {
       setStatus('Add a reason so Pedro can review the late cancellation.');
       return;
@@ -1012,6 +1061,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       setStatus(error?.message ?? data?.error ?? 'Could not cancel booking.');
     } else {
       setBookingReason('');
+      setSelectedBooking(null);
       setStatus(data?.status === 'cancellation_requested' ? 'Pedro has received your cancellation request.' : 'Booking cancelled.');
       await loadPortal();
     }
@@ -1243,6 +1293,62 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     );
   };
 
+  const renderBodyMetricsPanel = () => (
+    <section className="border border-black/10 bg-white p-4 md:p-5">
+      <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Body Metrics</p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <input type="date" value={metricDraft.measured_at} onChange={(event) => patchMetricDraft({ measured_at: event.target.value })}
+          className="col-span-2 border border-black/10 px-3 py-3 text-[15px] outline-none focus:border-black/35" />
+        <input value={metricDraft.weight_kg} onChange={(event) => patchMetricDraft({ weight_kg: event.target.value })}
+          inputMode="decimal" className="border border-black/10 px-3 py-3 text-[15px] outline-none focus:border-black/35" placeholder="Weight kg" />
+        <input value={metricDraft.waist_cm} onChange={(event) => patchMetricDraft({ waist_cm: event.target.value })}
+          inputMode="decimal" className="border border-black/10 px-3 py-3 text-[15px] outline-none focus:border-black/35" placeholder="Waist cm" />
+        <input value={metricDraft.body_fat_pct} onChange={(event) => patchMetricDraft({ body_fat_pct: event.target.value })}
+          inputMode="decimal" className="border border-black/10 px-3 py-3 text-[15px] outline-none focus:border-black/35" placeholder="Body fat %" />
+        <input value={metricDraft.muscle_mass_kg} onChange={(event) => patchMetricDraft({ muscle_mass_kg: event.target.value })}
+          inputMode="decimal" className="border border-black/10 px-3 py-3 text-[15px] outline-none focus:border-black/35" placeholder="Muscle kg" />
+        <textarea value={metricDraft.notes} onChange={(event) => patchMetricDraft({ notes: event.target.value })}
+          rows={2} className="col-span-2 resize-none border border-black/10 px-3 py-3 text-[15px] outline-none focus:border-black/35" placeholder="Scale notes or context." />
+      </div>
+      <button type="button" onClick={() => void submitMetric()} disabled={submittingMetric}
+        className="mt-3 w-full border border-black bg-black px-4 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40">
+        {submittingMetric ? 'Saving...' : 'Send metrics'}
+      </button>
+      {latestMetric && (
+        <div className="mt-4 border-t border-black/8 pt-3">
+          <p className="text-xs text-black/35">Latest: {formatDate(latestMetric.measured_at)}</p>
+          <p className="mt-1 text-sm text-black/60">
+            {formatMetric(latestMetric.weight_kg, 'kg')} · {formatMetric(latestMetric.waist_cm, 'cm')} · {formatMetric(latestMetric.body_fat_pct, '%')}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+
+  const renderProgressPanel = () => (
+    <section className="border border-black/10 bg-white p-4 md:p-5">
+      <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Progress</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+          <p className="text-xs text-black/35">Weight</p>
+          <p className="mt-1 text-sm text-black/65">{renderDelta(weightPair.current?.weight_kg, weightPair.previous?.weight_kg, 'kg')}</p>
+        </div>
+        <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+          <p className="text-xs text-black/35">Waist</p>
+          <p className="mt-1 text-sm text-black/65">{renderDelta(waistPair.current?.waist_cm, waistPair.previous?.waist_cm, 'cm')}</p>
+        </div>
+        <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+          <p className="text-xs text-black/35">Monthly adherence</p>
+          <p className="mt-1 text-sm text-black/65">
+            {monthlyAdherence.adherencePct === null
+              ? 'No monthly plan yet'
+              : `${monthlyAdherence.adherencePct}% with ${monthlyAdherence.done}/${monthlyAdherence.total} items done`}
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+
   const renderCoachingHome = () => (
     <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
       <section className="border border-black/10 bg-white p-4 md:p-5">
@@ -1472,36 +1578,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
         <div className="space-y-4">
           <div className="border border-black/10 bg-white p-4 md:p-5">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Body Metrics</p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <input type="date" value={metricDraft.measured_at} onChange={(event) => patchMetricDraft({ measured_at: event.target.value })}
-                className="col-span-2 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" />
-              <input value={metricDraft.weight_kg} onChange={(event) => patchMetricDraft({ weight_kg: event.target.value })}
-                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Weight kg" />
-              <input value={metricDraft.waist_cm} onChange={(event) => patchMetricDraft({ waist_cm: event.target.value })}
-                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Waist cm" />
-              <input value={metricDraft.body_fat_pct} onChange={(event) => patchMetricDraft({ body_fat_pct: event.target.value })}
-                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Body fat %" />
-              <input value={metricDraft.muscle_mass_kg} onChange={(event) => patchMetricDraft({ muscle_mass_kg: event.target.value })}
-                inputMode="decimal" className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Muscle kg" />
-              <textarea value={metricDraft.notes} onChange={(event) => patchMetricDraft({ notes: event.target.value })}
-                rows={2} className="col-span-2 resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Scale notes or context." />
-            </div>
-            <button type="button" onClick={() => void submitMetric()} disabled={submittingMetric}
-              className="mt-3 w-full border border-black bg-black px-4 py-2 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40">
-              {submittingMetric ? 'Saving...' : 'Send metrics'}
-            </button>
-            {latestMetric && (
-              <div className="mt-4 border-t border-black/8 pt-3">
-                <p className="text-xs text-black/35">Latest: {formatDate(latestMetric.measured_at)}</p>
-                <p className="mt-1 text-sm text-black/60">
-                  {formatMetric(latestMetric.weight_kg, 'kg')} · {formatMetric(latestMetric.waist_cm, 'cm')} · {formatMetric(latestMetric.body_fat_pct, '%')}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="border border-black/10 bg-white p-4 md:p-5">
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
             {goals.length > 0 ? (
               <div className="mt-3 space-y-2">
@@ -1517,28 +1593,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             ) : (
               <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
             )}
-          </div>
-
-          <div className="border border-black/10 bg-white p-4 md:p-5">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Progress</p>
-            <div className="mt-3 space-y-2">
-              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                <p className="text-xs text-black/35">Weight</p>
-                <p className="mt-1 text-sm text-black/65">{renderDelta(weightPair.current?.weight_kg, weightPair.previous?.weight_kg, 'kg')}</p>
-              </div>
-              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                <p className="text-xs text-black/35">Waist</p>
-                <p className="mt-1 text-sm text-black/65">{renderDelta(waistPair.current?.waist_cm, waistPair.previous?.waist_cm, 'cm')}</p>
-              </div>
-              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                <p className="text-xs text-black/35">Monthly adherence</p>
-                <p className="mt-1 text-sm text-black/65">
-                  {monthlyAdherence.adherencePct === null
-                    ? 'No monthly plan yet'
-                    : `${monthlyAdherence.adherencePct}% with ${monthlyAdherence.done}/${monthlyAdherence.total} items done`}
-                </p>
-              </div>
-            </div>
           </div>
 
           <div className="border border-black/10 bg-white p-4 md:p-5">
@@ -1908,6 +1962,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
           </section>
 
+          {renderProgressPanel()}
+
           <section className="border border-black/10 bg-white p-4 md:p-5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
@@ -1931,9 +1987,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     key={day.id}
                     type="button"
                     onClick={() => openWorkout(activePhaseIndex, dayIndex)}
-                    className={`group min-h-[8.5rem] border p-4 text-left transition-colors ${
+                    className={`group relative min-h-[8.5rem] overflow-hidden border p-4 text-left transition-colors ${
                       done
-                        ? 'border-green-300 bg-green-50/50 hover:border-green-500'
+                        ? 'border-black/10 bg-white shadow-[0_16px_40px_-30px_rgba(40,220,120,0.75),inset_0_-1px_0_rgba(80,220,150,0.35)] after:absolute after:inset-x-5 after:bottom-0 after:h-px after:bg-[linear-gradient(90deg,transparent,rgba(70,220,145,0.8),transparent)] hover:border-black/20'
                         : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
                     }`}
                   >
@@ -1943,7 +1999,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         <h4 className="mt-2 text-lg font-medium">{day.title}</h4>
                       </div>
                       {done ? (
-                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-white">
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-white shadow-[0_0_18px_rgba(70,220,145,0.25)]">
                           <Check className="h-4 w-4" />
                         </span>
                       ) : (
@@ -1965,63 +2021,159 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     </div>
   );
 
-  const renderToolsScreen = () => (
-    <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-      <section className="border border-black/10 bg-white p-4 md:p-5">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Session credits</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-            <p className="text-xs text-black/35">Pack balance</p>
-            <p className="mt-1 text-2xl font-light">{client?.sessions_remaining ?? 0}</p>
-          </div>
-          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-            <p className="text-xs text-black/35">Held</p>
-            <p className="mt-1 text-2xl font-light">{heldCredits}</p>
-          </div>
-          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-            <p className="text-xs text-black/35">Available to book</p>
-            <p className={`mt-1 text-2xl font-light ${availableCredits === 0 ? 'text-red-600' : ''}`}>{availableCredits}</p>
-          </div>
-        </div>
-      </section>
+  const renderToolsScreen = () => {
+    const title =
+      bookingView === 'day'
+        ? bookingDate.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })
+        : bookingView === 'week'
+          ? `${formatBookingDate(bookingWeekDays[0])} - ${formatBookingDate(bookingWeekDays[6])}`
+          : bookingMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+    const selectedBookingIsLate = selectedBooking ? bookingWithin24Hours(selectedBooking) : false;
 
-      <section className="border border-black/10 bg-white p-4 md:p-5">
-        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Book Pedro</p>
-            <h2 className="mt-1 font-display text-2xl font-light">Calendar</h2>
-          </div>
-          <p className="text-xs text-black/40">48 hours to 28 days ahead</p>
-        </div>
+    const moveCalendar = (direction: -1 | 1) => {
+      setSelectedSlot(null);
+      setSelectedBooking(null);
+      setBookingReason('');
+      if (bookingView === 'month') {
+        setBookingMonth((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
+        return;
+      }
+      setBookingDate((current) => addDays(current, bookingView === 'week' ? direction * 7 : direction));
+    };
 
-        {bookableSlots.length === 0 ? (
-          <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
-            {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
-          </p>
-        ) : (
-          <div className="mt-5">
-            <div className="mb-3 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setBookingMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
-                className="inline-flex h-9 w-9 items-center justify-center border border-black/10 bg-white text-black/45 hover:border-black/30 hover:text-black"
-                aria-label="Previous month"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <p className="text-sm font-medium">
-                {bookingMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })}
+    const renderSlotButton = (slot: PTBookableSlot) => (
+      <button
+        key={slot.start_at}
+        type="button"
+        onClick={() => openBookingSlot(slot)}
+        disabled={!slot.available && slot.reason !== 'You booked this'}
+        className={`flex min-h-11 items-center justify-between gap-3 border px-3 py-2 text-left text-sm transition-colors ${
+          selectedSlot?.start_at === slot.start_at
+            ? 'border-black bg-black text-white'
+            : slot.reason === 'You booked this'
+              ? 'border-black bg-black text-white hover:bg-black/80'
+              : slot.available
+                ? 'border-black/10 bg-white text-black hover:border-black/35'
+                : 'border-black/5 bg-black/[0.035] text-black/30'
+        }`}
+      >
+        <span className="font-medium">{formatBookingTime(slot.start_at)}</span>
+        <span className="text-xs opacity-70">{slot.available ? 'Available' : slot.reason === 'You booked this' ? 'Yours' : 'Busy'}</span>
+      </button>
+    );
+
+    return (
+      <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+        <section className="border border-black/10 bg-white p-4 md:p-5">
+          <div className="grid gap-3 sm:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Next session</p>
+              <h2 className="mt-1 font-display text-2xl font-light">
+                {nextBooking ? formatBookingDate(nextBooking.start_at) : 'Nothing booked'}
+              </h2>
+              <p className="mt-1 text-sm text-black/50">
+                {nextBooking ? `${formatBookingTime(nextBooking.start_at)} at ${nextBooking.location ?? 'the gym'}` : 'Pick a slot below when you are ready.'}
               </p>
-              <button
-                type="button"
-                onClick={() => setBookingMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
-                className="inline-flex h-9 w-9 items-center justify-center border border-black/10 bg-white text-black/45 hover:border-black/30 hover:text-black"
-                aria-label="Next month"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
             </div>
-            <div className="grid grid-cols-7 border-l border-t border-black/10 bg-white">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                <p className="text-xs text-black/35">Pack</p>
+                <p className="mt-1 text-2xl font-light">{client?.sessions_remaining ?? 0}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                <p className="text-xs text-black/35">Held</p>
+                <p className="mt-1 text-2xl font-light">{heldCredits}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                <p className="text-xs text-black/35">Open</p>
+                <p className={`mt-1 text-2xl font-light ${availableCredits === 0 ? 'text-red-600' : ''}`}>{availableCredits}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="border border-black/10 bg-white p-4 md:p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Book Pedro</p>
+              <h2 className="mt-1 font-display text-2xl font-light">Calendar</h2>
+            </div>
+            <div className="inline-grid grid-cols-3 border border-black/10 bg-[#fbfbf8] p-1">
+              {(['day', 'week', 'month'] as BookingCalendarView[]).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => {
+                    setBookingView(view);
+                    setSelectedSlot(null);
+                    setSelectedBooking(null);
+                  }}
+                  className={`px-3 py-2 text-xs font-medium uppercase tracking-[0.08em] transition-colors ${
+                    bookingView === view ? 'bg-black text-white' : 'text-black/45 hover:text-black'
+                  }`}
+                >
+                  {view}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => moveCalendar(-1)}
+              className="inline-flex h-10 w-10 items-center justify-center border border-black/10 bg-white text-black/45 hover:border-black/30 hover:text-black"
+              aria-label="Previous calendar range"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <p className="text-center text-sm font-medium">{title}</p>
+            <button
+              type="button"
+              onClick={() => moveCalendar(1)}
+              className="inline-flex h-10 w-10 items-center justify-center border border-black/10 bg-white text-black/45 hover:border-black/30 hover:text-black"
+              aria-label="Next calendar range"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          {bookableSlots.length === 0 ? (
+            <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
+              {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
+            </p>
+          ) : bookingView === 'day' ? (
+            <div className="mt-5 grid gap-2">
+              {selectedDaySlots.length > 0 ? selectedDaySlots.map(renderSlotButton) : (
+                <p className="border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
+                  No bookable windows on this day.
+                </p>
+              )}
+            </div>
+          ) : bookingView === 'week' ? (
+            <div className="mt-5 grid gap-3 md:grid-cols-7">
+              {bookingWeekDays.map((day) => {
+                const key = calendarDateKey(day);
+                const daySlots = slotsByDate.get(key) ?? [];
+                return (
+                  <div key={key} className="border border-black/10 bg-[#fbfbf8] p-2">
+                    <div className="mb-2">
+                      <p className="text-[0.62rem] uppercase tracking-[0.12em] text-black/35">
+                        {day.toLocaleDateString('en-AU', { weekday: 'short' })}
+                      </p>
+                      <p className="text-sm font-medium">{day.getDate()}</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      {daySlots.length > 0 ? daySlots.map(renderSlotButton) : (
+                        <p className="py-4 text-xs text-black/30">No slots</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-5 grid grid-cols-7 border-l border-t border-black/10 bg-white">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
                 <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
                   {day}
@@ -2029,109 +2181,105 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               ))}
               {calendarDays.map((day) => {
                 const key = calendarDateKey(day);
-                const daySlots = slotsByDate.get(key) ?? [];
                 const inMonth = day.getMonth() === bookingMonth.getMonth();
+                const dayBookings = bookingsByDate.get(key) ?? [];
                 return (
-                  <div key={key} className={`min-h-28 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-medium">{day.getDate()}</span>
-                      {daySlots.some((slot) => slot.available) && <span className="h-1.5 w-1.5 rounded-full bg-green-600" />}
-                    </div>
-                    <div className="space-y-1">
-                      {daySlots.slice(0, 4).map((slot) => (
+                  <div key={key} className={`min-h-20 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
+                    <span className="text-xs font-medium">{day.getDate()}</span>
+                    <div className="mt-2 space-y-1">
+                      {dayBookings.map((booking) => (
                         <button
-                          key={slot.start_at}
+                          key={booking.id}
                           type="button"
-                          onClick={() => slot.available && setSelectedSlot(slot)}
-                          disabled={!slot.available}
-                          className={`w-full truncate border px-2 py-1 text-left text-[0.68rem] transition-colors ${
-                            selectedSlot?.start_at === slot.start_at
-                              ? 'border-black bg-black text-white'
-                              : slot.available
-                                ? 'border-green-200 bg-white text-black hover:border-black/30'
-                                : slot.reason === 'You booked this'
-                                  ? 'border-black/10 bg-black text-white'
-                                  : 'border-black/5 bg-black/[0.04] text-black/30'
-                          }`}
+                          onClick={() => {
+                            setSelectedBooking(booking);
+                            setSelectedSlot(null);
+                            setBookingReason('');
+                          }}
+                          className="w-full truncate border border-black bg-black px-2 py-1 text-left text-[0.68rem] text-white"
                         >
-                          {formatBookingTime(slot.start_at)} {slot.available ? '' : slot.reason === 'You booked this' ? 'Yours' : 'Busy'}
+                          {formatBookingTime(booking.start_at)}
                         </button>
                       ))}
-                      {daySlots.length > 4 && <p className="text-[0.65rem] text-black/35">+{daySlots.length - 4} more</p>}
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
 
-        {selectedSlot && (
-          <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
-            <p className="text-sm font-medium">{selectedSlot.label}</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-              <label className="block">
-                <span className="mb-1 block text-xs text-black/45">Repeat weekly</span>
-                <select value={recurringWeeks} onChange={(event) => setRecurringWeeks(event.target.value)} className="w-full border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35">
-                  <option value="1">One session</option>
-                  <option value="2">2 weeks</option>
-                  <option value="3">3 weeks</option>
-                  <option value="4">4 weeks</option>
-                </select>
-              </label>
+          {selectedSlot && (
+            <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
+              <p className="text-sm font-medium">{selectedSlot.label}</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                <label className="block">
+                  <span className="mb-1 block text-xs text-black/45">Repeat weekly</span>
+                  <select value={recurringWeeks} onChange={(event) => setRecurringWeeks(event.target.value)} className="w-full border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35">
+                    <option value="1">One session</option>
+                    <option value="2">2 weeks</option>
+                    <option value="3">3 weeks</option>
+                    <option value="4">4 weeks</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void bookSelectedSlot()}
+                  disabled={bookingBusy}
+                  className="inline-flex items-center justify-center gap-2 border border-black bg-black px-5 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40"
+                >
+                  <CalendarDays className="h-4 w-4" />
+                  {bookingBusy ? 'Booking...' : 'Confirm'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selectedBooking && (
+            <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">{formatBookingDate(selectedBooking.start_at)} · {formatBookingTime(selectedBooking.start_at)}</p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {pendingCancellationIds.has(selectedBooking.id)
+                      ? 'Waiting for Pedro to review cancellation'
+                      : selectedBookingIsLate
+                        ? 'Inside 24 hours. Pedro needs to approve this cancellation.'
+                        : 'You can cancel this session now.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBooking(null)}
+                  className="text-xs text-black/35 underline-offset-2 hover:text-black hover:underline"
+                >
+                  Close
+                </button>
+              </div>
+              {selectedBookingIsLate && !pendingCancellationIds.has(selectedBooking.id) && (
+                <textarea
+                  value={bookingReason}
+                  onChange={(event) => setBookingReason(event.target.value)}
+                  rows={3}
+                  className="mt-3 w-full resize-none border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
+                  placeholder="Write the reason Pedro should review."
+                />
+              )}
               <button
                 type="button"
-                onClick={() => void bookSelectedSlot()}
-                disabled={bookingBusy}
-                className="inline-flex items-center justify-center gap-2 border border-black bg-black px-5 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40"
+                onClick={() => void cancelBooking(selectedBooking)}
+                disabled={bookingBusy || pendingCancellationIds.has(selectedBooking.id)}
+                className="mt-3 border border-black bg-black px-4 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-30"
               >
-                <CalendarDays className="h-4 w-4" />
-                {bookingBusy ? 'Booking...' : 'Confirm'}
+                {selectedBookingIsLate ? 'Request cancellation' : 'Cancel session'}
               </button>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+        </section>
 
-      <section className="border border-black/10 bg-white p-4 md:p-5">
-        <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Upcoming sessions</p>
-        <div className="mt-4 space-y-2">
-          {activeBookings.length === 0 ? (
-            <p className="text-sm text-black/40">No upcoming sessions booked.</p>
-          ) : activeBookings.map((booking) => {
-            const startsWithin24Hours = new Date(booking.start_at).getTime() - Date.now() < 24 * 60 * 60 * 1000;
-            return (
-              <div key={booking.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{formatBookingDate(booking.start_at)} · {formatBookingTime(booking.start_at)}</p>
-                    <p className="mt-1 text-xs text-black/40">{pendingCancellationIds.has(booking.id) ? 'Waiting for Pedro to review cancellation' : booking.status.replace(/_/g, ' ')}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void cancelBooking(booking)}
-                    disabled={bookingBusy || pendingCancellationIds.has(booking.id)}
-                    className="border border-black/10 bg-white px-3 py-2 text-xs text-black/55 hover:border-red-300 hover:text-red-700 disabled:opacity-30"
-                  >
-                    {startsWithin24Hours ? 'Request cancel' : 'Cancel'}
-                  </button>
-                </div>
-                {startsWithin24Hours && !pendingCancellationIds.has(booking.id) && (
-                  <textarea
-                    value={bookingReason}
-                    onChange={(event) => setBookingReason(event.target.value)}
-                    rows={2}
-                    className="mt-3 w-full resize-none border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
-                    placeholder="Reason for late cancellation."
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-    </div>
-  );
+        {renderBodyMetricsPanel()}
+      </div>
+    );
+  };
 
   const renderActiveScreen = () => {
     if (selectedWorkout?.started) return renderWorkoutLogger();
@@ -2142,10 +2290,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   };
 
   return (
-    <main className="client-liquid flex h-screen flex-col overflow-hidden text-black">
+    <main className="client-liquid flex h-dvh min-h-0 flex-col overflow-hidden text-black">
       {renderHeader()}
 
-      <div className="flex-1 overflow-y-auto px-4 py-5 pb-28 md:p-10">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-36 md:p-10 md:pb-28">
         {status && (
           <div className="mb-5 border border-black/10 bg-white px-4 py-3 text-sm text-black/60">
             {status}
@@ -2164,7 +2312,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       </div>
 
       {client && (
-        <nav className="client-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-black/10 bg-white/95 px-4 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur">
+        <nav className="client-bottom-nav fixed inset-x-4 bottom-5 z-40 border border-black/10 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur md:inset-x-auto md:left-1/2 md:w-[24rem] md:-translate-x-1/2">
           <div className="mx-auto grid max-w-sm grid-cols-3 gap-2">
             {([
               ['overview', Home, 'Overview'],
@@ -2178,7 +2326,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   setSelectedWorkout(null);
                   setActiveScreen(screen);
                 }}
-                className={`flex h-14 flex-col items-center justify-center gap-1 border text-[0.62rem] uppercase tracking-[0.08em] transition-colors ${
+                className={`flex h-12 flex-col items-center justify-center gap-1 border text-[0.68rem] uppercase tracking-[0.08em] transition-colors ${
                   activeScreen === screen
                     ? 'border-black bg-black text-white'
                     : 'border-transparent text-black/40 hover:border-black/10 hover:text-black'
