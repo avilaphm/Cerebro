@@ -4,16 +4,21 @@
 2026-05-13 by codex
 
 ## Last completed task
-Upgraded PT client booking calendar.
+Implemented liquid glass dashboard design.
 
 ## Last commit
-upgrade pt client booking calendar
+implement liquid glass dashboard design
 
 ## Current state
 
-PT booking flow is live with client and coach calendar views, 45 minute sessions, 5 minute buffers, hosted Friday reminder automation, and non-blocking Google Calendar sync.
+Dashboard and client portal now use the liquid glass design direction from the Claude Design handoff bundle.
 
 Shipped in this session:
+- Downloaded and read the Claude Design bundle from `https://api.anthropic.com/v1/design/h/oZbR-OuOAm6vkIqUehlDQA`, including README, transcript, and the admin/client HTML prototypes.
+- Added a scoped liquid glass system in `app/globals.css` for `/dashboard` and `/client` surfaces only.
+- Updated the main dashboard layout/sidebar to use a floating dark glass sidebar, warm monochrome background, translucent panels, rounded controls, and soft inner highlights.
+- Updated the PT dashboard shell/nav to inherit the same glass system while preserving the nested PT navigation structure.
+- Updated the client portal root and bottom nav to match the glass direction without affecting public marketing pages.
 - Added `session_duration_minutes` and `buffer_minutes` to PT booking availability. Defaults are 45 minute sessions and 5 minute buffers.
 - Booking blocks now reserve the session plus buffer, while appointments and Google Calendar events stay at the true 45 minute session time.
 - Client `/client` Tools tab now shows a calendar-style booking widget with available, busy, and own-booking states.

@@ -2142,7 +2142,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   };
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-[#f7f7f3] text-black">
+    <main className="client-liquid flex h-screen flex-col overflow-hidden text-black">
       {renderHeader()}
 
       <div className="flex-1 overflow-y-auto px-4 py-5 pb-28 md:p-10">
@@ -2164,7 +2164,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       </div>
 
       {client && (
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-black/10 bg-white/95 px-4 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur">
+        <nav className="client-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-black/10 bg-white/95 px-4 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur">
           <div className="mx-auto grid max-w-sm grid-cols-3 gap-2">
             {([
               ['overview', Home, 'Overview'],

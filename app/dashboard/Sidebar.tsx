@@ -48,7 +48,7 @@ export default function DashboardSidebar({ userEmail }: { userEmail: string }) {
   return (
     <>
       {/* Mobile top bar — visible only below md */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-black flex items-center justify-between px-4 z-40">
+      <div className="dashboard-glass-sidebar md:hidden fixed top-3 left-3 right-3 h-14 flex items-center justify-between px-4 z-40 rounded-2xl">
         <Link
           href="/"
           className="font-display text-sm font-medium tracking-[0.18em] uppercase text-white no-underline"
@@ -86,14 +86,14 @@ export default function DashboardSidebar({ userEmail }: { userEmail: string }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-full w-64 bg-black flex flex-col z-50 transform transition-transform duration-200 ease-out md:translate-x-0 ${
+        className={`dashboard-glass-sidebar fixed left-3 top-3 h-[calc(100vh-1.5rem)] w-56 rounded-[20px] flex flex-col z-50 transform transition-transform duration-200 ease-out md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="px-6 py-6 border-b border-white/10">
+        <div className="px-5 py-5 border-b border-white/10">
           <Link
             href="/"
-            className="font-display text-sm font-medium tracking-[0.18em] uppercase text-white no-underline"
+            className="font-display text-[0.95rem] font-light tracking-[0.22em] uppercase text-white no-underline"
           >
             Cerebro
           </Link>
@@ -109,20 +109,20 @@ export default function DashboardSidebar({ userEmail }: { userEmail: string }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                className={`flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
                   active
-                    ? 'bg-white/15 text-white'
-                    : 'text-white/50 hover:text-white hover:bg-white/8'
+                    ? 'border border-white/15 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+                    : 'border border-transparent text-white/50 hover:border-white/10 hover:bg-white/8 hover:text-white'
                 }`}
               >
-                <span className="text-base leading-none">{item.icon}</span>
+                <span className="w-4 text-center text-sm leading-none opacity-80">{item.icon}</span>
                 {item.label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="px-6 py-5 border-t border-white/10">
+        <div className="px-5 py-5 border-t border-white/10">
           <p className="text-xs text-white/40 truncate mb-3">{userEmail}</p>
           <button
             onClick={handleSignOut}
