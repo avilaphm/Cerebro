@@ -4,10 +4,10 @@
 2026-05-14 by Claude
 
 ## Last completed task
-Booking calendar overhaul - PT dashboard and client portal.
+PT Messages - per-client thread isolation, dropdown toggle, send button fix.
 
 ## Last commit
-overhaul booking calendar UX across PT dashboard and client portal
+fix PT messages: isolate per-client threads, replace sidebar with dropdown toggle, fix send button
 
 ## Current state
 
