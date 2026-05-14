@@ -119,11 +119,21 @@ interface Props {
   checkinSessions?: PTCheckinSession[];
 }
 
+interface SpeechRecognitionResultItemLike { transcript: string; }
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionResultItemLike;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
 interface SpeechRecognitionLike {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
-  onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean } & ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
