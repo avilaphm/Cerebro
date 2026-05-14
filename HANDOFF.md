@@ -1,13 +1,13 @@
 # Handoff
 
 ## Last updated
-2026-05-13 by codex
+2026-05-14 by Claude
 
 ## Last completed task
-Refined coach PT dashboard mobile UX.
+Fixed PT dashboard spacing and iOS input zoom across all pages.
 
 ## Last commit
-coach pt dashboard mobile ux
+fix pt dashboard spacing and iOS input zoom
 
 ## Current state
 
