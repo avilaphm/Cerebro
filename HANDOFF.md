@@ -4,10 +4,10 @@
 2026-05-14 by Claude
 
 ## Last completed task
-Fixed PT dashboard spacing and iOS input zoom across all pages.
+Booking calendar overhaul - PT dashboard and client portal.
 
 ## Last commit
-fix pt dashboard spacing and iOS input zoom
+overhaul booking calendar UX across PT dashboard and client portal
 
 ## Current state
 
@@ -20,6 +20,8 @@ Shipped in this session:
 - Reworked PT Overview mobile spacing: one-column metrics on narrow phones, stacked list rows, smaller page padding, and responsive operations grids.
 - Reworked coach Messages so message loading scrolls only the message pane instead of pushing the whole dashboard upward.
 - Adjusted coach Bookings, Clients, Groups, Programmes, Emails, Settings, client detail, and programme editor/create pages with responsive padding, stacked headers, full-width mobile actions, and scroll-safe modals.
+- Booking calendar overhaul: PT day view has top padding (6am no longer clips), day view removes horizontal scroll, week and month views show Mon-Fri only, past days in current month are dimmed (arrows reveal past months), PT availability windows appear as green background bands on the calendar, PT availability form has labeled fields.
+- Client calendar: day toggle replaced with 3-days (next 3 weekdays from tomorrow, skipping weekends), week is Mon-Fri only, month is Mon-Fri only with past days dimmed, Move session option jumps to the booking's week so client can pick a new slot (same-week only), cancel + rebook in sequence via manage-pt-booking.
 - Restored the client booking calendar as a true visual calendar instead of a compact slot list.
 - Client Tools now uses Google Calendar-style day/week time grids with a left time rail, hour lines, and positioned Available/Busy/Yours blocks.
 - Client monthly view now shows compact event bars inside day cells, with day/week/month toggles above the calendar.
