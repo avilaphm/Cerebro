@@ -27,7 +27,6 @@ import type {
   PTClientGoal,
   PTClientMetric,
   PTCoachingReview,
-  PTCoachingTask,
   PTProgramAssignment,
   PTProgrammeDay,
   PTProgrammeExercise,
@@ -99,36 +98,6 @@ interface VideoState {
   id: string;
   title: string;
 }
-
-interface WeeklyResetDraft {
-  availability: string;
-  golf_days: string;
-  run_days: string;
-  energy: string;
-  soreness: string;
-  sleep: string;
-  stress: string;
-  travel: string;
-  injuries: string;
-  nutrition_focus: string;
-  nutrition_obstacles: string;
-  client_focus: string;
-}
-
-const emptyWeeklyReset: WeeklyResetDraft = {
-  availability: '',
-  golf_days: '',
-  run_days: '',
-  energy: '',
-  soreness: '',
-  sleep: '',
-  stress: '',
-  travel: '',
-  injuries: '',
-  nutrition_focus: '',
-  nutrition_obstacles: '',
-  client_focus: '',
-};
 
 interface MetricDraft {
   measured_at: string;
@@ -473,8 +442,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [bookAnotherDate, setBookAnotherDate] = useState('');
   const [moveDayTarget, setMoveDayTarget] = useState<string | null>(null);
   const [bookingBusy, setBookingBusy] = useState(false);
-  const [resetDraft, setResetDraft] = useState<WeeklyResetDraft>(emptyWeeklyReset);
-  const [submittingReset, setSubmittingReset] = useState(false);
   const [showCheckinModal, setShowCheckinModal] = useState(false);
   const [checkinSession, setCheckinSession] = useState<PTCheckinSession | null>(null);
   const [checkinFocus, setCheckinFocus] = useState<CheckinWeeklyFocus | null>(null);
@@ -944,64 +911,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setSubmittingSectionNote(null);
   };
 
-  const patchResetDraft = (patch: Partial<WeeklyResetDraft>) => {
-    setResetDraft((current) => ({ ...current, ...patch }));
-  };
-
   const patchMetricDraft = (patch: Partial<MetricDraft>) => {
     setMetricDraft((current) => ({ ...current, ...patch }));
-  };
-
-  const submitWeeklyReset = async () => {
-    if (!client || submittingReset) return;
-
-    setSubmittingReset(true);
-    setStatus('Submitting weekly reset...');
-
-    const { data, error } = await supabase
-      .from('pt_weekly_checkins')
-      .insert({
-        client_id: client.id,
-        week_start: currentWeekStart,
-        availability: resetDraft.availability.trim() || null,
-        golf_days: resetDraft.golf_days.trim() || null,
-        run_days: resetDraft.run_days.trim() || null,
-        energy: toNullableNumber(resetDraft.energy),
-        soreness: toNullableNumber(resetDraft.soreness),
-        sleep: toNullableNumber(resetDraft.sleep),
-        stress: toNullableNumber(resetDraft.stress),
-        travel: resetDraft.travel.trim() || null,
-        injuries: resetDraft.injuries.trim() || null,
-        nutrition_focus: resetDraft.nutrition_focus.trim() || null,
-        nutrition_obstacles: resetDraft.nutrition_obstacles.trim() || null,
-        client_focus: resetDraft.client_focus.trim() || null,
-      })
-      .select('*')
-      .single();
-
-    if (error || !data) {
-      setStatus(error?.message ?? 'Could not submit weekly reset.');
-      setSubmittingReset(false);
-      return;
-    }
-
-    const checkin = data as PTWeeklyCheckin;
-    const task: Omit<PTCoachingTask, 'id' | 'created_at' | 'updated_at' | 'completed_at'> = {
-      client_id: client.id,
-      source_type: 'weekly_checkin',
-      source_id: checkin.id,
-      title: 'Review weekly reset',
-      details: checkin.client_focus || checkin.availability || 'Weekly reset submitted.',
-      priority: checkin.injuries || checkin.travel ? 'high' : 'normal',
-      status: 'open',
-      due_at: new Date().toISOString(),
-    };
-    const { error: taskError } = await supabase.from('pt_coaching_tasks').insert(task);
-
-    setWeeklyCheckins((current) => [checkin, ...current.filter((item) => item.id !== checkin.id)]);
-    setResetDraft(emptyWeeklyReset);
-    setStatus(taskError ? `Weekly reset saved, but Pedro task failed: ${taskError.message}` : 'Weekly reset sent to Pedro.');
-    setSubmittingReset(false);
   };
 
   const submitMetric = async () => {
