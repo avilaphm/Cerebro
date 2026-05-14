@@ -4,10 +4,10 @@
 2026-05-14 by Claude
 
 ## Last completed task
-PT Messages - per-client thread isolation, dropdown toggle, send button fix.
+Client calendar modal booking UX - slot click opens step-by-step booking modal, owned slots show blue with move/cancel options, 24h cancellation window with reason textarea.
 
 ## Last commit
-fix PT messages: isolate per-client threads, replace sidebar with dropdown toggle, fix send button
+add modal booking UX and restore missing WeeklyResetDraft declarations
 
 ## Current state
 
@@ -22,6 +22,7 @@ Shipped in this session:
 - Adjusted coach Bookings, Clients, Groups, Programmes, Emails, Settings, client detail, and programme editor/create pages with responsive padding, stacked headers, full-width mobile actions, and scroll-safe modals.
 - Booking calendar overhaul: PT day view has top padding (6am no longer clips), day view removes horizontal scroll, week and month views show Mon-Fri only, past days in current month are dimmed (arrows reveal past months), PT availability windows appear as green background bands on the calendar, PT availability form has labeled fields.
 - Client calendar: day toggle replaced with 3-days (next 3 weekdays from tomorrow, skipping weekends), week is Mon-Fri only, month is Mon-Fri only with past days dimmed, Move session option jumps to the booking's week so client can pick a new slot (same-week only), cancel + rebook in sequence via manage-pt-booking.
+- Client calendar modal UX: clicking an available slot opens a step-by-step booking modal (slot info -> confirm time + repeat -> booked). Owned sessions render in blue with client name. Clicking a blue slot opens an options sheet: Book another session (date picker, shows available times), Move this session (same day or another day within the week; Friday -> next Mon/Tue), Cancel (outside 24h = simple confirm; within 24h = reason textarea -> Pedro reviews on PT dashboard).
 - Restored the client booking calendar as a true visual calendar instead of a compact slot list.
 - Client Tools now uses Google Calendar-style day/week time grids with a left time rail, hour lines, and positioned Available/Busy/Yours blocks.
 - Client monthly view now shows compact event bars inside day cells, with day/week/month toggles above the calendar.
