@@ -241,8 +241,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const currentDay = phase && activeDay !== null ? phase.days[activeDay] ?? null : null;
 
   return (
-    <div className="max-w-4xl p-4 sm:p-6 lg:p-8">
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+    <div className="max-w-4xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+      <div className="mb-8 flex flex-wrap items-center gap-3">
         <Link href="/dashboard/pt/programmes" className="text-black/30 hover:text-black text-sm transition-colors">
           ← Programmes
         </Link>

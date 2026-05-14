@@ -86,9 +86,9 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
-      <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-8">Settings</h1>
+      <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-10">Settings</h1>
 
       <section className="mb-10 max-w-2xl">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Exercise library import</h2>

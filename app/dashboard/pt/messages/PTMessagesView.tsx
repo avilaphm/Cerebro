@@ -147,13 +147,13 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
   let lastDay = '';
 
   return (
-    <div className="flex h-[calc(100dvh-7rem)] min-h-[42rem] flex-col overflow-hidden lg:h-[calc(100vh-1.5rem)] lg:flex-row">
-      <aside className="flex max-h-64 w-full shrink-0 flex-col border-b border-black/8 bg-white lg:max-h-none lg:w-64 lg:border-b-0 lg:border-r">
-        <div className="px-5 py-5 border-b border-black/8">
+    <div className="flex h-[calc(100dvh-10rem)] min-h-[32rem] flex-col overflow-hidden lg:h-[calc(100vh-1.5rem)] lg:flex-row">
+      <aside className="flex max-h-52 w-full shrink-0 flex-col border-b border-black/8 bg-white lg:max-h-none lg:w-64 lg:border-b-0 lg:border-r">
+        <div className="px-5 py-4 border-b border-black/8 lg:py-5">
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
           <h1 className="font-display text-xl font-light">Messages</h1>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overscroll-contain">
           {clients.length === 0 ? (
             <p className="px-5 py-4 text-xs text-black/30">No clients yet.</p>
           ) : (
@@ -166,7 +166,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
                   key={c.id}
                   type="button"
                   onClick={() => setSelectedClientId(c.id)}
-                  className={`w-full text-left px-4 py-3.5 border-b border-black/5 transition-colors ${
+                  className={`w-full text-left px-4 py-4 border-b border-black/5 transition-colors ${
                     active ? 'bg-black text-white' : 'hover:bg-black/4'
                   }`}
                 >
@@ -181,7 +181,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
                     )}
                   </div>
                   {last && (
-                    <p className={`text-xs truncate ${active ? 'text-white/60' : 'text-black/35'}`}>
+                    <p className={`text-xs truncate mt-0.5 ${active ? 'text-white/60' : 'text-black/35'}`}>
                       {last.sender === 'pt' ? 'You: ' : ''}{last.content}
                     </p>
                   )}
@@ -204,7 +204,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
               <p className="text-xs text-black/40">{selectedClient.email}</p>
             </div>
 
-            <div ref={messagesRef} className="flex-1 space-y-1 overflow-y-auto px-4 py-5 sm:px-6">
+            <div ref={messagesRef} className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
               {loading ? (
                 <p className="text-xs text-black/30 text-center py-8">Loading messages...</p>
               ) : messages.length === 0 ? (
@@ -252,20 +252,21 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
               <div ref={bottomRef} />
             </div>
 
-            <div className="flex shrink-0 gap-2 border-t border-black/8 bg-white px-3 py-3 sm:px-4">
+            <div className="flex shrink-0 items-end gap-2 border-t border-black/8 bg-white px-3 py-3 sm:px-4">
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={handleKey}
                 placeholder={`Message ${selectedClient.name}…`}
                 rows={1}
-                className="flex-1 resize-none border border-black/10 px-4 py-2.5 text-sm outline-none focus:border-black/30 rounded-xl"
+                style={{ fontSize: '16px' }}
+                className="flex-1 resize-none border border-black/10 px-4 py-3 outline-none focus:border-black/30 rounded-xl leading-snug"
               />
               <button
                 type="button"
                 onClick={() => void send()}
                 disabled={!text.trim() || sending}
-                className="border border-black bg-black text-white px-4 py-2.5 text-sm rounded-xl disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
+                className="shrink-0 border border-black bg-black text-white px-4 py-3 text-sm rounded-xl disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
               >
                 Send
               </button>

@@ -364,9 +364,9 @@ export default function PTBookingsView() {
   );
 
   return (
-    <div className="min-h-screen bg-[#f7f7f3] p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-[#f7f7f3] px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <div className="max-w-7xl">
-        <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">PT Dashboard</p>
             <h1 className="mt-1 font-display text-3xl font-light tracking-[-0.02em]">Bookings</h1>

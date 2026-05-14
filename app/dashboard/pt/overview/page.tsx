@@ -134,11 +134,11 @@ export default async function PTOverviewPage() {
   });
 
   return (
-    <div className="max-w-5xl p-4 sm:p-6 lg:p-8">
+    <div className="max-w-5xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">Dashboard</p>
-      <h1 className="mb-6 font-display text-3xl font-light tracking-[-0.02em] sm:mb-8">Overview</h1>
+      <h1 className="mb-8 font-display text-3xl font-light tracking-[-0.02em] sm:mb-10">Overview</h1>
 
-      <div className="mb-8 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:mb-10 lg:grid-cols-5 lg:gap-4">
+      <div className="mb-10 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 xl:gap-4 xl:mb-12">
         {[
           { label: 'Clients', value: clients.length },
           { label: 'Active programmes', value: activeAssignments.length },
@@ -147,27 +147,27 @@ export default async function PTOverviewPage() {
           { label: 'Unread messages', value: unreadMessages, alert: unreadMessages > 0, href: '/dashboard/pt/messages' },
         ].map((s) => (
           s.href ? (
-            <Link key={s.label} href={s.href} className={`border p-4 transition-colors hover:border-black/30 sm:p-5 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
+            <Link key={s.label} href={s.href} className={`border p-5 transition-colors hover:border-black/30 sm:p-6 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
               <p className={`text-3xl font-light ${s.alert ? 'text-amber-700' : ''}`}>{s.value}</p>
-              <p className={`text-xs mt-1 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
+              <p className={`text-xs mt-2 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
             </Link>
           ) : (
-            <div key={s.label} className={`border p-4 sm:p-5 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
+            <div key={s.label} className={`border p-5 sm:p-6 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
               <p className={`text-3xl font-light ${s.alert ? 'text-amber-700' : ''}`}>{s.value}</p>
-              <p className={`text-xs mt-1 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
+              <p className={`text-xs mt-2 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
             </div>
           )
         ))}
       </div>
 
-      <section className="mb-10">
-        <div className="mb-4 flex items-end justify-between gap-3">
+      <section className="mb-12">
+        <div className="mb-5 flex items-end justify-between gap-3">
           <div>
             <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Coaching operations</p>
             <h2 className="mt-1 text-lg font-medium">Week of {new Date(`${currentWeekStart}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</h2>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-5 md:gap-4">
+        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 xl:gap-4">
           {[
             { label: 'Resets waiting', value: waitingCheckins.length, alert: waitingCheckins.length > 0 },
             { label: 'Plans not published', value: plansNotPublished.length, alert: plansNotPublished.length > 0 },
@@ -175,15 +175,15 @@ export default async function PTOverviewPage() {
             { label: 'Open loops', value: openCoachingTasks, alert: openCoachingTasks > 0 },
             { label: 'Metrics due', value: metricsDue.length, alert: metricsDue.length > 0 },
           ].map((item) => (
-            <div key={item.label} className={`border p-4 ${item.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10 bg-white'}`}>
+            <div key={item.label} className={`border p-5 sm:p-6 ${item.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10 bg-white'}`}>
               <p className={`text-2xl font-light ${item.alert ? 'text-amber-700' : 'text-black'}`}>{item.value}</p>
-              <p className={`mt-1 text-[0.6rem] uppercase tracking-[0.12em] ${item.alert ? 'text-amber-700' : 'text-black/35'}`}>{item.label}</p>
+              <p className={`mt-2 text-[0.6rem] uppercase tracking-[0.12em] ${item.alert ? 'text-amber-700' : 'text-black/35'}`}>{item.label}</p>
             </div>
           ))}
         </div>
 
         {(waitingCheckins.length > 0 || plansNotPublished.length > 0) && (
-          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <div className="mt-6 grid gap-6 lg:grid-cols-2 lg:gap-8">
             {waitingCheckins.length > 0 && (
               <div>
                 <h3 className="mb-3 text-[0.6rem] uppercase tracking-[0.18em] text-amber-600">Reset review</h3>
@@ -191,7 +191,7 @@ export default async function PTOverviewPage() {
                   {waitingCheckins.slice(0, 5).map((checkin) => {
                     const client = clients.find((c) => c.id === checkin.client_id);
                     return (
-                      <Link key={checkin.id} href={`/dashboard/pt/clients/${checkin.client_id}`} className="block border border-amber-200 bg-amber-50/60 px-3 py-3 transition-colors hover:border-amber-400 sm:px-4">
+                      <Link key={checkin.id} href={`/dashboard/pt/clients/${checkin.client_id}`} className="block border border-amber-200 bg-amber-50/60 px-4 py-3.5 transition-colors hover:border-amber-400">
                         <p className="text-sm font-medium">{client?.name ?? 'Client'}</p>
                         <p className="mt-1 line-clamp-1 text-xs text-black/45">{checkin.client_focus || checkin.availability || 'Weekly reset submitted.'}</p>
                       </Link>
@@ -205,7 +205,7 @@ export default async function PTOverviewPage() {
                 <h3 className="mb-3 text-[0.6rem] uppercase tracking-[0.18em] text-black/40">Planning queue</h3>
                 <div className="space-y-2">
                   {plansNotPublished.slice(0, 5).map((client) => (
-                    <Link key={client.id} href={`/dashboard/pt/clients/${client.id}`} className="flex flex-col gap-2 border border-black/8 px-3 py-3 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                    <Link key={client.id} href={`/dashboard/pt/clients/${client.id}`} className="flex flex-col gap-2 border border-black/8 px-4 py-3.5 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-medium">{client.name}</p>
                         <p className="text-xs text-black/40">{draftPlanClientIds.has(client.id) ? 'Draft waiting to publish' : 'No plan created'}</p>
@@ -220,10 +220,10 @@ export default async function PTOverviewPage() {
         )}
       </section>
 
-      <div className="mb-8 grid gap-6 lg:grid-cols-2 lg:gap-8">
+      <div className="mb-10 grid gap-8 lg:grid-cols-2 lg:gap-10">
         {needsAttention.length > 0 && (
           <section>
-            <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-amber-600 mb-4">Needs attention (14 days no workout)</h2>
+            <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-amber-600 mb-4">Needs attention — 14 days no workout</h2>
             <div className="space-y-2">
               {needsAttention.map((c) => {
                 const lastWorkout = recentWorkouts.find((w) => w.client_id === c.id);
@@ -231,7 +231,7 @@ export default async function PTOverviewPage() {
                   <Link
                     key={c.id}
                     href={`/dashboard/pt/clients/${c.id}`}
-                    className="flex flex-col gap-2 border border-amber-200 bg-amber-50/50 px-3 py-3 transition-colors hover:border-amber-400 sm:flex-row sm:items-center sm:justify-between sm:px-4"
+                    className="flex flex-col gap-2 border border-amber-200 bg-amber-50/50 px-4 py-4 transition-colors hover:border-amber-400 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <p className="text-sm font-medium">{c.name}</p>
@@ -241,7 +241,7 @@ export default async function PTOverviewPage() {
                           : 'No workouts logged'}
                       </p>
                     </div>
-                    <span className="text-xs text-amber-600">Check in</span>
+                    <span className="text-xs text-amber-600 shrink-0">Check in</span>
                   </Link>
                 );
               })}
@@ -261,12 +261,12 @@ export default async function PTOverviewPage() {
                   day: 'numeric', month: 'short',
                 });
                 return (
-                  <div key={w.client_id} className="flex flex-col gap-2 border border-black/8 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                  <div key={w.client_id} className="flex flex-col gap-2 border border-black/8 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-medium">{clientData?.name ?? 'Unknown'}</p>
                       <p className="text-xs text-black/40">{w.workout_title}</p>
                     </div>
-                    <p className="text-xs text-black/30">{date}</p>
+                    <p className="text-xs text-black/30 shrink-0">{date}</p>
                   </div>
                 );
               })}
@@ -282,13 +282,13 @@ export default async function PTOverviewPage() {
                 <Link
                   key={c.id}
                   href={`/dashboard/pt/clients/${c.id}`}
-                  className="flex flex-col gap-2 border border-black/8 px-3 py-3 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between sm:px-4"
+                  className="flex flex-col gap-2 border border-black/8 px-4 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-medium">{c.name}</p>
                     <p className="text-xs text-black/40">{c.email}</p>
                   </div>
-                  <span className={`text-sm font-medium ${c.sessions_remaining === 0 ? 'text-red-500' : 'text-amber-600'}`}>
+                  <span className={`text-sm font-medium shrink-0 ${c.sessions_remaining === 0 ? 'text-red-500' : 'text-amber-600'}`}>
                     {c.sessions_remaining} left
                   </span>
                 </Link>
@@ -305,13 +305,13 @@ export default async function PTOverviewPage() {
                 <Link
                   key={c.id}
                   href={`/dashboard/pt/clients/${c.id}`}
-                  className="flex flex-col gap-2 border border-black/8 px-3 py-3 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between sm:px-4"
+                  className="flex flex-col gap-2 border border-black/8 px-4 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-medium">{c.name}</p>
                     <p className="text-xs text-black/40">{c.email}</p>
                   </div>
-                  <span className="text-xs border border-black/15 px-3 py-1 text-black/40">
+                  <span className="text-xs border border-black/15 px-3 py-1 text-black/40 shrink-0">
                     Assign
                   </span>
                 </Link>
@@ -321,7 +321,7 @@ export default async function PTOverviewPage() {
         )}
       </div>
 
-      <section>
+      <section className="pb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-4">Recent activity</h2>
         {events.length === 0 ? (
           <p className="text-sm text-black/30">No activity yet.</p>
@@ -332,7 +332,7 @@ export default async function PTOverviewPage() {
                 day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
               });
               return (
-                <div key={e.id} className="flex flex-col gap-1 border-b border-black/5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                <div key={e.id} className="flex flex-col gap-1 border-b border-black/5 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm text-black/70">{formatEvent(e)}</p>
                   <p className="shrink-0 text-xs text-black/30 sm:ml-4">{date}</p>
                 </div>
