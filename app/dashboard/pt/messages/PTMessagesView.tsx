@@ -24,25 +24,34 @@ interface Props {
   lastMessageByClient: Record<string, { content: string; created_at: string; sender: string }>;
 }
 
-export default function PTMessagesView({ clients, unreadByClient, lastMessageByClient }: Props) {
+export default function PTMessagesView({ clients, unreadByClient }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(
-    clients[0]?.id ?? null,
-  );
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(clients[0]?.id ?? null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [unread, setUnread] = useState(unreadByClient);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) ?? null;
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    if (dropdownOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [dropdownOpen]);
 
   const mergeMessages = useCallback((incoming: Message[]) => {
     setMessages((current) => {
       const byId = new Map<string, Message>();
-      [...current, ...incoming].forEach((message) => byId.set(message.id, message));
+      [...current, ...incoming].forEach((m) => byId.set(m.id, m));
       return Array.from(byId.values()).sort(
         (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
       );
@@ -50,14 +59,22 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
   }, []);
 
   const loadMessages = useCallback(async (clientId: string, showLoading = true) => {
-    if (showLoading) setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+      setMessages([]);
+    }
     const { data } = await supabase
       .from('pt_messages')
       .select('*')
       .eq('client_id', clientId)
       .order('created_at', { ascending: true });
-    mergeMessages((data ?? []) as Message[]);
-    if (showLoading) setLoading(false);
+
+    if (showLoading) {
+      setMessages((data ?? []) as Message[]);
+      setLoading(false);
+    } else {
+      mergeMessages((data ?? []) as Message[]);
+    }
 
     await supabase
       .from('pt_messages')
@@ -117,11 +134,11 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
     setSending(true);
     const content = text.trim();
     setText('');
-    const { data: inserted, error } = await supabase.from('pt_messages').insert({
-      client_id: selectedClientId,
-      sender: 'pt',
-      content,
-    }).select('*').single();
+    const { data: inserted, error } = await supabase
+      .from('pt_messages')
+      .insert({ client_id: selectedClientId, sender: 'pt', content })
+      .select('*')
+      .single();
     if (error) {
       setText(content);
       setSending(false);
@@ -144,54 +161,79 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
   const formatDay = (iso: string) =>
     new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
 
+  const otherUnreadCount = clients
+    .filter((c) => c.id !== selectedClientId)
+    .reduce((sum, c) => sum + (unread[c.id] ?? 0), 0);
+
   let lastDay = '';
 
   return (
-    <div className="flex h-[calc(100dvh-10rem)] min-h-[32rem] flex-col overflow-hidden lg:h-[calc(100vh-1.5rem)] lg:flex-row">
-      <aside className="flex max-h-52 w-full shrink-0 flex-col border-b border-black/8 bg-white lg:max-h-none lg:w-64 lg:border-b-0 lg:border-r">
-        <div className="px-5 py-4 border-b border-black/8 lg:py-5">
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
+    <div className="flex h-[calc(100dvh-10rem)] min-h-[32rem] flex-col overflow-hidden lg:h-[calc(100vh-1.5rem)]">
+      {/* Header */}
+      <div className="shrink-0 px-5 py-4 border-b border-black/8 bg-white lg:py-5">
+        <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
+        <div className="flex items-center gap-2.5">
           <h1 className="font-display text-xl font-light">Messages</h1>
-        </div>
-        <div className="flex-1 overflow-y-auto overscroll-contain">
-          {clients.length === 0 ? (
-            <p className="px-5 py-4 text-xs text-black/30">No clients yet.</p>
-          ) : (
-            clients.map((c) => {
-              const last = lastMessageByClient[c.id];
-              const count = unread[c.id] ?? 0;
-              const active = c.id === selectedClientId;
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setSelectedClientId(c.id)}
-                  className={`w-full text-left px-4 py-4 border-b border-black/5 transition-colors ${
-                    active ? 'bg-black text-white' : 'hover:bg-black/4'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-0.5">
-                    <p className={`text-sm font-medium truncate ${active ? 'text-white' : ''}`}>
-                      {c.name}
-                    </p>
-                    {count > 0 && (
-                      <span className="ml-2 shrink-0 text-[0.6rem] bg-black text-white rounded-full w-4 h-4 flex items-center justify-center font-medium">
-                        {count}
-                      </span>
-                    )}
-                  </div>
-                  {last && (
-                    <p className={`text-xs truncate mt-0.5 ${active ? 'text-white/60' : 'text-black/35'}`}>
-                      {last.sender === 'pt' ? 'You: ' : ''}{last.content}
-                    </p>
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
-      </aside>
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setDropdownOpen((o) => !o)}
+              className="flex items-center gap-1.5 pl-3 pr-2.5 py-1 rounded-lg bg-black text-white text-sm font-medium hover:bg-black/80 transition-colors"
+            >
+              <span>{selectedClient?.name ?? 'Select client'}</span>
+              {otherUnreadCount > 0 && (
+                <span className="bg-white text-black rounded-full w-4 h-4 flex items-center justify-center text-[0.6rem] font-bold leading-none">
+                  {otherUnreadCount}
+                </span>
+              )}
+              <svg
+                className={`w-3.5 h-3.5 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
 
+            {dropdownOpen && (
+              <div className="absolute top-full left-0 mt-1.5 w-56 bg-white border border-black/10 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+                {clients.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-black/30">No clients yet.</p>
+                ) : (
+                  clients.map((c) => {
+                    const count = unread[c.id] ?? 0;
+                    const isActive = c.id === selectedClientId;
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedClientId(c.id);
+                          setDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-3 flex items-center justify-between transition-colors ${
+                          isActive ? 'bg-black/6 font-medium' : 'hover:bg-black/4'
+                        }`}
+                      >
+                        <span className="text-sm">{c.name}</span>
+                        {count > 0 && (
+                          <span className="text-[0.6rem] bg-black text-white rounded-full w-4 h-4 flex items-center justify-center font-medium leading-none">
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Chat pane */}
       <div className="flex min-h-0 flex-1 flex-col bg-[#fafaf8]">
         {!selectedClient ? (
           <div className="flex-1 flex items-center justify-center">
@@ -199,18 +241,14 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
           </div>
         ) : (
           <>
-            <div className="shrink-0 border-b border-black/8 bg-white px-4 py-4 sm:px-6">
-              <p className="font-medium text-sm">{selectedClient.name}</p>
-              <p className="text-xs text-black/40">{selectedClient.email}</p>
-            </div>
-
-            <div ref={messagesRef} className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+            <div
+              ref={messagesRef}
+              className="flex-1 space-y-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6"
+            >
               {loading ? (
                 <p className="text-xs text-black/30 text-center py-8">Loading messages...</p>
               ) : messages.length === 0 ? (
-                <p className="text-xs text-black/30 text-center py-8">
-                  No messages yet. Say hello.
-                </p>
+                <p className="text-xs text-black/30 text-center py-8">No messages yet. Say hello.</p>
               ) : (
                 messages.map((m) => {
                   const day = formatDay(m.created_at);
@@ -249,7 +287,6 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
                   );
                 })
               )}
-              <div ref={bottomRef} />
             </div>
 
             <div className="flex shrink-0 items-end gap-2 border-t border-black/8 bg-white px-3 py-3 sm:px-4">
@@ -266,7 +303,7 @@ export default function PTMessagesView({ clients, unreadByClient, lastMessageByC
                 type="button"
                 onClick={() => void send()}
                 disabled={!text.trim() || sending}
-                className="shrink-0 border border-black bg-black text-white px-4 py-3 text-sm rounded-xl disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
+                className="shrink-0 bg-black text-white px-4 py-3 text-sm font-medium rounded-xl disabled:bg-black/40 hover:bg-black/80 transition-colors"
               >
                 Send
               </button>
