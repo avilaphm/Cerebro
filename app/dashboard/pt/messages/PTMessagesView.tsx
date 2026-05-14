@@ -182,8 +182,8 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
 
   return (
     <div className="flex h-[calc(100dvh-10rem)] min-h-[32rem] flex-col overflow-hidden lg:h-[calc(100vh-1.5rem)]">
-      {/* Header */}
-      <div className="shrink-0 px-5 py-4 border-b border-black/8 bg-white lg:py-5">
+      {/* Header — relative z-10 creates a stacking context above the chat pane so the dropdown renders on top */}
+      <div className="relative z-10 shrink-0 px-6 py-5 border-b border-black/8 bg-white lg:py-6">
         <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
         <div className="flex items-center gap-2.5">
           <h1 className="font-display text-xl font-light">Messages</h1>
@@ -211,7 +211,7 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
             </button>
 
             {dropdownOpen && (
-              <div className="no-glass absolute top-full left-0 mt-1.5 w-56 bg-white border border-black/10 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+              <div className="no-glass absolute top-full left-0 mt-1.5 w-56 z-50 py-1 overflow-hidden">
                 {clients.length === 0 ? (
                   <p className="px-4 py-3 text-xs text-black/30">No clients yet.</p>
                 ) : (

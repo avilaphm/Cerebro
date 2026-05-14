@@ -248,7 +248,10 @@ body::before {
   border-radius: 20px;
 }
 
-/* Opt-out of glass treatment for elements that need a solid background (e.g. dropdowns) */
+/* Opt-out of glass treatment for elements that need a solid background (e.g. dropdowns).
+   Scoped under liquid-dashboard/client-liquid to beat the bg-white glass override. */
+.liquid-dashboard .no-glass,
+.client-liquid .no-glass,
 .no-glass {
   background: white !important;
   backdrop-filter: none !important;

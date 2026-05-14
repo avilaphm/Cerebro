@@ -74,13 +74,13 @@ export default function DashboardSidebar({ userEmail }: { userEmail: string }) {
         </button>
       </div>
 
-      {/* Backdrop — mobile only, when drawer open */}
+      {/* Backdrop — mobile only, invisible hit area to close drawer */}
       {open && (
         <button
           type="button"
           aria-label="Close menu"
           onClick={() => setOpen(false)}
-          className="md:hidden fixed inset-0 bg-black/40 z-40"
+          className="md:hidden fixed inset-0 z-40"
         />
       )}
 

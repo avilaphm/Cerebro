@@ -1344,7 +1344,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   };
 
   const renderBodyMetricsPanel = () => (
-    <section className="border border-black/10 bg-white p-4 md:p-5">
+    <section className="border border-black/10 bg-white p-5 md:p-6">
       <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Body Metrics</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <input type="date" value={metricDraft.measured_at} onChange={(event) => patchMetricDraft({ measured_at: event.target.value })}
@@ -1376,7 +1376,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   );
 
   const renderProgressPanel = () => (
-    <section className="border border-black/10 bg-white p-4 md:p-5">
+    <section className="border border-black/10 bg-white p-5 md:p-6">
       <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Progress</p>
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
@@ -1401,7 +1401,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const renderCoachingHome = () => (
     <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-      <section className="border border-black/10 bg-white p-4 md:p-5">
+      <section className="border border-black/10 bg-white p-5 md:p-6">
         <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
           <div>
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week</p>
@@ -1464,7 +1464,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       </section>
 
       {currentWeeklyPlan && (
-        <section className="border border-black/10 bg-white p-4 md:p-5">
+        <section className="border border-black/10 bg-white p-5 md:p-6">
           <div className="flex items-center justify-between gap-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Plan</p>
             <p className="text-xs text-black/35">
@@ -1547,7 +1547,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       )}
 
       {checkinFocus && (
-        <section className="border border-black/10 bg-white p-4 md:p-5">
+        <section className="border border-black/10 bg-white p-5 md:p-6">
           <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week&apos;s Focus</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="border border-black/8 bg-[#fbfbf8] p-3">
@@ -1567,7 +1567,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       )}
 
       <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="border border-black/10 bg-white p-4 md:p-5">
+        <div className="border border-black/10 bg-white p-5 md:p-6">
           <div className="flex items-start justify-between gap-3">
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
             {checkinDue && (
@@ -1602,7 +1602,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </div>
 
         <div className="space-y-4">
-          <div className="border border-black/10 bg-white p-4 md:p-5">
+          <div className="border border-black/10 bg-white p-5 md:p-6">
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Monthly Review</p>
             {monthlyReview ? (
               <div className="mt-3 space-y-2">
@@ -1635,7 +1635,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           Phase {selectedWorkout.phaseIndex + 1}
         </button>
 
-        <section className="border border-black/10 bg-white p-4 md:p-5">
+        <section className="border border-black/10 bg-white p-5 md:p-6">
           <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Workout preview</p>
           <h2 className="mt-2 font-display text-2xl font-light md:text-3xl">{selectedDay.title}</h2>
           {selectedDay.focus && <p className="mt-2 text-sm leading-relaxed text-black/55">{selectedDay.focus}</p>}
@@ -1905,7 +1905,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const renderOverviewScreen = () => (
     <div className="space-y-4 md:space-y-6">
       <div className="mx-auto max-w-5xl">
-        <section className="border border-black/10 bg-white p-4 md:p-5">
+        <section className="border border-black/10 bg-white p-5 md:p-6">
           <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Overview</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
@@ -1963,7 +1963,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </div>
       ) : (
         <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-          <section className="border border-black/10 bg-white p-4 md:p-5">
+          <section className="border border-black/10 bg-white p-5 md:p-6">
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
             <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
             {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
@@ -1971,7 +1971,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
           {renderProgressPanel()}
 
-          <section className="border border-black/10 bg-white p-4 md:p-5">
+          <section className="border border-black/10 bg-white p-5 md:p-6">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Phase {activePhaseIndex + 1}</p>
@@ -2176,7 +2176,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
     return (
       <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-        <section className="border border-black/10 bg-white p-4 md:p-5">
+        <section className="border border-black/10 bg-white p-5 md:p-6">
           <div className="grid gap-3 sm:grid-cols-[1.2fr_0.8fr]">
             <div>
               <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Next session</p>
@@ -2204,7 +2204,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         </section>
 
-        <section className="border border-black/10 bg-white p-4 md:p-5">
+        <section className="border border-black/10 bg-white p-5 md:p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Book Pedro</p>

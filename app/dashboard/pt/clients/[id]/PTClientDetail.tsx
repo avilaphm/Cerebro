@@ -859,7 +859,7 @@ export default function PTClientDetail({
   };
 
   const renderWeeklyPlanBuilder = () => (
-    <div className="mt-4 border border-black/10 px-5 py-4">
+    <div className="mt-4 border border-black/10 px-6 py-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Weekly plan</p>
@@ -1461,7 +1461,7 @@ export default function PTClientDetail({
 
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-4">
-            <div className="border border-black/10 bg-[#fbfbf8] px-5 py-4">
+            <div className="border border-black/10 bg-[#fbfbf8] px-6 py-5">
               <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Client 360</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <div>
@@ -1483,7 +1483,7 @@ export default function PTClientDetail({
               </div>
             </div>
 
-            <div className="border border-black/10 px-5 py-4">
+            <div className="border border-black/10 px-6 py-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest check-in</p>
@@ -1519,7 +1519,7 @@ export default function PTClientDetail({
             </div>
 
             {checkinSessions.length > 0 && (
-              <div className="border border-black/10 px-5 py-4">
+              <div className="border border-black/10 px-6 py-5">
                 <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">AI Check-in Sessions</p>
                 <div className="mt-3 space-y-4">
                   {checkinSessions.map((session, index) => (
@@ -1583,7 +1583,7 @@ export default function PTClientDetail({
           </div>
 
           <div className="space-y-4">
-            <div className="border border-black/10 px-5 py-4">
+            <div className="border border-black/10 px-6 py-5">
               <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Open loops</p>
               {coachingTasks.length > 0 ? (
                 <div className="mt-3 space-y-2">
@@ -1608,7 +1608,7 @@ export default function PTClientDetail({
               )}
             </div>
 
-            <div className="border border-black/10 px-5 py-4">
+            <div className="border border-black/10 px-6 py-5">
               <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest metrics</p>
               {latestMetric ? (
                 <div className="mt-3">
@@ -1626,7 +1626,7 @@ export default function PTClientDetail({
               )}
             </div>
 
-            <div className="border border-black/10 px-5 py-4">
+            <div className="border border-black/10 px-6 py-5">
               <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Progress snapshot</p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {renderMetricDelta('Weight', weightPair.current?.weight_kg, weightPair.previous?.weight_kg, 'kg')}
@@ -1660,7 +1660,7 @@ export default function PTClientDetail({
 
         {renderWeeklyPlanBuilder()}
 
-        <div className="mt-4 border border-black/10 px-5 py-4">
+        <div className="mt-4 border border-black/10 px-6 py-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Review loop</p>
@@ -1724,7 +1724,7 @@ export default function PTClientDetail({
           </div>
         </div>
 
-        <div className="mt-4 border border-black/10 px-5 py-4">
+        <div className="mt-4 border border-black/10 px-6 py-5">
           <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Goals</p>
           {activeGoals.length > 0 && (
             <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -1782,7 +1782,7 @@ export default function PTClientDetail({
       <div className="border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programme</h2>
         {activeAssignment ? (
-          <div className="border border-black/10 px-5 py-4">
+          <div className="border border-black/10 px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-medium">{activeAssignment.name}</p>
@@ -1802,7 +1802,7 @@ export default function PTClientDetail({
             </div>
           </div>
         ) : (
-          <div className="border border-black/8 px-5 py-4">
+          <div className="border border-black/8 px-6 py-5">
             <p className="text-sm text-black/40 mb-3">No active programme.</p>
             {templates.length > 0 ? (
               <div className="space-y-2">
@@ -1829,7 +1829,7 @@ export default function PTClientDetail({
 
       <div className="border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programming Agent</h2>
-        <div className="border border-black/10 bg-[#fbfbf8] px-5 py-4">
+        <div className="border border-black/10 bg-[#fbfbf8] px-6 py-5">
           <p className="text-sm text-black/55">
             Drafts from this client's document, notes, feedback, training logs, current programme, and exercise library. Nothing is saved until you review and press Create or Save.
           </p>
