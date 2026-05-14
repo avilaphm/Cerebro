@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTClient } from '@/utils/pt/types';
 import type {
@@ -19,6 +19,12 @@ type BookingCalendarView = 'day' | 'week' | 'month';
 const COACH_CALENDAR_START_HOUR = 6;
 const COACH_CALENDAR_END_HOUR = 18;
 const COACH_HOUR_HEIGHT = 72;
+const GRID_TOP_PAD = 20;
+
+function timeToMinutes(value: string) {
+  const [hour, minute] = value.slice(0, 5).split(':').map(Number);
+  return hour * 60 + minute;
+}
 
 function todayInputValue() {
   const now = new Date();
@@ -145,20 +151,36 @@ export default function PTBookingsView() {
     map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
     return map;
   }, [appointments]);
-  const calendarDays = useMemo(() => {
-    const first = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
-    const start = new Date(first);
-    start.setDate(first.getDate() - first.getDay());
-    return Array.from({ length: 42 }, (_, index) => {
-      const date = new Date(start);
-      date.setDate(start.getDate() + index);
-      return date;
-    });
-  }, [calendarMonth]);
+
+  // Mon-Fri only week days
   const calendarWeekDays = useMemo(() => {
-    const start = startOfWeek(calendarDate);
-    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+    const sunday = startOfWeek(calendarDate);
+    const monday = addDays(sunday, 1);
+    return Array.from({ length: 5 }, (_, i) => addDays(monday, i));
   }, [calendarDate]);
+
+  // Mon-Fri only month days
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const first = new Date(year, month, 1);
+    const last = new Date(year, month + 1, 0);
+    const startDay = new Date(first);
+    const dow = startDay.getDay();
+    startDay.setDate(startDay.getDate() - (dow === 0 ? 6 : dow - 1));
+    const endDay = new Date(last);
+    const endDow = endDay.getDay();
+    endDay.setDate(endDay.getDate() + (endDow === 0 ? 5 : endDow <= 5 ? 5 - endDow : 6));
+    const days: Date[] = [];
+    const current = new Date(startDay);
+    while (current <= endDay) {
+      const d = current.getDay();
+      if (d >= 1 && d <= 5) days.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+    return days;
+  }, [calendarMonth]);
+
   const lowCreditClients = clients.filter((client) => client.sessions_remaining <= 2).sort((a, b) => a.sessions_remaining - b.sessions_remaining);
 
   const addAvailability = async () => {
@@ -277,7 +299,7 @@ export default function PTBookingsView() {
     calendarView === 'day'
       ? calendarDate.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })
       : calendarView === 'week'
-        ? `${formatBookingDate(calendarWeekDays[0])} - ${formatBookingDate(calendarWeekDays[6])}`
+        ? `${formatBookingDate(calendarWeekDays[0])} - ${formatBookingDate(calendarWeekDays[4])}`
         : calendarMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
 
   const renderAppointmentBlock = (appointment: PTBookingAppointment, compact = false) => {
@@ -292,7 +314,7 @@ export default function PTBookingsView() {
         type="button"
         onClick={() => setSelectedAppointment(appointment)}
         style={{ top, height }}
-        className={`absolute inset-x-1 overflow-hidden border px-2 py-1 text-left transition-colors ${
+        className={`absolute inset-x-1 z-10 overflow-hidden border px-2 py-1 text-left transition-colors ${
           selectedAppointment?.id === appointment.id
             ? 'border-black bg-black text-white'
             : isRequest
@@ -312,9 +334,9 @@ export default function PTBookingsView() {
     );
   };
 
-  const renderCoachCalendarRail = (days: Date[]) => (
-    <div className="mt-5 overflow-x-auto border border-black/10 bg-white">
-      <div className="min-w-[48rem]">
+  const renderCoachCalendarRail = (days: Date[], scrollable = true) => {
+    const body = (
+      <div className={scrollable ? 'min-w-[48rem]' : undefined}>
         <div className="grid border-b border-black/10" style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}>
           <div className="bg-[#fbfbf8]" />
           {days.map((day) => {
@@ -333,7 +355,8 @@ export default function PTBookingsView() {
           className="grid"
           style={{
             gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))`,
-            height: (COACH_CALENDAR_END_HOUR - COACH_CALENDAR_START_HOUR) * COACH_HOUR_HEIGHT,
+            height: (COACH_CALENDAR_END_HOUR - COACH_CALENDAR_START_HOUR) * COACH_HOUR_HEIGHT + GRID_TOP_PAD,
+            paddingTop: GRID_TOP_PAD,
           }}
         >
           <div className="relative bg-white">
@@ -349,19 +372,42 @@ export default function PTBookingsView() {
           {days.map((day) => {
             const key = dateKey(day);
             const dayAppointments = appointmentsByDate.get(key) ?? [];
+            const dayWindows = availability.filter((w) => w.is_active && w.day_of_week === day.getDay());
             return (
               <div key={key} className="relative border-l border-black/10">
                 {Array.from({ length: COACH_CALENDAR_END_HOUR - COACH_CALENDAR_START_HOUR + 1 }, (_, index) => (
                   <div key={index} className="absolute inset-x-0 border-t border-black/10" style={{ top: index * COACH_HOUR_HEIGHT }} />
                 ))}
+                {dayWindows.map((window) => {
+                  const wTop = Math.max(0, ((timeToMinutes(window.start_time) - COACH_CALENDAR_START_HOUR * 60) / 60) * COACH_HOUR_HEIGHT);
+                  const wHeight = Math.max(0, ((timeToMinutes(window.end_time) - timeToMinutes(window.start_time)) / 60) * COACH_HOUR_HEIGHT);
+                  return (
+                    <div
+                      key={window.id}
+                      style={{ top: wTop, height: wHeight }}
+                      className="absolute inset-x-0 border-l-2 border-emerald-300 bg-emerald-50"
+                    />
+                  );
+                })}
                 {dayAppointments.map((appointment) => renderAppointmentBlock(appointment, days.length > 1))}
               </div>
             );
           })}
         </div>
       </div>
-    </div>
-  );
+    );
+
+    return (
+      <div className={`mt-5 border border-black/10 bg-white ${scrollable ? 'overflow-x-auto' : ''}`}>
+        {body}
+      </div>
+    );
+  };
+
+  const todayStr = todayInputValue();
+  const isCurrentMonth =
+    calendarMonth.getMonth() === new Date().getMonth() &&
+    calendarMonth.getFullYear() === new Date().getFullYear();
 
   return (
     <div className="min-h-screen bg-[#f7f7f3] px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
@@ -433,25 +479,31 @@ export default function PTBookingsView() {
                   </div>
 
                   {calendarView === 'day' ? (
-                    renderCoachCalendarRail([calendarDate])
+                    renderCoachCalendarRail([calendarDate], false)
                   ) : calendarView === 'week' ? (
                     renderCoachCalendarRail(calendarWeekDays)
                   ) : (
-                    <div className="mt-5 grid grid-cols-7 border-l border-t border-black/10">
-                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                    <div className="mt-5 grid grid-cols-5 border-l border-t border-black/10">
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day) => (
                         <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
                           {day}
                         </div>
                       ))}
                       {calendarDays.map((day) => {
                         const key = dateKey(day);
-                        const dayAppointments = appointmentsByDate.get(key) ?? [];
+                        const isPast = isCurrentMonth && dateKey(day) < todayStr;
+                        const dayAppointments = isPast ? [] : (appointmentsByDate.get(key) ?? []);
                         const inMonth = day.getMonth() === calendarMonth.getMonth();
                         return (
-                          <div key={key} className={`min-h-24 border-b border-r border-black/10 p-1.5 sm:min-h-32 sm:p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
+                          <div
+                            key={key}
+                            className={`min-h-24 border-b border-r border-black/10 p-1.5 sm:min-h-32 sm:p-2 ${
+                              isPast ? 'bg-white opacity-30' : inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'
+                            }`}
+                          >
                             <div className="mb-2 flex items-center justify-between">
                               <span className="text-xs font-medium">{day.getDate()}</span>
-                              {dayAppointments.length > 0 && <Clock size={13} className="text-black/35" />}
+                              {!isPast && dayAppointments.length > 0 && <Clock size={13} className="text-black/35" />}
                             </div>
                             <div className="space-y-1">
                               {dayAppointments.slice(0, 5).map((appointment) => (
@@ -570,28 +622,60 @@ export default function PTBookingsView() {
                 </Panel>
 
                 <Panel title="Availability" eyebrow="Weekly windows">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-	                    <select value={windowDraft.day_of_week} onChange={(event) => setWindowDraft((current) => ({ ...current, day_of_week: event.target.value }))} className={FIELD_CLASS}>
-	                      {DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
-	                    </select>
-	                    <input type="number" min="15" step="5" value={windowDraft.session_duration_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, session_duration_minutes: event.target.value, slot_duration_minutes: String(Number(event.target.value) + Number(current.buffer_minutes || 0)) }))} className={FIELD_CLASS} aria-label="Session minutes" />
-	                    <input type="time" value={windowDraft.start_time} onChange={(event) => setWindowDraft((current) => ({ ...current, start_time: event.target.value }))} className={FIELD_CLASS} />
-	                    <input type="time" value={windowDraft.end_time} onChange={(event) => setWindowDraft((current) => ({ ...current, end_time: event.target.value }))} className={FIELD_CLASS} />
-	                    <input type="number" min="0" step="5" value={windowDraft.buffer_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, buffer_minutes: event.target.value, slot_duration_minutes: String(Number(current.session_duration_minutes || 0) + Number(event.target.value)) }))} className={FIELD_CLASS} aria-label="Buffer minutes" />
-	                    <input type="number" min="15" step="5" value={windowDraft.slot_duration_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, slot_duration_minutes: event.target.value }))} className={FIELD_CLASS} aria-label="Slot cadence minutes" />
-	                    <input value={windowDraft.location} onChange={(event) => setWindowDraft((current) => ({ ...current, location: event.target.value }))} placeholder="Location" className={`${FIELD_CLASS} col-span-2`} />
-	                    <input value={windowDraft.label} onChange={(event) => setWindowDraft((current) => ({ ...current, label: event.target.value }))} placeholder="Label" className={`${FIELD_CLASS} col-span-2`} />
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormLabel label="Day">
+                        <select value={windowDraft.day_of_week} onChange={(event) => setWindowDraft((current) => ({ ...current, day_of_week: event.target.value }))} className={FIELD_CLASS}>
+                          {DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
+                        </select>
+                      </FormLabel>
+                      <FormLabel label="Session (min)">
+                        <input
+                          type="number"
+                          min="15"
+                          step="5"
+                          value={windowDraft.session_duration_minutes}
+                          onChange={(event) => setWindowDraft((current) => ({ ...current, session_duration_minutes: event.target.value, slot_duration_minutes: String(Number(event.target.value) + Number(current.buffer_minutes || 0)) }))}
+                          className={FIELD_CLASS}
+                        />
+                      </FormLabel>
+                      <FormLabel label="Start time">
+                        <input type="time" value={windowDraft.start_time} onChange={(event) => setWindowDraft((current) => ({ ...current, start_time: event.target.value }))} className={FIELD_CLASS} />
+                      </FormLabel>
+                      <FormLabel label="End time">
+                        <input type="time" value={windowDraft.end_time} onChange={(event) => setWindowDraft((current) => ({ ...current, end_time: event.target.value }))} className={FIELD_CLASS} />
+                      </FormLabel>
+                      <FormLabel label="Buffer (min)">
+                        <input
+                          type="number"
+                          min="0"
+                          step="5"
+                          value={windowDraft.buffer_minutes}
+                          onChange={(event) => setWindowDraft((current) => ({ ...current, buffer_minutes: event.target.value, slot_duration_minutes: String(Number(current.session_duration_minutes || 0) + Number(event.target.value)) }))}
+                          className={FIELD_CLASS}
+                        />
+                      </FormLabel>
+                      <FormLabel label="Slot cadence (min)">
+                        <input type="number" min="15" step="5" value={windowDraft.slot_duration_minutes} onChange={(event) => setWindowDraft((current) => ({ ...current, slot_duration_minutes: event.target.value }))} className={FIELD_CLASS} />
+                      </FormLabel>
+                    </div>
+                    <FormLabel label="Location">
+                      <input value={windowDraft.location} onChange={(event) => setWindowDraft((current) => ({ ...current, location: event.target.value }))} placeholder="e.g. P.E Dept" className={FIELD_CLASS} />
+                    </FormLabel>
+                    <FormLabel label="Label">
+                      <input value={windowDraft.label} onChange={(event) => setWindowDraft((current) => ({ ...current, label: event.target.value }))} placeholder="Optional label" className={FIELD_CLASS} />
+                    </FormLabel>
                   </div>
-                  <button type="button" onClick={() => void addAvailability()} disabled={busy === 'availability'} className="mt-3 w-full border border-black bg-black px-4 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40">
+                  <button type="button" onClick={() => void addAvailability()} disabled={busy === 'availability'} className="mt-3 w-full border border-black bg-black px-4 py-3 text-sm font-medium text-white hover:bg-white hover:text-black disabled:opacity-40">
                     Add availability
                   </button>
                   <div className="mt-4 space-y-2">
                     {availability.map((row) => (
                       <div key={row.id} className="flex flex-col gap-3 border border-black/8 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-	                        <div className="min-w-0">
-	                          <p className="text-sm font-medium">{DAYS[row.day_of_week]} · {row.start_time.slice(0, 5)}-{row.end_time.slice(0, 5)}</p>
-	                          <p className="text-xs text-black/35">{row.label || row.location || `${row.session_duration_minutes ?? 45}m session · ${row.buffer_minutes ?? 5}m buffer`}</p>
-	                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{DAYS[row.day_of_week]} · {row.start_time.slice(0, 5)}-{row.end_time.slice(0, 5)}</p>
+                          <p className="text-xs text-black/35">{row.label || row.location || `${row.session_duration_minutes ?? 45}m session · ${row.buffer_minutes ?? 5}m buffer`}</p>
+                        </div>
                         <div className="flex gap-2">
                           <button type="button" onClick={() => void toggleAvailability(row)} className="text-xs text-black/40 hover:text-black">
                             {row.is_active ? 'Disable' : 'Enable'}

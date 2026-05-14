@@ -120,10 +120,11 @@ interface MetricDraft {
 }
 
 type ClientScreen = 'overview' | 'workout' | 'tools';
-type BookingCalendarView = 'day' | 'week' | 'month';
+type BookingCalendarView = '3days' | 'week' | 'month';
 const BOOKING_CALENDAR_START_HOUR = 6;
 const BOOKING_CALENDAR_END_HOUR = 14;
 const BOOKING_HOUR_HEIGHT = 72;
+const BOOKING_GRID_TOP_PAD = 20;
 
 const emptyWeeklyReset: WeeklyResetDraft = {
   availability: '',
@@ -258,6 +259,20 @@ function startOfWeek(date: Date) {
 
 function bookingWithin24Hours(booking: PTBookingAppointment) {
   return new Date(booking.start_at).getTime() - Date.now() < 24 * 60 * 60 * 1000;
+}
+
+function getNextWeekday(from: Date): Date {
+  const d = new Date(from);
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function advanceWeekday(date: Date, direction: -1 | 1): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + direction);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + direction);
+  return d;
 }
 
 function calendarOffsetMinutes(value: string | Date) {
@@ -415,8 +430,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [cancellationRequests, setCancellationRequests] = useState<PTBookingCancellationRequest[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<PTBookableSlot | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<PTBookingAppointment | null>(null);
-  const [bookingView, setBookingView] = useState<BookingCalendarView>('week');
-  const [bookingDate, setBookingDate] = useState(() => new Date());
+  const [movingBookingId, setMovingBookingId] = useState<string | null>(null);
+  const [bookingView, setBookingView] = useState<BookingCalendarView>('3days');
+  const [bookingDate, setBookingDate] = useState(() => getNextWeekday(new Date()));
   const [bookingMonth, setBookingMonth] = useState(() => {
     const date = new Date();
     date.setDate(1);
@@ -681,21 +697,45 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
     return map;
   }, [bookableSlots]);
+  // Mon-Fri only month days
   const calendarDays = useMemo(() => {
-    const first = new Date(bookingMonth.getFullYear(), bookingMonth.getMonth(), 1);
-    const start = new Date(first);
-    start.setDate(first.getDate() - first.getDay());
-    return Array.from({ length: 42 }, (_, index) => {
-      const date = new Date(start);
-      date.setDate(start.getDate() + index);
-      return date;
-    });
+    const year = bookingMonth.getFullYear();
+    const month = bookingMonth.getMonth();
+    const first = new Date(year, month, 1);
+    const last = new Date(year, month + 1, 0);
+    const startDay = new Date(first);
+    const dow = startDay.getDay();
+    startDay.setDate(startDay.getDate() - (dow === 0 ? 6 : dow - 1));
+    const endDay = new Date(last);
+    const endDow = endDay.getDay();
+    endDay.setDate(endDay.getDate() + (endDow === 0 ? 5 : endDow <= 5 ? 5 - endDow : 6));
+    const days: Date[] = [];
+    const current = new Date(startDay);
+    while (current <= endDay) {
+      const d = current.getDay();
+      if (d >= 1 && d <= 5) days.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+    return days;
   }, [bookingMonth]);
+
+  // Mon-Fri only week days
   const bookingWeekDays = useMemo(() => {
-    const start = startOfWeek(bookingDate);
-    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+    const sunday = startOfWeek(bookingDate);
+    const monday = addDays(sunday, 1);
+    return Array.from({ length: 5 }, (_, i) => addDays(monday, i));
   }, [bookingDate]);
-  const selectedDaySlots = slotsByDate.get(calendarDateKey(bookingDate)) ?? [];
+
+  // Next 3 weekdays starting from bookingDate
+  const threeDayDays = useMemo(() => {
+    const days: Date[] = [];
+    const cursor = new Date(bookingDate);
+    while (days.length < 3) {
+      if (cursor.getDay() !== 0 && cursor.getDay() !== 6) days.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return days;
+  }, [bookingDate]);
   const bookingById = useMemo(() => {
     const map = new Map<string, PTBookingAppointment>();
     activeBookings.forEach((booking) => map.set(booking.id, booking));
@@ -1025,10 +1065,16 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   };
 
   const openBookingSlot = (slot: PTBookableSlot) => {
+    if (movingBookingId && slot.available) {
+      void moveSession(slot);
+      return;
+    }
+
     if (slot.booking_id) {
       setSelectedBooking(bookingById.get(slot.booking_id) ?? null);
       setSelectedSlot(null);
       setBookingReason('');
+      setMovingBookingId(null);
       return;
     }
 
@@ -1036,6 +1082,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setSelectedSlot(slot);
     setSelectedBooking(null);
     setBookingReason('');
+    setMovingBookingId(null);
   };
 
   const cancelBooking = async (booking: PTBookingAppointment) => {
@@ -1065,6 +1112,33 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       await loadPortal();
     }
     setBookingBusy(false);
+  };
+
+  const moveSession = async (targetSlot: PTBookableSlot) => {
+    if (!movingBookingId || bookingBusy) return;
+    setBookingBusy(true);
+    setStatus('Moving session...');
+    const { error: cancelError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
+      body: { action: 'cancel', appointment_id: movingBookingId, reason: 'Moved by client.' },
+    });
+    if (cancelError) {
+      setStatus(cancelError.message ?? 'Could not cancel original session.');
+      setBookingBusy(false);
+      return;
+    }
+    const { data, error: bookError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
+      body: { action: 'create', start_at: targetSlot.start_at, recurring_weeks: 1 },
+    });
+    if (bookError || data?.error) {
+      setStatus(bookError?.message ?? data?.error ?? 'Cancelled original but could not book new slot.');
+    } else {
+      setStatus('Session moved.');
+    }
+    setMovingBookingId(null);
+    setSelectedBooking(null);
+    setSelectedSlot(null);
+    setBookingBusy(false);
+    await loadPortal();
   };
 
   const openLinkedPlanWorkout = (item: PTWeeklyPlanItem) => {
@@ -2022,10 +2096,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const renderToolsScreen = () => {
     const title =
-      bookingView === 'day'
-        ? bookingDate.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' })
+      bookingView === '3days'
+        ? `${formatBookingDate(threeDayDays[0])} - ${formatBookingDate(threeDayDays[2])}`
         : bookingView === 'week'
-          ? `${formatBookingDate(bookingWeekDays[0])} - ${formatBookingDate(bookingWeekDays[6])}`
+          ? `${formatBookingDate(bookingWeekDays[0])} - ${formatBookingDate(bookingWeekDays[4])}`
           : bookingMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
     const selectedBookingIsLate = selectedBooking ? bookingWithin24Hours(selectedBooking) : false;
 
@@ -2033,11 +2107,16 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       setSelectedSlot(null);
       setSelectedBooking(null);
       setBookingReason('');
+      setMovingBookingId(null);
       if (bookingView === 'month') {
         setBookingMonth((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
         return;
       }
-      setBookingDate((current) => addDays(current, bookingView === 'week' ? direction * 7 : direction));
+      if (bookingView === 'week') {
+        setBookingDate((current) => addDays(current, direction * 7));
+        return;
+      }
+      setBookingDate((current) => advanceWeekday(current, direction));
     };
 
     const renderCalendarSlot = (slot: PTBookableSlot, compact = false) => {
@@ -2076,9 +2155,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       );
     };
 
-    const renderCalendarRail = (days: Date[]) => (
-      <div className="mt-5 overflow-x-auto border border-black/10 bg-white">
-        <div className="min-w-[44rem]">
+    const renderCalendarRail = (days: Date[], scrollable = true) => {
+      const body = (
+        <div className={scrollable ? 'min-w-[44rem]' : undefined}>
           <div className="grid border-b border-black/10" style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}>
             <div className="bg-[#fbfbf8]" />
             {days.map((day) => {
@@ -2097,7 +2176,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             className="grid"
             style={{
               gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))`,
-              height: (BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR) * BOOKING_HOUR_HEIGHT,
+              height: (BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR) * BOOKING_HOUR_HEIGHT + BOOKING_GRID_TOP_PAD,
+              paddingTop: BOOKING_GRID_TOP_PAD,
             }}
           >
             <div className="relative bg-white">
@@ -2112,7 +2192,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             </div>
             {days.map((day) => {
               const key = calendarDateKey(day);
-              const daySlots = slotsByDate.get(key) ?? [];
+              const allDaySlots = slotsByDate.get(key) ?? [];
+              const daySlots = movingBookingId
+                ? allDaySlots.filter((s) => s.available)
+                : allDaySlots;
               return (
                 <div key={key} className="relative border-l border-black/10">
                   {Array.from({ length: BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR + 1 }, (_, index) => (
@@ -2124,8 +2207,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             })}
           </div>
         </div>
-      </div>
-    );
+      );
+      return (
+        <div className={`mt-5 border border-black/10 bg-white ${scrollable ? 'overflow-x-auto' : ''}`}>
+          {body}
+        </div>
+      );
+    };
 
     const renderMonthSlot = (slot: PTBookableSlot) => {
       const isOwn = slot.reason === 'You booked this';
@@ -2185,7 +2273,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               <h2 className="mt-1 font-display text-2xl font-light">Calendar</h2>
             </div>
             <div className="inline-grid grid-cols-3 border border-black/10 bg-[#fbfbf8] p-1">
-              {(['day', 'week', 'month'] as BookingCalendarView[]).map((view) => (
+              {(['3days', 'week', 'month'] as BookingCalendarView[]).map((view) => (
                 <button
                   key={view}
                   type="button"
@@ -2193,12 +2281,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     setBookingView(view);
                     setSelectedSlot(null);
                     setSelectedBooking(null);
+                    setMovingBookingId(null);
                   }}
                   className={`px-3 py-2 text-xs font-medium uppercase tracking-[0.08em] transition-colors ${
                     bookingView === view ? 'bg-black text-white' : 'text-black/45 hover:text-black'
                   }`}
                 >
-                  {view}
+                  {view === '3days' ? '3 days' : view}
                 </button>
               ))}
             </div>
@@ -2224,41 +2313,57 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             </button>
           </div>
 
+          {movingBookingId && (
+            <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Pick an available slot below to move your session. Only slots within the same week are shown.{' '}
+              <button type="button" onClick={() => setMovingBookingId(null)} className="underline underline-offset-2 hover:no-underline">
+                Cancel move
+              </button>
+            </p>
+          )}
+
           {bookableSlots.length === 0 ? (
             <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
               {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
             </p>
-          ) : bookingView === 'day' ? (
-            selectedDaySlots.length > 0 ? renderCalendarRail([bookingDate]) : (
-              <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
-                No bookable windows on this day.
-              </p>
-            )
+          ) : bookingView === '3days' ? (
+            renderCalendarRail(threeDayDays, false)
           ) : bookingView === 'week' ? (
             renderCalendarRail(bookingWeekDays)
-          ) : (
-            <div className="mt-5 grid grid-cols-7 border-l border-t border-black/10 bg-white">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
-                  {day}
-                </div>
-              ))}
-              {calendarDays.map((day) => {
-                const key = calendarDateKey(day);
-                const inMonth = day.getMonth() === bookingMonth.getMonth();
-                const daySlots = slotsByDate.get(key) ?? [];
-                return (
-                  <div key={key} className={`min-h-28 border-b border-r border-black/10 p-2 ${inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'}`}>
-                    <span className="text-xs font-medium">{day.getDate()}</span>
-                    <div className="mt-2 space-y-1">
-                      {daySlots.slice(0, 4).map(renderMonthSlot)}
-                      {daySlots.length > 4 && <p className="text-[0.65rem] text-black/35">+{daySlots.length - 4} more</p>}
-                    </div>
+          ) : (() => {
+            const todayStr = todayInputValue();
+            const isCurrentMonth =
+              bookingMonth.getMonth() === new Date().getMonth() &&
+              bookingMonth.getFullYear() === new Date().getFullYear();
+            return (
+              <div className="mt-5 grid grid-cols-5 border-l border-t border-black/10 bg-white">
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day) => (
+                  <div key={day} className="border-b border-r border-black/10 px-2 py-2 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/35">
+                    {day}
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ))}
+                {calendarDays.map((day) => {
+                  const key = calendarDateKey(day);
+                  const isPast = isCurrentMonth && calendarDateKey(day) < todayStr;
+                  const inMonth = day.getMonth() === bookingMonth.getMonth();
+                  const daySlots = isPast ? [] : (slotsByDate.get(key) ?? []);
+                  return (
+                    <div key={key} className={`min-h-28 border-b border-r border-black/10 p-2 ${
+                      isPast ? 'bg-white opacity-30' : inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'
+                    }`}>
+                      <span className="text-xs font-medium">{day.getDate()}</span>
+                      {!isPast && (
+                        <div className="mt-2 space-y-1">
+                          {daySlots.slice(0, 4).map(renderMonthSlot)}
+                          {daySlots.length > 4 && <p className="text-[0.65rem] text-black/35">+{daySlots.length - 4} more</p>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
           {selectedSlot && (
             <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
@@ -2296,7 +2401,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       ? 'Waiting for Pedro to review cancellation'
                       : selectedBookingIsLate
                         ? 'Inside 24 hours. Pedro needs to approve this cancellation.'
-                        : 'You can cancel this session now.'}
+                        : 'You can cancel or move this session.'}
                   </p>
                 </div>
                 <button
@@ -2316,14 +2421,31 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   placeholder="Write the reason Pedro should review."
                 />
               )}
-              <button
-                type="button"
-                onClick={() => void cancelBooking(selectedBooking)}
-                disabled={bookingBusy || pendingCancellationIds.has(selectedBooking.id)}
-                className="mt-3 border border-black bg-black px-4 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-30"
-              >
-                {selectedBookingIsLate ? 'Request cancellation' : 'Cancel session'}
-              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {!pendingCancellationIds.has(selectedBooking.id) && !selectedBookingIsLate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMovingBookingId(selectedBooking.id);
+                      setBookingDate(new Date(selectedBooking.start_at));
+                      setBookingView('week');
+                      setSelectedBooking(null);
+                    }}
+                    disabled={bookingBusy}
+                    className="border border-black/10 bg-white px-4 py-3 text-sm text-black/70 hover:border-black/30 hover:text-black disabled:opacity-30"
+                  >
+                    Move session
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void cancelBooking(selectedBooking)}
+                  disabled={bookingBusy || pendingCancellationIds.has(selectedBooking.id)}
+                  className="border border-black bg-black px-4 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-30"
+                >
+                  {selectedBookingIsLate ? 'Request cancellation' : 'Cancel session'}
+                </button>
+              </div>
             </div>
           )}
         </section>
