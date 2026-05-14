@@ -4,10 +4,10 @@
 2026-05-14 by Claude
 
 ## Last completed task
-AI conversational weekly check-in - replaced static weekly reset form with per-client AI assistant. Database migration, edge function, modal component, and Goals card integration all shipped.
+Bug fixes and TypeScript cleanup: SpeechRecognition type errors fixed across PT voice components; client_id now passed in all manage-pt-booking calls so admin-tested portal resolves correctly; booking modal flow end-to-end verified (slot turns blue with client name after booking).
 
 ## Last commit
-replace weekly reset form with AI conversational check-in (56468d4)
+pass client_id in booking calls so admin-tested portal resolves correctly (4ed335d)
 
 ## Current state
 
