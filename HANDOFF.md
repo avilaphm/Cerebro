@@ -4,16 +4,21 @@
 2026-05-14 by Claude
 
 ## Last completed task
-Client calendar modal booking UX - slot click opens step-by-step booking modal, owned slots show blue with move/cancel options, 24h cancellation window with reason textarea.
+AI conversational weekly check-in - replaced static weekly reset form with per-client AI assistant. Database migration, edge function, modal component, and Goals card integration all shipped.
 
 ## Last commit
-add modal booking UX and restore missing WeeklyResetDraft declarations
+replace weekly reset form with AI conversational check-in (56468d4)
 
 ## Current state
 
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
-Shipped in this session:
+Shipped most recently:
+- AI weekly check-in system: `pt_checkin_sessions` table (migration applied to remote), `client-ai-checkin` edge function (deployed), `WeeklyCheckinModal.tsx` component, Goals card "Weekly Check-in" button with pulsing DUE badge, This Week's Focus card (3-col exercise/nutrition/sleep). Removed all `WeeklyResetDraft` / `submitWeeklyReset` dead code from `ClientPortal.tsx`.
+- Edge function reads Pedro's `pt_booking_availability` + `pt_booking_blocks` to generate open PT slots, passes client context + calendar screenshot (Claude vision) to `claude-sonnet-4-6`, auto-creates `pt_weekly_plan_items` for activities, upserts `pt_weekly_checkins`, and creates a coaching task for Pedro on completion.
+- `PTClientDetail.tsx` and `page.tsx` already include AI Check-in Sessions section (last 8 sessions, per-session focus card, activity list, health tips).
+
+Previously shipped in this session:
 - Audited the coach PT dashboard mobile experience across Overview, Messages, Bookings, Clients, Groups, Programmes, Emails, Settings, client detail, and programme editor/create flows.
 - Fixed the shared PT layout so the PT nav becomes a horizontal scroll rail on mobile and remains a sidebar on desktop.
 - Added `min-w-0` to dashboard shells to prevent nested content from squeezing or causing hidden horizontal overflow.
