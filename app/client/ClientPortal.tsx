@@ -1017,6 +1017,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const { data, error } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
       body: {
         action: 'create',
+        client_id: client?.id,
         start_at: selectedSlot.start_at,
         recurring_weeks: Number(recurringWeeks),
       },
@@ -1069,6 +1070,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const { data, error } = await supabase.functions.invoke<{ error?: string; status?: string }>('manage-pt-booking', {
       body: {
         action: 'cancel',
+        client_id: client?.id,
         appointment_id: booking.id,
         reason: startsWithin24Hours ? bookingReason.trim() : 'Cancelled by client.',
       },
@@ -1092,7 +1094,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setBookingBusy(true);
     setStatus('Moving session...');
     const { error: cancelError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
-      body: { action: 'cancel', appointment_id: idToMove, reason: 'Moved by client.' },
+      body: { action: 'cancel', client_id: client?.id, appointment_id: idToMove, reason: 'Moved by client.' },
     });
     if (cancelError) {
       setStatus(cancelError.message ?? 'Could not cancel original session.');
@@ -1100,7 +1102,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return;
     }
     const { data, error: bookError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
-      body: { action: 'create', start_at: targetSlot.start_at, recurring_weeks: 1 },
+      body: { action: 'create', client_id: client?.id, start_at: targetSlot.start_at, recurring_weeks: 1 },
     });
     if (bookError || data?.error) {
       setStatus(bookError?.message ?? data?.error ?? 'Cancelled original but could not book new slot.');
