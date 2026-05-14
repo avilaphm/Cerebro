@@ -38,6 +38,11 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const activeClientIdRef = useRef<string | null>(selectedClientId);
+
+  useEffect(() => {
+    activeClientIdRef.current = selectedClientId;
+  }, [selectedClientId]);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) ?? null;
 
@@ -71,6 +76,8 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
       .select('*')
       .eq('client_id', clientId)
       .order('created_at', { ascending: true });
+
+    if (activeClientIdRef.current !== clientId) return;
 
     if (showLoading) {
       setMessages((data ?? []) as Message[]);
@@ -134,12 +141,13 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
 
   const send = async () => {
     if (!text.trim() || !selectedClientId || sending) return;
+    const targetClientId = selectedClientId;
     setSending(true);
     const content = text.trim();
     setText('');
     const { data: inserted, error } = await supabase
       .from('pt_messages')
-      .insert({ client_id: selectedClientId, sender: 'pt', content })
+      .insert({ client_id: targetClientId, sender: 'pt', content })
       .select('*')
       .single();
     if (error) {
@@ -147,7 +155,9 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
       setSending(false);
       return;
     }
-    if (inserted) mergeMessages([inserted as Message]);
+    if (inserted && activeClientIdRef.current === targetClientId) {
+      mergeMessages([inserted as Message]);
+    }
     setSending(false);
   };
 
