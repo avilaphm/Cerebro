@@ -149,6 +149,8 @@ export interface PTWeeklyCheckin {
   nutrition_obstacles: string | null;
   client_focus: string | null;
   status: 'submitted' | 'reviewed' | 'archived';
+  checkin_session_id: string | null;
+  checkin_mode: 'form' | 'ai';
   created_at: string;
   updated_at?: string;
 }
@@ -161,7 +163,10 @@ export type PTWeeklyPlanItemType =
   | 'golf_mobility'
   | 'recovery'
   | 'nutrition'
-  | 'check_in';
+  | 'check_in'
+  | 'pilates'
+  | 'walk'
+  | 'fitness_class';
 export type PTWeeklyPlanItemStatus = 'planned' | 'done' | 'skipped' | 'moved';
 export type PTWeeklyPlanConfirmationStatus = 'none' | 'needs_confirmation' | 'confirmed' | 'moved' | 'cancelled';
 export type PTWeeklyPlanSlotStatus = 'unconfirmed' | 'confirmed' | 'moved' | 'cancelled';
@@ -238,6 +243,50 @@ export interface PTCoachingTask {
   priority: 'low' | 'normal' | 'high';
   status: 'open' | 'done' | 'archived';
   due_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CheckinMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  ui_hint?: string;
+  created_at: string;
+}
+
+export interface CheckinActivitySelection {
+  activity: string;
+  suggested_date: string;
+  suggested_time: string;
+  confirmed: boolean;
+}
+
+export interface CheckinWeeklyFocus {
+  exercise: string;
+  nutrition: string;
+  sleep: string;
+}
+
+export interface PTSlotSuggestion {
+  date: string;
+  start_at: string;
+  end_at: string;
+  label: string;
+}
+
+export interface PTCheckinSession {
+  id: string;
+  client_id: string;
+  week_start: string;
+  status: 'in_progress' | 'completed';
+  messages: CheckinMessage[];
+  activity_selections: CheckinActivitySelection[] | null;
+  pt_session_suggestions: PTSlotSuggestion[] | null;
+  ai_weekly_focus: CheckinWeeklyFocus | null;
+  injury_tips: string | null;
+  stress_tips: string | null;
+  nutrition_tips: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at?: string;

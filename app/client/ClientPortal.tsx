@@ -38,8 +38,11 @@ import type {
   PTWeeklyPlanItem,
   PTWeeklyPlanItemType,
   PTWeeklyCheckin,
+  PTCheckinSession,
+  CheckinWeeklyFocus,
 } from '@/utils/pt/types';
 import MessageBubble from './MessageBubble';
+import WeeklyCheckinModal from './WeeklyCheckinModal';
 
 const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
   pt_session: 'PT session',
@@ -49,6 +52,9 @@ const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
   recovery: 'Recovery',
   nutrition: 'Nutrition',
   check_in: 'Check-in',
+  pilates: 'Pilates',
+  walk: 'Walk',
+  fitness_class: 'Fitness class',
 };
 
 interface SetDraft {
@@ -109,6 +115,21 @@ interface WeeklyResetDraft {
   client_focus: string;
 }
 
+const emptyWeeklyReset: WeeklyResetDraft = {
+  availability: '',
+  golf_days: '',
+  run_days: '',
+  energy: '',
+  soreness: '',
+  sleep: '',
+  stress: '',
+  travel: '',
+  injuries: '',
+  nutrition_focus: '',
+  nutrition_obstacles: '',
+  client_focus: '',
+};
+
 interface MetricDraft {
   measured_at: string;
   weight_kg: string;
@@ -125,21 +146,6 @@ const BOOKING_CALENDAR_START_HOUR = 6;
 const BOOKING_CALENDAR_END_HOUR = 14;
 const BOOKING_HOUR_HEIGHT = 72;
 const BOOKING_GRID_TOP_PAD = 20;
-
-const emptyWeeklyReset: WeeklyResetDraft = {
-  availability: '',
-  golf_days: '',
-  run_days: '',
-  energy: '',
-  soreness: '',
-  sleep: '',
-  stress: '',
-  travel: '',
-  injuries: '',
-  nutrition_focus: '',
-  nutrition_obstacles: '',
-  client_focus: '',
-};
 
 function calcPhaseProgress(
   logs: WorkoutLog[],
@@ -273,6 +279,29 @@ function advanceWeekday(date: Date, direction: -1 | 1): Date {
   d.setDate(d.getDate() + direction);
   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + direction);
   return d;
+}
+
+type ModalStep =
+  | null
+  | 'slot-book'
+  | 'slot-confirm'
+  | 'booking-options'
+  | 'booking-book-another'
+  | 'booking-move'
+  | 'booking-move-time'
+  | 'booking-move-day'
+  | 'booking-cancel';
+
+function getMovableDays(booking: PTBookingAppointment): Date[] {
+  const d = new Date(booking.start_at);
+  const dow = d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  monday.setHours(0, 0, 0, 0);
+  if (dow === 5) {
+    return [addDays(monday, 7), addDays(monday, 8)];
+  }
+  return Array.from({ length: 5 }, (_, i) => addDays(monday, i)).filter((day) => day.getDay() !== dow);
 }
 
 function calendarOffsetMinutes(value: string | Date) {
@@ -440,8 +469,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   });
   const [recurringWeeks, setRecurringWeeks] = useState('1');
   const [bookingReason, setBookingReason] = useState('');
+  const [modalStep, setModalStep] = useState<ModalStep>(null);
+  const [bookAnotherDate, setBookAnotherDate] = useState('');
+  const [moveDayTarget, setMoveDayTarget] = useState<string | null>(null);
   const [bookingBusy, setBookingBusy] = useState(false);
   const [resetDraft, setResetDraft] = useState<WeeklyResetDraft>(emptyWeeklyReset);
+  const [submittingReset, setSubmittingReset] = useState(false);
+  const [showCheckinModal, setShowCheckinModal] = useState(false);
+  const [checkinSession, setCheckinSession] = useState<PTCheckinSession | null>(null);
+  const [checkinFocus, setCheckinFocus] = useState<CheckinWeeklyFocus | null>(null);
   const [metricDraft, setMetricDraft] = useState<MetricDraft>({
     measured_at: todayInputValue(),
     weight_kg: '',
@@ -463,7 +499,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingWorkout, setSavingWorkout] = useState(false);
-  const [submittingReset, setSubmittingReset] = useState(false);
   const [submittingMetric, setSubmittingMetric] = useState(false);
   const [activeContext, setActiveContext] = useState<{
     phase_index: number; phase_title: string; day_index: number; day_title: string;
@@ -501,6 +536,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       bookingRes,
       blockRes,
       cancellationRes,
+      checkinSessionRes,
     ] = await Promise.all([
       supabase
         .from('pt_program_assignments')
@@ -585,6 +621,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         .select('*')
         .eq('client_id', currentClient.id)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('pt_checkin_sessions')
+        .select('*')
+        .eq('client_id', currentClient.id)
+        .order('week_start', { ascending: false })
+        .limit(1),
     ]);
 
     setAssignments(((assignmentRes.data ?? []) as PTProgramAssignment[]).map((row) => ({
@@ -605,6 +647,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setBookings((bookingRes.data ?? []) as PTBookingAppointment[]);
     setBookingBlocks((blockRes.data ?? []) as PTBookingBlock[]);
     setCancellationRequests((cancellationRes.data ?? []) as PTBookingCancellationRequest[]);
+    const latestSession = ((checkinSessionRes.data ?? []) as PTCheckinSession[])[0] ?? null;
+    setCheckinSession(latestSession);
+    if (latestSession?.ai_weekly_focus) setCheckinFocus(latestSession.ai_weekly_focus);
     setLoading(false);
   }, [supabase]);
 
@@ -657,6 +702,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     ? phaseProgress[selectedWorkout.phaseIndex] ?? null
     : null;
   const currentWeekStart = weekStartInputValue();
+  const nextMondayStr = (() => {
+    const now = new Date();
+    const day = now.getDay();
+    const daysUntilMonday = ((8 - day) % 7) || 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + daysUntilMonday);
+    const y = monday.getFullYear();
+    const m = String(monday.getMonth() + 1).padStart(2, '0');
+    const d = String(monday.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  })();
+  const checkinDue = !checkinSession || checkinSession.week_start < nextMondayStr;
   const latestCheckin = weeklyCheckins[0] ?? null;
   const latestMetric = metrics[0] ?? null;
   const monthlyReview = reviews[0] ?? null;
@@ -1059,6 +1116,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     } else {
       setStatus('Session booked. Check your email for the confirmation.');
       setSelectedSlot(null);
+      setModalStep(null);
       await loadPortal();
     }
     setBookingBusy(false);
@@ -1075,6 +1133,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       setSelectedSlot(null);
       setBookingReason('');
       setMovingBookingId(null);
+      setModalStep('booking-options');
       return;
     }
 
@@ -1083,6 +1142,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setSelectedBooking(null);
     setBookingReason('');
     setMovingBookingId(null);
+    setModalStep('slot-book');
   };
 
   const cancelBooking = async (booking: PTBookingAppointment) => {
@@ -1108,18 +1168,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     } else {
       setBookingReason('');
       setSelectedBooking(null);
+      setModalStep(null);
       setStatus(data?.status === 'cancellation_requested' ? 'Pedro has received your cancellation request.' : 'Booking cancelled.');
       await loadPortal();
     }
     setBookingBusy(false);
   };
 
-  const moveSession = async (targetSlot: PTBookableSlot) => {
-    if (!movingBookingId || bookingBusy) return;
+  const moveSession = async (targetSlot: PTBookableSlot, bookingIdOverride?: string) => {
+    const idToMove = bookingIdOverride ?? movingBookingId;
+    if (!idToMove || bookingBusy) return;
     setBookingBusy(true);
     setStatus('Moving session...');
     const { error: cancelError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
-      body: { action: 'cancel', appointment_id: movingBookingId, reason: 'Moved by client.' },
+      body: { action: 'cancel', appointment_id: idToMove, reason: 'Moved by client.' },
     });
     if (cancelError) {
       setStatus(cancelError.message ?? 'Could not cancel original session.');
@@ -1137,6 +1199,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setMovingBookingId(null);
     setSelectedBooking(null);
     setSelectedSlot(null);
+    setModalStep(null);
+    setMoveDayTarget(null);
     setBookingBusy(false);
     await loadPortal();
   };
@@ -1569,105 +1633,62 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </section>
       )}
 
+      {checkinFocus && (
+        <section className="border border-black/10 bg-white p-4 md:p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week&apos;s Focus</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="border border-black/8 bg-[#fbfbf8] p-3">
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Exercise</p>
+              <p className="mt-2 text-sm leading-relaxed">{checkinFocus.exercise}</p>
+            </div>
+            <div className="border border-black/8 bg-[#fbfbf8] p-3">
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Nutrition</p>
+              <p className="mt-2 text-sm leading-relaxed">{checkinFocus.nutrition}</p>
+            </div>
+            <div className="border border-black/8 bg-[#fbfbf8] p-3">
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Sleep</p>
+              <p className="mt-2 text-sm leading-relaxed">{checkinFocus.sleep}</p>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="border border-black/10 bg-white p-4 md:p-5">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Weekly Reset</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <label className="block">
-              <span className="text-xs text-black/45">Availability</span>
-              <textarea value={resetDraft.availability} onChange={(event) => patchResetDraft({ availability: event.target.value })}
-                rows={3} className="mt-1 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
-                placeholder="Days, times, work constraints." />
-            </label>
-            <label className="block">
-              <span className="text-xs text-black/45">What do you want help with?</span>
-              <textarea value={resetDraft.client_focus} onChange={(event) => patchResetDraft({ client_focus: event.target.value })}
-                rows={3} className="mt-1 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35"
-                placeholder="The thing Pedro should solve this week." />
-            </label>
-            <label className="block">
-              <span className="text-xs text-black/45">Golf days</span>
-              <input value={resetDraft.golf_days} onChange={(event) => patchResetDraft({ golf_days: event.target.value })}
-                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="e.g. Tue, Sat" />
-            </label>
-            <label className="block">
-              <span className="text-xs text-black/45">Runs or desired runs</span>
-              <input value={resetDraft.run_days} onChange={(event) => patchResetDraft({ run_days: event.target.value })}
-                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="e.g. 2 easy runs" />
-            </label>
-            <label className="block">
-              <span className="text-xs text-black/45">Travel or schedule changes</span>
-              <input value={resetDraft.travel} onChange={(event) => patchResetDraft({ travel: event.target.value })}
-                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Travel, late nights, busy days." />
-            </label>
-            <label className="block">
-              <span className="text-xs text-black/45">Injuries, pain, soreness</span>
-              <input value={resetDraft.injuries} onChange={(event) => patchResetDraft({ injuries: event.target.value })}
-                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Anything Pedro needs to know." />
-            </label>
-            <label className="block">
-              <span className="text-xs text-black/45">Nutrition focus</span>
-              <input value={resetDraft.nutrition_focus} onChange={(event) => patchResetDraft({ nutrition_focus: event.target.value })}
-                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Protein, alcohol, meals, weekends." />
-            </label>
-            <label className="block">
-              <span className="text-xs text-black/45">Nutrition obstacles</span>
-              <input value={resetDraft.nutrition_obstacles} onChange={(event) => patchResetDraft({ nutrition_obstacles: event.target.value })}
-                className="mt-1 w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Work lunches, travel, social plans." />
-            </label>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
+            {checkinDue && (
+              <span className="animate-pulse border border-amber-300 bg-amber-50 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.1em] text-amber-700">
+                Check-in due
+              </span>
+            )}
           </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {([
-              ['Energy', 'energy'],
-              ['Soreness', 'soreness'],
-              ['Sleep', 'sleep'],
-              ['Stress', 'stress'],
-            ] as Array<[string, keyof WeeklyResetDraft]>).map(([label, key]) => (
-              <label key={key} className="block">
-                <span className="text-xs text-black/45">{label}</span>
-                <select value={resetDraft[key]} onChange={(event) => patchResetDraft({ [key]: event.target.value })}
-                  className="mt-1 w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35">
-                  <option value="">-</option>
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                </select>
-              </label>
-            ))}
-          </div>
-
+          {goals.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {goals.slice(0, 4).map((goal) => (
+                <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                  <p className="text-sm font-medium">{goal.title}</p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {getGoalProgressLabel(goal, metrics)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
+          )}
           <button
             type="button"
-            onClick={() => void submitWeeklyReset()}
-            disabled={submittingReset}
-            className="mt-5 w-full bg-black px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-black/80 disabled:opacity-40 md:w-auto"
+            onClick={() => setShowCheckinModal(true)}
+            className={`mt-4 w-full px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-black/80 ${
+              checkinDue ? 'bg-black' : 'bg-black/60'
+            }`}
           >
-            {submittingReset ? 'Sending...' : 'Send weekly reset'}
+            Weekly Check-in
           </button>
         </div>
 
         <div className="space-y-4">
-          <div className="border border-black/10 bg-white p-4 md:p-5">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
-            {goals.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {goals.slice(0, 4).map((goal) => (
-                  <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                    <p className="text-sm font-medium">{goal.title}</p>
-                    <p className="mt-1 text-xs text-black/45">
-                      {getGoalProgressLabel(goal, metrics)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
-            )}
-          </div>
-
           <div className="border border-black/10 bg-white p-4 md:p-5">
             <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Monthly Review</p>
             {monthlyReview ? (
@@ -2101,7 +2122,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         : bookingView === 'week'
           ? `${formatBookingDate(bookingWeekDays[0])} - ${formatBookingDate(bookingWeekDays[4])}`
           : bookingMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
-    const selectedBookingIsLate = selectedBooking ? bookingWithin24Hours(selectedBooking) : false;
+
+    const closeModal = () => {
+      setModalStep(null);
+      setSelectedSlot(null);
+      setSelectedBooking(null);
+      setBookingReason('');
+      setMoveDayTarget(null);
+    };
 
     const moveCalendar = (direction: -1 | 1) => {
       setSelectedSlot(null);
@@ -2124,7 +2152,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       const top = Math.max(0, (calendarOffsetMinutes(slot.start_at) / 60) * BOOKING_HOUR_HEIGHT);
       const height = Math.max(34, (duration / 60) * BOOKING_HOUR_HEIGHT);
       const isOwn = slot.reason === 'You booked this';
-      const isSelected = selectedSlot?.start_at === slot.start_at || selectedBooking?.id === slot.booking_id;
 
       return (
         <button
@@ -2134,20 +2161,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           disabled={!slot.available && !isOwn}
           style={{ top, height }}
           className={`absolute inset-x-1 overflow-hidden border px-2 py-1 text-left transition-colors ${
-            isSelected
-              ? 'border-black bg-black text-white'
-              : isOwn
-                ? 'border-black bg-black text-white hover:bg-black/80'
-                : slot.available
-                  ? 'border-black/12 bg-white text-black shadow-[0_12px_22px_-20px_rgba(0,0,0,0.55)] hover:border-black/35'
-                  : 'border-black/6 bg-black/[0.08] text-black/35'
+            isOwn
+              ? 'border-blue-500 bg-blue-500 text-white hover:bg-blue-600'
+              : slot.available
+                ? 'border-black/12 bg-white text-black shadow-[0_12px_22px_-20px_rgba(0,0,0,0.55)] hover:border-black/35'
+                : 'border-black/6 bg-black/[0.08] text-black/35'
           }`}
         >
           <span className={`block truncate font-medium ${compact ? 'text-[0.72rem]' : 'text-sm'}`}>
-            {isOwn ? 'Yours' : slot.available ? 'Available' : 'Busy'}
+            {isOwn ? (client?.name ?? 'Booked') : slot.available ? 'Available' : 'Busy'}
           </span>
           {!compact && (
-            <span className="mt-0.5 block truncate text-xs opacity-70">
+            <span className="mt-0.5 block truncate text-xs opacity-80">
               {formatBookingTime(slot.start_at)} - {formatBookingTime(slot.end_at)}
             </span>
           )}
@@ -2225,13 +2250,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           disabled={!slot.available && !isOwn}
           className={`w-full truncate px-2 py-1 text-left text-[0.68rem] font-medium ${
             isOwn
-              ? 'bg-black text-white'
+              ? 'bg-blue-500 text-white'
               : slot.available
                 ? 'bg-white text-black'
                 : 'bg-black/[0.08] text-black/35'
           }`}
         >
-          {formatBookingTime(slot.start_at)} {isOwn ? 'Yours' : slot.available ? 'Open' : 'Busy'}
+          {formatBookingTime(slot.start_at)} {isOwn ? (client?.name ?? 'Booked') : slot.available ? 'Open' : 'Busy'}
         </button>
       );
     };
@@ -2365,90 +2390,323 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             );
           })()}
 
-          {selectedSlot && (
-            <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
-              <p className="text-sm font-medium">{selectedSlot.label}</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                <label className="block">
-                  <span className="mb-1 block text-xs text-black/45">Repeat weekly</span>
-                  <select value={recurringWeeks} onChange={(event) => setRecurringWeeks(event.target.value)} className="w-full border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35">
-                    <option value="1">One session</option>
-                    <option value="2">2 weeks</option>
-                    <option value="3">3 weeks</option>
-                    <option value="4">4 weeks</option>
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => void bookSelectedSlot()}
-                  disabled={bookingBusy}
-                  className="inline-flex items-center justify-center gap-2 border border-black bg-black px-5 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-40"
-                >
-                  <CalendarDays className="h-4 w-4" />
-                  {bookingBusy ? 'Booking...' : 'Confirm'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {selectedBooking && (
-            <div className="mt-5 border border-black/10 bg-[#fbfbf8] p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium">{formatBookingDate(selectedBooking.start_at)} · {formatBookingTime(selectedBooking.start_at)}</p>
-                  <p className="mt-1 text-xs text-black/45">
-                    {pendingCancellationIds.has(selectedBooking.id)
-                      ? 'Waiting for Pedro to review cancellation'
-                      : selectedBookingIsLate
-                        ? 'Inside 24 hours. Pedro needs to approve this cancellation.'
-                        : 'You can cancel or move this session.'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedBooking(null)}
-                  className="text-xs text-black/35 underline-offset-2 hover:text-black hover:underline"
-                >
-                  Close
-                </button>
-              </div>
-              {selectedBookingIsLate && !pendingCancellationIds.has(selectedBooking.id) && (
-                <textarea
-                  value={bookingReason}
-                  onChange={(event) => setBookingReason(event.target.value)}
-                  rows={3}
-                  className="mt-3 w-full resize-none border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
-                  placeholder="Write the reason Pedro should review."
-                />
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {!pendingCancellationIds.has(selectedBooking.id) && !selectedBookingIsLate && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMovingBookingId(selectedBooking.id);
-                      setBookingDate(new Date(selectedBooking.start_at));
-                      setBookingView('week');
-                      setSelectedBooking(null);
-                    }}
-                    disabled={bookingBusy}
-                    className="border border-black/10 bg-white px-4 py-3 text-sm text-black/70 hover:border-black/30 hover:text-black disabled:opacity-30"
-                  >
-                    Move session
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void cancelBooking(selectedBooking)}
-                  disabled={bookingBusy || pendingCancellationIds.has(selectedBooking.id)}
-                  className="border border-black bg-black px-4 py-3 text-sm text-white hover:bg-white hover:text-black disabled:opacity-30"
-                >
-                  {selectedBookingIsLate ? 'Request cancellation' : 'Cancel session'}
-                </button>
-              </div>
-            </div>
-          )}
         </section>
+
+        {/* Booking modal overlay */}
+        {modalStep && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-[2px] sm:items-center sm:p-4"
+            onClick={closeModal}
+          >
+            <div
+              className="w-full max-w-sm overflow-hidden bg-white shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Available slot: step 1 */}
+              {modalStep === 'slot-book' && selectedSlot && (
+                <div className="p-6">
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Available slot</p>
+                  <h3 className="mt-1 text-xl font-medium">{formatBookingDate(selectedSlot.start_at)}</h3>
+                  <p className="mt-1 text-sm text-black/55">
+                    {formatBookingTime(selectedSlot.start_at)} - {formatBookingTime(selectedSlot.end_at)}{selectedSlot.location ? ` · ${selectedSlot.location}` : ''}
+                  </p>
+                  <div className="mt-6 space-y-2">
+                    <button type="button" onClick={() => setModalStep('slot-confirm')} className="w-full bg-black py-3 text-sm font-medium text-white hover:bg-black/85">
+                      Book session
+                    </button>
+                    <button type="button" onClick={closeModal} className="w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Available slot: step 2 — confirm */}
+              {modalStep === 'slot-confirm' && selectedSlot && (
+                <div className="p-6">
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Confirm booking</p>
+                  <h3 className="mt-1 text-xl font-medium">{formatBookingDate(selectedSlot.start_at)}</h3>
+                  <p className="mt-1 text-sm text-black/55">
+                    {formatBookingTime(selectedSlot.start_at)} - {formatBookingTime(selectedSlot.end_at)}{selectedSlot.location ? ` · ${selectedSlot.location}` : ''}
+                  </p>
+                  <label className="mt-4 block">
+                    <span className="mb-1 block text-[0.62rem] uppercase tracking-[0.13em] text-black/35">Repeat weekly</span>
+                    <select value={recurringWeeks} onChange={(e) => setRecurringWeeks(e.target.value)} className="w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35">
+                      <option value="1">One session</option>
+                      <option value="2">2 weeks</option>
+                      <option value="3">3 weeks</option>
+                      <option value="4">4 weeks</option>
+                    </select>
+                  </label>
+                  <div className="mt-5 space-y-2">
+                    <button type="button" onClick={() => void bookSelectedSlot()} disabled={bookingBusy} className="w-full bg-black py-3 text-sm font-medium text-white hover:bg-black/85 disabled:opacity-40">
+                      {bookingBusy ? 'Booking...' : 'Confirm booking'}
+                    </button>
+                    <button type="button" onClick={() => setModalStep('slot-book')} className="w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                      Back
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Owned booking: options menu */}
+              {modalStep === 'booking-options' && selectedBooking && (
+                <div className="p-6">
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Your session</p>
+                  <h3 className="mt-1 text-xl font-medium">{formatBookingDate(selectedBooking.start_at)}</h3>
+                  <p className="mt-1 text-sm text-black/55">
+                    {formatBookingTime(selectedBooking.start_at)} - {formatBookingTime(selectedBooking.end_at)}{selectedBooking.location ? ` · ${selectedBooking.location}` : ''}
+                  </p>
+                  {pendingCancellationIds.has(selectedBooking.id) && (
+                    <p className="mt-3 text-xs text-amber-600">Cancellation request sent. Waiting for Pedro to review.</p>
+                  )}
+                  <div className="mt-5 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => { setBookAnotherDate(calendarDateKey(getNextWeekday(new Date()))); setModalStep('booking-book-another'); }}
+                      className="flex w-full items-center justify-between border border-black/10 px-4 py-3 text-sm text-black hover:border-black/30"
+                    >
+                      Book another session <ChevronRight className="h-4 w-4 text-black/35" />
+                    </button>
+                    {!pendingCancellationIds.has(selectedBooking.id) && (
+                      <button
+                        type="button"
+                        onClick={() => setModalStep('booking-move')}
+                        className="flex w-full items-center justify-between border border-black/10 px-4 py-3 text-sm text-black hover:border-black/30"
+                      >
+                        Move this session <ChevronRight className="h-4 w-4 text-black/35" />
+                      </button>
+                    )}
+                    {!pendingCancellationIds.has(selectedBooking.id) && (
+                      <button
+                        type="button"
+                        onClick={() => setModalStep('booking-cancel')}
+                        className="flex w-full items-center justify-between border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 hover:bg-red-100"
+                      >
+                        Cancel this session <ChevronRight className="h-4 w-4 text-red-400" />
+                      </button>
+                    )}
+                  </div>
+                  <button type="button" onClick={closeModal} className="mt-3 w-full py-2 text-xs text-black/35 hover:text-black">
+                    Close
+                  </button>
+                </div>
+              )}
+
+              {/* Book another session */}
+              {modalStep === 'booking-book-another' && (
+                <div className="p-6">
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Book another session</p>
+                  <label className="mt-4 block">
+                    <span className="mb-1 block text-[0.62rem] uppercase tracking-[0.13em] text-black/35">Date (weekdays only)</span>
+                    <input
+                      type="date"
+                      value={bookAnotherDate}
+                      min={calendarDateKey(getNextWeekday(new Date()))}
+                      onChange={(e) => setBookAnotherDate(e.target.value)}
+                      className="w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35"
+                    />
+                  </label>
+                  <div className="mt-4 max-h-48 overflow-y-auto">
+                    {(() => {
+                      const slots = (slotsByDate.get(bookAnotherDate) ?? []).filter((s) => s.available);
+                      if (!bookAnotherDate) return <p className="text-sm text-black/40">Pick a date above.</p>;
+                      if (slots.length === 0) return <p className="text-sm text-black/40">No available slots for this date.</p>;
+                      return (
+                        <div className="space-y-1">
+                          {slots.map((slot) => (
+                            <button
+                              key={slot.start_at}
+                              type="button"
+                              onClick={() => { setSelectedSlot(slot); setModalStep('slot-confirm'); }}
+                              className="flex w-full items-center justify-between border border-black/10 px-4 py-2.5 text-sm hover:border-black/30 hover:bg-[#fbfbf8]"
+                            >
+                              <span>{formatBookingTime(slot.start_at)} - {formatBookingTime(slot.end_at)}</span>
+                              {slot.location && <span className="text-xs text-black/40">{slot.location}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <button type="button" onClick={() => setModalStep('booking-options')} className="mt-4 w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {/* Move: choose same-day or other-day */}
+              {modalStep === 'booking-move' && selectedBooking && (
+                <div className="p-6">
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Move session</p>
+                  <h3 className="mt-1 text-xl font-medium">{formatBookingDate(selectedBooking.start_at)}</h3>
+                  <p className="mt-1 text-sm text-black/55">{formatBookingTime(selectedBooking.start_at)}</p>
+                  <div className="mt-5 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalStep('booking-move-time')}
+                      className="flex w-full items-center justify-between border border-black/10 px-4 py-3 text-sm text-black hover:border-black/30"
+                    >
+                      Different time, same day <ChevronRight className="h-4 w-4 text-black/35" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setMoveDayTarget(null); setModalStep('booking-move-day'); }}
+                      className="flex w-full items-center justify-between border border-black/10 px-4 py-3 text-sm text-black hover:border-black/30"
+                    >
+                      Another day this week <ChevronRight className="h-4 w-4 text-black/35" />
+                    </button>
+                  </div>
+                  <button type="button" onClick={() => setModalStep('booking-options')} className="mt-4 w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {/* Move: different time, same day */}
+              {modalStep === 'booking-move-time' && selectedBooking && (
+                <div className="p-6">
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Different time, same day</p>
+                  <h3 className="mt-1 text-xl font-medium">{formatBookingDate(selectedBooking.start_at)}</h3>
+                  <div className="mt-4 max-h-48 overflow-y-auto">
+                    {(() => {
+                      const dayKey = calendarDateKey(selectedBooking.start_at);
+                      const slots = (slotsByDate.get(dayKey) ?? []).filter(
+                        (s) => s.available && s.start_at !== selectedBooking.start_at,
+                      );
+                      if (slots.length === 0) return <p className="text-sm text-black/40">No other available times on this day.</p>;
+                      return (
+                        <div className="space-y-1">
+                          {slots.map((slot) => (
+                            <button
+                              key={slot.start_at}
+                              type="button"
+                              onClick={() => void moveSession(slot, selectedBooking.id)}
+                              disabled={bookingBusy}
+                              className="flex w-full items-center border border-black/10 px-4 py-2.5 text-sm hover:border-black/30 hover:bg-[#fbfbf8] disabled:opacity-40"
+                            >
+                              {formatBookingTime(slot.start_at)} - {formatBookingTime(slot.end_at)}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <button type="button" onClick={() => setModalStep('booking-move')} className="mt-4 w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                    Back
+                  </button>
+                </div>
+              )}
+
+              {/* Move: another day this week */}
+              {modalStep === 'booking-move-day' && selectedBooking && (
+                <div className="p-6">
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">
+                    {moveDayTarget ? 'Pick a time' : 'Pick a day'}
+                  </p>
+                  {!moveDayTarget ? (
+                    <>
+                      <div className="mt-4 space-y-1">
+                        {getMovableDays(selectedBooking).map((day) => {
+                          const key = calendarDateKey(day);
+                          const hasSlots = (slotsByDate.get(key) ?? []).some((s) => s.available);
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              disabled={!hasSlots}
+                              onClick={() => setMoveDayTarget(key)}
+                              className="flex w-full items-center justify-between border border-black/10 px-4 py-3 text-sm hover:border-black/30 hover:bg-[#fbfbf8] disabled:opacity-30"
+                            >
+                              <span>{formatBookingDate(day)}</span>
+                              {hasSlots ? <ChevronRight className="h-4 w-4 text-black/35" /> : <span className="text-xs text-black/35">No slots</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button type="button" onClick={() => setModalStep('booking-move')} className="mt-4 w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                        Back
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="mt-1 text-xl font-medium">{formatBookingDate(moveDayTarget)}</h3>
+                      <div className="mt-4 max-h-48 overflow-y-auto space-y-1">
+                        {(slotsByDate.get(moveDayTarget) ?? []).filter((s) => s.available).map((slot) => (
+                          <button
+                            key={slot.start_at}
+                            type="button"
+                            onClick={() => void moveSession(slot, selectedBooking.id)}
+                            disabled={bookingBusy}
+                            className="flex w-full items-center border border-black/10 px-4 py-2.5 text-sm hover:border-black/30 hover:bg-[#fbfbf8] disabled:opacity-40"
+                          >
+                            {formatBookingTime(slot.start_at)} - {formatBookingTime(slot.end_at)}
+                          </button>
+                        ))}
+                      </div>
+                      <button type="button" onClick={() => setMoveDayTarget(null)} className="mt-4 w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                        Back to days
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Cancel session */}
+              {modalStep === 'booking-cancel' && selectedBooking && (
+                <div className="p-6">
+                  {bookingWithin24Hours(selectedBooking) ? (
+                    <>
+                      <p className="text-[0.6rem] uppercase tracking-[0.18em] text-amber-600">24-hour window</p>
+                      <h3 className="mt-1 text-lg font-medium leading-snug">Your session is within the 24-hour window.</h3>
+                      <p className="mt-2 text-sm text-black/55">Emergencies happen. What is your reason for cancelling? Pedro will review your request and approve or decline.</p>
+                      <textarea
+                        value={bookingReason}
+                        onChange={(e) => setBookingReason(e.target.value)}
+                        rows={3}
+                        className="mt-3 w-full resize-none border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
+                        placeholder="Type your reason here..."
+                      />
+                      <div className="mt-3 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => void cancelBooking(selectedBooking)}
+                          disabled={bookingBusy || !bookingReason.trim()}
+                          className="w-full bg-black py-3 text-sm font-medium text-white hover:bg-black/85 disabled:opacity-40"
+                        >
+                          {bookingBusy ? 'Submitting...' : 'Submit cancellation request'}
+                        </button>
+                        <button type="button" onClick={() => setModalStep('booking-options')} className="w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                          Keep my session
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Cancel session</p>
+                      <h3 className="mt-1 text-xl font-medium">{formatBookingDate(selectedBooking.start_at)}</h3>
+                      <p className="mt-1 text-sm text-black/55">{formatBookingTime(selectedBooking.start_at)}</p>
+                      <p className="mt-4 text-sm text-black/55">Are you sure you want to cancel this session?</p>
+                      <div className="mt-5 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => void cancelBooking(selectedBooking)}
+                          disabled={bookingBusy}
+                          className="w-full border border-red-300 bg-red-50 py-3 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-40"
+                        >
+                          {bookingBusy ? 'Cancelling...' : 'Yes, cancel session'}
+                        </button>
+                        <button type="button" onClick={() => setModalStep('booking-options')} className="w-full border border-black/10 py-3 text-sm text-black/50 hover:text-black">
+                          Keep my session
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {renderBodyMetricsPanel()}
       </div>
@@ -2557,6 +2815,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 }
               : null
           }
+        />
+      )}
+
+      {showCheckinModal && client && (
+        <WeeklyCheckinModal
+          clientId={client.id}
+          clientName={client.name}
+          onClose={() => setShowCheckinModal(false)}
+          onComplete={(focus) => {
+            setCheckinFocus(focus);
+            setShowCheckinModal(false);
+            void loadPortal();
+          }}
         />
       )}
     </main>

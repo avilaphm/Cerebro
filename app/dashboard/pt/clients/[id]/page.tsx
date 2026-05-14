@@ -6,6 +6,7 @@ import type {
   PTClientMetric,
   PTCoachingReview,
   PTCoachingTask,
+  PTCheckinSession,
   PTProgramAssignment,
   PTProgramTemplate,
   PTWeeklyPlan,
@@ -35,7 +36,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const supabase = await createClient();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -98,6 +99,12 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .order('period_start', { ascending: false })
       .limit(12),
+    supabase
+      .from('pt_checkin_sessions')
+      .select('id, client_id, week_start, status, activity_selections, ai_weekly_focus, injury_tips, stress_tips, nutrition_tips, completed_at, created_at')
+      .eq('client_id', id)
+      .order('week_start', { ascending: false })
+      .limit(8),
   ]);
 
   if (clientRes.error || !clientRes.data) notFound();
@@ -120,6 +127,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const goals = (goalsRes.data ?? []) as PTClientGoal[];
   const coachingTasks = (tasksRes.data ?? []) as PTCoachingTask[];
   const reviews = (reviewsRes.data ?? []) as PTCoachingReview[];
+  const checkinSessions = (checkinSessionsRes.data ?? []) as PTCheckinSession[];
 
   return (
     <PTClientDetail
@@ -135,6 +143,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       goals={goals}
       coachingTasks={coachingTasks}
       reviews={reviews}
+      checkinSessions={checkinSessions}
     />
   );
 }

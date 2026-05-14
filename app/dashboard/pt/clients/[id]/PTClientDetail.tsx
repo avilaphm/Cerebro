@@ -13,6 +13,7 @@ import {
   monthStartInputValue,
 } from '@/utils/pt/coaching';
 import type {
+  PTCheckinSession,
   PTClient,
   PTClientGoal,
   PTClientMetric,
@@ -45,6 +46,9 @@ const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
   recovery: 'Recovery',
   nutrition: 'Nutrition',
   check_in: 'Check-in',
+  pilates: 'Pilates',
+  walk: 'Walk',
+  fitness_class: 'Fitness class',
 };
 
 const PLAN_ITEM_TYPES = Object.keys(PLAN_ITEM_LABELS) as PTWeeklyPlanItemType[];
@@ -112,6 +116,7 @@ interface Props {
   goals: PTClientGoal[];
   coachingTasks: PTCoachingTask[];
   reviews: PTCoachingReview[];
+  checkinSessions?: PTCheckinSession[];
 }
 
 interface SpeechRecognitionLike {
@@ -316,6 +321,7 @@ export default function PTClientDetail({
   goals: initialGoals,
   coachingTasks: initialCoachingTasks,
   reviews: initialReviews,
+  checkinSessions = [],
 }: Props) {
   const supabase = createClient();
   const router = useRouter();
@@ -1470,11 +1476,11 @@ export default function PTClientDetail({
             <div className="border border-black/10 px-5 py-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest weekly reset</p>
+                  <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Latest check-in</p>
                   {latestCheckin ? (
                     <p className="mt-2 text-sm font-medium">Week of {formatDate(latestCheckin.week_start)}</p>
                   ) : (
-                    <p className="mt-2 text-sm text-black/45">No weekly reset yet.</p>
+                    <p className="mt-2 text-sm text-black/45">No check-in yet.</p>
                   )}
                 </div>
                 {latestCheckin && latestCheckin.status === 'submitted' && (
@@ -1491,22 +1497,79 @@ export default function PTClientDetail({
                 <div className="mt-4 space-y-3">
                   <p className="text-sm leading-relaxed text-black/75">{latestCheckin.client_focus || 'No focus written.'}</p>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <p className="text-xs text-black/45"><span className="text-black/70">Availability:</span> {latestCheckin.availability || '-'}</p>
-                    <p className="text-xs text-black/45"><span className="text-black/70">Golf:</span> {latestCheckin.golf_days || '-'}</p>
-                    <p className="text-xs text-black/45"><span className="text-black/70">Runs:</span> {latestCheckin.run_days || '-'}</p>
-                    <p className="text-xs text-black/45"><span className="text-black/70">Travel:</span> {latestCheckin.travel || '-'}</p>
                     <p className="text-xs text-black/45"><span className="text-black/70">Injuries:</span> {latestCheckin.injuries || '-'}</p>
                     <p className="text-xs text-black/45"><span className="text-black/70">Nutrition:</span> {latestCheckin.nutrition_focus || '-'}</p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Energy {scoreLabel(latestCheckin.energy)}</span>
                     <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Soreness {scoreLabel(latestCheckin.soreness)}</span>
-                    <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Sleep {scoreLabel(latestCheckin.sleep)}</span>
                     <span className="border border-black/8 bg-black/3 px-2 py-1 text-xs text-black/45">Stress {scoreLabel(latestCheckin.stress)}</span>
                   </div>
                 </div>
               )}
             </div>
+
+            {checkinSessions.length > 0 && (
+              <div className="border border-black/10 px-5 py-4">
+                <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">AI Check-in Sessions</p>
+                <div className="mt-3 space-y-4">
+                  {checkinSessions.map((session, index) => (
+                    <div key={session.id} className={`space-y-3 ${index > 0 ? 'border-t border-black/8 pt-3' : ''}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium">Week of {formatDate(session.week_start)}</p>
+                        <span className={`border px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.08em] ${
+                          session.status === 'completed'
+                            ? 'border-green-200 bg-green-50 text-green-700'
+                            : 'border-amber-200 bg-amber-50 text-amber-700'
+                        }`}>
+                          {session.status === 'completed' ? 'Completed' : 'In progress'}
+                        </span>
+                      </div>
+                      {session.ai_weekly_focus && (
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                            <p className="text-[0.6rem] uppercase tracking-[0.1em] text-black/35">Exercise</p>
+                            <p className="mt-1 text-xs leading-relaxed text-black/70">{session.ai_weekly_focus.exercise}</p>
+                          </div>
+                          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                            <p className="text-[0.6rem] uppercase tracking-[0.1em] text-black/35">Nutrition</p>
+                            <p className="mt-1 text-xs leading-relaxed text-black/70">{session.ai_weekly_focus.nutrition}</p>
+                          </div>
+                          <div className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                            <p className="text-[0.6rem] uppercase tracking-[0.1em] text-black/35">Sleep</p>
+                            <p className="mt-1 text-xs leading-relaxed text-black/70">{session.ai_weekly_focus.sleep}</p>
+                          </div>
+                        </div>
+                      )}
+                      {session.activity_selections && session.activity_selections.length > 0 && (
+                        <div>
+                          <p className="text-xs text-black/45">Activities booked:</p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {session.activity_selections.map((sel, i) => (
+                              <span key={i} className="border border-black/8 bg-[#fbfbf8] px-2 py-1 text-xs text-black/60">
+                                {sel.activity} - {sel.suggested_date}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {(session.injury_tips || session.stress_tips || session.nutrition_tips) && (
+                        <div className="space-y-1.5">
+                          {session.injury_tips && (
+                            <p className="text-xs text-black/55"><span className="text-black/70">Injury tips:</span> {session.injury_tips}</p>
+                          )}
+                          {session.stress_tips && (
+                            <p className="text-xs text-black/55"><span className="text-black/70">Stress tips:</span> {session.stress_tips}</p>
+                          )}
+                          {session.nutrition_tips && (
+                            <p className="text-xs text-black/55"><span className="text-black/70">Nutrition tips:</span> {session.nutrition_tips}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
