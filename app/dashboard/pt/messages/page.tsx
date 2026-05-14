@@ -2,7 +2,12 @@ import { createClient } from '@/utils/supabase/server';
 import type { PTClient } from '@/utils/pt/types';
 import PTMessagesView from './PTMessagesView';
 
-export default async function PTMessagesPage() {
+export default async function PTMessagesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ client?: string }>;
+}) {
+  const { client: initialClientId } = await searchParams;
   const supabase = await createClient();
 
   const [clientRes, msgRes] = await Promise.all([
@@ -42,6 +47,7 @@ export default async function PTMessagesPage() {
       clients={sortedClients}
       unreadByClient={unreadByClient}
       lastMessageByClient={lastMessageByClient}
+      initialClientId={initialClientId}
     />
   );
 }

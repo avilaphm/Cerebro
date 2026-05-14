@@ -60,9 +60,11 @@ export default async function PTOverviewPage() {
       .limit(20),
     supabase
       .from('pt_messages')
-      .select('id', { count: 'exact', head: true })
+      .select('client_id, content, created_at', { count: 'exact' })
       .eq('sender', 'client')
-      .is('read_at', null),
+      .is('read_at', null)
+      .order('created_at', { ascending: false })
+      .limit(20),
     supabase
       .from('pt_weekly_checkins')
       .select('*')
@@ -88,6 +90,20 @@ export default async function PTOverviewPage() {
   const recentWorkouts = workoutRes.data ?? [];
   const events = (eventRes.data ?? []) as PTEvent[];
   const unreadMessages = unreadRes.count ?? 0;
+  const unreadMsgRows = (unreadRes.data ?? []) as { client_id: string; content: string; created_at: string }[];
+  const seenUnreadClients = new Set<string>();
+  const unreadNotifications = unreadMsgRows
+    .filter((m) => {
+      if (seenUnreadClients.has(m.client_id)) return false;
+      seenUnreadClients.add(m.client_id);
+      return true;
+    })
+    .map((m) => ({
+      client_id: m.client_id,
+      content: m.content,
+      created_at: m.created_at,
+      clientName: clients.find((c) => c.id === m.client_id)?.name ?? 'Client',
+    }));
   const waitingCheckins = (checkinRes.data ?? []) as PTWeeklyCheckin[];
   const currentPlans = (planRes.data ?? []) as PTWeeklyPlan[];
   const openCoachingTasks = coachingTaskRes.count ?? 0;
@@ -159,6 +175,30 @@ export default async function PTOverviewPage() {
           )
         ))}
       </div>
+
+      {unreadNotifications.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-3">New messages</h2>
+          <div className="space-y-2">
+            {unreadNotifications.map((n) => (
+              <Link
+                key={n.client_id}
+                href={`/dashboard/pt/messages?client=${n.client_id}`}
+                className="flex items-center gap-4 border border-black/10 bg-white px-4 py-3.5 transition-colors hover:border-black/30"
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-black shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">New message from {n.clientName}</p>
+                  <p className="text-xs text-black/40 truncate mt-0.5">{n.content}</p>
+                </div>
+                <span className="text-xs text-black/30 shrink-0">
+                  {new Date(n.created_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="mb-12">
         <div className="mb-5 flex items-end justify-between gap-3">

@@ -22,11 +22,14 @@ interface Props {
   clients: PTClient[];
   unreadByClient: Record<string, number>;
   lastMessageByClient: Record<string, { content: string; created_at: string; sender: string }>;
+  initialClientId?: string;
 }
 
-export default function PTMessagesView({ clients, unreadByClient }: Props) {
+export default function PTMessagesView({ clients, unreadByClient, initialClientId }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const [selectedClientId, setSelectedClientId] = useState<string | null>(clients[0]?.id ?? null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(
+    initialClientId ?? clients[0]?.id ?? null,
+  );
   const [messages, setMessages] = useState<Message[]>([]);
   const [unread, setUnread] = useState(unreadByClient);
   const [text, setText] = useState('');
@@ -198,7 +201,7 @@ export default function PTMessagesView({ clients, unreadByClient }: Props) {
             </button>
 
             {dropdownOpen && (
-              <div className="absolute top-full left-0 mt-1.5 w-56 bg-white border border-black/10 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+              <div className="no-glass absolute top-full left-0 mt-1.5 w-56 bg-white border border-black/10 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
                 {clients.length === 0 ? (
                   <p className="px-4 py-3 text-xs text-black/30">No clients yet.</p>
                 ) : (
