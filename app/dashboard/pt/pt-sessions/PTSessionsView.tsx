@@ -25,6 +25,7 @@ interface WorkoutLog {
   week_number: number;
   block_index: number | null;
   is_quick_done: boolean;
+  created_at: string;
 }
 
 interface PhaseProgress {
@@ -109,6 +110,13 @@ function workoutIsDone(logs: WorkoutLog[], phaseIndex: number, dayIndex: number,
   );
 }
 
+function getWorkoutCompletedAt(logs: WorkoutLog[], phaseIndex: number, dayIndex: number, progress: PhaseProgress | null): string | null {
+  const log = progress
+    ? logs.find((l) => l.phase_index === phaseIndex && l.day_index === dayIndex && l.block_index === progress.blockIndex && l.week_number === progress.weekWithinBlock)
+    : logs.find((l) => l.phase_index === phaseIndex && l.day_index === dayIndex);
+  return log?.created_at ?? null;
+}
+
 function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
   return exercise.exercise_id ?? exercise.name.toLowerCase();
 }
@@ -171,6 +179,12 @@ export default function PTSessionsView({
     return todays.length > 1;
   }, [appointments]);
 
+  // First upcoming appointment for the currently selected client (regardless of who nextAppointment is for)
+  const selectedClientNextAppt = useMemo(() => {
+    if (!selectedClient) return null;
+    return appointments.find((a) => a.client_id === selectedClient.id) ?? null;
+  }, [appointments, selectedClient]);
+
   const refreshAppointments = useCallback(async () => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -220,7 +234,7 @@ export default function PTSessionsView({
         .limit(500),
       supabase
         .from('pt_workout_logs')
-        .select('id, phase_index, day_index, week_number, block_index, is_quick_done')
+        .select('id, phase_index, day_index, week_number, block_index, is_quick_done, created_at')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false }),
     ]);
@@ -374,7 +388,7 @@ export default function PTSessionsView({
   }
 
   const handleNoShow = async () => {
-    const linkedAppt = selectedClient && nextAppointment?.client_id === selectedClient.id ? nextAppointment : null;
+    const linkedAppt = selectedClientNextAppt;
     if (!linkedAppt || !selectedClient) return;
     setNoShowBusy(true);
     setNoShowStatus('');
@@ -490,7 +504,7 @@ export default function PTSessionsView({
     }
 
     // Deduct session — use 'complete' action (same as PTBookingsView)
-    const linkedAppt = nextAppointment?.client_id === selectedClient.id ? nextAppointment : null;
+    const linkedAppt = selectedClientNextAppt;
     if (linkedAppt) {
       const { data: apptData, error: apptError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
         body: { action: 'complete', appointment_id: linkedAppt.id },
@@ -702,11 +716,11 @@ export default function PTSessionsView({
           >
             {saving ? 'Saving...' : 'Finish Session'}
           </button>
-          {!nextAppointment || nextAppointment.client_id !== selectedClient.id ? (
+          {!selectedClientNextAppt && (
             <p className="mt-2 text-center text-xs text-black/35">
               No linked appointment — session count unchanged.
             </p>
-          ) : null}
+          )}
         </div>
 
         {/* Exercise swap modal */}
@@ -892,12 +906,13 @@ export default function PTSessionsView({
                 <div className="divide-y divide-black/8">
                   {activePhase.days.map((day, dayIndex) => {
                     const done = workoutIsDone(workoutLogs, activePhaseIndex, dayIndex, activeProgress);
+                    const completedAt = done ? getWorkoutCompletedAt(workoutLogs, activePhaseIndex, dayIndex, activeProgress) : null;
                     return (
                       <button
                         key={day.id}
                         type="button"
                         onClick={() => setSelectedWorkout({ phaseIndex: activePhaseIndex, dayIndex })}
-                        className={`flex w-full items-center justify-between gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-black/4 ${done ? 'opacity-50' : ''}`}
+                        className={`flex w-full items-center justify-between gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-black/4 ${done ? 'opacity-40' : ''}`}
                       >
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium">{day.title}</p>
@@ -906,9 +921,14 @@ export default function PTSessionsView({
                             {day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
                           </p>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {done && <Check className="h-4 w-4 text-black/35" />}
-                          <ChevronRight className="h-4 w-4 text-black/25" />
+                        <div className="flex shrink-0 flex-col items-end gap-0.5">
+                          {done && <Check className="h-4 w-4 text-black/40" />}
+                          {completedAt && (
+                            <p className="text-[0.55rem] text-black/30 leading-none">
+                              {new Date(completedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                            </p>
+                          )}
+                          {!done && <ChevronRight className="h-4 w-4 text-black/25" />}
                         </div>
                       </button>
                     );
@@ -919,25 +939,31 @@ export default function PTSessionsView({
           </div>
         )}
 
-        {/* No Show — only when selected client has the next appointment */}
-        {selectedClient && nextAppointment && nextAppointment.client_id === selectedClient.id && (
+        {/* No Show — shown for every selected client */}
+        {selectedClient && (
           <div className="border border-black/10 bg-white px-5 py-5">
             <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Session attendance</p>
             {noShowStatus && (
               <p className="mb-3 text-sm text-red-600">{noShowStatus}</p>
             )}
-            <button
-              type="button"
-              onClick={() => void handleNoShow()}
-              disabled={noShowBusy}
-              className="flex w-full items-center justify-center gap-2 border border-red-300 px-4 py-3 text-sm font-medium text-red-600 transition-colors hover:border-red-400 hover:bg-red-50 disabled:opacity-50"
-            >
-              <AlertCircle className="h-4 w-4" />
-              {noShowBusy ? 'Marking...' : 'No Show — deduct 1 session'}
-            </button>
-            <p className="mt-2 text-center text-xs text-black/35">
-              Client did not attend · 1 session will be deducted
-            </p>
+            {selectedClientNextAppt ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleNoShow()}
+                  disabled={noShowBusy}
+                  className="flex w-full items-center justify-center gap-2 border border-red-300 px-4 py-3 text-sm font-medium text-red-600 transition-colors hover:border-red-400 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <AlertCircle className="h-4 w-4" />
+                  {noShowBusy ? 'Marking...' : 'No Show — deduct 1 session'}
+                </button>
+                <p className="mt-2 text-center text-xs text-black/35">
+                  Client did not attend · 1 session will be deducted
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-black/35">No upcoming appointment for {selectedClient.name}.</p>
+            )}
           </div>
         )}
       </div>
