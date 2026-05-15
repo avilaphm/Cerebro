@@ -4,7 +4,14 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Booking session rules overhaul (commit 0bd4e22):
+Workout tab tightened in `app/client/ClientPortal.tsx`:
+- Removed "Active programme" label from first card; programme name only
+- Removed `renderProgressPanel` (weight/waist/adherence) call from workout screen
+- Phase card now sits directly under the programme card with nothing between them
+- `renderProgress` replaced with a collapsible journey timeline: horizontal line with one circle per phase, green when phase is complete, dark ring for active, gray for upcoming; expands to show block sub-checkpoints per phase (small circles, green when block done); chevron indicates state
+- Completed workout card glow made significantly stronger - large positive y-offset shadow in green, 2px bottom gradient line at full card width, subtle green border tint; matches timeline checkpoint color `rgb(46,213,115)`
+
+Previous task: Booking session rules overhaul (commit 0bd4e22):
 - Sessions ONLY deduct on Finish Session (complete) or No Show - not on booking or cancellation
 - Removed `booking_hold` ledger inserts on booking creation and `hold_released` on cancellation
 - Removed "held by future bookings" display from client portal overview card
