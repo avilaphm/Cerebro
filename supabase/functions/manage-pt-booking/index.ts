@@ -581,6 +581,11 @@ async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointm
       return null;
     }
 
+    const coachEmail = Deno.env.get('COACH_CALENDAR_EMAIL') ?? 'avila.phm@gmail.com';
+    const attendees: Array<{ email: string }> = [];
+    if (input.client?.email) attendees.push({ email: input.client.email });
+    if (coachEmail) attendees.push({ email: coachEmail });
+
     const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
       method: 'POST',
       headers: {
@@ -592,7 +597,7 @@ async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointm
         description: `Booked through Pedro Avila Coaching.${input.appointment.location ? `\nLocation: ${input.appointment.location}` : ''}`,
         start: { dateTime: input.appointment.start_at, timeZone: TIMEZONE },
         end: { dateTime: input.appointment.end_at, timeZone: TIMEZONE },
-        attendees: input.client?.email ? [{ email: input.client.email }] : [],
+        attendees,
       }),
     });
     if (!res.ok) {
@@ -621,6 +626,24 @@ async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, ty
     recipient_email: client.email,
     subject,
   });
+
+  if (type === 'booking_confirmation') {
+    try {
+      const coachEmail = Deno.env.get('COACH_NOTIFY_EMAIL') ?? 'pedro@cerebroai.au';
+      const coachSubject = `[Cerebro Booking] ${client.name} — ${formatDateTime(new Date(appointment.start_at))}`;
+      const coachText = `New PT session booked.\n\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\n${appointment.location ? `Location: ${appointment.location}\n` : ''}\nThis is a coach copy.`;
+      await sendEmail(coachEmail, coachSubject, coachText);
+      await adminClient.from('pt_notification_log').insert({
+        client_id: client.id,
+        appointment_id: appointment.id,
+        notification_type: 'coach_booking_notification',
+        recipient_email: coachEmail,
+        subject: coachSubject,
+      });
+    } catch (error) {
+      console.error('Coach booking notification failed:', error);
+    }
+  }
 }
 
 async function sendCreditEmail(adminClient: ReturnType<typeof createClient>, client: PTClientRow, balance: number) {

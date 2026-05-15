@@ -4,10 +4,10 @@
 2026-05-15 by Claude
 
 ## Last completed task
-PT Sessions screen: new coach-only route at /dashboard/pt/pt-sessions. Three-card layout (next appointment, client info, programme days) leads into an inline workout logger with pre-filled weights from last session, per-exercise done toggles, set/rep inputs, swap-exercise modal (session-only), and a Finish Session button that saves pt_workout_logs + pt_set_logs and calls manage-pt-booking complete_appointment to deduct one session. Data immediately visible in client portal workout history.
+Coach booking notifications: when a client books a PT session, Pedro now (1) receives a coach-copy confirmation email at pedro@cerebroai.au (configurable via COACH_NOTIFY_EMAIL), and (2) is added as an attendee on the Google Calendar event so it lands on his avila.phm@gmail.com calendar (configurable via COACH_CALENDAR_EMAIL). Both are wrapped in soft-fail try/catch so booking still succeeds if either side errors. No migration. Single edit to `supabase/functions/manage-pt-booking/index.ts` covering both `sendBookingEmail` and `syncGoogleCalendar`. Pre-change rollback tag: `pre-pedro-notify-2026-05-15`.
 
 ## Last commit
-add PT Sessions screen to coach dashboard (ee636ef)
+add coach booking notifications (pedro email + calendar attendee)
 
 ## Current state
 
@@ -72,5 +72,6 @@ Recent shipped surfaces include:
 - Pre-commit hook rejects em dashes in markdown files. Use plain hyphens.
 - Supabase Cron job `pt-booking-weekly-reminders` is active on project `otcnrkfvgyvwolironoz` with schedule `0 22 * * 4`, which maps to Friday morning Sydney time in the current timezone.
 - Google Calendar sync is wired in `manage-pt-booking` through `GOOGLE_CALENDAR_SYNC_URL` or `GOOGLE_CALENDAR_ACCESS_TOKEN` plus `GOOGLE_CALENDAR_ID`. No Google secret was present locally, so calendar writes will no-op until one of those secrets is configured.
+- Coach booking notifications: `COACH_NOTIFY_EMAIL` defaults to `pedro@cerebroai.au`, `COACH_CALENDAR_EMAIL` defaults to `avila.phm@gmail.com`. Coach calendar attendance only fires when the existing Google Calendar sync secrets are set. The email piece works as long as `RESEND_API_KEY` is set.
 - Resend email sending uses existing `RESEND_API_KEY` and `RESEND_FROM_PEDRO_NOTIFY` Edge Function secrets when available.
 - Security advisor still reports `pg_net` installed in `public` from the live project. Attempting `ALTER EXTENSION pg_net SET SCHEMA extensions` is not supported by the extension, so this was left as an existing non-blocking warning rather than dropping/recreating the extension on a live project.
