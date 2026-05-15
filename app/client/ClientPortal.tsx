@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
@@ -11,9 +11,7 @@ import {
   PT_BOOKING_HORIZON_DAYS,
   PT_BOOKING_MIN_NOTICE_HOURS,
   PT_BOOKING_TIMEZONE,
-  activeBookingHoldCount,
   addDays,
-  availableSessionCredits,
   formatBookingDate,
   formatBookingTime,
   overlaps,
@@ -467,6 +465,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [savingWorkout, setSavingWorkout] = useState(false);
   const [submittingMetric, setSubmittingMetric] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [progressExpanded, setProgressExpanded] = useState(false);
   const [activeContext, setActiveContext] = useState<{
     phase_index: number; phase_title: string; day_index: number; day_title: string;
   } | null>(null);
@@ -695,11 +694,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const nextPlanItem = currentWeeklyPlanItems.find((item) => item.status === 'planned') ?? null;
   const activeBookings = bookings.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(booking.status));
   const nextBooking = activeBookings.find((booking) => new Date(booking.start_at).getTime() > Date.now()) ?? null;
-  const heldCredits = activeBookingHoldCount(bookings);
-  const availableCredits = availableSessionCredits(client, bookings);
+  const sessionsRemaining = client?.sessions_remaining ?? 0;
   const bookableSlots = useMemo(
-    () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, availableCredits > 0),
-    [availableCredits, bookingAvailability, bookingBlocks, bookings],
+    () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, sessionsRemaining > 0),
+    [sessionsRemaining, bookingAvailability, bookingBlocks, bookings],
   );
   const enrichedBookableSlots = useMemo(() => {
     const byStart = new Map<string, PTBookableSlot>();
@@ -1797,8 +1795,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
               <p className="text-xs text-black/35">Sessions left</p>
-              <p className="mt-1 text-2xl font-light">{client?.sessions_remaining ?? 0}</p>
-              <p className="mt-1 text-xs text-black/40">{heldCredits} held by future bookings</p>
+              <p className={`mt-1 text-2xl font-light ${sessionsRemaining === 0 ? 'text-red-600' : ''}`}>{sessionsRemaining}</p>
+              {sessionsRemaining === 0 && (
+                <p className="mt-1 text-xs text-red-500">Contact Pedro to add more</p>
+              )}
             </div>
             <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
               <p className="text-xs text-black/35">Next session</p>
@@ -2226,19 +2226,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 {nextBooking ? `${formatBookingTime(nextBooking.start_at)} at ${nextBooking.location ?? 'the gym'}` : 'Pick a slot below when you are ready.'}
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-                <p className="text-xs text-black/35">Pack</p>
-                <p className="mt-1 text-2xl font-light">{client?.sessions_remaining ?? 0}</p>
-              </div>
-              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-                <p className="text-xs text-black/35">Held</p>
-                <p className="mt-1 text-2xl font-light">{heldCredits}</p>
-              </div>
-              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-                <p className="text-xs text-black/35">Open</p>
-                <p className={`mt-1 text-2xl font-light ${availableCredits === 0 ? 'text-red-600' : ''}`}>{availableCredits}</p>
-              </div>
+            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+              <p className="text-xs text-black/35">Sessions left</p>
+              <p className={`mt-1 text-2xl font-light ${sessionsRemaining === 0 ? 'text-red-600' : ''}`}>{sessionsRemaining}</p>
             </div>
           </div>
         </section>
@@ -2290,6 +2280,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             </button>
           </div>
 
+          {sessionsRemaining === 0 && (
+            <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              You have no sessions remaining. Please contact Pedro to add more sessions before booking.
+            </p>
+          )}
+
           {movingBookingId && (
             <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               Pick an available slot below to move your session. Only slots within the same week are shown.{' '}
@@ -2301,7 +2297,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
           {bookableSlots.length === 0 ? (
             <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
-              {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
+              {sessionsRemaining === 0 ? 'No sessions remaining — contact Pedro to add more.' : 'No slots are currently available.'}
             </p>
           ) : bookingView === '3days' ? (
             renderCalendarRail(threeDayDays, false)

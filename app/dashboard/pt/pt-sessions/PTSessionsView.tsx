@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getExerciseBlockValues, requiredWorkoutsForBlock, safeProgramme } from '@/utils/pt/programme';
 import { formatBookingDate, formatBookingTime, type PTBookingAppointment } from '@/utils/pt/bookings';
@@ -157,6 +157,8 @@ export default function PTSessionsView({
   const [swapSearch, setSwapSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
+  const [noShowBusy, setNoShowBusy] = useState(false);
+  const [noShowStatus, setNoShowStatus] = useState('');
 
   // Next appointment: first one today (regardless of time), else first future one
   const nextAppointment = useMemo(() => {
@@ -370,6 +372,24 @@ export default function PTSessionsView({
     setSwapTarget(null);
     setSwapSearch('');
   }
+
+  const handleNoShow = async () => {
+    const linkedAppt = selectedClient && nextAppointment?.client_id === selectedClient.id ? nextAppointment : null;
+    if (!linkedAppt || !selectedClient) return;
+    setNoShowBusy(true);
+    setNoShowStatus('');
+    const { data, error } = await supabase.functions.invoke<{ error?: string; sessions_remaining?: number }>('manage-pt-booking', {
+      body: { action: 'no_show', appointment_id: linkedAppt.id },
+    });
+    if (error || data?.error) {
+      setNoShowStatus(data?.error ?? error?.message ?? 'Could not mark no show.');
+      setNoShowBusy(false);
+      return;
+    }
+    setNoShowStatus('');
+    setNoShowBusy(false);
+    await Promise.all([refreshAppointments(), loadClientData(selectedClient.id)]);
+  };
 
   const handleFinishSession = async () => {
     if (!selectedClient || !assignment || !selectedWorkout) return;
@@ -869,7 +889,7 @@ export default function PTSessionsView({
                     </span>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-px bg-black/8 sm:grid-cols-3">
+                <div className="divide-y divide-black/8">
                   {activePhase.days.map((day, dayIndex) => {
                     const done = workoutIsDone(workoutLogs, activePhaseIndex, dayIndex, activeProgress);
                     return (
@@ -877,16 +897,16 @@ export default function PTSessionsView({
                         key={day.id}
                         type="button"
                         onClick={() => setSelectedWorkout({ phaseIndex: activePhaseIndex, dayIndex })}
-                        className={`flex items-center justify-between gap-3 bg-white px-4 py-4 text-left transition-colors hover:bg-black/4 ${done ? 'opacity-50' : ''}`}
+                        className={`flex w-full items-center justify-between gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-black/4 ${done ? 'opacity-50' : ''}`}
                       >
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium truncate">{day.title}</p>
-                          <p className="mt-0.5 text-[0.6rem] text-black/40 truncate">{day.focus}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{day.title}</p>
+                          <p className="mt-0.5 text-xs text-black/40">{day.focus}</p>
                           <p className="mt-1 text-[0.6rem] text-black/30">
                             {day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
                           </p>
                         </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
+                        <div className="flex shrink-0 items-center gap-2">
                           {done && <Check className="h-4 w-4 text-black/35" />}
                           <ChevronRight className="h-4 w-4 text-black/25" />
                         </div>
@@ -896,6 +916,28 @@ export default function PTSessionsView({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* No Show — only when selected client has the next appointment */}
+        {selectedClient && nextAppointment && nextAppointment.client_id === selectedClient.id && (
+          <div className="border border-black/10 bg-white px-5 py-5">
+            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Session attendance</p>
+            {noShowStatus && (
+              <p className="mb-3 text-sm text-red-600">{noShowStatus}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleNoShow()}
+              disabled={noShowBusy}
+              className="flex w-full items-center justify-center gap-2 border border-red-300 px-4 py-3 text-sm font-medium text-red-600 transition-colors hover:border-red-400 hover:bg-red-50 disabled:opacity-50"
+            >
+              <AlertCircle className="h-4 w-4" />
+              {noShowBusy ? 'Marking...' : 'No Show — deduct 1 session'}
+            </button>
+            <p className="mt-2 text-center text-xs text-black/35">
+              Client did not attend · 1 session will be deducted
+            </p>
           </div>
         )}
       </div>

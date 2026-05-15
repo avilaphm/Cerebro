@@ -13,7 +13,7 @@ const MIN_NOTICE_MS = 48 * 60 * 60 * 1000;
 const HORIZON_MS = 28 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-type Action = 'create' | 'cancel' | 'complete' | 'review_cancellation' | 'send_weekly_reminders';
+type Action = 'create' | 'cancel' | 'complete' | 'no_show' | 'review_cancellation' | 'send_weekly_reminders' | 'send_session_alerts';
 type BookingStatus = 'scheduled' | 'confirmed' | 'cancellation_requested' | 'completed' | 'cancelled' | 'no_show';
 
 interface RequestBody {
@@ -78,6 +78,10 @@ Deno.serve(async (req: Request) => {
       return await sendWeeklyBookingReminders(adminClient);
     }
 
+    if (body.action === 'send_session_alerts' && bearer && bearer === internalSecret) {
+      return await sendSessionAlerts(adminClient);
+    }
+
     if (!authHeader) return json({ error: 'Missing authorization.' }, 401);
     const userClient = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } });
 
@@ -103,6 +107,11 @@ Deno.serve(async (req: Request) => {
     if (body.action === 'complete') {
       if (!isAdmin) return json({ error: 'Only Pedro can complete sessions.' }, 403);
       return await completeBooking(adminClient, authData.user.id, body);
+    }
+
+    if (body.action === 'no_show') {
+      if (!isAdmin) return json({ error: 'Only Pedro can mark no shows.' }, 403);
+      return await noShowBooking(adminClient, authData.user.id, body);
     }
 
     if (body.action === 'review_cancellation') {
@@ -136,20 +145,11 @@ async function createBooking(adminClient: ReturnType<typeof createClient>, userI
 
   if (starts.length === 0) return json({ error: 'No valid booking dates in the 28 day window.' }, 400);
 
-  const [{ data: availabilityRows }, { data: activeBookings }] = await Promise.all([
-    adminClient.from('pt_booking_availability').select('*').eq('is_active', true),
-    adminClient
-      .from('pt_booking_appointments')
-      .select('id, start_at, status')
-      .eq('client_id', client.id)
-      .in('status', ['scheduled', 'confirmed', 'cancellation_requested'])
-      .gt('start_at', new Date().toISOString()),
-  ]);
+  const { data: availabilityRows } = await adminClient.from('pt_booking_availability').select('*').eq('is_active', true);
 
   const availability = (availabilityRows ?? []) as AvailabilityRow[];
-  const activeHoldCount = (activeBookings ?? []).length;
-  if (client.sessions_remaining - activeHoldCount < starts.length) {
-    return json({ error: 'Not enough sessions left to book those slots.' }, 400);
+  if (client.sessions_remaining <= 0) {
+    return json({ error: 'No sessions remaining. Contact Pedro to add more.' }, 400);
   }
 
   const occurrences: Array<{ start: Date; end: Date; availability: AvailabilityRow }> = [];
@@ -208,15 +208,6 @@ async function createBooking(adminClient: ReturnType<typeof createClient>, userI
       start_at: row.start_at,
       end_at: new Date(occurrence.end.getTime() + bufferMinutes(occurrence.availability) * 60000).toISOString(),
       status: 'active',
-    });
-    await adminClient.from('pt_session_ledger').insert({
-      client_id: client.id,
-      appointment_id: row.id,
-      entry_type: 'booking_hold',
-      quantity: -1,
-      balance_after: client.sessions_remaining,
-      notes: 'Credit held for future booking.',
-      created_by: userId,
     });
 
     const googleId = await syncGoogleCalendar('create', { appointment: row, client });
@@ -310,6 +301,114 @@ async function completeBooking(adminClient: ReturnType<typeof createClient>, use
   }
 
   return json({ ok: true, status: 'completed', sessions_remaining: nextBalance });
+}
+
+async function noShowBooking(adminClient: ReturnType<typeof createClient>, userId: string, body: RequestBody) {
+  if (!body.appointment_id) return json({ error: 'Missing appointment_id.' }, 400);
+  const appointment = await getAppointment(adminClient, body.appointment_id);
+  if (!appointment) return json({ error: 'Booking not found.' }, 404);
+  if (appointment.status === 'no_show') return json({ ok: true, status: 'no_show' });
+  const client = appointment.pt_clients;
+  if (!client) return json({ error: 'Client not found.' }, 404);
+
+  const nextBalance = Math.max(0, client.sessions_remaining - 1);
+  await adminClient.from('pt_booking_appointments').update({
+    status: 'no_show',
+    completed_at: new Date().toISOString(),
+    completed_by: userId,
+    updated_at: new Date().toISOString(),
+  }).eq('id', appointment.id);
+  await adminClient.from('pt_booking_blocks').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('appointment_id', appointment.id);
+  await adminClient.from('pt_clients').update({ sessions_remaining: nextBalance, updated_at: new Date().toISOString() }).eq('id', client.id);
+  await adminClient.from('pt_session_ledger').insert({
+    client_id: client.id,
+    appointment_id: appointment.id,
+    entry_type: 'no_show',
+    quantity: -1,
+    balance_after: nextBalance,
+    notes: 'Client did not show for session.',
+    created_by: userId,
+  });
+  await adminClient.from('pt_events').insert({
+    client_id: client.id,
+    event_type: 'pt_session_no_show',
+    metadata: { appointment_id: appointment.id, start_at: appointment.start_at, balance_after: nextBalance },
+  });
+
+  if ([2, 1, 0].includes(nextBalance)) {
+    await sendCreditEmail(adminClient, client, nextBalance);
+  }
+
+  return json({ ok: true, status: 'no_show', sessions_remaining: nextBalance });
+}
+
+async function sendSessionAlerts(adminClient: ReturnType<typeof createClient>) {
+  const now = new Date();
+  const in24h = new Date(now.getTime() + DAY_MS);
+
+  const { data: clients, error: clientError } = await adminClient
+    .from('pt_clients')
+    .select('id, name, email, user_id, sessions_remaining')
+    .neq('status', 'archived')
+    .lte('sessions_remaining', 1);
+
+  if (clientError) return json({ error: clientError.message }, 500);
+
+  const todayDate = now.toISOString().slice(0, 10);
+  let sent = 0;
+
+  for (const client of (clients ?? []) as PTClientRow[]) {
+    const { data: upcoming } = await adminClient
+      .from('pt_booking_appointments')
+      .select('id, start_at')
+      .eq('client_id', client.id)
+      .in('status', ['scheduled', 'confirmed'])
+      .gte('start_at', now.toISOString())
+      .lt('start_at', in24h.toISOString())
+      .order('start_at', { ascending: true })
+      .limit(1);
+
+    const nextAppt = (upcoming ?? [])[0];
+    if (!nextAppt) continue;
+
+    const notifType = client.sessions_remaining === 0 ? 'zero_sessions_upcoming' : 'last_session_upcoming';
+
+    const { data: existing } = await adminClient
+      .from('pt_notification_log')
+      .select('id')
+      .eq('client_id', client.id)
+      .eq('notification_type', notifType)
+      .gte('created_at', `${todayDate}T00:00:00Z`)
+      .limit(1);
+
+    if ((existing ?? []).length > 0) continue;
+
+    const apptDate = formatDateTime(new Date(nextAppt.start_at));
+
+    let subject: string;
+    let text: string;
+
+    if (client.sessions_remaining === 0) {
+      subject = 'Your upcoming PT session — no sessions remaining';
+      text = `Hi ${client.name},\n\nYou have a PT session booked for ${apptDate}, but you currently have no sessions remaining. This session will not be able to go ahead.\n\nPlease make a payment as soon as possible to continue your training.\n\nPedro`;
+    } else {
+      subject = 'Your last PT session is coming up';
+      text = `Hi ${client.name},\n\nYour next session with Pedro is booked for ${apptDate}.\n\nAfter this session you will have no sessions remaining. Please make a payment when possible to keep your training going.\n\nPedro`;
+    }
+
+    await sendEmail(client.email, subject, text);
+    await adminClient.from('pt_notification_log').insert({
+      client_id: client.id,
+      appointment_id: nextAppt.id,
+      notification_type: notifType,
+      recipient_email: client.email,
+      subject,
+      metadata: { sessions_remaining: client.sessions_remaining },
+    });
+    sent += 1;
+  }
+
+  return json({ ok: true, sent });
 }
 
 async function reviewCancellation(adminClient: ReturnType<typeof createClient>, userId: string, body: RequestBody) {
@@ -420,15 +519,6 @@ async function applyCancellation(adminClient: ReturnType<typeof createClient>, u
     updated_at: new Date().toISOString(),
   }).eq('id', appointment.id);
   await adminClient.from('pt_booking_blocks').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('appointment_id', appointment.id);
-  await adminClient.from('pt_session_ledger').insert({
-    client_id: appointment.client_id,
-    appointment_id: appointment.id,
-    entry_type: 'hold_released',
-    quantity: 1,
-    balance_after: appointment.pt_clients?.sessions_remaining ?? null,
-    notes: 'Future booking hold released.',
-    created_by: userId,
-  });
   await syncGoogleCalendar('cancel', { appointment, client: appointment.pt_clients ?? null });
 }
 
@@ -650,8 +740,10 @@ async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, ty
 async function sendCreditEmail(adminClient: ReturnType<typeof createClient>, client: PTClientRow, balance: number) {
   const subject = balance === 0 ? 'You have no PT sessions left' : `You have ${balance} PT session${balance === 1 ? '' : 's'} left`;
   const text = balance === 0
-    ? `Hi ${client.name},\n\nYou have no PT sessions left with Pedro. Bookings are paused until another pack is added.\n\nPedro`
-    : `Hi ${client.name},\n\nYou have ${balance} PT session${balance === 1 ? '' : 's'} left with Pedro.\n\nPedro`;
+    ? `Hi ${client.name},\n\nYou have no PT sessions remaining with Pedro. You won't be able to book new sessions until another pack is added. Please contact Pedro to continue your training.\n\nPedro`
+    : balance === 1
+      ? `Hi ${client.name},\n\nYou have 1 PT session remaining with Pedro. Once that session is complete, your pack will be finished. Please arrange payment when possible to keep your training going.\n\nPedro`
+      : `Hi ${client.name},\n\nYou have ${balance} PT sessions remaining with Pedro.\n\nPedro`;
   await sendEmail(client.email, subject, text);
   await adminClient.from('pt_notification_log').insert({
     client_id: client.id,
