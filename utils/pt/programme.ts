@@ -1,6 +1,63 @@
-import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammeWeekBlock, PTProgrammeExerciseBlockOverride } from './types';
+import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammePhase, PTProgrammeWeekBlock, PTProgrammeExerciseBlockOverride } from './types';
 
 export const emptyProgramme: PTProgramme = { phases: [] };
+
+export const CANONICAL_SECTION_ORDER = ['Warm Up', 'Workout', 'MetCon', 'Stretches'] as const;
+
+export const DEFAULT_PROGRAMME_PHASES: Omit<PTProgrammePhase, 'id'>[] = [
+  { title: 'Phase 1 - Foundation', focus: 'Movement quality & base conditioning', weeks: '4', progression: '', days: [] },
+  { title: 'Testing 1 RM', focus: 'Baseline strength assessment', weeks: '1', progression: '', days: [] },
+  { title: 'Phase 2 - Hypertrophy', focus: 'Muscle building & volume', weeks: '4', progression: '', days: [] },
+  { title: 'Phase 3 - Strength', focus: 'Maximal strength development', weeks: '4', progression: '', days: [] },
+  { title: 'Re-testing 1 RM', focus: 'Strength reassessment', weeks: '1', progression: '', days: [] },
+];
+
+export function sortExercisesBySectionOrder(exercises: PTProgrammeExercise[]): PTProgrammeExercise[] {
+  type Group = { name: string | null; items: PTProgrammeExercise[] };
+  const groups: Group[] = [];
+
+  exercises.forEach((ex) => {
+    if (ex.section_start !== undefined) {
+      groups.push({ name: ex.section_start || null, items: [ex] });
+    } else if (groups.length === 0) {
+      groups.push({ name: null, items: [ex] });
+    } else {
+      groups[groups.length - 1].items.push(ex);
+    }
+  });
+
+  const sectionRank = (name: string | null): number => {
+    if (name === null) return -1;
+    const idx = CANONICAL_SECTION_ORDER.indexOf(name as typeof CANONICAL_SECTION_ORDER[number]);
+    return idx >= 0 ? idx : CANONICAL_SECTION_ORDER.length;
+  };
+
+  groups.sort((a, b) => sectionRank(a.name) - sectionRank(b.name));
+
+  const result: PTProgrammeExercise[] = [];
+  groups.forEach((group) => {
+    group.items.forEach((ex, i) => {
+      if (i === 0 && group.name !== null) {
+        result.push({ ...ex, section_start: group.name });
+      } else {
+        result.push({ ...ex, section_start: undefined });
+      }
+    });
+  });
+
+  return result;
+}
+
+export function getPhaseStartWeeks(phases: PTProgrammePhase[]): number[] {
+  const startWeeks: number[] = [];
+  let cumulative = 1;
+  for (const phase of phases) {
+    startWeeks.push(cumulative);
+    const weeks = parseInt(phase.weeks, 10);
+    cumulative += Number.isFinite(weeks) && weeks > 0 ? weeks : 0;
+  }
+  return startWeeks;
+}
 
 export function makeId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;

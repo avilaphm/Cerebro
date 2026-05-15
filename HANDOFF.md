@@ -4,7 +4,15 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Build fix (commit 5e10822): `PTSessionsView.tsx` was missing `created_at` on a `WorkoutLog` object literal added by another session, causing Vercel type-check failure. Added `created_at: new Date().toISOString()`.
+Programme creation rules: section order, default template, cascade weeks (commit pending):
+- `utils/pt/programme.ts` exports `CANONICAL_SECTION_ORDER` (Warm Up, Workout, MetCon, Stretches), `DEFAULT_PROGRAMME_PHASES` (5-phase journey), `sortExercisesBySectionOrder()`, and `getPhaseStartWeeks()`
+- `PTDayEditor.tsx`: section picker offers only Warm Up/Workout/MetCon/Stretches. Assigning a section auto-sorts exercises into canonical order.
+- `PTProgrammeWizard.tsx`: initialises with 5 default phases pre-filled. AI generation replaces them.
+- Both wizard and edit view show "starts week X" per phase, live cascade.
+- `ClientPortal.tsx` `getWorkoutSections` sorts by canonical order at render time.
+- Rules written to top-level CLAUDE.md.
+
+Previous task: Build fix (commit 5e10822): `PTSessionsView.tsx` was missing `created_at` on a `WorkoutLog` object literal added by another session, causing Vercel type-check failure. Added `created_at: new Date().toISOString()`.
 
 Also this session: client overview page redesign (commits df5ac49, 6c6eb03):
 - "This Week" + "Overview" merged into one "Overview" card with "This Week's Focus" sub-header, week date range, coach note, and three mini items: Next session / Due today / Next workout

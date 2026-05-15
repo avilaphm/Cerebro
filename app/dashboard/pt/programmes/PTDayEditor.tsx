@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { makeId } from '@/utils/pt/programme';
+import { makeId, sortExercisesBySectionOrder } from '@/utils/pt/programme';
 import type {
   PTExercise,
   PTProgrammeExercise,
@@ -22,19 +22,17 @@ const SECTION_CARD: Record<string, string> = {
   'Workout':  'bg-stone-50/70 ring-1 ring-inset ring-stone-300',
   'MetCon':   'bg-amber-50/70 ring-1 ring-inset ring-amber-200',
   'Stretches':'bg-emerald-50/70 ring-1 ring-inset ring-emerald-200',
-  'Cool Down':'bg-teal-50/70 ring-1 ring-inset ring-teal-200',
 };
 const SECTION_LABEL: Record<string, string> = {
   'Warm Up':  'text-blue-600',
   'Workout':  'text-stone-600',
   'MetCon':   'text-amber-700',
   'Stretches':'text-emerald-700',
-  'Cool Down':'text-teal-700',
 };
 const DEFAULT_CARD = 'bg-purple-50/70 ring-1 ring-inset ring-purple-200';
 const DEFAULT_LABEL = 'text-purple-700';
 
-const SECTION_NAMES = ['Warm Up', 'Workout', 'MetCon', 'Stretches', 'Cool Down'];
+const SECTION_NAMES = ['Warm Up', 'Workout', 'MetCon', 'Stretches'];
 
 type SectionGroup = {
   name: string | null;
@@ -134,7 +132,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     const updated = [...exercises];
     sortedIndices.forEach((i) => { updated[i] = { ...updated[i], section_start: undefined }; });
     updated[sortedIndices[0]] = { ...updated[sortedIndices[0]], section_start: name.trim() };
-    onChange(updated);
+    onChange(sortExercisesBySectionOrder(updated));
     clearSelected();
     setCustomSection('');
   };

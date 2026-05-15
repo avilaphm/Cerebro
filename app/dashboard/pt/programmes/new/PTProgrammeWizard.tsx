@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, safeProgramme, exerciseFromLibrary, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks } from '@/utils/pt/programme';
+import { makeId, safeProgramme, exerciseFromLibrary, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, getPhaseStartWeeks } from '@/utils/pt/programme';
 import type {
   PTClient, PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay,
 } from '@/utils/pt/types';
@@ -47,13 +47,16 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const router = useRouter();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
+
   const [clientId, setClientId] = useState(clients[0]?.id ?? '');
   const [brainDump, setBrainDump] = useState('');
   const [listening, setListening] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genStatus, setGenStatus] = useState('');
 
-  const [programme, setProgramme] = useState<PTProgramme>({ phases: [] });
+  const [programme, setProgramme] = useState<PTProgramme>({
+    phases: DEFAULT_PROGRAMME_PHASES.map((ph) => ({ ...ph, id: makeId('phase') })),
+  });
   const [progName, setProgName] = useState('');
   const [progGoal, setProgGoal] = useState('');
 
@@ -376,7 +379,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
           )}
 
           <div className="space-y-3">
-            {programme.phases.map((ph, i) => (
+            {programme.phases.map((ph, i) => {
+              const startWeek = getPhaseStartWeeks(programme.phases)[i] ?? 1;
+              return (
               <div key={ph.id}>
                 {editingPhase === i ? (
                   <div className="border border-black/20 p-5 space-y-3">
@@ -473,6 +478,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                       <div className="flex items-center gap-2">
                         <span className="text-[0.55rem] text-black/30">☰</span>
                         <p className="font-medium text-sm">{ph.title || `Phase ${i + 1}`}</p>
+                        <span className="text-[0.55rem] text-black/25 ml-auto">starts week {startWeek}</span>
                       </div>
                       <p className="text-xs text-black/40 mt-0.5">
                         {ph.weeks ? `${ph.weeks} weeks` : 'Duration not set'}{ph.focus ? ` · ${ph.focus}` : ''}
@@ -501,7 +507,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           <button onClick={addPhase} className="border border-black/15 border-dashed px-5 py-3 text-sm text-black/40 hover:border-black/30 hover:text-black transition-colors w-full text-center">
