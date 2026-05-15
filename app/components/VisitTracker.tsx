@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 
 const SESSION_KEY = 'cerebro_session_id';
 const TRACKED_PREFIX = 'cerebro_tracked_';
 
-// Skip tracking on private surfaces.
 function isPublicPath(path: string): boolean {
   if (!path) return false;
   if (path.startsWith('/dashboard')) return false;
@@ -29,25 +28,36 @@ function getSessionId(): string {
   }
 }
 
+function beacon(url: string, data: object) {
+  const payload = JSON.stringify(data);
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      return;
+    }
+  } catch { /* fall through */ }
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+}
+
 export default function VisitTracker() {
   const pathname = usePathname();
+  const entryTime = useRef<number>(0);
+  const trackedPath = useRef<string>('');
 
   useEffect(() => {
     if (!pathname || !isPublicPath(pathname)) return;
 
-    // Dedupe: don't log the same path twice in one session.
     let alreadyTracked = false;
     try {
       const key = TRACKED_PREFIX + pathname;
       alreadyTracked = sessionStorage.getItem(key) === '1';
       if (!alreadyTracked) sessionStorage.setItem(key, '1');
-    } catch {
-      // sessionStorage blocked — track every time, oh well
-    }
+    } catch { /* sessionStorage blocked */ }
     if (alreadyTracked) return;
 
+    const sessionId = getSessionId();
     const params = new URLSearchParams(window.location.search);
-    const body = JSON.stringify({
+    beacon('/api/track/visit', {
       path: pathname,
       referrer: document.referrer || null,
       utm_source: params.get('utm_source'),
@@ -55,25 +65,31 @@ export default function VisitTracker() {
       utm_campaign: params.get('utm_campaign'),
       utm_term: params.get('utm_term'),
       utm_content: params.get('utm_content'),
-      session_id: getSessionId(),
+      session_id: sessionId,
     });
 
-    // Use sendBeacon when available so the request survives navigation.
-    try {
-      if (navigator.sendBeacon) {
-        const blob = new Blob([body], { type: 'application/json' });
-        navigator.sendBeacon('/api/track/visit', blob);
-        return;
-      }
-    } catch {
-      // fall through to fetch
-    }
-    fetch('/api/track/visit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      keepalive: true,
-    }).catch(() => {});
+    entryTime.current = Date.now();
+    trackedPath.current = pathname;
+  }, [pathname]);
+
+  // Send time-on-page when tab is hidden or closed
+  useEffect(() => {
+    if (!pathname || !isPublicPath(pathname)) return;
+
+    const sendDuration = () => {
+      if (!entryTime.current || !trackedPath.current) return;
+      const seconds = Math.round((Date.now() - entryTime.current) / 1000);
+      if (seconds < 2) return;
+      beacon('/api/track/duration', {
+        session_id: getSessionId(),
+        path: trackedPath.current,
+        duration_seconds: seconds,
+      });
+    };
+
+    const onVisibility = () => { if (document.visibilityState === 'hidden') sendDuration(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [pathname]);
 
   return null;

@@ -32,6 +32,35 @@ const SUGGESTED_ACTIONS = [
 ];
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+const SESSION_KEY = 'cerebro_session_id';
+
+function getSessionId(): string {
+  try { return sessionStorage.getItem(SESSION_KEY) ?? ''; } catch { return ''; }
+}
+
+function fireTrackEvent(event_type: string) {
+  const params = new URLSearchParams(window.location.search);
+  let src = params.get('utm_source');
+  if (!src && document.referrer) {
+    try { src = new URL(document.referrer).hostname; } catch { src = null; }
+  }
+  const payload = JSON.stringify({
+    event_type,
+    session_id: getSessionId(),
+    source: src ?? 'direct',
+    utm_source: params.get('utm_source'),
+    utm_medium: params.get('utm_medium'),
+    utm_campaign: params.get('utm_campaign'),
+    path: window.location.pathname,
+  });
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/track/event', new Blob([payload], { type: 'application/json' }));
+      return;
+    }
+  } catch { /* fall through */ }
+  fetch('/api/track/event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true }).catch(() => {});
+}
 
 function TypingIndicator() {
   return (
@@ -61,6 +90,7 @@ export default function GetInTouchSection() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const captureCalledRef = useRef(false);
+  const chatStartedRef = useRef(false);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -87,6 +117,7 @@ export default function GetInTouchSection() {
       if (captureCalledRef.current) return;
       captureCalledRef.current = true;
       setLeadCaptureTriggered(true);
+      fireTrackEvent('email_submitted');
 
       try {
         await fetch(`${supabaseUrl}/functions/v1/chat`, {
@@ -120,6 +151,11 @@ export default function GetInTouchSection() {
         role: 'user',
         content: trimmed,
       };
+
+      if (!chatStartedRef.current) {
+        chatStartedRef.current = true;
+        fireTrackEvent('chat_started');
+      }
 
       const nextMessages = [...messages, userMsg];
       setMessages(nextMessages);

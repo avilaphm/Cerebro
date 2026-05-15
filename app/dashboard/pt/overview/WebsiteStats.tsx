@@ -1,0 +1,162 @@
+import { createClient } from '@/utils/supabase/server';
+
+interface VisitRow {
+  session_id: string | null;
+  source: string | null;
+  duration_seconds: number | null;
+  path: string;
+}
+
+interface EventRow {
+  session_id: string | null;
+  event_type: string;
+  source: string | null;
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  instagram: 'Instagram',
+  youtube: 'YouTube',
+  x: 'X',
+  tiktok: 'TikTok',
+  linkedin: 'LinkedIn',
+  search: 'Search',
+  direct: 'Direct',
+};
+
+function label(source: string) {
+  return SOURCE_LABELS[source] ?? source;
+}
+
+function fmtDuration(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+export default async function WebsiteStats() {
+  const supabase = await createClient();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [visitsRes, eventsRes] = await Promise.all([
+    supabase
+      .from('page_visits')
+      .select('session_id, source, duration_seconds, path')
+      .gte('created_at', sevenDaysAgo)
+      .eq('path', '/')
+      .limit(5000),
+    supabase
+      .from('site_events')
+      .select('session_id, event_type, source')
+      .gte('created_at', sevenDaysAgo)
+      .limit(5000),
+  ]);
+
+  const visits = (visitsRes.data ?? []) as VisitRow[];
+  const events = (eventsRes.data ?? []) as EventRow[];
+
+  // Unique landing page visitors
+  const uniqueSessions = new Set(visits.map((v) => v.session_id).filter(Boolean));
+  const totalVisitors = uniqueSessions.size;
+
+  // Avg time on page (only sessions that sent a duration)
+  const durationsWithValue = visits.filter((v) => v.duration_seconds && v.duration_seconds > 0);
+  const avgDuration = durationsWithValue.length > 0
+    ? Math.round(durationsWithValue.reduce((sum, v) => sum + (v.duration_seconds ?? 0), 0) / durationsWithValue.length)
+    : null;
+
+  // Chat and email counts
+  const chatStarted = events.filter((e) => e.event_type === 'chat_started').length;
+  const emailSubmitted = events.filter((e) => e.event_type === 'email_submitted').length;
+
+  // Per-source breakdown
+  const bySource = new Map<string, { visitors: Set<string>; chats: number; emails: number }>();
+
+  for (const v of visits) {
+    const src = v.source ?? 'direct';
+    if (!bySource.has(src)) bySource.set(src, { visitors: new Set(), chats: 0, emails: 0 });
+    if (v.session_id) bySource.get(src)!.visitors.add(v.session_id);
+  }
+  for (const e of events) {
+    const src = e.source ?? 'direct';
+    if (!bySource.has(src)) bySource.set(src, { visitors: new Set(), chats: 0, emails: 0 });
+    if (e.event_type === 'chat_started') bySource.get(src)!.chats += 1;
+    if (e.event_type === 'email_submitted') bySource.get(src)!.emails += 1;
+  }
+
+  const sorted = Array.from(bySource.entries())
+    .map(([src, d]) => ({ src, visitors: d.visitors.size, chats: d.chats, emails: d.emails }))
+    .sort((a, b) => b.visitors - a.visitors);
+
+  // UTM links for each channel
+  const base = 'https://www.cerebroai.au';
+  const utmLinks = [
+    { channel: 'Instagram', url: `${base}/?utm_source=instagram&utm_medium=bio&utm_campaign=organic` },
+    { channel: 'YouTube', url: `${base}/?utm_source=youtube&utm_medium=description&utm_campaign=organic` },
+    { channel: 'LinkedIn', url: `${base}/?utm_source=linkedin&utm_medium=bio&utm_campaign=organic` },
+    { channel: 'X', url: `${base}/?utm_source=x&utm_medium=bio&utm_campaign=organic` },
+    { channel: 'TikTok', url: `${base}/?utm_source=tiktok&utm_medium=bio&utm_campaign=organic` },
+  ];
+
+  return (
+    <section className="mb-10">
+      <div className="mb-4 flex items-baseline justify-between">
+        <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Website · last 7 days</p>
+        <a href="https://www.cerebroai.au" target="_blank" rel="noopener noreferrer"
+          className="text-xs text-black/30 hover:text-black/60 transition-colors">
+          cerebroai.au ↗
+        </a>
+      </div>
+
+      {/* Summary stats */}
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: 'Visitors', value: totalVisitors },
+          { label: 'Avg time', value: avgDuration !== null ? fmtDuration(avgDuration) : '—' },
+          { label: 'Chats started', value: chatStarted },
+          { label: 'Emails captured', value: emailSubmitted },
+        ].map((s) => (
+          <div key={s.label} className="border border-black/10 bg-white p-4">
+            <p className="text-2xl font-light">{s.value}</p>
+            <p className="mt-1 text-[0.6rem] uppercase tracking-[0.12em] text-black/35">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Per-source breakdown */}
+      {sorted.length > 0 ? (
+        <div className="mb-4 border border-black/10 bg-white divide-y divide-black/5">
+          <div className="grid grid-cols-4 gap-2 px-4 py-2">
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30">Source</p>
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30 text-right">Visitors</p>
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30 text-right">Chats</p>
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30 text-right">Emails</p>
+          </div>
+          {sorted.map(({ src, visitors, chats, emails }) => (
+            <div key={src} className="grid grid-cols-4 gap-2 px-4 py-3 items-center">
+              <p className="text-sm font-medium truncate">{label(src)}</p>
+              <p className="text-sm text-right">{visitors}</p>
+              <p className="text-sm text-right">{chats || '—'}</p>
+              <p className="text-sm text-right">{emails || '—'}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mb-4 text-sm text-black/30 border border-black/8 px-4 py-3">
+          No visitors tracked yet. Tag your links with UTM parameters below and share them on your socials.
+        </p>
+      )}
+
+      {/* UTM tracking links */}
+      <div className="border border-black/10 bg-white p-4">
+        <p className="mb-3 text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Tracking links — copy and use in bio / posts</p>
+        <div className="space-y-2">
+          {utmLinks.map(({ channel, url }) => (
+            <div key={channel} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+              <p className="w-20 shrink-0 text-xs font-medium text-black/60">{channel}</p>
+              <p className="flex-1 truncate font-mono text-[0.65rem] text-black/40 select-all">{url}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
