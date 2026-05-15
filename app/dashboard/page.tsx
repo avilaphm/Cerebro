@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import SocialChannels from './components/SocialChannels';
 import TrafficSources from './components/TrafficSources';
+import WebsiteStats from './components/WebsiteStats';
 
 async function getStats() {
   const supabase = await createClient();
@@ -73,6 +74,8 @@ export default async function DashboardPage() {
       <TrafficSources />
 
       <SocialChannels />
+
+      <WebsiteStats />
 
       <div className="border border-black/10 rounded-xl p-6 max-w-sm">
         <p className="text-sm font-medium text-black mb-1">Quick actions</p>

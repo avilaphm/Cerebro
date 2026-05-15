@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import type { PTClient, PTClientMetric, PTWeeklyCheckin, PTWeeklyPlan } from '@/utils/pt/types';
-import WebsiteStats from './WebsiteStats';
-
 interface PTEvent {
   id: string;
   client_id: string;
@@ -361,8 +359,6 @@ export default async function PTOverviewPage() {
           </section>
         )}
       </div>
-
-      <WebsiteStats />
 
       <section className="pb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-4">Recent activity</h2>
