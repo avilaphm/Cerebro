@@ -4,7 +4,19 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Workout tab tightened in `app/client/ClientPortal.tsx`:
+Workout tab journey timeline rules locked in (commit a460195):
+- Journey timeline is now a standalone card, always visible for ALL clients
+- No programme assigned: shows default 5-phase fallback (Phase 1 - Foundation, Testing 1 RM, Phase 2 - Hypertrophy, Phase 3 - Strength, Re-testing 1 RM)
+- Programme assigned: phases come from `assignment.programme.phases[n].title`
+- Week numbers never shown anywhere in client-facing progress UI (Pedro extends weeks freely)
+- Block sub-checkpoints use `block.sets` or `block.weight_pct` as labels, never week count
+- Journey card sits below workout cards; workouts stay at top of screen
+- Active programme label removed from first card (programme name only)
+- renderProgressPanel (weight/waist/adherence) removed from workout screen
+- Stronger completed workout card glow: `rgb(46,213,115)` neon shadow lifts card
+- Rules written to top-level CLAUDE.md under CLIENT TRAINING PROGRAMME RULES
+
+Previous task: Booking session rules overhaul (commit 0bd4e22):
 - Removed "Active programme" label from first card; programme name only
 - Removed `renderProgressPanel` (weight/waist/adherence) call from workout screen
 - Phase card now sits directly under the programme card with nothing between them
