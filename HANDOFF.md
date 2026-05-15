@@ -1,13 +1,13 @@
 # Handoff
 
 ## Last updated
-2026-05-14 by Claude
+2026-05-15 by Claude
 
 ## Last completed task
-Bug fixes and TypeScript cleanup: SpeechRecognition type errors fixed across PT voice components; client_id now passed in all manage-pt-booking calls so admin-tested portal resolves correctly; booking modal flow end-to-end verified (slot turns blue with client name after booking).
+PT Sessions screen: new coach-only route at /dashboard/pt/pt-sessions. Three-card layout (next appointment, client info, programme days) leads into an inline workout logger with pre-filled weights from last session, per-exercise done toggles, set/rep inputs, swap-exercise modal (session-only), and a Finish Session button that saves pt_workout_logs + pt_set_logs and calls manage-pt-booking complete_appointment to deduct one session. Data immediately visible in client portal workout history.
 
 ## Last commit
-pass client_id in booking calls so admin-tested portal resolves correctly (4ed335d)
+add PT Sessions screen to coach dashboard (ee636ef)
 
 ## Current state
 
