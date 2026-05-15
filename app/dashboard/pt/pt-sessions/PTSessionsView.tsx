@@ -285,11 +285,18 @@ export default function PTSessionsView({
       const count = parseSets(values.sets);
       newCounts[exercise.id] = count;
 
+      // Fall back to the lower-bound of target reps (e.g. "8-12" → "8", "10" → "10")
+      const targetRepsNum = parseInt(values.reps, 10);
+      const defaultReps = Number.isFinite(targetRepsNum) ? targetRepsNum.toString() : '';
+
       const history = lastSetsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
       for (let si = 0; si < count; si++) {
         const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, si);
         const last = history.find((l) => l.set_number === si + 1);
-        newDrafts[key] = { reps: last?.reps?.toString() ?? '', weight: last?.weight?.toString() ?? '' };
+        newDrafts[key] = {
+          reps: last?.reps?.toString() ?? defaultReps,
+          weight: last?.weight?.toString() ?? '',
+        };
       }
     });
 
@@ -308,14 +315,22 @@ export default function PTSessionsView({
   }
 
   function addExerciseSet(exercise: PTProgrammeExercise, currentCount: number) {
-    if (!selectedWorkout) return;
+    if (!selectedWorkout || !assignment) return;
     const newCount = currentCount + 1;
     setSetCounts((prev) => ({ ...prev, [exercise.id]: newCount }));
     const effective = exerciseOverrides[exercise.id] ?? exercise;
+    const phase = assignment.programme.phases[selectedWorkout.phaseIndex];
+    const blockIndex = phaseProgress[selectedWorkout.phaseIndex]?.blockIndex ?? 0;
+    const values = getExerciseBlockValues(effective, phase?.week_blocks, blockIndex);
+    const targetRepsNum = parseInt(values.reps, 10);
+    const defaultReps = Number.isFinite(targetRepsNum) ? targetRepsNum.toString() : '';
     const history = lastSetsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
     const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, newCount - 1);
     const last = history.find((l) => l.set_number === newCount);
-    setSetDrafts((prev) => ({ ...prev, [key]: { reps: last?.reps?.toString() ?? '', weight: last?.weight?.toString() ?? '' } }));
+    setSetDrafts((prev) => ({
+      ...prev,
+      [key]: { reps: last?.reps?.toString() ?? defaultReps, weight: last?.weight?.toString() ?? '' },
+    }));
   }
 
   function toggleDone(exerciseId: string) {
@@ -343,11 +358,13 @@ export default function PTSessionsView({
     setExerciseOverrides((prev) => ({ ...prev, [originalId]: newExercise }));
     setSetCounts((prev) => ({ ...prev, [originalId]: count }));
     const history = lastSetsByExercise.get(lib.id ?? lib.name.toLowerCase()) ?? [];
+    const targetRepsNum = parseInt(existingValues.reps, 10);
+    const defaultReps = Number.isFinite(targetRepsNum) ? targetRepsNum.toString() : '';
     const newDrafts: Record<string, SetDraft> = {};
     for (let si = 0; si < count; si++) {
       const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, originalId, si);
       const last = history.find((l) => l.set_number === si + 1);
-      newDrafts[key] = { reps: last?.reps?.toString() ?? '', weight: last?.weight?.toString() ?? '' };
+      newDrafts[key] = { reps: last?.reps?.toString() ?? defaultReps, weight: last?.weight?.toString() ?? '' };
     }
     setSetDrafts((prev) => ({ ...prev, ...newDrafts }));
     setSwapTarget(null);
@@ -391,9 +408,15 @@ export default function PTSessionsView({
 
     const workoutId = (workout as { id: string }).id;
 
+    const blockIndexForSave = phaseProgress[selectedWorkout.phaseIndex]?.blockIndex ?? 0;
+
     const rows = day.exercises.flatMap((exercise) => {
       const effective = exerciseOverrides[exercise.id] ?? exercise;
       const count = setCounts[exercise.id] ?? 1;
+      const values = getExerciseBlockValues(effective, phase.week_blocks, blockIndexForSave);
+      const targetRepsNum = parseInt(values.reps, 10);
+      const targetRepsFallback = Number.isFinite(targetRepsNum) ? targetRepsNum : null;
+
       return Array.from({ length: count }).map((_, si) => {
         const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, si);
         const draft = setDrafts[key];
@@ -404,7 +427,7 @@ export default function PTSessionsView({
           exercise_id: effective.exercise_id,
           exercise_name: effective.name,
           set_number: si + 1,
-          reps: toNullableNumber(draft?.reps),
+          reps: toNullableNumber(draft?.reps) ?? targetRepsFallback,
           weight: toNullableNumber(draft?.weight),
           notes: null,
         };
