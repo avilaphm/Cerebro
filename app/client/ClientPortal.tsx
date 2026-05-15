@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
@@ -467,6 +467,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [savingWorkout, setSavingWorkout] = useState(false);
   const [submittingMetric, setSubmittingMetric] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [progressExpanded, setProgressExpanded] = useState(false);
   const [activeContext, setActiveContext] = useState<{
     phase_index: number; phase_title: string; day_index: number; day_title: string;
   } | null>(null);
@@ -1340,52 +1341,142 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     </header>
   );
 
-  const renderProgress = (phase: PTProgrammePhase, progress: PhaseProgress | null) => {
-    if (!phase.week_blocks || phase.week_blocks.length === 0 || !progress) return null;
+  const DEFAULT_PROGRAMME_PHASES = [
+    'Phase 1 - Foundation',
+    'Testing 1 RM',
+    'Phase 2 - Hypertrophy',
+    'Phase 3 - Strength',
+    'Re-testing 1 RM',
+  ];
+
+  const renderJourneyTimeline = () => {
+    const hasProgramme = !!assignment && assignment.programme.phases.length > 0;
+    const phaseLabels = hasProgramme
+      ? assignment.programme.phases.map((p) => p.title)
+      : DEFAULT_PROGRAMME_PHASES;
+    const phaseCount = phaseLabels.length;
+    const activePi = hasProgramme ? activePhaseIndex : -1;
+    const doneFill = hasProgramme && phaseCount > 1
+      ? `${(activePi / (phaseCount - 1)) * 100}%`
+      : hasProgramme && (phaseProgress[0]?.allBlocksDone ? '100%' : '0%')
+        ? hasProgramme ? (phaseProgress[0]?.allBlocksDone ? '100%' : '0%') : '0%'
+        : '0%';
 
     return (
-      <div className="mt-5 border border-black/8 bg-[#fbfbf8] px-3 py-3 md:px-4">
-        <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Progress</p>
-          {progress.allBlocksDone ? (
-            <span className="text-[0.6rem] uppercase tracking-[0.1em] border border-green-300 bg-green-50 px-2 py-0.5 text-green-700">
-              Phase complete
-            </span>
-          ) : (
-            <span className="text-[0.65rem] text-black/50">
-              Block {progress.blockIndex + 1} of {phase.week_blocks.length} · Week {progress.weekWithinBlock} of {progress.block?.weeks ?? '?'} · {progress.block?.sets ? `${progress.block.sets} sets` : progress.block?.weight_pct ?? 'Progression'}
-            </span>
-          )}
-        </div>
-        <div className="flex gap-1">
-          {Array.from({ length: progress.block?.weeks ?? 0 }).map((_, weekIndex) => {
-            const weekNumber = weekIndex + 1;
-            const logsInWeek = workoutLogs.filter(
-              (log) =>
-                log.phase_index === activePhaseIndex &&
-                log.block_index === progress.blockIndex &&
-                log.week_number === weekNumber,
-            );
-            const doneDays = new Set(logsInWeek.map((log) => log.day_index)).size;
-            const isDone = progress.allBlocksDone || doneDays >= phase.days.length;
-            const isCurrent = !progress.allBlocksDone && weekNumber === progress.weekWithinBlock;
-            return (
+      <div className="mx-auto max-w-5xl">
+        <button
+          type="button"
+          onClick={() => setProgressExpanded((v) => !v)}
+          className="w-full border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:bg-[#fcfcfa] md:px-6"
+        >
+          <div className="flex items-center gap-4">
+            <p className="shrink-0 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Journey</p>
+            <div className="relative flex-1">
+              <div className="absolute left-0 right-0 top-[0.42rem] h-px bg-black/10" />
               <div
-                key={`week-${weekNumber}`}
-                className={`min-w-0 flex-1 py-1.5 text-center text-[0.52rem] uppercase tracking-[0.08em] sm:text-[0.55rem] ${
-                  isDone
-                    ? 'bg-black text-white'
-                    : isCurrent
-                    ? 'border border-black/30 bg-black/10 text-black/70'
-                    : 'border border-black/8 bg-black/4 text-black/25'
-                }`}
-              >
-                Week {weekNumber}
-                <span className="block text-[0.48rem] normal-case opacity-70">{doneDays}/{phase.days.length}</span>
+                className="absolute left-0 top-[0.42rem] h-px bg-[rgb(46,213,115)] transition-all"
+                style={{ width: doneFill }}
+              />
+              <div className="relative flex justify-between">
+                {phaseLabels.map((label, pi) => {
+                  const pp = hasProgramme ? (phaseProgress[pi] ?? null) : null;
+                  const isDone = pp?.allBlocksDone ?? false;
+                  const isActive = pi === activePi;
+                  return (
+                    <div key={pi} className="flex flex-col items-center gap-1.5">
+                      <div
+                        className={`h-3.5 w-3.5 rounded-full border-2 transition-colors ${
+                          isDone
+                            ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
+                            : isActive
+                              ? 'border-black bg-white'
+                              : 'border-black/20 bg-white'
+                        }`}
+                      />
+                      <span className="max-w-[3.5rem] text-center text-[0.44rem] uppercase leading-tight tracking-[0.06em] text-black/35">
+                        {label}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-black/25 transition-transform ${progressExpanded ? 'rotate-180' : ''}`}
+            />
+          </div>
+        </button>
+
+        {progressExpanded && (
+          <div className="space-y-5 border border-t-0 border-black/10 bg-white px-5 py-5 md:px-6">
+            {phaseLabels.map((label, pi) => {
+              const pp = hasProgramme ? (phaseProgress[pi] ?? null) : null;
+              const isDonePhase = pp?.allBlocksDone ?? false;
+              const isActivePhase = pi === activePi;
+              const blocks = hasProgramme
+                ? (assignment.programme.phases[pi]?.week_blocks ?? [])
+                : [];
+
+              return (
+                <div key={pi}>
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
+                        isDonePhase
+                          ? 'bg-[rgb(46,213,115)]'
+                          : isActivePhase
+                            ? 'border-2 border-black bg-white'
+                            : 'border-2 border-black/15 bg-white'
+                      }`}
+                    >
+                      {isDonePhase && <Check className="h-2.5 w-2.5 text-white" />}
+                    </div>
+                    <p
+                      className={`text-xs font-medium ${
+                        isActivePhase ? 'text-black' : isDonePhase ? 'text-black/60' : 'text-black/30'
+                      }`}
+                    >
+                      {label}
+                    </p>
+                    {isActivePhase && (
+                      <span className="ml-1 text-[0.55rem] uppercase tracking-[0.1em] text-[rgb(46,213,115)]">Current</span>
+                    )}
+                  </div>
+
+                  {blocks.length > 0 && (
+                    <div className="ml-8 mt-3 flex gap-4">
+                      {blocks.map((block, bi) => {
+                        const blockDone = isDonePhase || (pp !== null && pp.blockIndex > bi);
+                        const isActiveBlock = isActivePhase && pp !== null && pp.blockIndex === bi;
+                        const blockLabel = block.sets
+                          ? `${block.sets} sets`
+                          : block.weight_pct
+                            ? block.weight_pct
+                            : `Block ${bi + 1}`;
+                        return (
+                          <div key={bi} className="flex flex-col items-center gap-1.5">
+                            <div
+                              className={`h-2.5 w-2.5 rounded-full transition-colors ${
+                                blockDone
+                                  ? 'bg-[rgb(46,213,115)]'
+                                  : isActiveBlock
+                                    ? 'border-[1.5px] border-black/60 bg-transparent'
+                                    : 'border border-black/15 bg-transparent'
+                              }`}
+                            />
+                            <span className="max-w-[3rem] text-center text-[0.44rem] uppercase leading-tight tracking-wide text-black/30">
+                              {blockLabel}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -1955,23 +2046,23 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const renderWorkoutHome = () => (
     <div className="space-y-4 md:space-y-6">
       {!assignment || !activePhase ? (
-        <div className="mx-auto max-w-5xl border border-black/10 bg-white p-6">
-          <p className="text-sm font-medium text-black">
-            {client?.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
-          </p>
-          <p className="mt-2 text-sm text-black/55">
-            Your programme is being created. It will appear here as soon as it is live.
-          </p>
+        <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+          <div className="border border-black/10 bg-white p-6">
+            <p className="text-sm font-medium text-black">
+              {client?.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
+            </p>
+            <p className="mt-2 text-sm text-black/55">
+              Your programme is being created. It will appear here as soon as it is live.
+            </p>
+          </div>
+          {renderJourneyTimeline()}
         </div>
       ) : (
         <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
           <section className="border border-black/10 bg-white p-5 md:p-6">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
-            <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
+            <h2 className="font-display text-2xl font-light">{assignment.name}</h2>
             {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
           </section>
-
-          {renderProgressPanel()}
 
           <section className="border border-black/10 bg-white p-5 md:p-6">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -1982,8 +2073,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               </div>
               {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
             </div>
-
-            {renderProgress(activePhase, activeProgress)}
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               {activePhase.days.map((day, dayIndex) => {
@@ -1998,7 +2087,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     onClick={() => openWorkout(activePhaseIndex, dayIndex)}
                     className={`group relative min-h-[8.5rem] overflow-hidden border p-4 text-left transition-colors ${
                       done
-                        ? 'border-black/10 bg-white shadow-[0_16px_40px_-30px_rgba(40,220,120,0.75),inset_0_-1px_0_rgba(80,220,150,0.35)] after:absolute after:inset-x-5 after:bottom-0 after:h-px after:bg-[linear-gradient(90deg,transparent,rgba(70,220,145,0.8),transparent)] hover:border-black/20'
+                        ? 'border-[rgba(46,213,115,0.3)] bg-white shadow-[0_6px_30px_4px_rgba(46,213,115,0.45),0_16px_48px_-4px_rgba(46,213,115,0.3)] after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[linear-gradient(90deg,transparent,rgba(46,213,115,1),transparent)] hover:border-[rgba(46,213,115,0.45)]'
                         : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
                     }`}
                   >
@@ -2008,7 +2097,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         <h4 className="mt-2 text-lg font-medium">{day.title}</h4>
                       </div>
                       {done ? (
-                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-white shadow-[0_0_18px_rgba(70,220,145,0.25)]">
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-black text-white shadow-[0_0_18px_rgba(46,213,115,0.4)]">
                           <Check className="h-4 w-4" />
                         </span>
                       ) : (
@@ -2025,6 +2114,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               })}
             </div>
           </section>
+
+          {renderJourneyTimeline()}
         </div>
       )}
     </div>
