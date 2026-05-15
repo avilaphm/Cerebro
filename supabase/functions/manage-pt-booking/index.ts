@@ -9,7 +9,7 @@ const corsHeaders = {
 const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au'];
 const TIMEZONE = 'Australia/Sydney';
 const INTERNAL_SECRET_FALLBACK = 'cerebro-cron-2026';
-const MIN_NOTICE_MS = 48 * 60 * 60 * 1000;
+const MIN_NOTICE_MS = 12 * 60 * 60 * 1000;
 const HORIZON_MS = 28 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -540,7 +540,7 @@ async function getAppointment(adminClient: ReturnType<typeof createClient>, appo
 
 function validateBookingWindow(start: Date) {
   const now = Date.now();
-  if (start.getTime() < now + MIN_NOTICE_MS) throw new Error('Bookings need at least 48 hours notice.');
+  if (start.getTime() < now + MIN_NOTICE_MS) throw new Error('Bookings need at least 12 hours notice.');
   if (start.getTime() > now + HORIZON_MS) throw new Error('Bookings can only be made up to 28 days ahead.');
 }
 

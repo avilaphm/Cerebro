@@ -107,7 +107,7 @@ export interface PTBookableSlot {
 }
 
 export const PT_BOOKING_TIMEZONE = 'Australia/Sydney';
-export const PT_BOOKING_MIN_NOTICE_HOURS = 48;
+export const PT_BOOKING_MIN_NOTICE_HOURS = 12;
 export const PT_BOOKING_HORIZON_DAYS = 28;
 export const PT_BOOKING_SESSION_MINUTES = 45;
 export const PT_BOOKING_BUFFER_MINUTES = 5;
