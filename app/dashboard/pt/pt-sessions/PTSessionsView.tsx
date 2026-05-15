@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getExerciseBlockValues, requiredWorkoutsForBlock, safeProgramme } from '@/utils/pt/programme';
@@ -16,10 +16,7 @@ import type {
   PTSetLog,
 } from '@/utils/pt/types';
 
-interface SetDraft {
-  reps: string;
-  weight: string;
-}
+interface SetDraft { reps: string; weight: string; }
 
 interface WorkoutLog {
   id: string;
@@ -40,33 +37,23 @@ interface PhaseProgress {
 interface WorkoutSectionView {
   id: string;
   title: string;
-  exercises: {
-    exercise: PTProgrammeExercise;
-    values: ReturnType<typeof getExerciseBlockValues>;
-  }[];
+  exercises: { exercise: PTProgrammeExercise; values: ReturnType<typeof getExerciseBlockValues>; }[];
 }
 
-interface SelectedWorkout {
-  phaseIndex: number;
-  dayIndex: number;
-}
+interface SelectedWorkout { phaseIndex: number; dayIndex: number; }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function calcPhaseProgress(
-  logs: WorkoutLog[],
-  phaseIndex: number,
-  weekBlocks: PTProgrammeWeekBlock[] | undefined,
-  daysInPhase: number,
+  logs: WorkoutLog[], phaseIndex: number,
+  weekBlocks: PTProgrammeWeekBlock[] | undefined, daysInPhase: number,
 ): PhaseProgress | null {
   if (!weekBlocks || weekBlocks.length === 0) return null;
-
   for (let bi = 0; bi < weekBlocks.length; bi++) {
     const block = weekBlocks[bi];
     const required = requiredWorkoutsForBlock(weekBlocks, bi, daysInPhase);
-    const logsInBlock = logs.filter(
-      (l) => l.phase_index === phaseIndex && l.block_index === bi,
-    );
+    const logsInBlock = logs.filter((l) => l.phase_index === phaseIndex && l.block_index === bi);
     const distinct = new Set(logsInBlock.map((l) => `${l.week_number}-${l.day_index}`));
-
     if (distinct.size < required) {
       const weekMap = new Map<number, Set<number>>();
       logsInBlock.forEach((l) => {
@@ -75,80 +62,50 @@ function calcPhaseProgress(
       });
       let currentWeek = 1;
       for (let w = 1; w <= block.weeks; w++) {
-        if ((weekMap.get(w)?.size ?? 0) < daysInPhase) {
-          currentWeek = w;
-          break;
-        }
+        if ((weekMap.get(w)?.size ?? 0) < daysInPhase) { currentWeek = w; break; }
       }
       return { blockIndex: bi, weekWithinBlock: currentWeek, block, allBlocksDone: false };
     }
   }
-
-  const lastBlock = weekBlocks[weekBlocks.length - 1];
-  return {
-    blockIndex: weekBlocks.length - 1,
-    weekWithinBlock: lastBlock.weeks,
-    block: lastBlock,
-    allBlocksDone: true,
-  };
+  const last = weekBlocks[weekBlocks.length - 1];
+  return { blockIndex: weekBlocks.length - 1, weekWithinBlock: last.weeks, block: last, allBlocksDone: true };
 }
 
 function parseSets(value: string) {
-  const parsed = parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
 function toNullableNumber(value: string | undefined) {
   if (!value) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function draftKey(phaseIndex: number, dayIndex: number, exerciseId: string, setIndex: number) {
   return `${phaseIndex}-${dayIndex}-${exerciseId}-${setIndex}`;
 }
 
-function getWorkoutSections(
-  day: PTProgrammeDay,
-  phase: PTProgrammePhase,
-  blockIndex: number,
-): WorkoutSectionView[] {
+function getWorkoutSections(day: PTProgrammeDay, phase: PTProgrammePhase, blockIndex: number): WorkoutSectionView[] {
   const sections: WorkoutSectionView[] = [];
-
   day.exercises.forEach((exercise, index) => {
     const title = exercise.section_start?.trim() || (sections.length === 0 ? 'Main work' : '');
     if (index === 0 || exercise.section_start || sections.length === 0) {
-      sections.push({
-        id: `${index}-${title || 'section'}`,
-        title: title || 'Main work',
-        exercises: [],
-      });
+      sections.push({ id: `${index}-${title || 'section'}`, title: title || 'Main work', exercises: [] });
     }
-
     sections[sections.length - 1].exercises.push({
       exercise,
       values: getExerciseBlockValues(exercise, phase.week_blocks, blockIndex),
     });
   });
-
   return sections;
 }
 
-function workoutIsDone(
-  logs: WorkoutLog[],
-  phaseIndex: number,
-  dayIndex: number,
-  progress: PhaseProgress | null,
-) {
-  if (!progress) {
-    return logs.some((l) => l.phase_index === phaseIndex && l.day_index === dayIndex);
-  }
-  return logs.some(
-    (l) =>
-      l.phase_index === phaseIndex &&
-      l.day_index === dayIndex &&
-      l.block_index === progress.blockIndex &&
-      l.week_number === progress.weekWithinBlock,
+function workoutIsDone(logs: WorkoutLog[], phaseIndex: number, dayIndex: number, progress: PhaseProgress | null) {
+  if (!progress) return logs.some((l) => l.phase_index === phaseIndex && l.day_index === dayIndex);
+  return logs.some((l) =>
+    l.phase_index === phaseIndex && l.day_index === dayIndex &&
+    l.block_index === progress.blockIndex && l.week_number === progress.weekWithinBlock,
   );
 }
 
@@ -156,24 +113,35 @@ function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
   return exercise.exercise_id ?? exercise.name.toLowerCase();
 }
 
-function formatAppointmentTime(appointment: PTBookingAppointment) {
-  const date = new Date(appointment.start_at);
-  return `${formatBookingDate(date)} · ${formatBookingTime(date)}`;
+function isToday(isoString: string) {
+  const d = new Date(isoString);
+  const now = new Date();
+  return d.toDateString() === now.toDateString();
 }
+
+function isTomorrow(isoString: string) {
+  const d = new Date(isoString);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return d.toDateString() === tomorrow.toDateString();
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PTSessionsView({
   initialClients,
   exercises,
-  nextAppointment: initialNextAppointment,
+  initialAppointments,
 }: {
   initialClients: PTClient[];
   exercises: PTExercise[];
-  nextAppointment: PTBookingAppointment | null;
+  initialAppointments: PTBookingAppointment[];
 }) {
   const supabase = createClient();
+  const topRef = useRef<HTMLDivElement>(null);
 
   const [clients] = useState<PTClient[]>(initialClients);
-  const [nextAppointment, setNextAppointment] = useState<PTBookingAppointment | null>(initialNextAppointment);
+  const [appointments, setAppointments] = useState<PTBookingAppointment[]>(initialAppointments);
   const [selectedClient, setSelectedClient] = useState<PTClient | null>(null);
   const [showClientSelector, setShowClientSelector] = useState(false);
   const [assignment, setAssignment] = useState<PTProgramAssignment | null>(null);
@@ -190,11 +158,35 @@ export default function PTSessionsView({
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
-  // Auto-select client from next appointment on mount
+  // Next appointment: first one today (regardless of time), else first future one
+  const nextAppointment = useMemo(() => {
+    const todayFirst = appointments.find((a) => isToday(a.start_at));
+    return todayFirst ?? appointments[0] ?? null;
+  }, [appointments]);
+
+  const hasMoreToday = useMemo(() => {
+    const todays = appointments.filter((a) => isToday(a.start_at));
+    return todays.length > 1;
+  }, [appointments]);
+
+  const refreshAppointments = useCallback(async () => {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const res = await supabase
+      .from('pt_booking_appointments')
+      .select('*, pt_clients(id, name, email, sessions_remaining)')
+      .in('status', ['scheduled', 'confirmed'])
+      .gte('start_at', todayStart.toISOString())
+      .order('start_at', { ascending: true })
+      .limit(10);
+    setAppointments((res.data ?? []) as PTBookingAppointment[]);
+  }, [supabase]);
+
+  // Auto-select client from next appointment
   useEffect(() => {
-    if (initialNextAppointment?.pt_clients) {
-      const apptClient = clients.find((c) => c.id === initialNextAppointment.pt_clients!.id);
-      if (apptClient) setSelectedClient(apptClient);
+    if (nextAppointment?.pt_clients) {
+      const match = clients.find((c) => c.id === nextAppointment.pt_clients!.id);
+      if (match) setSelectedClient(match);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -256,6 +248,15 @@ export default function PTSessionsView({
     );
   }, [assignment, workoutLogs]);
 
+  // Active phase: first phase that's not complete, or last phase
+  const activePhaseIndex = useMemo(() => {
+    if (!assignment) return 0;
+    const next = phaseProgress.findIndex((p) => p && !p.allBlocksDone);
+    if (next >= 0) return next;
+    // All done — keep last
+    return assignment.programme.phases.length - 1;
+  }, [assignment, phaseProgress]);
+
   const lastSetsByExercise = useMemo(() => {
     const map = new Map<string, PTSetLog[]>();
     setLogs.forEach((log) => {
@@ -266,7 +267,7 @@ export default function PTSessionsView({
     return map;
   }, [setLogs]);
 
-  // Pre-fill drafts when a workout is selected
+  // Pre-fill drafts when workout is selected
   useEffect(() => {
     if (!selectedWorkout || !assignment) return;
     const phase = assignment.programme.phases[selectedWorkout.phaseIndex];
@@ -284,23 +285,17 @@ export default function PTSessionsView({
       const count = parseSets(values.sets);
       newCounts[exercise.id] = count;
 
-      const histKey = getExerciseHistoryKey(effective);
-      const history = lastSetsByExercise.get(histKey) ?? [];
-
-      for (let setIndex = 0; setIndex < count; setIndex++) {
-        const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
-        const lastLog = history.find((l) => l.set_number === setIndex + 1);
-        newDrafts[key] = {
-          reps: lastLog?.reps?.toString() ?? '',
-          weight: lastLog?.weight?.toString() ?? '',
-        };
+      const history = lastSetsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
+      for (let si = 0; si < count; si++) {
+        const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, si);
+        const last = history.find((l) => l.set_number === si + 1);
+        newDrafts[key] = { reps: last?.reps?.toString() ?? '', weight: last?.weight?.toString() ?? '' };
       }
     });
 
     setSetDrafts(newDrafts);
     setSetCounts(newCounts);
     setDoneExercises(new Set());
-  // exerciseOverrides intentionally omitted — only re-run when workout selection changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWorkout, assignment, phaseProgress, lastSetsByExercise]);
 
@@ -309,8 +304,7 @@ export default function PTSessionsView({
   }
 
   function setExerciseCount(exerciseId: string, count: number) {
-    const next = Math.max(1, count);
-    setSetCounts((prev) => ({ ...prev, [exerciseId]: next }));
+    setSetCounts((prev) => ({ ...prev, [exerciseId]: Math.max(1, count) }));
   }
 
   function addExerciseSet(exercise: PTProgrammeExercise, currentCount: number) {
@@ -318,57 +312,42 @@ export default function PTSessionsView({
     const newCount = currentCount + 1;
     setSetCounts((prev) => ({ ...prev, [exercise.id]: newCount }));
     const effective = exerciseOverrides[exercise.id] ?? exercise;
-    const histKey = getExerciseHistoryKey(effective);
-    const history = lastSetsByExercise.get(histKey) ?? [];
-    const setIndex = newCount - 1;
-    const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
-    const lastLog = history.find((l) => l.set_number === setIndex + 1);
-    setSetDrafts((prev) => ({
-      ...prev,
-      [key]: { reps: lastLog?.reps?.toString() ?? '', weight: lastLog?.weight?.toString() ?? '' },
-    }));
+    const history = lastSetsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
+    const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, newCount - 1);
+    const last = history.find((l) => l.set_number === newCount);
+    setSetDrafts((prev) => ({ ...prev, [key]: { reps: last?.reps?.toString() ?? '', weight: last?.weight?.toString() ?? '' } }));
   }
 
   function toggleDone(exerciseId: string) {
     setDoneExercises((prev) => {
       const next = new Set(prev);
-      if (next.has(exerciseId)) next.delete(exerciseId);
-      else next.add(exerciseId);
+      if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId);
       return next;
     });
   }
 
-  function swapExercise(originalExerciseId: string, libraryExercise: PTExercise) {
+  function swapExercise(originalId: string, lib: PTExercise) {
     if (!selectedWorkout || !assignment) return;
     const phase = assignment.programme.phases[selectedWorkout.phaseIndex];
     const blockIndex = phaseProgress[selectedWorkout.phaseIndex]?.blockIndex ?? 0;
-    const values = getExerciseBlockValues(
-      { id: originalExerciseId, exercise_id: libraryExercise.id, name: libraryExercise.name, sets: '3', reps: '8-12', rest: '', notes: '', video_url: null, cues: [] },
-      phase?.week_blocks,
-      blockIndex,
+    const existingValues = getExerciseBlockValues(
+      { id: originalId, exercise_id: null, name: lib.name, sets: '3', reps: '8-12', rest: '', notes: '', video_url: null, cues: [] },
+      phase?.week_blocks, blockIndex,
     );
-    const count = parseSets(values.sets);
+    const count = parseSets(existingValues.sets);
     const newExercise: PTProgrammeExercise = {
-      id: originalExerciseId,
-      exercise_id: libraryExercise.id,
-      name: libraryExercise.name,
-      sets: values.sets,
-      reps: values.reps,
-      rest: '',
-      notes: libraryExercise.purpose ?? '',
-      video_url: libraryExercise.video_url,
-      cues: libraryExercise.cues.slice(0, 4),
+      id: originalId, exercise_id: lib.id, name: lib.name,
+      sets: existingValues.sets, reps: existingValues.reps, rest: '', notes: lib.purpose ?? '',
+      video_url: lib.video_url, cues: lib.cues.slice(0, 4),
     };
-    setExerciseOverrides((prev) => ({ ...prev, [originalExerciseId]: newExercise }));
-    setSetCounts((prev) => ({ ...prev, [originalExerciseId]: count }));
-
-    const histKey = libraryExercise.id ?? libraryExercise.name.toLowerCase();
-    const history = lastSetsByExercise.get(histKey) ?? [];
+    setExerciseOverrides((prev) => ({ ...prev, [originalId]: newExercise }));
+    setSetCounts((prev) => ({ ...prev, [originalId]: count }));
+    const history = lastSetsByExercise.get(lib.id ?? lib.name.toLowerCase()) ?? [];
     const newDrafts: Record<string, SetDraft> = {};
-    for (let setIndex = 0; setIndex < count; setIndex++) {
-      const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, originalExerciseId, setIndex);
-      const lastLog = history.find((l) => l.set_number === setIndex + 1);
-      newDrafts[key] = { reps: lastLog?.reps?.toString() ?? '', weight: lastLog?.weight?.toString() ?? '' };
+    for (let si = 0; si < count; si++) {
+      const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, originalId, si);
+      const last = history.find((l) => l.set_number === si + 1);
+      newDrafts[key] = { reps: last?.reps?.toString() ?? '', weight: last?.weight?.toString() ?? '' };
     }
     setSetDrafts((prev) => ({ ...prev, ...newDrafts }));
     setSwapTarget(null);
@@ -415,8 +394,8 @@ export default function PTSessionsView({
     const rows = day.exercises.flatMap((exercise) => {
       const effective = exerciseOverrides[exercise.id] ?? exercise;
       const count = setCounts[exercise.id] ?? 1;
-      return Array.from({ length: count }).map((_, setIndex) => {
-        const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
+      return Array.from({ length: count }).map((_, si) => {
+        const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, si);
         const draft = setDrafts[key];
         return {
           workout_log_id: workoutId,
@@ -424,7 +403,7 @@ export default function PTSessionsView({
           assignment_id: assignment.id,
           exercise_id: effective.exercise_id,
           exercise_name: effective.name,
-          set_number: setIndex + 1,
+          set_number: si + 1,
           reps: toNullableNumber(draft?.reps),
           weight: toNullableNumber(draft?.weight),
           notes: null,
@@ -434,11 +413,7 @@ export default function PTSessionsView({
 
     if (rows.length > 0) {
       const { error: setError } = await supabase.from('pt_set_logs').insert(rows);
-      if (setError) {
-        setStatus(setError.message);
-        setSaving(false);
-        return;
-      }
+      if (setError) { setStatus(setError.message); setSaving(false); return; }
     }
 
     await supabase.from('pt_events').insert({
@@ -457,27 +432,13 @@ export default function PTSessionsView({
 
     // Update programme progression if block advanced
     if (progress && !progress.allBlocksDone) {
-      const newLogs: WorkoutLog[] = [
+      const updatedLogs: WorkoutLog[] = [
         ...workoutLogs,
-        {
-          id: workoutId,
-          phase_index: selectedWorkout.phaseIndex,
-          day_index: selectedWorkout.dayIndex,
-          week_number: weekWithinBlock,
-          block_index: blockIndex,
-          is_quick_done: false,
-        },
+        { id: workoutId, phase_index: selectedWorkout.phaseIndex, day_index: selectedWorkout.dayIndex,
+          week_number: weekWithinBlock, block_index: blockIndex, is_quick_done: false },
       ];
-      const newProgress = calcPhaseProgress(
-        newLogs,
-        selectedWorkout.phaseIndex,
-        phase.week_blocks,
-        phase.days.length,
-      );
-      if (
-        newProgress &&
-        (newProgress.blockIndex !== progress.blockIndex || newProgress.weekWithinBlock !== progress.weekWithinBlock)
-      ) {
+      const newProgress = calcPhaseProgress(updatedLogs, selectedWorkout.phaseIndex, phase.week_blocks, phase.days.length);
+      if (newProgress && (newProgress.blockIndex !== progress.blockIndex || newProgress.weekWithinBlock !== progress.weekWithinBlock)) {
         await supabase
           .from('pt_program_assignments')
           .update({ current_block_index: newProgress.blockIndex, current_week: newProgress.weekWithinBlock })
@@ -485,50 +446,40 @@ export default function PTSessionsView({
       }
     }
 
-    // Deduct session via appointment if linked
-    if (nextAppointment && nextAppointment.client_id === selectedClient.id) {
-      const { error: bookingError } = await supabase.functions.invoke('manage-pt-booking', {
-        body: {
-          action: 'complete_appointment',
-          appointment_id: nextAppointment.id,
-          client_id: selectedClient.id,
-        },
+    // Deduct session — use 'complete' action (same as PTBookingsView)
+    const linkedAppt = nextAppointment?.client_id === selectedClient.id ? nextAppointment : null;
+    if (linkedAppt) {
+      const { data: apptData, error: apptError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
+        body: { action: 'complete', appointment_id: linkedAppt.id },
       });
-      if (bookingError) {
-        setStatus('Workout saved. Session deduction failed — mark complete manually in Bookings.');
+      if (apptError || apptData?.error) {
+        setStatus(`Workout saved. Session deduction failed: ${apptData?.error ?? apptError?.message ?? 'unknown error'}`);
         setSaving(false);
         return;
       }
     }
 
-    setStatus('Session complete.');
+    // Reset and scroll to top
     setSaving(false);
+    setStatus('');
     setSelectedWorkout(null);
     setSetDrafts({});
     setSetCounts({});
     setDoneExercises(new Set());
     setExerciseOverrides({});
 
-    // Reload next appointment and client data
-    const apptRes = await supabase
-      .from('pt_booking_appointments')
-      .select('*, pt_clients(id, name, email, sessions_remaining)')
-      .in('status', ['scheduled', 'confirmed'])
-      .gt('start_at', new Date().toISOString())
-      .order('start_at', { ascending: true })
-      .limit(1);
-    setNextAppointment((apptRes.data ?? [])[0] ?? null);
-    await loadClientData(selectedClient.id);
+    await Promise.all([refreshAppointments(), loadClientData(selectedClient.id)]);
+
+    topRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const filteredExercises = useMemo(() => {
     if (!swapSearch.trim()) return exercises.slice(0, 30);
     const q = swapSearch.toLowerCase();
-    return exercises.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        e.muscles.some((m) => m.toLowerCase().includes(q)) ||
-        (e.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+    return exercises.filter((e) =>
+      e.name.toLowerCase().includes(q) ||
+      e.muscles.some((m) => m.toLowerCase().includes(q)) ||
+      (e.tags ?? []).some((t) => t.toLowerCase().includes(q)),
     ).slice(0, 30);
   }, [exercises, swapSearch]);
 
@@ -557,7 +508,7 @@ export default function PTSessionsView({
           Back to programme
         </button>
 
-        <div className="mb-2">
+        <div className="mb-1">
           <p className="text-[0.65rem] uppercase tracking-[0.18em] text-black/35">{selectedClient.name}</p>
         </div>
         <div className="mb-5 flex items-end justify-between gap-4">
@@ -578,8 +529,7 @@ export default function PTSessionsView({
                     ? getExerciseBlockValues(effective, phase.week_blocks, blockIndex)
                     : values;
                   const count = setCounts[exercise.id] ?? parseSets(effectiveValues.sets);
-                  const histKey = getExerciseHistoryKey(effective);
-                  const history = lastSetsByExercise.get(histKey) ?? [];
+                  const history = lastSetsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
                   const isDone = doneExercises.has(exercise.id);
                   const wasSwapped = !!exerciseOverrides[exercise.id];
 
@@ -587,7 +537,7 @@ export default function PTSessionsView({
                     <div key={exercise.id} className={`p-4 transition-colors ${isDone ? 'bg-black/[0.02]' : ''}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex flex-wrap items-center gap-2">
                             <p className={`font-medium ${isDone ? 'text-black/40 line-through' : ''}`}>{effective.name}</p>
                             {wasSwapped && (
                               <span className="text-[0.55rem] uppercase tracking-[0.12em] border border-black/15 bg-black/5 px-1.5 py-0.5 text-black/40">
@@ -642,13 +592,13 @@ export default function PTSessionsView({
                       )}
 
                       <div className="mt-3 space-y-2">
-                        {Array.from({ length: count }).map((_, setIndex) => {
-                          const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
+                        {Array.from({ length: count }).map((_, si) => {
+                          const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, si);
                           const draft = setDrafts[key] ?? { reps: '', weight: '' };
                           return (
                             <div key={key} className="grid grid-cols-[3.25rem_1fr_1fr] gap-2">
                               <div className="flex items-center border border-black/10 bg-[#fbfbf8] px-2 text-xs text-black/40">
-                                S{setIndex + 1}
+                                S{si + 1}
                               </div>
                               <input
                                 value={draft.weight}
@@ -709,11 +659,11 @@ export default function PTSessionsView({
           >
             {saving ? 'Saving...' : 'Finish Session'}
           </button>
-          {nextAppointment?.client_id !== selectedClient.id && (
+          {!nextAppointment || nextAppointment.client_id !== selectedClient.id ? (
             <p className="mt-2 text-center text-xs text-black/35">
-              No linked appointment — workout will be saved, session count unchanged.
+              No linked appointment — session count unchanged.
             </p>
-          )}
+          ) : null}
         </div>
 
         {/* Exercise swap modal */}
@@ -740,14 +690,14 @@ export default function PTSessionsView({
               </div>
               <div className="max-h-72 overflow-y-auto divide-y divide-black/8">
                 {filteredExercises.length === 0 && (
-                  <p className="px-4 py-6 text-sm text-black/40 text-center">No exercises found</p>
+                  <p className="px-4 py-6 text-center text-sm text-black/40">No exercises found</p>
                 )}
                 {filteredExercises.map((ex) => (
                   <button
                     key={ex.id}
                     type="button"
                     onClick={() => swapExercise(swapTarget, ex)}
-                    className="w-full px-4 py-3 text-left hover:bg-black/4 transition-colors"
+                    className="w-full px-4 py-3 text-left transition-colors hover:bg-black/4"
                   >
                     <p className="text-sm font-medium">{ex.name}</p>
                     {ex.muscles.length > 0 && (
@@ -763,98 +713,105 @@ export default function PTSessionsView({
     );
   };
 
-  // ─── Render: Client selector + 3 cards ───────────────────────────────────
+  // ─── Render: 3-card pick view ─────────────────────────────────────────────
 
   const renderPickView = () => {
-    const appointmentClient = nextAppointment?.pt_clients
-      ? clients.find((c) => c.id === nextAppointment.pt_clients!.id) ?? null
-      : null;
+    const activePhase = assignment?.programme.phases[activePhaseIndex] ?? null;
+    const activeProgress = phaseProgress[activePhaseIndex] ?? null;
 
     return (
       <div className="space-y-4">
-        {/* Card 1: Next Session */}
-        <div className="border border-black/10 bg-white">
-          <div className="px-5 py-5">
-            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Next Session</p>
-            {nextAppointment ? (
-              <div className="mt-2 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-lg font-light">{nextAppointment.pt_clients?.name ?? 'Unknown client'}</p>
-                  <p className="mt-0.5 text-sm text-black/45">{formatAppointmentTime(nextAppointment)}</p>
+
+        {/* Card 1: Next Session — read only from calendar */}
+        <div className="border border-black/10 bg-white px-5 py-5">
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Next Session</p>
+          {nextAppointment ? (
+            <div className="mt-2">
+              {isToday(nextAppointment.start_at) ? (
+                <>
+                  <p className="text-lg font-light">{nextAppointment.pt_clients?.name ?? '—'}</p>
+                  <p className="mt-0.5 text-sm text-black/45">
+                    Today · {formatBookingTime(new Date(nextAppointment.start_at))}
+                  </p>
                   {nextAppointment.location && (
                     <p className="mt-0.5 text-xs text-black/35">{nextAppointment.location}</p>
                   )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowClientSelector((v) => !v)}
-                  className="flex shrink-0 items-center gap-1.5 border border-black/15 px-3 py-2 text-xs text-black/50 hover:border-black/30 hover:text-black transition-colors"
-                >
-                  Change
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showClientSelector ? 'rotate-180' : ''}`} />
-                </button>
-              </div>
-            ) : (
-              <div className="mt-2 flex items-center justify-between gap-4">
-                <p className="text-sm text-black/45">No upcoming session booked</p>
-                <button
-                  type="button"
-                  onClick={() => setShowClientSelector((v) => !v)}
-                  className="flex shrink-0 items-center gap-1.5 border border-black/15 px-3 py-2 text-xs text-black/50 hover:border-black/30 hover:text-black transition-colors"
-                >
-                  Select client
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showClientSelector ? 'rotate-180' : ''}`} />
-                </button>
-              </div>
-            )}
-          </div>
+                  {hasMoreToday && (
+                    <p className="mt-1 text-xs text-black/35">+{appointments.filter((a) => isToday(a.start_at)).length - 1} more today</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-black/45">No more sessions today</p>
+                  <p className="mt-1 text-sm font-light">
+                    {isTomorrow(nextAppointment.start_at) ? 'Tomorrow' : formatBookingDate(new Date(nextAppointment.start_at))}
+                    {' '}· {nextAppointment.pt_clients?.name ?? '—'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-black/35">
+                    {formatBookingTime(new Date(nextAppointment.start_at))}
+                    {nextAppointment.location ? ` · ${nextAppointment.location}` : ''}
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-black/40">No upcoming sessions booked</p>
+          )}
+        </div>
 
-          {(showClientSelector || !nextAppointment) && (
+        {/* Card 2: Client — tap to select */}
+        <div className="border border-black/10 bg-white">
+          <button
+            type="button"
+            onClick={() => setShowClientSelector((v) => !v)}
+            className="flex w-full items-center justify-between px-5 py-5 text-left"
+          >
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Client</p>
+              {selectedClient ? (
+                <div className="mt-2 flex items-end justify-between gap-6">
+                  <p className="text-lg font-light">{selectedClient.name}</p>
+                  <div className="text-right">
+                    <p className="text-2xl font-light leading-none">{selectedClient.sessions_remaining}</p>
+                    <p className="text-[0.55rem] uppercase tracking-[0.12em] text-black/35">Sessions left</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-black/40">Tap to select client</p>
+              )}
+            </div>
+            <ChevronDown className={`ml-4 h-4 w-4 shrink-0 text-black/35 transition-transform ${showClientSelector ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showClientSelector && (
             <div className="border-t border-black/8">
               <div className="max-h-56 overflow-y-auto divide-y divide-black/8">
-                {clients.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedClient(c);
-                      setShowClientSelector(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-5 py-3 text-left text-sm transition-colors hover:bg-black/4 ${
-                      selectedClient?.id === c.id ? 'bg-black/5' : ''
-                    }`}
-                  >
-                    <span className={selectedClient?.id === c.id ? 'font-medium' : ''}>{c.name}</span>
-                    {c.id === appointmentClient?.id && (
-                      <span className="text-[0.55rem] uppercase tracking-[0.12em] border border-black/15 px-1.5 py-0.5 text-black/40">
-                        Booked
-                      </span>
-                    )}
-                  </button>
-                ))}
+                {clients.map((c) => {
+                  const isNextAppt = nextAppointment?.client_id === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => { setSelectedClient(c); setShowClientSelector(false); }}
+                      className={`flex w-full items-center justify-between px-5 py-3 text-left text-sm transition-colors hover:bg-black/4 ${
+                        selectedClient?.id === c.id ? 'bg-black/5' : ''
+                      }`}
+                    >
+                      <span className={selectedClient?.id === c.id ? 'font-medium' : ''}>{c.name}</span>
+                      {isNextAppt && (
+                        <span className="text-[0.55rem] uppercase tracking-[0.12em] border border-black/15 px-1.5 py-0.5 text-black/40">
+                          Next
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
 
-        {/* Card 2: Selected Client */}
-        {selectedClient && (
-          <div className="border border-black/10 bg-white px-5 py-5">
-            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Client</p>
-            <div className="mt-2 flex items-center justify-between gap-4">
-              <p className="text-lg font-light">{selectedClient.name}</p>
-              <div className="text-right">
-                <p className="text-2xl font-light">{selectedClient.sessions_remaining}</p>
-                <p className="text-[0.6rem] uppercase tracking-[0.12em] text-black/35">Sessions left</p>
-              </div>
-            </div>
-            {selectedClient.coaching_focus && (
-              <p className="mt-2 text-xs text-black/40">{selectedClient.coaching_focus}</p>
-            )}
-          </div>
-        )}
-
-        {/* Card 3: Workout Programme */}
+        {/* Card 3: Workout Programme — current phase only */}
         {selectedClient && (
           <div className="border border-black/10 bg-white">
             <div className="border-b border-black/8 px-5 py-4">
@@ -865,61 +822,55 @@ export default function PTSessionsView({
               <div className="flex items-center justify-center px-5 py-10">
                 <RefreshCw className="h-5 w-5 animate-spin text-black/30" />
               </div>
-            ) : !assignment ? (
+            ) : !assignment || !activePhase ? (
               <div className="px-5 py-8 text-center">
                 <p className="text-sm text-black/40">No active programme for {selectedClient.name}</p>
               </div>
             ) : (
-              <div className="divide-y divide-black/8">
-                {assignment.programme.phases.map((phase, phaseIndex) => {
-                  const progress = phaseProgress[phaseIndex];
-                  return (
-                    <div key={phase.id}>
-                      <div className="px-5 py-3">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <p className="text-sm font-medium">{phase.title}</p>
-                          <p className="text-xs text-black/35">{phase.focus}</p>
-                        </div>
-                        {progress && !progress.allBlocksDone && (
-                          <p className="mt-0.5 text-xs text-black/35">
-                            Block {progress.blockIndex + 1} · Week {progress.weekWithinBlock}
-                            {progress.block?.sets ? ` · ${progress.block.sets} sets` : ''}
+              <div>
+                <div className="px-5 py-3 border-b border-black/8">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-sm font-medium">{activePhase.title}</p>
+                    <p className="text-xs text-black/35">{activePhase.focus}</p>
+                  </div>
+                  {activeProgress && !activeProgress.allBlocksDone && (
+                    <p className="mt-0.5 text-xs text-black/40">
+                      Block {activeProgress.blockIndex + 1} · Week {activeProgress.weekWithinBlock}
+                      {activeProgress.block?.sets ? ` · ${activeProgress.block.sets} sets` : ''}
+                      {activeProgress.block?.weight_pct ? ` · ${activeProgress.block.weight_pct}` : ''}
+                    </p>
+                  )}
+                  {activeProgress?.allBlocksDone && (
+                    <span className="mt-1 inline-block text-[0.55rem] uppercase tracking-[0.1em] border border-green-300 bg-green-50 px-1.5 py-0.5 text-green-700">
+                      Phase complete
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-px bg-black/8 sm:grid-cols-3">
+                  {activePhase.days.map((day, dayIndex) => {
+                    const done = workoutIsDone(workoutLogs, activePhaseIndex, dayIndex, activeProgress);
+                    return (
+                      <button
+                        key={day.id}
+                        type="button"
+                        onClick={() => setSelectedWorkout({ phaseIndex: activePhaseIndex, dayIndex })}
+                        className={`flex items-center justify-between gap-3 bg-white px-4 py-4 text-left transition-colors hover:bg-black/4 ${done ? 'opacity-50' : ''}`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate">{day.title}</p>
+                          <p className="mt-0.5 text-[0.6rem] text-black/40 truncate">{day.focus}</p>
+                          <p className="mt-1 text-[0.6rem] text-black/30">
+                            {day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
                           </p>
-                        )}
-                        {progress?.allBlocksDone && (
-                          <span className="mt-1 inline-block text-[0.55rem] uppercase tracking-[0.1em] border border-green-300 bg-green-50 px-1.5 py-0.5 text-green-700">
-                            Phase complete
-                          </span>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-px bg-black/8 border-t border-black/8 sm:grid-cols-3">
-                        {phase.days.map((day, dayIndex) => {
-                          const done = workoutIsDone(workoutLogs, phaseIndex, dayIndex, progress);
-                          return (
-                            <button
-                              key={day.id}
-                              type="button"
-                              onClick={() => setSelectedWorkout({ phaseIndex, dayIndex })}
-                              className={`flex items-center justify-between gap-3 bg-white px-4 py-4 text-left transition-colors hover:bg-black/4 ${done ? 'opacity-50' : ''}`}
-                            >
-                              <div className="min-w-0">
-                                <p className="text-xs font-medium truncate">{day.title}</p>
-                                <p className="mt-0.5 text-[0.6rem] text-black/40 truncate">{day.focus}</p>
-                                <p className="mt-1 text-[0.6rem] text-black/30">
-                                  {day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
-                                </p>
-                              </div>
-                              <div className="flex shrink-0 flex-col items-end gap-1">
-                                {done && <Check className="h-4 w-4 text-black/35" />}
-                                <ChevronRight className="h-4 w-4 text-black/25" />
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {done && <Check className="h-4 w-4 text-black/35" />}
+                          <ChevronRight className="h-4 w-4 text-black/25" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -928,10 +879,10 @@ export default function PTSessionsView({
     );
   };
 
-  // ─── Main render ─────────────────────────────────────────────────────────
+  // ─── Main render ──────────────────────────────────────────────────────────
 
   return (
-    <div className="px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <div ref={topRef} className="px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
       <h1 className="font-display text-3xl font-light tracking-[-0.02em] mb-8">PT Sessions</h1>
 

@@ -6,6 +6,10 @@ import PTSessionsView from './PTSessionsView';
 export default async function PTSessionsPage() {
   const supabase = await createClient();
 
+  // Start from beginning of today so past-but-not-completed appointments still show
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
   const [clientRes, exerciseRes, appointmentRes] = await Promise.all([
     supabase
       .from('pt_clients')
@@ -20,20 +24,20 @@ export default async function PTSessionsPage() {
       .from('pt_booking_appointments')
       .select('*, pt_clients(id, name, email, sessions_remaining)')
       .in('status', ['scheduled', 'confirmed'])
-      .gt('start_at', new Date().toISOString())
+      .gte('start_at', todayStart.toISOString())
       .order('start_at', { ascending: true })
-      .limit(1),
+      .limit(10),
   ]);
 
   const clients = (clientRes.data ?? []) as PTClient[];
   const exercises = (exerciseRes.data ?? []) as PTExercise[];
-  const nextAppointment = ((appointmentRes.data ?? []) as PTBookingAppointment[])[0] ?? null;
+  const appointments = (appointmentRes.data ?? []) as PTBookingAppointment[];
 
   return (
     <PTSessionsView
       initialClients={clients}
       exercises={exercises}
-      nextAppointment={nextAppointment}
+      initialAppointments={appointments}
     />
   );
 }
