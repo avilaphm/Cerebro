@@ -1334,52 +1334,118 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     </header>
   );
 
-  const renderProgress = (phase: PTProgrammePhase, progress: PhaseProgress | null) => {
-    if (!phase.week_blocks || phase.week_blocks.length === 0 || !progress) return null;
+  const renderProgress = () => {
+    if (!assignment) return null;
+    const phases = assignment.programme.phases;
+    if (phases.length === 0) return null;
 
     return (
-      <div className="mt-5 border border-black/8 bg-[#fbfbf8] px-3 py-3 md:px-4">
-        <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Progress</p>
-          {progress.allBlocksDone ? (
-            <span className="text-[0.6rem] uppercase tracking-[0.1em] border border-green-300 bg-green-50 px-2 py-0.5 text-green-700">
-              Phase complete
-            </span>
-          ) : (
-            <span className="text-[0.65rem] text-black/50">
-              Block {progress.blockIndex + 1} of {phase.week_blocks.length} · Week {progress.weekWithinBlock} of {progress.block?.weeks ?? '?'} · {progress.block?.sets ? `${progress.block.sets} sets` : progress.block?.weight_pct ?? 'Progression'}
-            </span>
-          )}
-        </div>
-        <div className="flex gap-1">
-          {Array.from({ length: progress.block?.weeks ?? 0 }).map((_, weekIndex) => {
-            const weekNumber = weekIndex + 1;
-            const logsInWeek = workoutLogs.filter(
-              (log) =>
-                log.phase_index === activePhaseIndex &&
-                log.block_index === progress.blockIndex &&
-                log.week_number === weekNumber,
-            );
-            const doneDays = new Set(logsInWeek.map((log) => log.day_index)).size;
-            const isDone = progress.allBlocksDone || doneDays >= phase.days.length;
-            const isCurrent = !progress.allBlocksDone && weekNumber === progress.weekWithinBlock;
-            return (
+      <div className="mt-5">
+        <button
+          type="button"
+          onClick={() => setProgressExpanded((v) => !v)}
+          className="w-full border border-black/8 bg-[#fbfbf8] px-4 py-3 text-left transition-colors hover:bg-[#f5f5f2]"
+        >
+          <div className="flex items-center gap-3">
+            <p className="shrink-0 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Journey</p>
+            <div className="relative flex-1">
+              <div className="absolute left-0 right-0 top-[0.4rem] h-px bg-black/10" />
               <div
-                key={`week-${weekNumber}`}
-                className={`min-w-0 flex-1 py-1.5 text-center text-[0.52rem] uppercase tracking-[0.08em] sm:text-[0.55rem] ${
-                  isDone
-                    ? 'bg-black text-white'
-                    : isCurrent
-                    ? 'border border-black/30 bg-black/10 text-black/70'
-                    : 'border border-black/8 bg-black/4 text-black/25'
-                }`}
-              >
-                Week {weekNumber}
-                <span className="block text-[0.48rem] normal-case opacity-70">{doneDays}/{phase.days.length}</span>
+                className="absolute left-0 top-[0.4rem] h-px bg-[rgb(46,213,115)] transition-all"
+                style={{
+                  width: phases.length > 1
+                    ? `${(activePhaseIndex / (phases.length - 1)) * 100}%`
+                    : (phaseProgress[0]?.allBlocksDone ? '100%' : '0%'),
+                }}
+              />
+              <div className="relative flex justify-between">
+                {phases.map((p, pi) => {
+                  const pp = phaseProgress[pi] ?? null;
+                  const isDone = pp?.allBlocksDone ?? false;
+                  const isActive = pi === activePhaseIndex;
+                  return (
+                    <div key={pi} className="flex flex-col items-center gap-1.5">
+                      <div
+                        className={`h-3.5 w-3.5 rounded-full border-2 transition-colors ${
+                          isDone
+                            ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
+                            : isActive
+                              ? 'border-black bg-white'
+                              : 'border-black/20 bg-white'
+                        }`}
+                      />
+                      <span className="max-w-[3.5rem] text-center text-[0.45rem] uppercase leading-tight tracking-[0.06em] text-black/35">
+                        {p.title}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-black/25 transition-transform ${progressExpanded ? 'rotate-180' : ''}`}
+            />
+          </div>
+        </button>
+
+        {progressExpanded && (
+          <div className="space-y-5 border border-t-0 border-black/8 bg-white px-4 py-5">
+            {phases.map((p, pi) => {
+              const pp = phaseProgress[pi] ?? null;
+              const isDonePhase = pp?.allBlocksDone ?? false;
+              const isActivePhase = pi === activePhaseIndex;
+              const blocks = p.week_blocks ?? [];
+
+              return (
+                <div key={pi}>
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
+                        isDonePhase
+                          ? 'bg-[rgb(46,213,115)]'
+                          : isActivePhase
+                            ? 'border-2 border-black bg-white'
+                            : 'border-2 border-black/15 bg-white'
+                      }`}
+                    >
+                      {isDonePhase && <Check className="h-2.5 w-2.5 text-white" />}
+                    </div>
+                    <p
+                      className={`text-xs font-medium ${
+                        isActivePhase ? 'text-black' : isDonePhase ? 'text-black/60' : 'text-black/30'
+                      }`}
+                    >
+                      {p.title}
+                    </p>
+                  </div>
+
+                  {blocks.length > 0 && (
+                    <div className="ml-8 mt-2.5 flex gap-3">
+                      {blocks.map((_block, bi) => {
+                        const blockDone = isDonePhase || (pp !== null && pp.blockIndex > bi);
+                        const isActiveBlock = isActivePhase && pp !== null && pp.blockIndex === bi;
+                        return (
+                          <div key={bi} className="flex flex-col items-center gap-1">
+                            <div
+                              className={`h-2.5 w-2.5 rounded-full transition-colors ${
+                                blockDone
+                                  ? 'bg-[rgb(46,213,115)]'
+                                  : isActiveBlock
+                                    ? 'border-[1.5px] border-black/60 bg-transparent'
+                                    : 'border border-black/15 bg-transparent'
+                              }`}
+                            />
+                            <span className="text-[0.45rem] uppercase tracking-wide text-black/30">B{bi + 1}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -2003,12 +2069,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       ) : (
         <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
           <section className="border border-black/10 bg-white p-5 md:p-6">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
-            <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
+            <h2 className="font-display text-2xl font-light">{assignment.name}</h2>
             {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
           </section>
-
-          {renderProgressPanel()}
 
           <section className="border border-black/10 bg-white p-5 md:p-6">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -2020,7 +2083,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
             </div>
 
-            {renderProgress(activePhase, activeProgress)}
+            {renderProgress()}
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               {activePhase.days.map((day, dayIndex) => {
@@ -2035,7 +2098,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     onClick={() => openWorkout(activePhaseIndex, dayIndex)}
                     className={`group relative min-h-[8.5rem] overflow-hidden border p-4 text-left transition-colors ${
                       done
-                        ? 'border-black/10 bg-white shadow-[0_16px_40px_-30px_rgba(40,220,120,0.75),inset_0_-1px_0_rgba(80,220,150,0.35)] after:absolute after:inset-x-5 after:bottom-0 after:h-px after:bg-[linear-gradient(90deg,transparent,rgba(70,220,145,0.8),transparent)] hover:border-black/20'
+                        ? 'border-[rgba(46,213,115,0.3)] bg-white shadow-[0_6px_30px_4px_rgba(46,213,115,0.45),0_16px_48px_-4px_rgba(46,213,115,0.3)] after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[linear-gradient(90deg,transparent,rgba(46,213,115,1),transparent)] hover:border-[rgba(46,213,115,0.45)]'
                         : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
                     }`}
                   >
