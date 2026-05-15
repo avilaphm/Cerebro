@@ -4,15 +4,15 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Coach booking notifications + cancel menu fallback:
-1. Coach email to pedro@cerebroai.au (COACH_NOTIFY_EMAIL) now includes a `booking.ics` attachment. Gmail surfaces an Add-to-Calendar action that lands the event on Pedro's avila.phm@gmail.com calendar in one click. No Google OAuth setup needed.
-2. Google Calendar sync (existing path) still adds Pedro as attendee via COACH_CALENDAR_EMAIL if GOOGLE_CALENDAR_ACCESS_TOKEN secret is set, but the .ics attachment is the primary delivery and is independent of Google API auth.
-3. Client portal booking menu: openBookingSlot now constructs a fallback PTBookingAppointment from slot data when bookingById lookup misses, so the cancel/move modal always opens for an owned slot.
+Client booking calendar now reliably shows owned bookings as blue slots with the client name:
+- New `enrichedBookableSlots` useMemo enriches generated slots with booking_id + reason='You booked this' for any slot whose time overlaps an active booking, even when generateBookableSlots' internal match misses.
+- For any active booking that has NO generated slot at all (e.g., availability window changed after booking), a synthetic slot is injected so the booking still renders.
+- slotsByDate now consumes enrichedBookableSlots, so 3-day, week, and month views all show the client's session as blue and clickable. Combined with the earlier openBookingSlot fallback, the Cancel/Move menu now opens reliably.
 
-All changes wrapped in existing soft-fail try/catch. Pre-change rollback tag: `pre-pedro-notify-2026-05-15`.
+Prior session also shipped: coach .ics email attachment (Gmail Add-to-Calendar) and openBookingSlot defensive fallback. Pre-change rollback tag: `pre-pedro-notify-2026-05-15`.
 
 ## Last commit
-fix cancel menu fallback and attach .ics to coach booking email
+fix booking calendar to always render owned slots as yours
 
 ## Current state
 

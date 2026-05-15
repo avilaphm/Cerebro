@@ -713,15 +713,47 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, availableCredits > 0),
     [availableCredits, bookingAvailability, bookingBlocks, bookings],
   );
+  const enrichedBookableSlots = useMemo(() => {
+    const byStart = new Map<string, PTBookableSlot>();
+    bookableSlots.forEach((slot) => byStart.set(slot.start_at, slot));
+    bookableSlots.forEach((slot) => {
+      if (slot.booking_id) return;
+      const slotStart = new Date(slot.start_at).getTime();
+      const slotEnd = new Date(slot.end_at).getTime();
+      const match = activeBookings.find((b) => {
+        const bs = new Date(b.start_at).getTime();
+        const be = new Date(b.end_at).getTime();
+        return bs < slotEnd && be > slotStart;
+      });
+      if (match) {
+        byStart.set(slot.start_at, { ...slot, booking_id: match.id, reason: 'You booked this', available: false });
+      }
+    });
+    activeBookings.forEach((booking) => {
+      if (new Date(booking.start_at).getTime() <= Date.now()) return;
+      const covered = Array.from(byStart.values()).some((s) => s.booking_id === booking.id);
+      if (covered) return;
+      byStart.set(booking.start_at, {
+        start_at: booking.start_at,
+        end_at: booking.end_at,
+        label: `${formatBookingDate(booking.start_at)} · ${formatBookingTime(booking.start_at)}`,
+        available: false,
+        booking_id: booking.id,
+        reason: 'You booked this',
+        location: booking.location,
+      });
+    });
+    return Array.from(byStart.values()).sort((a, b) => a.start_at.localeCompare(b.start_at));
+  }, [bookableSlots, activeBookings]);
   const slotsByDate = useMemo(() => {
     const map = new Map<string, PTBookableSlot[]>();
-    bookableSlots.forEach((slot) => {
+    enrichedBookableSlots.forEach((slot) => {
       const key = calendarDateKey(slot.start_at);
       map.set(key, [...(map.get(key) ?? []), slot]);
     });
     map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
     return map;
-  }, [bookableSlots]);
+  }, [enrichedBookableSlots]);
   // Mon-Fri only month days
   const calendarDays = useMemo(() => {
     const year = bookingMonth.getFullYear();
