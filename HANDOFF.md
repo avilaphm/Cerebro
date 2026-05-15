@@ -4,7 +4,15 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Workout tab journey timeline rules locked in (commit a460195):
+Build fix (commit 5e10822): `PTSessionsView.tsx` was missing `created_at` on a `WorkoutLog` object literal added by another session, causing Vercel type-check failure. Added `created_at: new Date().toISOString()`.
+
+Also this session: client overview page redesign (commits df5ac49, 6c6eb03):
+- "This Week" + "Overview" merged into one "Overview" card with "This Week's Focus" sub-header, week date range, coach note, and three mini items: Next session / Due today / Next workout
+- Sessions left counter moved to a fixed badge at top-right beside the message bubble (no sub-text)
+- Plan card converted to a collapsible toggle (collapsed by default, chevron + done count in header)
+- Monthly Review removed from overview page; unused `reviews` state and `pt_coaching_reviews` query removed
+
+Previous task: Workout tab journey timeline rules locked in (commit a460195):
 - Journey timeline is now a standalone card, always visible for ALL clients
 - No programme assigned: shows default 5-phase fallback (Phase 1 - Foundation, Testing 1 RM, Phase 2 - Hypertrophy, Phase 3 - Strength, Re-testing 1 RM)
 - Programme assigned: phases come from `assignment.programme.phases[n].title`
