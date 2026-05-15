@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock } from '@/utils/pt/programme';
@@ -11,7 +11,9 @@ import {
   PT_BOOKING_HORIZON_DAYS,
   PT_BOOKING_MIN_NOTICE_HOURS,
   PT_BOOKING_TIMEZONE,
+  activeBookingHoldCount,
   addDays,
+  availableSessionCredits,
   formatBookingDate,
   formatBookingTime,
   overlaps,
@@ -465,7 +467,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [savingWorkout, setSavingWorkout] = useState(false);
   const [submittingMetric, setSubmittingMetric] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
-  const [progressExpanded, setProgressExpanded] = useState(false);
   const [activeContext, setActiveContext] = useState<{
     phase_index: number; phase_title: string; day_index: number; day_title: string;
   } | null>(null);
@@ -692,12 +693,17 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     });
   const dueTodayItems = currentWeeklyPlanItems.filter((item) => item.scheduled_date === todayInputValue() && item.status === 'planned');
   const nextPlanItem = currentWeeklyPlanItems.find((item) => item.status === 'planned') ?? null;
+  const nextWorkoutDayIndex = activePhase
+    ? activePhase.days.findIndex((_, i) => !workoutIsDone(workoutLogs, activePhaseIndex, i, activeProgress))
+    : -1;
+  const nextWorkoutDay = nextWorkoutDayIndex >= 0 ? (activePhase?.days[nextWorkoutDayIndex] ?? null) : null;
   const activeBookings = bookings.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(booking.status));
   const nextBooking = activeBookings.find((booking) => new Date(booking.start_at).getTime() > Date.now()) ?? null;
-  const sessionsRemaining = client?.sessions_remaining ?? 0;
+  const heldCredits = activeBookingHoldCount(bookings);
+  const availableCredits = availableSessionCredits(client, bookings);
   const bookableSlots = useMemo(
-    () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, sessionsRemaining > 0),
-    [sessionsRemaining, bookingAvailability, bookingBlocks, bookings],
+    () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, availableCredits > 0),
+    [availableCredits, bookingAvailability, bookingBlocks, bookings],
   );
   const enrichedBookableSlots = useMemo(() => {
     const byStart = new Map<string, PTBookableSlot>();
@@ -1334,118 +1340,52 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     </header>
   );
 
-  const renderProgress = () => {
-    if (!assignment) return null;
-    const phases = assignment.programme.phases;
-    if (phases.length === 0) return null;
+  const renderProgress = (phase: PTProgrammePhase, progress: PhaseProgress | null) => {
+    if (!phase.week_blocks || phase.week_blocks.length === 0 || !progress) return null;
 
     return (
-      <div className="mt-5">
-        <button
-          type="button"
-          onClick={() => setProgressExpanded((v) => !v)}
-          className="w-full border border-black/8 bg-[#fbfbf8] px-4 py-3 text-left transition-colors hover:bg-[#f5f5f2]"
-        >
-          <div className="flex items-center gap-3">
-            <p className="shrink-0 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Journey</p>
-            <div className="relative flex-1">
-              <div className="absolute left-0 right-0 top-[0.4rem] h-px bg-black/10" />
+      <div className="mt-5 border border-black/8 bg-[#fbfbf8] px-3 py-3 md:px-4">
+        <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Progress</p>
+          {progress.allBlocksDone ? (
+            <span className="text-[0.6rem] uppercase tracking-[0.1em] border border-green-300 bg-green-50 px-2 py-0.5 text-green-700">
+              Phase complete
+            </span>
+          ) : (
+            <span className="text-[0.65rem] text-black/50">
+              Block {progress.blockIndex + 1} of {phase.week_blocks.length} · Week {progress.weekWithinBlock} of {progress.block?.weeks ?? '?'} · {progress.block?.sets ? `${progress.block.sets} sets` : progress.block?.weight_pct ?? 'Progression'}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-1">
+          {Array.from({ length: progress.block?.weeks ?? 0 }).map((_, weekIndex) => {
+            const weekNumber = weekIndex + 1;
+            const logsInWeek = workoutLogs.filter(
+              (log) =>
+                log.phase_index === activePhaseIndex &&
+                log.block_index === progress.blockIndex &&
+                log.week_number === weekNumber,
+            );
+            const doneDays = new Set(logsInWeek.map((log) => log.day_index)).size;
+            const isDone = progress.allBlocksDone || doneDays >= phase.days.length;
+            const isCurrent = !progress.allBlocksDone && weekNumber === progress.weekWithinBlock;
+            return (
               <div
-                className="absolute left-0 top-[0.4rem] h-px bg-[rgb(46,213,115)] transition-all"
-                style={{
-                  width: phases.length > 1
-                    ? `${(activePhaseIndex / (phases.length - 1)) * 100}%`
-                    : (phaseProgress[0]?.allBlocksDone ? '100%' : '0%'),
-                }}
-              />
-              <div className="relative flex justify-between">
-                {phases.map((p, pi) => {
-                  const pp = phaseProgress[pi] ?? null;
-                  const isDone = pp?.allBlocksDone ?? false;
-                  const isActive = pi === activePhaseIndex;
-                  return (
-                    <div key={pi} className="flex flex-col items-center gap-1.5">
-                      <div
-                        className={`h-3.5 w-3.5 rounded-full border-2 transition-colors ${
-                          isDone
-                            ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
-                            : isActive
-                              ? 'border-black bg-white'
-                              : 'border-black/20 bg-white'
-                        }`}
-                      />
-                      <span className="max-w-[3.5rem] text-center text-[0.45rem] uppercase leading-tight tracking-[0.06em] text-black/35">
-                        {p.title}
-                      </span>
-                    </div>
-                  );
-                })}
+                key={`week-${weekNumber}`}
+                className={`min-w-0 flex-1 py-1.5 text-center text-[0.52rem] uppercase tracking-[0.08em] sm:text-[0.55rem] ${
+                  isDone
+                    ? 'bg-black text-white'
+                    : isCurrent
+                    ? 'border border-black/30 bg-black/10 text-black/70'
+                    : 'border border-black/8 bg-black/4 text-black/25'
+                }`}
+              >
+                Week {weekNumber}
+                <span className="block text-[0.48rem] normal-case opacity-70">{doneDays}/{phase.days.length}</span>
               </div>
-            </div>
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-black/25 transition-transform ${progressExpanded ? 'rotate-180' : ''}`}
-            />
-          </div>
-        </button>
-
-        {progressExpanded && (
-          <div className="space-y-5 border border-t-0 border-black/8 bg-white px-4 py-5">
-            {phases.map((p, pi) => {
-              const pp = phaseProgress[pi] ?? null;
-              const isDonePhase = pp?.allBlocksDone ?? false;
-              const isActivePhase = pi === activePhaseIndex;
-              const blocks = p.week_blocks ?? [];
-
-              return (
-                <div key={pi}>
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
-                        isDonePhase
-                          ? 'bg-[rgb(46,213,115)]'
-                          : isActivePhase
-                            ? 'border-2 border-black bg-white'
-                            : 'border-2 border-black/15 bg-white'
-                      }`}
-                    >
-                      {isDonePhase && <Check className="h-2.5 w-2.5 text-white" />}
-                    </div>
-                    <p
-                      className={`text-xs font-medium ${
-                        isActivePhase ? 'text-black' : isDonePhase ? 'text-black/60' : 'text-black/30'
-                      }`}
-                    >
-                      {p.title}
-                    </p>
-                  </div>
-
-                  {blocks.length > 0 && (
-                    <div className="ml-8 mt-2.5 flex gap-3">
-                      {blocks.map((_block, bi) => {
-                        const blockDone = isDonePhase || (pp !== null && pp.blockIndex > bi);
-                        const isActiveBlock = isActivePhase && pp !== null && pp.blockIndex === bi;
-                        return (
-                          <div key={bi} className="flex flex-col items-center gap-1">
-                            <div
-                              className={`h-2.5 w-2.5 rounded-full transition-colors ${
-                                blockDone
-                                  ? 'bg-[rgb(46,213,115)]'
-                                  : isActiveBlock
-                                    ? 'border-[1.5px] border-black/60 bg-transparent'
-                                    : 'border border-black/15 bg-transparent'
-                              }`}
-                            />
-                            <span className="text-[0.45rem] uppercase tracking-wide text-black/30">B{bi + 1}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -1793,88 +1733,45 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     <div className="space-y-4 md:space-y-6">
       <div className="mx-auto max-w-5xl">
         <section className="border border-black/10 bg-white p-5 md:p-6">
-          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week</p>
-              <h2 className="mt-2 font-display text-2xl font-light">
-                {formatWeekRange(currentWeeklyPlan?.week_start ?? currentWeekStart)}
-              </h2>
-              {currentWeeklyPlan ? (
-                <>
-                  {currentWeeklyPlan.client_note && (
-                    <p className="mt-2 text-sm leading-relaxed text-black/60">{currentWeeklyPlan.client_note}</p>
-                  )}
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="border border-black/10 bg-[#fbfbf8] px-3 py-1.5 text-xs text-black/55">
-                      Slot: {currentWeeklyPlan.regular_slot || 'Not set'}
-                    </span>
-                    <span className={`border px-3 py-1.5 text-xs ${
-                      currentWeeklyPlan.regular_slot_status === 'confirmed'
-                        ? 'border-green-200 bg-green-50 text-green-700'
-                        : 'border-amber-200 bg-amber-50 text-amber-700'
-                    }`}>
-                      {currentWeeklyPlan.regular_slot_status.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <p className="mt-2 text-sm leading-relaxed text-black/55">
-                  Send Pedro the shape of your week before he adjusts training, running, mobility, and nutrition.
-                </p>
-              )}
-            </div>
-            <div className="border border-black/8 bg-[#fbfbf8] p-3">
-              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">
-                {dueTodayItems.length > 0 ? 'Due today' : 'Next'}
-              </p>
-              {dueTodayItems.length > 0 ? (
-                <div className="mt-2 space-y-2">
-                  {dueTodayItems.slice(0, 2).map((item) => (
-                    <p key={item.id} className="text-sm font-medium">{item.title}</p>
-                  ))}
-                </div>
-              ) : nextPlanItem ? (
-                <>
-                  <p className="mt-2 text-sm font-medium">{nextPlanItem.title}</p>
-                  <p className="mt-1 text-xs text-black/45">
-                    {nextPlanItem.scheduled_date ? formatDate(nextPlanItem.scheduled_date) : PLAN_ITEM_LABELS[nextPlanItem.item_type]}
-                  </p>
-                </>
-              ) : latestCheckin ? (
-                <>
-                  <p className="mt-2 text-sm font-medium">Week of {formatDate(latestCheckin.week_start)}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-black/50">
-                    {latestCheckin.client_focus || latestCheckin.availability || 'Pedro has your reset.'}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-black/45">No weekly reset sent yet.</p>
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="mx-auto max-w-5xl">
-        <section className="border border-black/10 bg-white p-5 md:p-6">
           <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Overview</p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4">
+            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">This Week&apos;s Focus</p>
+            <h2 className="mt-1 font-display text-2xl font-light">
+              {formatWeekRange(currentWeeklyPlan?.week_start ?? currentWeekStart)}
+            </h2>
+            {currentWeeklyPlan?.client_note ? (
+              <p className="mt-2 text-sm leading-relaxed text-black/60">{currentWeeklyPlan.client_note}</p>
+            ) : (
+              <p className="mt-2 text-sm leading-relaxed text-black/45">
+                {currentWeeklyPlan
+                  ? 'Week is set. Check the plan below.'
+                  : 'Send Pedro the shape of your week before he adjusts training, running, mobility, and nutrition.'}
+              </p>
+            )}
+          </div>
+          <div className="mt-5 grid gap-2 sm:grid-cols-3">
             <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-              <p className="text-xs text-black/35">Sessions left</p>
-              <p className={`mt-1 text-2xl font-light ${sessionsRemaining === 0 ? 'text-red-600' : ''}`}>{sessionsRemaining}</p>
-              {sessionsRemaining === 0 && (
-                <p className="mt-1 text-xs text-red-500">Contact Pedro to add more</p>
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Next session</p>
+              <p className="mt-1.5 text-sm font-medium">{nextBooking ? formatBookingDate(nextBooking.start_at) : 'Not booked'}</p>
+              {nextBooking
+                ? <p className="mt-0.5 text-xs text-black/40">{formatBookingTime(nextBooking.start_at)}</p>
+                : <p className="mt-0.5 text-xs text-black/40">Use Tools to book</p>}
+            </div>
+            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Due today</p>
+              <p className="mt-1.5 text-sm font-medium">
+                {dueTodayItems.length > 0 ? `${dueTodayItems.length} item${dueTodayItems.length === 1 ? '' : 's'}` : 'Clear'}
+              </p>
+              {dueTodayItems.length > 0 && (
+                <p className="mt-0.5 text-xs text-black/40">{dueTodayItems[0].title}</p>
               )}
             </div>
             <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-              <p className="text-xs text-black/35">Next session</p>
-              <p className="mt-1 text-sm font-medium">{nextBooking ? formatBookingDate(nextBooking.start_at) : 'Not booked'}</p>
-              <p className="mt-1 text-xs text-black/40">{nextBooking ? formatBookingTime(nextBooking.start_at) : 'Use Tools to book'}</p>
-            </div>
-            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-              <p className="text-xs text-black/35">Today</p>
-              <p className="mt-1 text-sm font-medium">{dueTodayItems.length > 0 ? `${dueTodayItems.length} item${dueTodayItems.length === 1 ? '' : 's'}` : 'Clear'}</p>
-              <p className="mt-1 text-xs text-black/40">{nextPlanItem?.title ?? 'Follow the week plan'}</p>
+              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Next workout</p>
+              <p className="mt-1.5 text-sm font-medium">{nextWorkoutDay?.title ?? 'All done'}</p>
+              {nextWorkoutDay && activePhase && (
+                <p className="mt-0.5 text-xs text-black/40">Phase {activePhaseIndex + 1}</p>
+              )}
             </div>
           </div>
         </section>
@@ -2069,9 +1966,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       ) : (
         <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
           <section className="border border-black/10 bg-white p-5 md:p-6">
-            <h2 className="font-display text-2xl font-light">{assignment.name}</h2>
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Active programme</p>
+            <h2 className="mt-2 font-display text-2xl font-light">{assignment.name}</h2>
             {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
           </section>
+
+          {renderProgressPanel()}
 
           <section className="border border-black/10 bg-white p-5 md:p-6">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -2083,7 +1983,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               {activePhase.progression && <p className="max-w-md text-sm leading-relaxed text-black/45">{activePhase.progression}</p>}
             </div>
 
-            {renderProgress()}
+            {renderProgress(activePhase, activeProgress)}
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               {activePhase.days.map((day, dayIndex) => {
@@ -2098,7 +1998,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     onClick={() => openWorkout(activePhaseIndex, dayIndex)}
                     className={`group relative min-h-[8.5rem] overflow-hidden border p-4 text-left transition-colors ${
                       done
-                        ? 'border-[rgba(46,213,115,0.3)] bg-white shadow-[0_6px_30px_4px_rgba(46,213,115,0.45),0_16px_48px_-4px_rgba(46,213,115,0.3)] after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[linear-gradient(90deg,transparent,rgba(46,213,115,1),transparent)] hover:border-[rgba(46,213,115,0.45)]'
+                        ? 'border-black/10 bg-white shadow-[0_16px_40px_-30px_rgba(40,220,120,0.75),inset_0_-1px_0_rgba(80,220,150,0.35)] after:absolute after:inset-x-5 after:bottom-0 after:h-px after:bg-[linear-gradient(90deg,transparent,rgba(70,220,145,0.8),transparent)] hover:border-black/20'
                         : 'border-black/10 bg-[#fbfbf8] hover:border-black/35 hover:bg-white'
                     }`}
                   >
@@ -2289,9 +2189,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 {nextBooking ? `${formatBookingTime(nextBooking.start_at)} at ${nextBooking.location ?? 'the gym'}` : 'Pick a slot below when you are ready.'}
               </p>
             </div>
-            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
-              <p className="text-xs text-black/35">Sessions left</p>
-              <p className={`mt-1 text-2xl font-light ${sessionsRemaining === 0 ? 'text-red-600' : ''}`}>{sessionsRemaining}</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                <p className="text-xs text-black/35">Pack</p>
+                <p className="mt-1 text-2xl font-light">{client?.sessions_remaining ?? 0}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                <p className="text-xs text-black/35">Held</p>
+                <p className="mt-1 text-2xl font-light">{heldCredits}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                <p className="text-xs text-black/35">Open</p>
+                <p className={`mt-1 text-2xl font-light ${availableCredits === 0 ? 'text-red-600' : ''}`}>{availableCredits}</p>
+              </div>
             </div>
           </div>
         </section>
@@ -2343,12 +2253,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             </button>
           </div>
 
-          {sessionsRemaining === 0 && (
-            <p className="mt-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              You have no sessions remaining. Please contact Pedro to add more sessions before booking.
-            </p>
-          )}
-
           {movingBookingId && (
             <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               Pick an available slot below to move your session. Only slots within the same week are shown.{' '}
@@ -2360,7 +2264,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
           {bookableSlots.length === 0 ? (
             <p className="mt-5 border border-dashed border-black/10 py-8 text-center text-sm text-black/40">
-              {sessionsRemaining === 0 ? 'No sessions remaining — contact Pedro to add more.' : 'No slots are currently available.'}
+              {availableCredits === 0 ? 'You need another pack before booking again.' : 'No slots are currently available.'}
             </p>
           ) : bookingView === '3days' ? (
             renderCalendarRail(threeDayDays, false)
@@ -2808,6 +2712,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {client && !isPedro && (
+        <div className="fixed right-[4.75rem] top-4 z-50 flex h-12 flex-col items-center justify-center md:right-[5.5rem] md:top-6">
+          <span className="text-xl font-light leading-none tabular-nums">{client.sessions_remaining ?? 0}</span>
+          <span className="mt-0.5 text-[0.5rem] uppercase tracking-[0.14em] text-black/40">sessions</span>
         </div>
       )}
 
