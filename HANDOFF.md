@@ -4,17 +4,21 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Reordered the client overview page in `app/client/ClientPortal.tsx`:
-- "This Week" card moved to top (was buried inside renderCoachingHome)
-- "Overview" card (sessions left, next session, today) now sits below This Week
-- "Workout" card (black nav button) moved below Overview
-- "Plan" card converted to a collapsible toggle - clicking the card header reveals all plan items; shows done/total count and a chevron indicator; collapsed by default
-- "Goals" card moved below Plan (with This Week's Focus card between them if an AI checkin focus exists)
-- "Monthly Review" card removed entirely
-- Removed unused `reviews` state, `PTCoachingReview` type import, and `pt_coaching_reviews` Supabase query
+Booking session rules overhaul (commit 0bd4e22):
+- Sessions ONLY deduct on Finish Session (complete) or No Show - not on booking or cancellation
+- Removed `booking_hold` ledger inserts on booking creation and `hold_released` on cancellation
+- Removed "held by future bookings" display from client portal overview card
+- Replaced Pack/Held/Open 3-stat block on booking screen with single "Sessions left" stat
+- `canBook` now checks `sessions_remaining > 0` directly - clients with sessions can book freely
+- Client with 0 sessions sees red warning banner and cannot book on the calendar
+- Added No Show button in PT Sessions view (below Workout Programme card) - deducts 1 session
+- Workout days now stack vertically full-width instead of 2-3 col grid
+- Added `noShowBooking` edge function action
+- Added `sendSessionAlerts` cron action (0 or 1 session + booking in next 24h emails)
+- DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-reorder client overview page: This Week first, then Overview, Workout, Plan (collapsible toggle), Goals; remove Monthly Review
+0bd4e22 - Booking session rules: no-show, remove holds display, fix canBook
 
 ## Current state
 
@@ -78,6 +82,7 @@ Recent shipped surfaces include:
 - Full repo lint has pre-existing failures outside recent work. Prefer targeted build/type verification.
 - Pre-commit hook rejects em dashes in markdown files. Use plain hyphens.
 - Supabase Cron job `pt-booking-weekly-reminders` is active on project `otcnrkfvgyvwolironoz` with schedule `0 22 * * 4`, which maps to Friday morning Sydney time in the current timezone.
+- `send_session_alerts` action is ready in `manage-pt-booking` but needs a daily cron set up in Supabase Dashboard (e.g. `0 22 * * *` = 8am Sydney daily). Use the same internal secret bearer pattern as weekly reminders.
 - Google Calendar sync is wired in `manage-pt-booking` through `GOOGLE_CALENDAR_SYNC_URL` or `GOOGLE_CALENDAR_ACCESS_TOKEN` plus `GOOGLE_CALENDAR_ID`. No Google secret was present locally, so calendar writes will no-op until one of those secrets is configured.
 - Coach booking notifications: `COACH_NOTIFY_EMAIL` defaults to `pedro@cerebroai.au`, `COACH_CALENDAR_EMAIL` defaults to `avila.phm@gmail.com`. Coach calendar attendance only fires when the existing Google Calendar sync secrets are set. The email piece works as long as `RESEND_API_KEY` is set.
 - Resend email sending uses existing `RESEND_API_KEY` and `RESEND_FROM_PEDRO_NOTIFY` Edge Function secrets when available.
