@@ -492,7 +492,7 @@ export default function PTSessionsView({
       const updatedLogs: WorkoutLog[] = [
         ...workoutLogs,
         { id: workoutId, phase_index: selectedWorkout.phaseIndex, day_index: selectedWorkout.dayIndex,
-          week_number: weekWithinBlock, block_index: blockIndex, is_quick_done: false },
+          week_number: weekWithinBlock, block_index: blockIndex, is_quick_done: false, created_at: new Date().toISOString() },
       ];
       const newProgress = calcPhaseProgress(updatedLogs, selectedWorkout.phaseIndex, phase.week_blocks, phase.days.length);
       if (newProgress && (newProgress.blockIndex !== progress.blockIndex || newProgress.weekWithinBlock !== progress.weekWithinBlock)) {
