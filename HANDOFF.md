@@ -4,10 +4,15 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Coach booking notifications: when a client books a PT session, Pedro now (1) receives a coach-copy confirmation email at pedro@cerebroai.au (configurable via COACH_NOTIFY_EMAIL), and (2) is added as an attendee on the Google Calendar event so it lands on his avila.phm@gmail.com calendar (configurable via COACH_CALENDAR_EMAIL). Both are wrapped in soft-fail try/catch so booking still succeeds if either side errors. No migration. Single edit to `supabase/functions/manage-pt-booking/index.ts` covering both `sendBookingEmail` and `syncGoogleCalendar`. Pre-change rollback tag: `pre-pedro-notify-2026-05-15`.
+Coach booking notifications + cancel menu fallback:
+1. Coach email to pedro@cerebroai.au (COACH_NOTIFY_EMAIL) now includes a `booking.ics` attachment. Gmail surfaces an Add-to-Calendar action that lands the event on Pedro's avila.phm@gmail.com calendar in one click. No Google OAuth setup needed.
+2. Google Calendar sync (existing path) still adds Pedro as attendee via COACH_CALENDAR_EMAIL if GOOGLE_CALENDAR_ACCESS_TOKEN secret is set, but the .ics attachment is the primary delivery and is independent of Google API auth.
+3. Client portal booking menu: openBookingSlot now constructs a fallback PTBookingAppointment from slot data when bookingById lookup misses, so the cancel/move modal always opens for an owned slot.
+
+All changes wrapped in existing soft-fail try/catch. Pre-change rollback tag: `pre-pedro-notify-2026-05-15`.
 
 ## Last commit
-add coach booking notifications (pedro email + calendar attendee)
+fix cancel menu fallback and attach .ics to coach booking email
 
 ## Current state
 

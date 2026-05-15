@@ -631,8 +631,9 @@ async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, ty
     try {
       const coachEmail = Deno.env.get('COACH_NOTIFY_EMAIL') ?? 'pedro@cerebroai.au';
       const coachSubject = `[Cerebro Booking] ${client.name} — ${formatDateTime(new Date(appointment.start_at))}`;
-      const coachText = `New PT session booked.\n\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\n${appointment.location ? `Location: ${appointment.location}\n` : ''}\nThis is a coach copy.`;
-      await sendEmail(coachEmail, coachSubject, coachText);
+      const coachText = `New PT session booked.\n\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\n${appointment.location ? `Location: ${appointment.location}\n` : ''}\nThe attached booking.ics adds this session to your calendar in one click.\n\nCoach copy.`;
+      const ics = buildIcsForBooking(client, appointment);
+      await sendEmail(coachEmail, coachSubject, coachText, [ics]);
       await adminClient.from('pt_notification_log').insert({
         client_id: client.id,
         appointment_id: appointment.id,
@@ -664,22 +665,61 @@ async function sendPedroNotice(subject: string, text: string) {
   await sendEmail(Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com', subject, text);
 }
 
-async function sendEmail(to: string, subject: string, text: string) {
+interface EmailAttachment { filename: string; content: string; content_type?: string }
+
+async function sendEmail(to: string, subject: string, text: string, attachments?: EmailAttachment[]) {
   const resendKey = Deno.env.get('RESEND_API_KEY');
   if (!resendKey) return;
+  const body: Record<string, unknown> = {
+    from: Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ?? 'Pedro Avila Coaching <onboarding@resend.dev>',
+    to,
+    subject,
+    text,
+  };
+  if (attachments && attachments.length > 0) body.attachments = attachments;
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${resendKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      from: Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ?? 'Pedro Avila Coaching <onboarding@resend.dev>',
-      to,
-      subject,
-      text,
-    }),
+    body: JSON.stringify(body),
   });
+}
+
+function icsTimestamp(date: Date) {
+  return `${date.getUTCFullYear()}${pad2(date.getUTCMonth() + 1)}${pad2(date.getUTCDate())}T${pad2(date.getUTCHours())}${pad2(date.getUTCMinutes())}${pad2(date.getUTCSeconds())}Z`;
+}
+
+function pad2(n: number) { return String(n).padStart(2, '0'); }
+
+function buildIcsForBooking(client: PTClientRow, appointment: AppointmentRow): EmailAttachment {
+  const now = new Date();
+  const start = new Date(appointment.start_at);
+  const end = new Date(appointment.end_at);
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Cerebro//PT Booking//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${appointment.id}@cerebroai.au`,
+    `DTSTAMP:${icsTimestamp(now)}`,
+    `DTSTART:${icsTimestamp(start)}`,
+    `DTEND:${icsTimestamp(end)}`,
+    `SUMMARY:PT Session - ${client.name}`,
+    `DESCRIPTION:PT session booked via Cerebro. Client: ${client.name} <${client.email}>`,
+    appointment.location ? `LOCATION:${appointment.location}` : '',
+    'STATUS:CONFIRMED',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
+  const bytes = new TextEncoder().encode(lines);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const content = btoa(binary);
+  return { filename: 'booking.ics', content, content_type: 'text/calendar' };
 }
 
 function json(body: unknown, status = 200) {

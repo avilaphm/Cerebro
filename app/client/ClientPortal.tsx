@@ -10,6 +10,7 @@ import {
   ACTIVE_BOOKING_STATUSES,
   PT_BOOKING_HORIZON_DAYS,
   PT_BOOKING_MIN_NOTICE_HOURS,
+  PT_BOOKING_TIMEZONE,
   activeBookingHoldCount,
   addDays,
   availableSessionCredits,
@@ -1041,7 +1042,29 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     }
 
     if (slot.booking_id) {
-      setSelectedBooking(bookingById.get(slot.booking_id) ?? null);
+      const found = bookingById.get(slot.booking_id);
+      const fallback: PTBookingAppointment = {
+        id: slot.booking_id,
+        created_at: '',
+        client_id: client?.id ?? '',
+        start_at: slot.start_at,
+        end_at: slot.end_at,
+        timezone: PT_BOOKING_TIMEZONE,
+        status: 'confirmed',
+        source: 'client',
+        recurring_group_id: null,
+        google_calendar_event_id: null,
+        location: slot.location ?? null,
+        notes: null,
+        cancel_reason: null,
+        cancellation_requested_at: null,
+        confirmed_at: null,
+        completed_at: null,
+        completed_by: null,
+        cancelled_at: null,
+        created_by: null,
+      };
+      setSelectedBooking(found ?? fallback);
       setSelectedSlot(null);
       setBookingReason('');
       setMovingBookingId(null);
