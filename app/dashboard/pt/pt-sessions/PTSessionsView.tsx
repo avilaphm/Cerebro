@@ -912,23 +912,28 @@ export default function PTSessionsView({
                         key={day.id}
                         type="button"
                         onClick={() => setSelectedWorkout({ phaseIndex: activePhaseIndex, dayIndex })}
-                        className={`flex w-full items-center justify-between gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-black/4 ${done ? 'opacity-40' : ''}`}
+                        className="flex w-full items-center justify-between gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-black/4"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium">{day.title}</p>
+                          <p className={`text-sm font-medium ${done ? 'text-black/40' : ''}`}>{day.title}</p>
                           <p className="mt-0.5 text-xs text-black/40">{day.focus}</p>
                           <p className="mt-1 text-[0.6rem] text-black/30">
                             {day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
                           </p>
                         </div>
-                        <div className="flex shrink-0 flex-col items-end gap-0.5">
-                          {done && <Check className="h-4 w-4 text-black/40" />}
-                          {completedAt && (
-                            <p className="text-[0.55rem] text-black/30 leading-none">
-                              {new Date(completedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                            </p>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          {done ? (
+                            <>
+                              <Check className="h-4 w-4 text-black/60" />
+                              {completedAt && (
+                                <p className="text-[0.65rem] text-black/50 leading-none">
+                                  {new Date(completedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-black/25" />
                           )}
-                          {!done && <ChevronRight className="h-4 w-4 text-black/25" />}
                         </div>
                       </button>
                     );
