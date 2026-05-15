@@ -4,15 +4,17 @@
 2026-05-15 by Claude
 
 ## Last completed task
-Client booking calendar now reliably shows owned bookings as blue slots with the client name:
-- New `enrichedBookableSlots` useMemo enriches generated slots with booking_id + reason='You booked this' for any slot whose time overlaps an active booking, even when generateBookableSlots' internal match misses.
-- For any active booking that has NO generated slot at all (e.g., availability window changed after booking), a synthetic slot is injected so the booking still renders.
-- slotsByDate now consumes enrichedBookableSlots, so 3-day, week, and month views all show the client's session as blue and clickable. Combined with the earlier openBookingSlot fallback, the Cancel/Move menu now opens reliably.
-
-Prior session also shipped: coach .ics email attachment (Gmail Add-to-Calendar) and openBookingSlot defensive fallback. Pre-change rollback tag: `pre-pedro-notify-2026-05-15`.
+Reordered the client overview page in `app/client/ClientPortal.tsx`:
+- "This Week" card moved to top (was buried inside renderCoachingHome)
+- "Overview" card (sessions left, next session, today) now sits below This Week
+- "Workout" card (black nav button) moved below Overview
+- "Plan" card converted to a collapsible toggle - clicking the card header reveals all plan items; shows done/total count and a chevron indicator; collapsed by default
+- "Goals" card moved below Plan (with This Week's Focus card between them if an AI checkin focus exists)
+- "Monthly Review" card removed entirely
+- Removed unused `reviews` state, `PTCoachingReview` type import, and `pt_coaching_reviews` Supabase query
 
 ## Last commit
-fix booking calendar to always render owned slots as yours
+reorder client overview page: This Week first, then Overview, Workout, Plan (collapsible toggle), Goals; remove Monthly Review
 
 ## Current state
 
