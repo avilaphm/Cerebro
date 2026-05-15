@@ -27,7 +27,6 @@ import type {
   PTClient,
   PTClientGoal,
   PTClientMetric,
-  PTCoachingReview,
   PTProgramAssignment,
   PTProgrammeDay,
   PTProgrammeExercise,
@@ -422,7 +421,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [weeklyPlanItems, setWeeklyPlanItems] = useState<PTWeeklyPlanItem[]>([]);
   const [metrics, setMetrics] = useState<PTClientMetric[]>([]);
   const [goals, setGoals] = useState<PTClientGoal[]>([]);
-  const [reviews, setReviews] = useState<PTCoachingReview[]>([]);
   const [bookingAvailability, setBookingAvailability] = useState<PTBookingAvailability[]>([]);
   const [bookings, setBookings] = useState<PTBookingAppointment[]>([]);
   const [bookingBlocks, setBookingBlocks] = useState<PTBookingBlock[]>([]);
@@ -468,6 +466,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [loading, setLoading] = useState(true);
   const [savingWorkout, setSavingWorkout] = useState(false);
   const [submittingMetric, setSubmittingMetric] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const [activeContext, setActiveContext] = useState<{
     phase_index: number; phase_title: string; day_index: number; day_title: string;
   } | null>(null);
@@ -499,7 +498,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       planItemsRes,
       metricsRes,
       goalsRes,
-      reviewsRes,
       availabilityRes,
       bookingRes,
       blockRes,
@@ -557,14 +555,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         .order('created_at', { ascending: false })
         .limit(8),
       supabase
-        .from('pt_coaching_reviews')
-        .select('*')
-        .eq('client_id', currentClient.id)
-        .eq('review_type', 'monthly')
-        .eq('status', 'final')
-        .order('period_start', { ascending: false })
-        .limit(3),
-      supabase
         .from('pt_booking_availability')
         .select('*')
         .eq('is_active', true)
@@ -610,7 +600,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setWeeklyPlanItems((planItemsRes.data ?? []) as PTWeeklyPlanItem[]);
     setMetrics((metricsRes.data ?? []) as PTClientMetric[]);
     setGoals((goalsRes.data ?? []) as PTClientGoal[]);
-    setReviews((reviewsRes.data ?? []) as PTCoachingReview[]);
     setBookingAvailability((availabilityRes.data ?? []) as PTBookingAvailability[]);
     setBookings((bookingRes.data ?? []) as PTBookingAppointment[]);
     setBookingBlocks((blockRes.data ?? []) as PTBookingBlock[]);
@@ -684,7 +673,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const checkinDue = !checkinSession || checkinSession.week_start < nextMondayStr;
   const latestCheckin = weeklyCheckins[0] ?? null;
   const latestMetric = metrics[0] ?? null;
-  const monthlyReview = reviews[0] ?? null;
   const weightPair = latestMetricPair(metrics, 'weight_kg');
   const waistPair = latestMetricPair(metrics, 'waist_cm');
   const monthlyAdherence = computeAdherenceSnapshot(
@@ -1454,226 +1442,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     </section>
   );
 
-  const renderCoachingHome = () => (
-    <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-      <section className="border border-black/10 bg-white p-5 md:p-6">
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week</p>
-            <h2 className="mt-2 font-display text-2xl font-light">
-              {formatWeekRange(currentWeeklyPlan?.week_start ?? currentWeekStart)}
-            </h2>
-            {currentWeeklyPlan ? (
-              <>
-                {currentWeeklyPlan.client_note && (
-                  <p className="mt-2 text-sm leading-relaxed text-black/60">{currentWeeklyPlan.client_note}</p>
-                )}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="border border-black/10 bg-[#fbfbf8] px-3 py-1.5 text-xs text-black/55">
-                    Slot: {currentWeeklyPlan.regular_slot || 'Not set'}
-                  </span>
-                  <span className={`border px-3 py-1.5 text-xs ${
-                    currentWeeklyPlan.regular_slot_status === 'confirmed'
-                      ? 'border-green-200 bg-green-50 text-green-700'
-                      : 'border-amber-200 bg-amber-50 text-amber-700'
-                  }`}>
-                    {currentWeeklyPlan.regular_slot_status.replace(/_/g, ' ')}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <p className="mt-2 text-sm leading-relaxed text-black/55">
-                Send Pedro the shape of your week before he adjusts training, running, mobility, and nutrition.
-              </p>
-            )}
-          </div>
-          <div className="border border-black/8 bg-[#fbfbf8] p-3">
-            <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">
-              {dueTodayItems.length > 0 ? 'Due today' : 'Next'}
-            </p>
-            {dueTodayItems.length > 0 ? (
-              <div className="mt-2 space-y-2">
-                {dueTodayItems.slice(0, 2).map((item) => (
-                  <p key={item.id} className="text-sm font-medium">{item.title}</p>
-                ))}
-              </div>
-            ) : nextPlanItem ? (
-              <>
-                <p className="mt-2 text-sm font-medium">{nextPlanItem.title}</p>
-                <p className="mt-1 text-xs text-black/45">
-                  {nextPlanItem.scheduled_date ? formatDate(nextPlanItem.scheduled_date) : PLAN_ITEM_LABELS[nextPlanItem.item_type]}
-                </p>
-              </>
-            ) : latestCheckin ? (
-              <>
-                <p className="mt-2 text-sm font-medium">Week of {formatDate(latestCheckin.week_start)}</p>
-                <p className="mt-1 text-xs leading-relaxed text-black/50">
-                  {latestCheckin.client_focus || latestCheckin.availability || 'Pedro has your reset.'}
-                </p>
-              </>
-            ) : (
-              <p className="mt-2 text-sm text-black/45">No weekly reset sent yet.</p>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {currentWeeklyPlan && (
-        <section className="border border-black/10 bg-white p-5 md:p-6">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Plan</p>
-            <p className="text-xs text-black/35">
-              {currentWeeklyPlanItems.filter((item) => item.status === 'done').length}/{currentWeeklyPlanItems.length} done
-            </p>
-          </div>
-          {currentWeeklyPlanItems.length === 0 ? (
-            <p className="mt-3 text-sm text-black/45">Pedro has published the week, but no items are listed yet.</p>
-          ) : (
-            <div className="mt-4 grid gap-2">
-              {currentWeeklyPlanItems.map((item) => {
-                const isLinkedWorkout = Boolean(
-                  assignment &&
-                  item.linked_assignment_id === assignment.id &&
-                  item.linked_phase_index !== null &&
-                  item.linked_day_index !== null,
-                );
-                return (
-                  <div key={item.id} className={`border px-3 py-3 ${
-                    item.status === 'done'
-                      ? 'border-green-200 bg-green-50/60'
-                      : item.status === 'skipped'
-                      ? 'border-black/8 bg-black/3 opacity-70'
-                      : 'border-black/8 bg-[#fbfbf8]'
-                  }`}>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">
-                            {PLAN_ITEM_LABELS[item.item_type]}
-                          </span>
-                          {item.scheduled_date && <span className="text-xs text-black/35">{formatDate(item.scheduled_date)}</span>}
-                          {item.confirmation_status !== 'none' && (
-                            <span className="border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.08em] text-amber-700">
-                              {item.confirmation_status.replace(/_/g, ' ')}
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-sm font-medium text-black">{item.title}</p>
-                        {item.details && <p className="mt-1 text-xs leading-relaxed text-black/50">{item.details}</p>}
-                      </div>
-                      <div className="flex shrink-0 flex-wrap items-center gap-2">
-                        {isLinkedWorkout && item.status !== 'done' && (
-                          <button
-                            type="button"
-                            onClick={() => openLinkedPlanWorkout(item)}
-                            className="border border-black bg-black px-3 py-2 text-xs text-white transition-opacity hover:opacity-80"
-                          >
-                            Open workout
-                          </button>
-                        )}
-                        {item.status === 'planned' && !isLinkedWorkout && (
-                          <button
-                            type="button"
-                            onClick={() => void markPlanItemStatus(item, 'done')}
-                            className="border border-black/15 bg-white px-3 py-2 text-xs text-black/55 transition-colors hover:border-black hover:text-black"
-                          >
-                            Mark done
-                          </button>
-                        )}
-                        {item.status === 'planned' && (
-                          <button
-                            type="button"
-                            onClick={() => void markPlanItemStatus(item, 'skipped')}
-                            className="text-xs text-black/35 underline-offset-2 hover:text-black hover:underline"
-                          >
-                            Skip
-                          </button>
-                        )}
-                        {item.status === 'done' && <span className="text-xs font-medium text-green-700">Done</span>}
-                        {item.status === 'skipped' && <span className="text-xs text-black/35">Skipped</span>}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
-
-      {checkinFocus && (
-        <section className="border border-black/10 bg-white p-5 md:p-6">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week&apos;s Focus</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="border border-black/8 bg-[#fbfbf8] p-3">
-              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Exercise</p>
-              <p className="mt-2 text-sm leading-relaxed">{checkinFocus.exercise}</p>
-            </div>
-            <div className="border border-black/8 bg-[#fbfbf8] p-3">
-              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Nutrition</p>
-              <p className="mt-2 text-sm leading-relaxed">{checkinFocus.nutrition}</p>
-            </div>
-            <div className="border border-black/8 bg-[#fbfbf8] p-3">
-              <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Sleep</p>
-              <p className="mt-2 text-sm leading-relaxed">{checkinFocus.sleep}</p>
-            </div>
-          </div>
-        </section>
-      )}
-
-      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="border border-black/10 bg-white p-5 md:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
-            {checkinDue && (
-              <span className="animate-pulse border border-amber-300 bg-amber-50 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.1em] text-amber-700">
-                Check-in due
-              </span>
-            )}
-          </div>
-          {goals.length > 0 ? (
-            <div className="mt-3 space-y-2">
-              {goals.slice(0, 4).map((goal) => (
-                <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                  <p className="text-sm font-medium">{goal.title}</p>
-                  <p className="mt-1 text-xs text-black/45">
-                    {getGoalProgressLabel(goal, metrics)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowCheckinModal(true)}
-            className={`mt-4 w-full px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-black/80 ${
-              checkinDue ? 'bg-black' : 'bg-black/60'
-            }`}
-          >
-            Weekly Check-in
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div className="border border-black/10 bg-white p-5 md:p-6">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Monthly Review</p>
-            {monthlyReview ? (
-              <div className="mt-3 space-y-2">
-                <p className="text-xs text-black/35">
-                  {formatDate(monthlyReview.period_start)} - {formatDate(monthlyReview.period_end)}
-                </p>
-                <p className="text-sm leading-relaxed text-black/65">{monthlyReview.client_summary}</p>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-black/45">Pedro will share a monthly review here once it is ready.</p>
-            )}
-          </div>
-        </div>
-      </section>
-    </div>
-  );
 
   const renderWorkoutPreview = () => {
     if (!selectedWorkout || !selectedPhase || !selectedDay) return null;
@@ -1961,6 +1729,70 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     <div className="space-y-4 md:space-y-6">
       <div className="mx-auto max-w-5xl">
         <section className="border border-black/10 bg-white p-5 md:p-6">
+          <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week</p>
+              <h2 className="mt-2 font-display text-2xl font-light">
+                {formatWeekRange(currentWeeklyPlan?.week_start ?? currentWeekStart)}
+              </h2>
+              {currentWeeklyPlan ? (
+                <>
+                  {currentWeeklyPlan.client_note && (
+                    <p className="mt-2 text-sm leading-relaxed text-black/60">{currentWeeklyPlan.client_note}</p>
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="border border-black/10 bg-[#fbfbf8] px-3 py-1.5 text-xs text-black/55">
+                      Slot: {currentWeeklyPlan.regular_slot || 'Not set'}
+                    </span>
+                    <span className={`border px-3 py-1.5 text-xs ${
+                      currentWeeklyPlan.regular_slot_status === 'confirmed'
+                        ? 'border-green-200 bg-green-50 text-green-700'
+                        : 'border-amber-200 bg-amber-50 text-amber-700'
+                    }`}>
+                      {currentWeeklyPlan.regular_slot_status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-2 text-sm leading-relaxed text-black/55">
+                  Send Pedro the shape of your week before he adjusts training, running, mobility, and nutrition.
+                </p>
+              )}
+            </div>
+            <div className="border border-black/8 bg-[#fbfbf8] p-3">
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">
+                {dueTodayItems.length > 0 ? 'Due today' : 'Next'}
+              </p>
+              {dueTodayItems.length > 0 ? (
+                <div className="mt-2 space-y-2">
+                  {dueTodayItems.slice(0, 2).map((item) => (
+                    <p key={item.id} className="text-sm font-medium">{item.title}</p>
+                  ))}
+                </div>
+              ) : nextPlanItem ? (
+                <>
+                  <p className="mt-2 text-sm font-medium">{nextPlanItem.title}</p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {nextPlanItem.scheduled_date ? formatDate(nextPlanItem.scheduled_date) : PLAN_ITEM_LABELS[nextPlanItem.item_type]}
+                  </p>
+                </>
+              ) : latestCheckin ? (
+                <>
+                  <p className="mt-2 text-sm font-medium">Week of {formatDate(latestCheckin.week_start)}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-black/50">
+                    {latestCheckin.client_focus || latestCheckin.availability || 'Pedro has your reset.'}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-black/45">No weekly reset sent yet.</p>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div className="mx-auto max-w-5xl">
+        <section className="border border-black/10 bg-white p-5 md:p-6">
           <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Overview</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
@@ -1982,8 +1814,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </section>
       </div>
 
-      {renderCoachingHome()}
-
       <div className="mx-auto max-w-5xl">
         <button
           type="button"
@@ -2001,6 +1831,160 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             <Dumbbell className="h-7 w-7 shrink-0 opacity-75 transition-transform group-hover:translate-x-0.5" />
           </div>
         </button>
+      </div>
+
+      {currentWeeklyPlan && (
+        <div className="mx-auto max-w-5xl">
+          <section className="border border-black/10 bg-white">
+            <button
+              type="button"
+              onClick={() => setPlanOpen((prev) => !prev)}
+              className="flex w-full items-center justify-between gap-3 p-5 text-left md:p-6"
+            >
+              <div className="flex items-center gap-3">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Plan</p>
+                <p className="text-xs text-black/35">
+                  {currentWeeklyPlanItems.filter((item) => item.status === 'done').length}/{currentWeeklyPlanItems.length} done
+                </p>
+              </div>
+              <ChevronRight className={`h-5 w-5 shrink-0 text-black/35 transition-transform ${planOpen ? 'rotate-90' : ''}`} />
+            </button>
+            {planOpen && (
+              <div className="border-t border-black/8 px-5 pb-5 md:px-6 md:pb-6">
+                {currentWeeklyPlanItems.length === 0 ? (
+                  <p className="pt-4 text-sm text-black/45">Pedro has published the week, but no items are listed yet.</p>
+                ) : (
+                  <div className="mt-4 grid gap-2">
+                    {currentWeeklyPlanItems.map((item) => {
+                      const isLinkedWorkout = Boolean(
+                        assignment &&
+                        item.linked_assignment_id === assignment.id &&
+                        item.linked_phase_index !== null &&
+                        item.linked_day_index !== null,
+                      );
+                      return (
+                        <div key={item.id} className={`border px-3 py-3 ${
+                          item.status === 'done'
+                            ? 'border-green-200 bg-green-50/60'
+                            : item.status === 'skipped'
+                            ? 'border-black/8 bg-black/3 opacity-70'
+                            : 'border-black/8 bg-[#fbfbf8]'
+                        }`}>
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">
+                                  {PLAN_ITEM_LABELS[item.item_type]}
+                                </span>
+                                {item.scheduled_date && <span className="text-xs text-black/35">{formatDate(item.scheduled_date)}</span>}
+                                {item.confirmation_status !== 'none' && (
+                                  <span className="border border-amber-200 bg-amber-50 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.08em] text-amber-700">
+                                    {item.confirmation_status.replace(/_/g, ' ')}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-sm font-medium text-black">{item.title}</p>
+                              {item.details && <p className="mt-1 text-xs leading-relaxed text-black/50">{item.details}</p>}
+                            </div>
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              {isLinkedWorkout && item.status !== 'done' && (
+                                <button
+                                  type="button"
+                                  onClick={() => openLinkedPlanWorkout(item)}
+                                  className="border border-black bg-black px-3 py-2 text-xs text-white transition-opacity hover:opacity-80"
+                                >
+                                  Open workout
+                                </button>
+                              )}
+                              {item.status === 'planned' && !isLinkedWorkout && (
+                                <button
+                                  type="button"
+                                  onClick={() => void markPlanItemStatus(item, 'done')}
+                                  className="border border-black/15 bg-white px-3 py-2 text-xs text-black/55 transition-colors hover:border-black hover:text-black"
+                                >
+                                  Mark done
+                                </button>
+                              )}
+                              {item.status === 'planned' && (
+                                <button
+                                  type="button"
+                                  onClick={() => void markPlanItemStatus(item, 'skipped')}
+                                  className="text-xs text-black/35 underline-offset-2 hover:text-black hover:underline"
+                                >
+                                  Skip
+                                </button>
+                              )}
+                              {item.status === 'done' && <span className="text-xs font-medium text-green-700">Done</span>}
+                              {item.status === 'skipped' && <span className="text-xs text-black/35">Skipped</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {checkinFocus && (
+        <div className="mx-auto max-w-5xl">
+          <section className="border border-black/10 bg-white p-5 md:p-6">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">This Week&apos;s Focus</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="border border-black/8 bg-[#fbfbf8] p-3">
+                <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Exercise</p>
+                <p className="mt-2 text-sm leading-relaxed">{checkinFocus.exercise}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] p-3">
+                <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Nutrition</p>
+                <p className="mt-2 text-sm leading-relaxed">{checkinFocus.nutrition}</p>
+              </div>
+              <div className="border border-black/8 bg-[#fbfbf8] p-3">
+                <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Sleep</p>
+                <p className="mt-2 text-sm leading-relaxed">{checkinFocus.sleep}</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <div className="mx-auto max-w-5xl">
+        <div className="border border-black/10 bg-white p-5 md:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
+            {checkinDue && (
+              <span className="animate-pulse border border-amber-300 bg-amber-50 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.1em] text-amber-700">
+                Check-in due
+              </span>
+            )}
+          </div>
+          {goals.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {goals.slice(0, 4).map((goal) => (
+                <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                  <p className="text-sm font-medium">{goal.title}</p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {getGoalProgressLabel(goal, metrics)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowCheckinModal(true)}
+            className={`mt-4 w-full px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-black/80 ${
+              checkinDue ? 'bg-black' : 'bg-black/60'
+            }`}
+          >
+            Weekly Check-in
+          </button>
+        </div>
       </div>
     </div>
   );
