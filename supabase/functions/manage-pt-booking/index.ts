@@ -632,42 +632,49 @@ function dateInputValue(date: Date) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
-async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointment: AppointmentRow; client: PTClientRow | null }) {
-  const webhook = Deno.env.get('GOOGLE_CALENDAR_SYNC_URL');
-  if (webhook) {
+async function getGoogleAccessToken(): Promise<string | null> {
+  const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+  const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
+  const refreshToken = Deno.env.get('GOOGLE_REFRESH_TOKEN');
+  if (clientId && clientSecret && refreshToken) {
     try {
-      const response = await fetch(webhook, {
+      const res = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ...input }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: 'refresh_token',
+        }),
       });
-      if (!response.ok) {
-        console.error('Google Calendar sync webhook failed:', response.status, response.statusText);
-        return null;
+      if (res.ok) {
+        const data = (await res.json()) as { access_token?: string };
+        if (data.access_token) return data.access_token;
       }
-
-      const contentType = response.headers.get('content-type') ?? '';
-      if (!contentType.includes('application/json')) return null;
-
-      const payload = (await response.json()) as { id?: string; event_id?: string; google_calendar_event_id?: string };
-      return payload.id ?? payload.event_id ?? payload.google_calendar_event_id ?? null;
     } catch (error) {
-      console.error('Google Calendar sync webhook error:', error);
-      return null;
+      console.error('Google token refresh failed:', error);
     }
   }
+  return Deno.env.get('GOOGLE_CALENDAR_ACCESS_TOKEN') ?? null;
+}
 
-  const accessToken = Deno.env.get('GOOGLE_CALENDAR_ACCESS_TOKEN');
+async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointment: AppointmentRow; client: PTClientRow | null }) {
   const calendarId = Deno.env.get('GOOGLE_CALENDAR_ID') ?? 'primary';
+
+  const accessToken = await getGoogleAccessToken();
   if (!accessToken) return null;
 
   try {
     if (action === 'cancel') {
       if (!input.appointment.google_calendar_event_id) return null;
-      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.appointment.google_calendar_event_id)}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const res = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.appointment.google_calendar_event_id)}`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!res.ok && res.status !== 410) {
+        console.error('Google Calendar delete failed:', res.status, res.statusText);
+      }
       return null;
     }
 
@@ -676,29 +683,28 @@ async function syncGoogleCalendar(action: 'create' | 'cancel', input: { appointm
     if (input.client?.email) attendees.push({ email: input.client.email });
     if (coachEmail) attendees.push({ email: coachEmail });
 
-    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=none`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: `PT Session - ${input.client?.name ?? 'Client'}`,
+          description: `Booked through Pedro Avila Coaching.${input.appointment.location ? `\nLocation: ${input.appointment.location}` : ''}`,
+          start: { dateTime: input.appointment.start_at, timeZone: TIMEZONE },
+          end: { dateTime: input.appointment.end_at, timeZone: TIMEZONE },
+          attendees,
+        }),
       },
-      body: JSON.stringify({
-        summary: `PT Session - ${input.client?.name ?? 'Client'}`,
-        description: `Booked through Pedro Avila Coaching.${input.appointment.location ? `\nLocation: ${input.appointment.location}` : ''}`,
-        start: { dateTime: input.appointment.start_at, timeZone: TIMEZONE },
-        end: { dateTime: input.appointment.end_at, timeZone: TIMEZONE },
-        attendees,
-      }),
-    });
+    );
     if (!res.ok) {
-      console.error('Google Calendar sync API failed:', res.status, res.statusText);
+      console.error('Google Calendar create failed:', res.status, res.statusText);
       return null;
     }
-
     const data = (await res.json()) as { id?: string };
     return data.id ?? null;
   } catch (error) {
-    console.error('Google Calendar sync API error:', error);
+    console.error('Google Calendar sync error:', error);
     return null;
   }
 }
@@ -721,9 +727,8 @@ async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, ty
     try {
       const coachEmail = Deno.env.get('COACH_NOTIFY_EMAIL') ?? 'pedro@cerebroai.au';
       const coachSubject = `[Cerebro Booking] ${client.name} — ${formatDateTime(new Date(appointment.start_at))}`;
-      const coachText = `New PT session booked.\n\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\n${appointment.location ? `Location: ${appointment.location}\n` : ''}\nThe attached booking.ics adds this session to your calendar in one click.\n\nCoach copy.`;
-      const ics = buildIcsForBooking(client, appointment);
-      await sendEmail(coachEmail, coachSubject, coachText, [ics]);
+      const coachText = `New PT session booked.\n\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\n${appointment.location ? `Location: ${appointment.location}\n` : ''}\nThis session has been automatically added to your Google Calendar.\n\nCoach copy.`;
+      await sendEmail(coachEmail, coachSubject, coachText);
       await adminClient.from('pt_notification_log').insert({
         client_id: client.id,
         appointment_id: appointment.id,
@@ -757,61 +762,19 @@ async function sendPedroNotice(subject: string, text: string) {
   await sendEmail(Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com', subject, text);
 }
 
-interface EmailAttachment { filename: string; content: string; content_type?: string }
-
-async function sendEmail(to: string, subject: string, text: string, attachments?: EmailAttachment[]) {
+async function sendEmail(to: string, subject: string, text: string) {
   const resendKey = Deno.env.get('RESEND_API_KEY');
   if (!resendKey) return;
-  const body: Record<string, unknown> = {
-    from: Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ?? 'Pedro Avila Coaching <onboarding@resend.dev>',
-    to,
-    subject,
-    text,
-  };
-  if (attachments && attachments.length > 0) body.attachments = attachments;
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${resendKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+    headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ?? 'Pedro Avila Coaching <onboarding@resend.dev>',
+      to,
+      subject,
+      text,
+    }),
   });
-}
-
-function icsTimestamp(date: Date) {
-  return `${date.getUTCFullYear()}${pad2(date.getUTCMonth() + 1)}${pad2(date.getUTCDate())}T${pad2(date.getUTCHours())}${pad2(date.getUTCMinutes())}${pad2(date.getUTCSeconds())}Z`;
-}
-
-function pad2(n: number) { return String(n).padStart(2, '0'); }
-
-function buildIcsForBooking(client: PTClientRow, appointment: AppointmentRow): EmailAttachment {
-  const now = new Date();
-  const start = new Date(appointment.start_at);
-  const end = new Date(appointment.end_at);
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Cerebro//PT Booking//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'BEGIN:VEVENT',
-    `UID:${appointment.id}@cerebroai.au`,
-    `DTSTAMP:${icsTimestamp(now)}`,
-    `DTSTART:${icsTimestamp(start)}`,
-    `DTEND:${icsTimestamp(end)}`,
-    `SUMMARY:PT Session - ${client.name}`,
-    `DESCRIPTION:PT session booked via Cerebro. Client: ${client.name} <${client.email}>`,
-    appointment.location ? `LOCATION:${appointment.location}` : '',
-    'STATUS:CONFIRMED',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ].filter(Boolean).join('\r\n');
-  const bytes = new TextEncoder().encode(lines);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  const content = btoa(binary);
-  return { filename: 'booking.ics', content, content_type: 'text/calendar' };
 }
 
 function json(body: unknown, status = 200) {
