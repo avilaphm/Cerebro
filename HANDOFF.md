@@ -4,7 +4,16 @@
 2026-05-16 by Claude
 
 ## Last completed task
-Knowledge base RAG system + web search for programme generation (commit c7db554):
+Per-client AI coach + voice brain dump + PT knowledge brain (commit c95cbce):
+- `ai-client-chat` edge function: receives `{ client_id, message_id, content }`, fetches client goals/programme/logs/check-ins/coaching notes, searches knowledge base (RAG, cosine similarity), builds full context system prompt, calls gpt-4.1-mini, inserts AI response to `pt_messages` with `sender='ai'`; detects "hey pedro" -> sets `ai_handoff_requested=true` on client message + creates `pt_coaching_tasks` entry
+- `query-knowledge-brain` edge function: embeds query, cosine searches knowledge base, generates answer from indexed content only using gpt-4.1-mini (no hallucination mode)
+- `ingest-knowledge-document` v2: added voice note path - receives `voice_audio_base64` + `voice_mime_type` + `title`, transcribes via Whisper, creates text-only document (no file_path), ingests chunks; existing file path extracted into `ingestTextForDocument()` helper
+- `pt_messages`: added `ai_handoff_requested boolean default false` + partial index
+- `MessageBubble.tsx`: invokes `ai-client-chat` after every client message send, shows AI messages in light-blue bubble with "AI Coach" label, "Thinking..." bubble while waiting, "Pedro notified" on handoff messages; header changed to "AI Coach" with Pedro mention hint; marks 'ai' and 'pt' messages as read_at
+- `KnowledgeBaseManager.tsx`: voice recording section with Start/Stop buttons (MediaRecorder API, webm), "Test your PT brain" chat section calling `query-knowledge-brain`
+- `PTMessagesView.tsx`: AI messages shown with blue bubble and "AI Coach" label, amber "Client requested Pedro - take over" banner shown inline when `ai_handoff_requested=true`
+
+Previous task: Knowledge base RAG system + web search for programme generation (commit c7db554):
 - DB: `pt_knowledge_documents` + `pt_knowledge_chunks` tables live on remote with pgvector (1536-dim), IVFFlat index, `match_knowledge_chunks` RPC for cosine similarity search
 - Storage bucket `pt-knowledge-docs` created with PT admin RLS policies
 - Edge function `ingest-knowledge-document`: extracts PDF text via OpenAI Files API, chunks at 1500 chars, embeds with `text-embedding-3-small`, stores in `pt_knowledge_chunks`
@@ -63,7 +72,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-0bd4e22 - Booking session rules: no-show, remove holds display, fix canBook
+c95cbce - Add per-client AI coach, voice brain dump, and PT knowledge brain chat
 
 ## Current state
 
