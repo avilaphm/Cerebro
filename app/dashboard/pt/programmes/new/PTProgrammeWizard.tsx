@@ -103,8 +103,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     if (!clientId) return;
     setGenerating(true);
     setGenStatus('Reading client profile…');
+    const phaseTemplate = programme.phases.map(({ id, title, focus, weeks }) => ({ id, title, focus, weeks }));
     const { data, error } = await supabase.functions.invoke('parse-client-document', {
-      body: { client_id: clientId },
+      body: { client_id: clientId, phase_template: phaseTemplate },
     });
     if (error || (data as { error?: string })?.error) {
       setGenStatus((data as { error?: string })?.error ?? error?.message ?? 'Failed.');
@@ -124,8 +125,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     if (!brainDump.trim()) return;
     setGenerating(true);
     setGenStatus('Generating programme…');
+    const phaseTemplate = programme.phases.map(({ id, title, focus, weeks }) => ({ id, title, focus, weeks }));
     const { data, error } = await supabase.functions.invoke('generate-pt-programme', {
-      body: { notes: brainDump, exercises: exercises.slice(0, 300) },
+      body: { notes: brainDump, exercises: exercises.slice(0, 300), phase_template: phaseTemplate },
     });
     if (error) {
       setGenStatus(error.message);
