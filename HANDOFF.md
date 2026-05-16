@@ -4,7 +4,12 @@
 2026-05-16 by Claude
 
 ## Last completed task
-Programmes: global template flow + clickable cards + assign-to-client copy (commit bb148af):
+AI coach chat fix (commit 0b8719a):
+- Root cause: `pt_messages.sender` CHECK constraint only allowed `'pt'` and `'client'`. The `ai-client-chat` edge function inserts with `sender='ai'`, which was rejected by the constraint. The function returned 200 regardless (no error check on the insert), so the thinking indicator cleared but no message ever appeared.
+- Fixed: applied migration `20260516000600_allow_ai_sender_in_pt_messages.sql` to extend the constraint to include `'ai'`. Also added insert error handling in the edge function so future failures surface in logs.
+- Redeployed `ai-client-chat` edge function.
+
+Previous task: Programmes: global template flow + clickable cards + assign-to-client copy (commit bb148af):
 - Wizard now saves to `pt_program_templates` (global). Client selection is now optional - it provides AI generation context; if selected, an assignment copy is also created alongside the template.
 - Programmes list: template cards now link to `/programmes/template/[id]`; assignment cards link to `/programmes/[id]/edit`.
 - New template detail page (`/programmes/template/[id]`): shows name, goal, phase list with workout days, "Edit template" and "Assign to client" buttons.
