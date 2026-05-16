@@ -1,10 +1,20 @@
 # Handoff
 
 ## Last updated
-2026-05-15 by Claude
+2026-05-16 by Claude
 
 ## Last completed task
-Programme creation rules: section order, default template, cascade weeks (commit pending):
+Knowledge base RAG system + web search for programme generation (commit c7db554):
+- DB: `pt_knowledge_documents` + `pt_knowledge_chunks` tables live on remote with pgvector (1536-dim), IVFFlat index, `match_knowledge_chunks` RPC for cosine similarity search
+- Storage bucket `pt-knowledge-docs` created with PT admin RLS policies
+- Edge function `ingest-knowledge-document`: extracts PDF text via OpenAI Files API, chunks at 1500 chars, embeds with `text-embedding-3-small`, stores in `pt_knowledge_chunks`
+- `generate-pt-programme` and `parse-client-document` both updated: accept `phase_template`, run knowledge base search + web search (`gpt-4o-mini-search-preview`) in parallel before generation; phase structure is now FIXED by the template
+- `PTProgrammeWizard` passes current phase template to both generation functions
+- `/dashboard/pt/knowledge` page: upload PDFs/docs, triggers ingestion, lists documents with chunk counts, delete
+- Knowledge nav item added to PTNav
+- AI generation no longer replaces the 5-phase structure -- it populates workout days within it
+
+Previous task: Programme creation rules: section order, default template, cascade weeks (commit 37c359e):
 - `utils/pt/programme.ts` exports `CANONICAL_SECTION_ORDER` (Warm Up, Workout, MetCon, Stretches), `DEFAULT_PROGRAMME_PHASES` (5-phase journey), `sortExercisesBySectionOrder()`, and `getPhaseStartWeeks()`
 - `PTDayEditor.tsx`: section picker offers only Warm Up/Workout/MetCon/Stretches. Assigning a section auto-sorts exercises into canonical order.
 - `PTProgrammeWizard.tsx`: initialises with 5 default phases pre-filled. AI generation replaces them.
