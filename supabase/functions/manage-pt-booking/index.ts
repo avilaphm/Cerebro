@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au'];
+const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
 const TIMEZONE = 'Australia/Sydney';
 const INTERNAL_SECRET_FALLBACK = 'cerebro-cron-2026';
 const MIN_NOTICE_MS = 12 * 60 * 60 * 1000;
@@ -741,20 +741,6 @@ async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, ty
     }
   }
 
-  // Calendar sync notification — goes to avila.phm@gmail.com so the local
-  // gmail-calendar-sync agent can pick it up and create/delete the calendar event.
-  try {
-    const calendarEmail = Deno.env.get('COACH_CALENDAR_EMAIL') ?? 'avila.phm@gmail.com';
-    const calendarSubject = type === 'booking_confirmation'
-      ? `[Cerebro Booking] ${client.name} — ${formatDateTime(new Date(appointment.start_at))}`
-      : `[Cerebro Cancellation] ${client.name} — ${formatDateTime(new Date(appointment.start_at))}`;
-    const calendarText = type === 'booking_confirmation'
-      ? `PT session booked.\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\nAppointment-ID: ${appointment.id}\nStart-ISO: ${appointment.start_at}\nEnd-ISO: ${appointment.end_at}`
-      : `PT session cancelled.\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\nAppointment-ID: ${appointment.id}\nStart-ISO: ${appointment.start_at}\nEnd-ISO: ${appointment.end_at}`;
-    await sendEmail(calendarEmail, calendarSubject, calendarText);
-  } catch (error) {
-    console.error('Calendar sync notification failed:', error);
-  }
 }
 
 async function sendCreditEmail(adminClient: ReturnType<typeof createClient>, client: PTClientRow, balance: number) {
@@ -774,7 +760,7 @@ async function sendCreditEmail(adminClient: ReturnType<typeof createClient>, cli
 }
 
 async function sendPedroNotice(subject: string, text: string) {
-  await sendEmail(Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com', subject, text);
+  await sendEmail(Deno.env.get('PEDRO_EMAIL') ?? 'pedro@cerebroai.au', subject, text);
 }
 
 async function sendEmail(to: string, subject: string, text: string) {
