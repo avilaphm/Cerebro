@@ -301,13 +301,18 @@ Deno.serve(async (req: Request) => {
     }
 
     // Insert the AI response into pt_messages
-    await adminClient
+    const { error: insertError } = await adminClient
       .from('pt_messages')
       .insert({
         client_id: body.client_id,
         sender: 'ai',
         content: aiResponse,
       });
+
+    if (insertError) {
+      console.error('ai-client-chat insert error:', insertError);
+      return json({ error: 'Failed to save AI response.' }, 500);
+    }
 
     return json({ ok: true, response: aiResponse, handoff_requested: wantsPedro });
   } catch (err) {
