@@ -1,5 +1,4 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { extractText } from 'npm:unpdf@0.11.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,11 +19,6 @@ function chunkText(text: string): string[] {
     start = end - CHUNK_OVERLAP;
   }
   return chunks.filter((c) => c.length > 50);
-}
-
-async function extractTextFromPdf(fileBytes: ArrayBuffer): Promise<string> {
-  const { text } = await extractText(new Uint8Array(fileBytes), { mergePages: true });
-  return typeof text === 'string' ? text : (text as string[]).join('\n\n');
 }
 
 async function embedChunks(chunks: string[], openaiKey: string): Promise<number[][]> {
@@ -96,6 +90,7 @@ Deno.serve(async (req: Request) => {
 
     const body = (await req.json()) as {
       document_id?: string;
+      content_text?: string;
       voice_audio_base64?: string;
       voice_mime_type?: string;
       title?: string;
@@ -122,7 +117,7 @@ Deno.serve(async (req: Request) => {
       return json({ success: true, document_id: newDoc.id, chunk_count: chunkCount });
     }
 
-    // File document path: fetch from storage and extract text
+    // File document path
     if (!body.document_id) return json({ error: 'Missing document_id.' }, 400);
 
     const { data: doc, error: docError } = await db
@@ -133,7 +128,8 @@ Deno.serve(async (req: Request) => {
 
     if (docError || !doc) return json({ error: 'Document not found.' }, 404);
 
-    let contentText = (doc.content_text as string | null) ?? '';
+    // Prefer: pre-extracted text from request body → stored text in DB → fetch from storage
+    let contentText = body.content_text ?? (doc.content_text as string | null) ?? '';
 
     if (!contentText && doc.file_path) {
       const { data: signed, error: signedErr } = await db.storage
@@ -145,16 +141,7 @@ Deno.serve(async (req: Request) => {
       const fileRes = await fetch(signed.signedUrl);
       if (!fileRes.ok) return json({ error: 'File fetch failed.' }, 500);
 
-      const isPdf =
-        (doc.file_type as string)?.includes('pdf') ||
-        (doc.file_path as string).toLowerCase().endsWith('.pdf');
-
-      if (isPdf) {
-        const bytes = await fileRes.arrayBuffer();
-        contentText = await extractTextFromPdf(bytes);
-      } else {
-        contentText = await fileRes.text();
-      }
+      contentText = await fileRes.text();
     }
 
     if (!contentText.trim()) {

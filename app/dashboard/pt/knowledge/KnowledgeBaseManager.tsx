@@ -3,6 +3,10 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import * as pdfjsLib from 'pdfjs-dist';
+import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 interface BrainMessage {
   role: 'user' | 'assistant';
@@ -52,6 +56,23 @@ export default function KnowledgeBaseManager({ documents: initial }: { documents
   const [brainQuery, setBrainQuery] = useState('');
   const [brainLoading, setBrainLoading] = useState(false);
   const brainBottomRef = useRef<HTMLDivElement>(null);
+
+  const extractPdfText = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const text = content.items
+        .filter((item): item is TextItem => 'str' in item)
+        .map((item) => item.str)
+        .join(' ')
+        .trim();
+      if (text) pages.push(text);
+    }
+    return pages.join('\n\n');
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -106,8 +127,21 @@ export default function KnowledgeBaseManager({ documents: initial }: { documents
 
     setUploadStatus('Processing and indexing document…');
 
+    const isPdf = selectedFile.type.includes('pdf') || selectedFile.name.toLowerCase().endsWith('.pdf');
+    let extractedText: string | undefined;
+    if (isPdf) {
+      setUploadStatus('Extracting text from PDF…');
+      try {
+        extractedText = await extractPdfText(selectedFile);
+      } catch {
+        setUploadStatus('PDF text extraction failed. Document saved but not searchable yet.');
+        setUploading(false);
+        return;
+      }
+    }
+
     const { error: ingestError } = await supabase.functions.invoke('ingest-knowledge-document', {
-      body: { document_id: doc.id },
+      body: { document_id: doc.id, ...(extractedText ? { content_text: extractedText } : {}) },
     });
 
     if (ingestError) {
