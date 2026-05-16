@@ -4,7 +4,12 @@
 2026-05-16 by Claude
 
 ## Last completed task
-Dashboard tracking fix + UI cleanup (commit 106f3a7):
+Email-triggered Google Calendar sync for PT bookings (commit 8bde126):
+- edge function sends calendar-sync emails to avila.phm@gmail.com on booking/cancellation
+- ~/.cerebro/gmail-calendar-sync.py checks Gmail every 5 min via gws, creates/deletes calendar events
+- ~/Library/LaunchAgents/au.cerebroai.gmail-calendar-sync.plist runs it automatically
+
+Previous task: Dashboard tracking fix + UI cleanup (commit 106f3a7):
 - Root cause: `SUPABASE_SERVICE_ROLE_KEY` was missing from both `.env.local` and Vercel production. Every insert into `page_visits` and `site_events` was silently failing inside a try/catch, leaving both tables at 0 rows despite all tracking code being wired correctly.
 - Fixed: added key to `.env.local` and pushed to Vercel via CLI (`vercel env add`). Vercel project linked to `avilaphms-projects/cerebro`.
 - Removed `TrafficSources` card from `/dashboard` (redundant with WebsiteStats last-7-days card).
