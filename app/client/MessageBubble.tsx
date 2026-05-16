@@ -5,9 +5,10 @@ import { createClient } from '@/utils/supabase/client';
 
 interface Message {
   id: string;
-  sender: 'pt' | 'client';
+  sender: 'pt' | 'client' | 'ai';
   content: string;
   created_at: string;
+  ai_handoff_requested?: boolean;
   context?: {
     phase_title?: string;
     day_title?: string;
@@ -34,6 +35,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [aiThinking, setAiThinking] = useState(false);
   const [unread, setUnread] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -50,7 +52,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
   const loadMessages = useCallback(async () => {
     const { data } = await supabase
       .from('pt_messages')
-      .select('id, sender, content, created_at, context')
+      .select('id, sender, content, created_at, context, ai_handoff_requested')
       .eq('client_id', clientId)
       .order('created_at', { ascending: true });
     mergeMessages((data ?? []) as Message[]);
@@ -68,7 +70,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       .from('pt_messages')
       .update({ read_at: new Date().toISOString() })
       .eq('client_id', clientId)
-      .eq('sender', 'pt')
+      .in('sender', ['pt', 'ai'])
       .is('read_at', null);
 
     setUnread(0);
@@ -90,8 +92,11 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
         (payload) => {
           const msg = payload.new as Message;
           mergeMessages([msg]);
-          if (msg.sender === 'pt' && !open) {
+          if ((msg.sender === 'pt' || msg.sender === 'ai') && !open) {
             setUnread((n) => n + 1);
+          }
+          if (msg.sender === 'ai') {
+            setAiThinking(false);
           }
         },
       )
@@ -127,6 +132,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       const message = inserted as Message;
       mergeMessages([message]);
       setSending(false);
+      setAiThinking(true);
 
       void supabase.functions.invoke('extract-client-note', {
         body: {
@@ -135,6 +141,19 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
           content,
           context: workoutContext,
         },
+      });
+
+      void supabase.functions.invoke('ai-client-chat', {
+        body: {
+          client_id: clientId,
+          message_id: message.id,
+          content,
+        },
+      }).then(() => {
+        void loadMessages();
+        setAiThinking(false);
+      }).catch(() => {
+        setAiThinking(false);
       });
       return;
     }
@@ -180,12 +199,12 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
         <div className="fixed inset-x-3 top-20 z-50 flex max-h-[calc(100dvh-6rem)] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-2xl sm:inset-auto sm:right-6 sm:top-24 sm:h-auto sm:max-h-[70vh] sm:w-96">
           <div className="px-4 py-3 border-b border-black/8 flex items-center justify-between shrink-0">
             <div>
-              <p className="text-sm font-medium">Message your coach</p>
-              {workoutContext && (
-                <p className="text-[0.6rem] uppercase tracking-[0.12em] text-black/35 mt-0.5">
-                  {workoutContext.phase_title} · {workoutContext.day_title}
-                </p>
-              )}
+              <p className="text-sm font-medium">AI Coach</p>
+              <p className="text-[0.6rem] text-black/35 mt-0.5">
+                {workoutContext
+                  ? `${workoutContext.phase_title} · ${workoutContext.day_title}`
+                  : 'Say "hey Pedro" to reach your coach directly'}
+              </p>
             </div>
             <button type="button" onClick={() => setOpen(false)} className="text-black/30 hover:text-black transition-colors">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -197,11 +216,12 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-3">
             {messages.length === 0 ? (
               <p className="text-xs text-black/30 text-center py-6">
-                Ask your coach anything. Let them know how you feel, if something hurts, or if you need to reschedule.
+                Ask anything about your programme, exercises, or nutrition. Say "hey Pedro" to reach your coach directly.
               </p>
             ) : (
               messages.map((m) => {
                 const isClient = m.sender === 'client';
+                const isAI = m.sender === 'ai';
                 return (
                   <div key={m.id} className={`flex ${isClient ? 'justify-end' : 'justify-start'} mb-1`}>
                     <div className={`max-w-[85%] flex flex-col gap-0.5 ${isClient ? 'items-end' : 'items-start'}`}>
@@ -210,18 +230,36 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
                           {m.context.phase_title && `${m.context.phase_title} · `}{m.context.day_title}
                         </span>
                       )}
+                      {isAI && (
+                        <span className="text-[0.55rem] uppercase tracking-[0.12em] text-black/35 px-1">AI Coach</span>
+                      )}
                       <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${
                         isClient
                           ? 'bg-black text-white rounded-br-sm'
-                          : 'bg-[#f0f0ec] text-black rounded-bl-sm'
+                          : isAI
+                            ? 'bg-[#eef4ff] text-black rounded-bl-sm border border-blue-100'
+                            : 'bg-[#f0f0ec] text-black rounded-bl-sm'
                       }`}>
                         {m.content}
                       </div>
+                      {m.ai_handoff_requested && (
+                        <span className="text-[0.55rem] text-amber-600 px-1">Pedro notified</span>
+                      )}
                       <span className="text-[0.55rem] text-black/25 px-1">{formatTime(m.created_at)}</span>
                     </div>
                   </div>
                 );
               })
+            )}
+            {aiThinking && (
+              <div className="flex justify-start mb-1">
+                <div className="max-w-[85%] flex flex-col gap-0.5 items-start">
+                  <span className="text-[0.55rem] uppercase tracking-[0.12em] text-black/35 px-1">AI Coach</span>
+                  <div className="px-3 py-2 rounded-2xl rounded-bl-sm bg-[#eef4ff] border border-blue-100 text-sm text-black/40">
+                    Thinking...
+                  </div>
+                </div>
+              </div>
             )}
             <div ref={bottomRef} />
           </div>

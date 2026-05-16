@@ -7,10 +7,11 @@ import type { PTClient } from '@/utils/pt/types';
 interface Message {
   id: string;
   client_id: string;
-  sender: 'pt' | 'client';
+  sender: 'pt' | 'client' | 'ai';
   content: string;
   read_at: string | null;
   created_at: string;
+  ai_handoff_requested?: boolean;
   context?: {
     assignment_name?: string;
     phase_title?: string;
@@ -268,6 +269,7 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
                   const showDay = day !== lastDay;
                   lastDay = day;
                   const isPT = m.sender === 'pt';
+                  const isAI = m.sender === 'ai';
                   return (
                     <div key={m.id}>
                       {showDay && (
@@ -277,8 +279,18 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
                           <div className="flex-1 h-px bg-black/8" />
                         </div>
                       )}
+                      {m.ai_handoff_requested && (
+                        <div className="flex justify-center my-2">
+                          <span className="text-[0.6rem] uppercase tracking-[0.12em] bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full">
+                            Client requested Pedro - take over
+                          </span>
+                        </div>
+                      )}
                       <div className={`flex ${isPT ? 'justify-end' : 'justify-start'} mb-1`}>
                         <div className={`max-w-[86%] sm:max-w-[70%] ${isPT ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
+                          {isAI && (
+                            <span className="text-[0.6rem] uppercase tracking-[0.12em] text-blue-500/70 px-1">AI Coach</span>
+                          )}
                           {m.context?.day_title && (
                             <span className={`text-[0.6rem] uppercase tracking-[0.12em] px-2 py-0.5 rounded ${
                               isPT ? 'text-black/30 self-end' : 'bg-black/6 text-black/40 self-start'
@@ -289,7 +301,9 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
                           <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${
                             isPT
                               ? 'bg-black text-white rounded-br-sm'
-                              : 'bg-white border border-black/10 text-black rounded-bl-sm'
+                              : isAI
+                                ? 'bg-blue-50 border border-blue-100 text-black rounded-bl-sm'
+                                : 'bg-white border border-black/10 text-black rounded-bl-sm'
                           }`}>
                             {m.content}
                           </div>

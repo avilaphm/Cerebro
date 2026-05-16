@@ -80,6 +80,47 @@ async function embedChunks(chunks: string[], openaiKey: string): Promise<number[
   return json.data.map((d) => d.embedding);
 }
 
+async function transcribeAudio(audioBase64: string, mimeType: string, openaiKey: string): Promise<string> {
+  const audioBytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
+  const ext = mimeType.includes('mp4') || mimeType.includes('m4a') ? 'm4a'
+    : mimeType.includes('mp3') ? 'mp3'
+    : mimeType.includes('ogg') ? 'ogg'
+    : 'webm';
+  const form = new FormData();
+  form.append('model', 'whisper-1');
+  form.append('file', new Blob([audioBytes], { type: mimeType }), `voice.${ext}`);
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${openaiKey}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error('Whisper transcription failed');
+  const data = (await res.json()) as { text?: string };
+  return data.text ?? '';
+}
+
+async function ingestTextForDocument(
+  documentId: string,
+  contentText: string,
+  openaiKey: string,
+  db: ReturnType<typeof createClient>,
+): Promise<number> {
+  await db.from('pt_knowledge_documents').update({ content_text: contentText }).eq('id', documentId);
+  await db.from('pt_knowledge_chunks').delete().eq('document_id', documentId);
+  const chunks = chunkText(contentText);
+  const embeddings = await embedChunks(chunks, openaiKey);
+  const rows = chunks.map((chunk_text, chunk_index) => ({
+    document_id: documentId,
+    chunk_index,
+    chunk_text,
+    embedding: JSON.stringify(embeddings[chunk_index]),
+  }));
+  const { error: insertError } = await db.from('pt_knowledge_chunks').insert(rows);
+  if (insertError) throw new Error(insertError.message);
+  await db.from('pt_knowledge_documents').update({ chunk_count: chunks.length }).eq('id', documentId);
+  return chunks.length;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -89,20 +130,48 @@ Deno.serve(async (req: Request) => {
     const openaiKey = Deno.env.get('OPENAI_API_KEY')!;
     const db = createClient(url, serviceKey);
 
-    const { document_id } = (await req.json()) as { document_id?: string };
-    if (!document_id) return json({ error: 'Missing document_id.' }, 400);
+    const body = (await req.json()) as {
+      document_id?: string;
+      voice_audio_base64?: string;
+      voice_mime_type?: string;
+      title?: string;
+    };
+
+    // Voice note path: transcribe audio then ingest as a new document
+    if (body.voice_audio_base64) {
+      if (!body.title) return json({ error: 'Missing title for voice note.' }, 400);
+      const contentText = await transcribeAudio(
+        body.voice_audio_base64,
+        body.voice_mime_type ?? 'audio/webm',
+        openaiKey,
+      );
+      if (!contentText.trim()) return json({ error: 'Transcription returned empty text.' }, 422);
+
+      const { data: newDoc, error: insertErr } = await db
+        .from('pt_knowledge_documents')
+        .insert({ title: body.title, source: 'voice', file_type: 'text/plain' })
+        .select('id')
+        .single();
+      if (insertErr || !newDoc) return json({ error: 'Failed to create document record.' }, 500);
+
+      const chunkCount = await ingestTextForDocument(newDoc.id as string, contentText, openaiKey, db);
+      return json({ success: true, document_id: newDoc.id, chunk_count: chunkCount });
+    }
+
+    // File document path: fetch from storage and extract text
+    if (!body.document_id) return json({ error: 'Missing document_id.' }, 400);
 
     const { data: doc, error: docError } = await db
       .from('pt_knowledge_documents')
-      .select('id, title, file_path, file_type')
-      .eq('id', document_id)
+      .select('id, title, file_path, file_type, content_text')
+      .eq('id', body.document_id)
       .single();
 
     if (docError || !doc) return json({ error: 'Document not found.' }, 404);
 
-    let contentText = '';
+    let contentText = (doc.content_text as string | null) ?? '';
 
-    if (doc.file_path) {
+    if (!contentText && doc.file_path) {
       const { data: signed, error: signedErr } = await db.storage
         .from('pt-knowledge-docs')
         .createSignedUrl(doc.file_path as string, 300);
@@ -128,30 +197,8 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'No text could be extracted from the document.' }, 422);
     }
 
-    await db.from('pt_knowledge_documents').update({ content_text: contentText }).eq('id', document_id);
-
-    // Delete any existing chunks for this document (re-ingestion)
-    await db.from('pt_knowledge_chunks').delete().eq('document_id', document_id);
-
-    const chunks = chunkText(contentText);
-    const embeddings = await embedChunks(chunks, openaiKey);
-
-    const rows = chunks.map((chunk_text, chunk_index) => ({
-      document_id,
-      chunk_index,
-      chunk_text,
-      embedding: JSON.stringify(embeddings[chunk_index]),
-    }));
-
-    const { error: insertError } = await db.from('pt_knowledge_chunks').insert(rows);
-    if (insertError) throw new Error(insertError.message);
-
-    await db
-      .from('pt_knowledge_documents')
-      .update({ chunk_count: chunks.length })
-      .eq('id', document_id);
-
-    return json({ success: true, chunk_count: chunks.length });
+    const chunkCount = await ingestTextForDocument(body.document_id, contentText, openaiKey, db);
+    return json({ success: true, chunk_count: chunkCount });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Ingestion failed.' }, 500);
   }

@@ -4,6 +4,11 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
+interface BrainMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 interface KnowledgeDoc {
   id: string;
   title: string;
@@ -34,6 +39,19 @@ export default function KnowledgeBaseManager({ documents: initial }: { documents
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Voice recording state
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('');
+
+  // PT Brain chat state
+  const [brainMessages, setBrainMessages] = useState<BrainMessage[]>([]);
+  const [brainQuery, setBrainQuery] = useState('');
+  const [brainLoading, setBrainLoading] = useState(false);
+  const brainBottomRef = useRef<HTMLDivElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -127,6 +145,96 @@ export default function KnowledgeBaseManager({ documents: initial }: { documents
     setDeletingId(null);
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = () => { stream.getTracks().forEach((t) => t.stop()); };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+      setVoiceStatus('Recording... click Stop when done.');
+    } catch {
+      setVoiceStatus('Microphone access denied.');
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+    void processVoiceNote();
+  };
+
+  const processVoiceNote = async () => {
+    setTranscribing(true);
+    setVoiceStatus('Transcribing...');
+
+    await new Promise<void>((resolve) => {
+      const check = setInterval(() => {
+        if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') {
+          clearInterval(check);
+          resolve();
+        }
+      }, 100);
+    });
+
+    const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+    if (blob.size < 1000) {
+      setVoiceStatus('Recording too short — try again.');
+      setTranscribing(false);
+      return;
+    }
+
+    const { error: invokeError, data: invokeData } = await supabase.functions.invoke('ingest-knowledge-document', {
+      body: {
+        voice_audio_base64: await blobToBase64(blob),
+        voice_mime_type: 'audio/webm',
+        title: `Voice note — ${new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+      },
+    });
+
+    if (invokeError) {
+      setVoiceStatus(`Failed: ${invokeError.message}`);
+      setTranscribing(false);
+      return;
+    }
+
+    const result = invokeData as { chunk_count?: number; document_id?: string } | null;
+    setVoiceStatus(`Done — ${result?.chunk_count ?? 0} chunks indexed.`);
+    setTranscribing(false);
+    router.refresh();
+  };
+
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  const askBrain = async () => {
+    if (!brainQuery.trim() || brainLoading) return;
+    const q = brainQuery.trim();
+    setBrainQuery('');
+    setBrainMessages((prev) => [...prev, { role: 'user', content: q }]);
+    setBrainLoading(true);
+
+    const { data, error } = await supabase.functions.invoke('query-knowledge-brain', {
+      body: { query: q, history: brainMessages.slice(-10) },
+    });
+
+    const answer = error
+      ? 'Failed to get a response. Check the knowledge base has indexed content.'
+      : ((data as { answer?: string } | null)?.answer ?? 'No response.');
+
+    setBrainMessages((prev) => [...prev, { role: 'assistant', content: answer }]);
+    setBrainLoading(false);
+    setTimeout(() => brainBottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
+
   const fileTypeBadge = (type: string | null) => {
     if (!type) return 'FILE';
     if (type.includes('pdf')) return 'PDF';
@@ -137,7 +245,7 @@ export default function KnowledgeBaseManager({ documents: initial }: { documents
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Upload form */}
       <div className="border border-black/10 p-5 space-y-4">
         <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Add document</p>
@@ -248,6 +356,86 @@ export default function KnowledgeBaseManager({ documents: initial }: { documents
       <div className="border border-black/8 bg-[#fafaf8] px-4 py-4 text-xs text-black/40 space-y-1">
         <p className="font-medium text-black/55">How it works</p>
         <p>Every uploaded document is chunked and embedded. When you generate a programme, the AI automatically searches your knowledge base for relevant content and combines it with live web research to inform exercise selection and progression — while always keeping the 5-phase programme structure intact.</p>
+      </div>
+
+      {/* Voice brain dump */}
+      <div className="border border-black/10 p-5 space-y-4">
+        <div>
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Voice brain dump</p>
+          <p className="text-xs text-black/40 mt-1">Record your coaching thoughts, frameworks, and methods. Transcribed and indexed automatically.</p>
+        </div>
+        <div className="flex items-center gap-4">
+          {!recording ? (
+            <button
+              onClick={() => void startRecording()}
+              disabled={transcribing}
+              className="flex items-center gap-2 border border-black px-5 py-2.5 text-sm disabled:opacity-30 hover:bg-black hover:text-white transition-colors"
+            >
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500" />
+              Start recording
+            </button>
+          ) : (
+            <button
+              onClick={stopRecording}
+              className="flex items-center gap-2 border border-red-500 bg-red-500 text-white px-5 py-2.5 text-sm hover:bg-red-600 transition-colors"
+            >
+              <span className="inline-block w-2.5 h-2.5 rounded-sm bg-white" />
+              Stop recording
+            </button>
+          )}
+          {voiceStatus && (
+            <p className="text-xs text-black/50">{voiceStatus}</p>
+          )}
+        </div>
+      </div>
+
+      {/* PT Brain test chat */}
+      <div className="border border-black/10 p-5 space-y-4">
+        <div>
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Test your PT brain</p>
+          <p className="text-xs text-black/40 mt-1">Ask questions to verify the brain knows what you uploaded. Answers come from your indexed knowledge base only.</p>
+        </div>
+
+        {brainMessages.length > 0 && (
+          <div className="space-y-2 max-h-72 overflow-y-auto border border-black/8 px-4 py-3 bg-[#fafaf8]">
+            {brainMessages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] px-3 py-2 text-sm rounded-xl ${
+                  msg.role === 'user'
+                    ? 'bg-black text-white rounded-br-none'
+                    : 'bg-white border border-black/10 text-black rounded-bl-none'
+                }`}>
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            {brainLoading && (
+              <div className="flex justify-start">
+                <div className="px-3 py-2 text-sm text-black/30 bg-white border border-black/10 rounded-xl rounded-bl-none">
+                  Searching knowledge base...
+                </div>
+              </div>
+            )}
+            <div ref={brainBottomRef} />
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            value={brainQuery}
+            onChange={(e) => setBrainQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void askBrain(); }}
+            placeholder="e.g. What does Zatsiorsky say about 1RM testing frequency?"
+            className="flex-1 border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
+          />
+          <button
+            onClick={() => void askBrain()}
+            disabled={!brainQuery.trim() || brainLoading}
+            className="border border-black bg-black text-white px-5 py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
+          >
+            Ask
+          </button>
+        </div>
       </div>
     </div>
   );
