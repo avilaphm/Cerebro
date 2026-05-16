@@ -2381,12 +2381,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     {day}
                   </div>
                 ))}
-                {calendarDays.map((day) => {
+                {calendarDays.flatMap((day, index) => {
                   const key = calendarDateKey(day);
                   const isPast = isCurrentMonth && calendarDateKey(day) < todayStr;
                   const inMonth = day.getMonth() === bookingMonth.getMonth();
                   const daySlots = isPast ? [] : (slotsByDate.get(key) ?? []);
-                  return (
+                  const cell = (
                     <div key={key} className={`min-h-28 border-b border-r border-black/10 p-2 ${
                       isPast ? 'bg-white opacity-30' : inMonth ? 'bg-[#fbfbf8]' : 'bg-white text-black/25'
                     }`}>
@@ -2399,6 +2399,17 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       )}
                     </div>
                   );
+                  if ((index + 1) % 5 === 0 && index < calendarDays.length - 1) {
+                    return [
+                      cell,
+                      <div key={`weekend-${index}`} className="col-span-5 flex items-center border-b border-r border-black/10 bg-black/[0.018] px-4 py-[5px]">
+                        <div className="h-px flex-1 bg-black/10" />
+                        <span className="mx-3 text-[0.5rem] uppercase tracking-[0.2em] text-black/20">Sat &middot; Sun</span>
+                        <div className="h-px flex-1 bg-black/10" />
+                      </div>,
+                    ];
+                  }
+                  return [cell];
                 })}
               </div>
             );
