@@ -43,7 +43,7 @@ export default async function PTProgrammesPage() {
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Templates</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
             {templates.map((t) => (
-              <div key={t.id} className="border border-black/10 p-5">
+              <Link key={t.id} href={`/dashboard/pt/programmes/template/${t.id}`} className="block border border-black/10 p-5 hover:border-black/30 transition-colors">
                 <p className="font-medium text-sm">{t.name}</p>
                 {t.goal && <p className="text-xs text-black/40 mt-0.5">{t.goal}</p>}
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -54,7 +54,7 @@ export default async function PTProgrammesPage() {
                   ))}
                 </div>
                 <p className="text-xs text-black/30 mt-3">{t.duration_weeks} weeks · {t.phase_count} phases</p>
-              </div>
+              </Link>
             ))}
           </div>
         </section>
@@ -67,7 +67,7 @@ export default async function PTProgrammesPage() {
             {assignments.map((a) => {
               const cl = a.pt_clients as { name: string; email: string } | null;
               return (
-                <div key={a.id} className="border border-black/10 p-5">
+                <Link key={a.id} href={`/dashboard/pt/programmes/${a.id}/edit`} className="block border border-black/10 p-5 hover:border-black/30 transition-colors">
                   <div className="flex items-start justify-between mb-2">
                     <p className="font-medium text-sm">{a.name}</p>
                     <span className={`text-[0.6rem] uppercase tracking-[0.1em] px-2 py-0.5 border rounded-full ${
@@ -82,7 +82,7 @@ export default async function PTProgrammesPage() {
                       </span>
                     ))}
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

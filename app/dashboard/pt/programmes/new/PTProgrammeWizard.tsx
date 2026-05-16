@@ -48,7 +48,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
 
-  const [clientId, setClientId] = useState(clients[0]?.id ?? '');
+  const [clientId, setClientId] = useState('');
   const [brainDump, setBrainDump] = useState('');
   const [listening, setListening] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -228,28 +228,47 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   });
 
   const save = async () => {
-    if (!progName.trim() || !clientId) return;
+    if (!progName.trim()) return;
     setSaving(true);
-    const payload = {
-      client_id: clientId,
-      name: progName.trim(),
-      goal: progGoal.trim() || null,
-      duration_weeks: countProgrammeWeeks(programme),
-      phase_count: programme.phases.length,
-      status: 'active',
-      programme,
-    };
-    const { error } = await supabase.from('pt_program_assignments').insert(payload);
-    if (!error) {
-      await supabase.from('pt_events').insert({
+
+    const { data: template, error: tErr } = await supabase
+      .from('pt_program_templates')
+      .insert({
+        name: progName.trim(),
+        goal: progGoal.trim() || null,
+        duration_weeks: countProgrammeWeeks(programme),
+        phase_count: programme.phases.length,
+        status: 'ready',
+        programme,
+      })
+      .select('id')
+      .single();
+
+    if (tErr || !template) { setSaving(false); return; }
+
+    if (clientId) {
+      const { error: aErr } = await supabase.from('pt_program_assignments').insert({
         client_id: clientId,
-        event_type: 'programme_assigned',
-        metadata: { template_name: progName },
+        template_id: template.id,
+        name: progName.trim(),
+        goal: progGoal.trim() || null,
+        duration_weeks: countProgrammeWeeks(programme),
+        phase_count: programme.phases.length,
+        status: 'active',
+        programme,
       });
-      router.push(`/dashboard/pt/clients/${clientId}`);
-    } else {
-      setSaving(false);
+      if (!aErr) {
+        await supabase.from('pt_events').insert({
+          client_id: clientId,
+          event_type: 'programme_assigned',
+          metadata: { template_name: progName },
+        });
+        router.push(`/dashboard/pt/clients/${clientId}`);
+        return;
+      }
     }
+
+    router.push(`/dashboard/pt/programmes/template/${template.id}`);
   };
 
   const phase = programme.phases[activePhaseTab] ?? null;
@@ -281,7 +300,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
           </div>
         ))}
         <span className="ml-3 text-xs text-black/40">
-          {step === 1 ? 'Select client & generate' : step === 2 ? 'Edit phases' : step === 3 ? 'Build workouts' : 'Save & assign'}
+          {step === 1 ? 'Generate' : step === 2 ? 'Edit phases' : step === 3 ? 'Build workouts' : 'Save template'}
         </span>
       </div>
 
@@ -295,12 +314,13 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       {step === 1 && (
         <div className="space-y-6">
           <div>
-            <label className="block text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-2">Client</label>
+            <label className="block text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-2">Client (optional — for AI generation from profile)</label>
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               className="w-full max-w-sm border border-black/15 px-3 py-3 text-sm outline-none focus:border-black/40 sm:py-2.5"
             >
+              <option value="">— No client (save as global template) —</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
               ))}
@@ -626,7 +646,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               onClick={() => setStep(4)}
               className="border border-black bg-black text-white px-5 py-2.5 text-sm hover:bg-white hover:text-black transition-colors"
             >
-              Finish & assign →
+              Finish →
             </button>
           </div>
         </div>
@@ -634,7 +654,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
       {step === 4 && (
         <div className="max-w-lg space-y-5">
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Save and assign to client</p>
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Save as global template{clientId && selectedClient ? ` · also assign to ${selectedClient.name}` : ''}</p>
 
           <div>
             <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Programme name</label>
@@ -655,7 +675,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
           <div className="border border-black/8 px-5 py-4 bg-[#fafaf8]">
             <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Summary</p>
-            <p className="text-sm font-medium">{selectedClient?.name ?? 'No client'}</p>
+            {selectedClient && <p className="text-sm font-medium mb-1">{selectedClient.name}</p>}
             <p className="text-xs text-black/40 mt-1">
               {programme.phases.length} phase{programme.phases.length !== 1 ? 's' : ''} ·{' '}
               {countProgrammeWeeks(programme)} weeks ·{' '}
@@ -679,7 +699,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               disabled={saving || !progName.trim()}
               className="flex-1 border border-black bg-black text-white py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
             >
-              {saving ? 'Saving…' : `Save & assign to ${selectedClient?.name ?? 'client'}`}
+              {saving ? 'Saving…' : clientId && selectedClient ? `Save & assign to ${selectedClient.name}` : 'Save template'}
             </button>
           </div>
         </div>
