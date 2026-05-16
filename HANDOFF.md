@@ -4,7 +4,14 @@
 2026-05-16 by Claude
 
 ## Last completed task
-Per-client AI coach + voice brain dump + PT knowledge brain (commit c95cbce):
+Dashboard tracking fix + UI cleanup (commit 106f3a7):
+- Root cause: `SUPABASE_SERVICE_ROLE_KEY` was missing from both `.env.local` and Vercel production. Every insert into `page_visits` and `site_events` was silently failing inside a try/catch, leaving both tables at 0 rows despite all tracking code being wired correctly.
+- Fixed: added key to `.env.local` and pushed to Vercel via CLI (`vercel env add`). Vercel project linked to `avilaphms-projects/cerebro`.
+- Removed `TrafficSources` card from `/dashboard` (redundant with WebsiteStats last-7-days card).
+- Removed UTM tracking links section from `WebsiteStats.tsx`. Empty state message cleaned up.
+- Tracking stack confirmed correct: `VisitTracker` in root layout fires `sendBeacon` to `/api/track/visit` on every public page load; `GetInTouchSection` fires `chat_started` and `email_submitted` events; `/api/track/duration` updates time-on-page on tab hide/close. All routes use service role key. RLS policies allow service role full access. Next Vercel deploy will start recording real visitor data.
+
+Previous task: Per-client AI coach + voice brain dump + PT knowledge brain (commit c95cbce):
 - `ai-client-chat` edge function: receives `{ client_id, message_id, content }`, fetches client goals/programme/logs/check-ins/coaching notes, searches knowledge base (RAG, cosine similarity), builds full context system prompt, calls gpt-4.1-mini, inserts AI response to `pt_messages` with `sender='ai'`; detects "hey pedro" -> sets `ai_handoff_requested=true` on client message + creates `pt_coaching_tasks` entry
 - `query-knowledge-brain` edge function: embeds query, cosine searches knowledge base, generates answer from indexed content only using gpt-4.1-mini (no hallucination mode)
 - `ingest-knowledge-document` v2: added voice note path - receives `voice_audio_base64` + `voice_mime_type` + `title`, transcribes via Whisper, creates text-only document (no file_path), ingests chunks; existing file path extracted into `ingestTextForDocument()` helper
