@@ -29,7 +29,7 @@ const FROM_LEAD_PROPOSAL =
 const FROM_PEDRO_NOTIFY =
   Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ??
   'Cerebro Notifications <onboarding@resend.dev>';
-const PEDRO_EMAIL = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com';
+const PEDRO_EMAIL = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@cerebroai.au';
 const BOOKING_URL = Deno.env.get('BOOKING_URL') ?? '';
 // Used to embed the email open tracking pixel. Set APP_URL to https://cerebroai.au in production.
 const APP_URL = Deno.env.get('APP_URL') ?? '';

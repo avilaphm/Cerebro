@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com'];
+const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -64,7 +64,7 @@ Deno.serve(async (req: Request) => {
 
     const summary = response.choices[0]?.message.content ?? 'No summary generated.';
     const resendKey = Deno.env.get('RESEND_API_KEY');
-    const pedroEmail = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com';
+    const pedroEmail = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@cerebroai.au';
 
     if (resendKey) {
       await fetch('https://api.resend.com/emails', {

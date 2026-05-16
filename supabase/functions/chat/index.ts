@@ -125,7 +125,7 @@ const FROM_LEAD_WELCOME =
   Deno.env.get('RESEND_FROM_LEAD_WELCOME') ?? 'Pedro at Cerebro <onboarding@resend.dev>';
 const FROM_PEDRO_NOTIFY =
   Deno.env.get('RESEND_FROM_PEDRO_NOTIFY') ?? 'Cerebro Notifications <onboarding@resend.dev>';
-const PEDRO_EMAIL = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@meetavila.com';
+const PEDRO_EMAIL = Deno.env.get('PEDRO_EMAIL') ?? 'pedro@cerebroai.au';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {

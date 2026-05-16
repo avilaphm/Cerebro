@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au'];
+const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
 
 type PlanItemType = 'pt_session' | 'solo_strength' | 'run' | 'golf_mobility' | 'recovery' | 'nutrition' | 'check_in';
 type ConfirmationStatus = 'none' | 'needs_confirmation' | 'confirmed' | 'moved' | 'cancelled';
