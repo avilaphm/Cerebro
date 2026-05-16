@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { extractText } from 'npm:unpdf@0.11.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,63 +22,26 @@ function chunkText(text: string): string[] {
   return chunks.filter((c) => c.length > 50);
 }
 
-async function extractTextFromPdf(fileBytes: ArrayBuffer, openaiKey: string): Promise<string> {
-  const form = new FormData();
-  form.append('purpose', 'user_data');
-  form.append('file', new Blob([fileBytes], { type: 'application/pdf' }), 'document.pdf');
-
-  const uploadRes = await fetch('https://api.openai.com/v1/files', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${openaiKey}` },
-    body: form,
-  });
-  if (!uploadRes.ok) throw new Error('PDF upload failed');
-  const uploadJson = (await uploadRes.json()) as { id?: string };
-  const fileId = uploadJson.id;
-  if (!fileId) throw new Error('No file ID from OpenAI');
-
-  try {
-    const responseRes = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        input: [
-          {
-            role: 'user',
-            content: [
-              { type: 'input_file', file_id: fileId },
-              {
-                type: 'input_text',
-                text: 'Extract all text from this document verbatim. Return only the extracted text, no commentary, no markdown formatting.',
-              },
-            ],
-          },
-        ],
-      }),
-    });
-    if (!responseRes.ok) throw new Error('OpenAI Responses API failed');
-    const responseJson = (await responseRes.json()) as {
-      output?: Array<{ content?: Array<{ text?: string }> }>;
-    };
-    return responseJson.output?.[0]?.content?.[0]?.text ?? '';
-  } finally {
-    await fetch(`https://api.openai.com/v1/files/${fileId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${openaiKey}` },
-    }).catch(() => {});
-  }
+async function extractTextFromPdf(fileBytes: ArrayBuffer): Promise<string> {
+  const { text } = await extractText(new Uint8Array(fileBytes), { mergePages: true });
+  return typeof text === 'string' ? text : (text as string[]).join('\n\n');
 }
 
 async function embedChunks(chunks: string[], openaiKey: string): Promise<number[][]> {
-  const res = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'text-embedding-3-small', input: chunks }),
-  });
-  if (!res.ok) throw new Error('Embedding API failed');
-  const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-  return json.data.map((d) => d.embedding);
+  const BATCH = 100;
+  const allEmbeddings: number[][] = [];
+  for (let i = 0; i < chunks.length; i += BATCH) {
+    const batch = chunks.slice(i, i + BATCH);
+    const res = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'text-embedding-3-small', input: batch }),
+    });
+    if (!res.ok) throw new Error('Embedding API failed');
+    const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
+    allEmbeddings.push(...json.data.map((d) => d.embedding));
+  }
+  return allEmbeddings;
 }
 
 async function transcribeAudio(audioBase64: string, mimeType: string, openaiKey: string): Promise<string> {
@@ -187,7 +151,7 @@ Deno.serve(async (req: Request) => {
 
       if (isPdf) {
         const bytes = await fileRes.arrayBuffer();
-        contentText = await extractTextFromPdf(bytes, openaiKey);
+        contentText = await extractTextFromPdf(bytes);
       } else {
         contentText = await fileRes.text();
       }
