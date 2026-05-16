@@ -740,6 +740,21 @@ async function sendBookingEmail(adminClient: ReturnType<typeof createClient>, ty
       console.error('Coach booking notification failed:', error);
     }
   }
+
+  // Calendar sync notification — goes to avila.phm@gmail.com so the local
+  // gmail-calendar-sync agent can pick it up and create/delete the calendar event.
+  try {
+    const calendarEmail = Deno.env.get('COACH_CALENDAR_EMAIL') ?? 'avila.phm@gmail.com';
+    const calendarSubject = type === 'booking_confirmation'
+      ? `[Cerebro Booking] ${client.name} — ${formatDateTime(new Date(appointment.start_at))}`
+      : `[Cerebro Cancellation] ${client.name} — ${formatDateTime(new Date(appointment.start_at))}`;
+    const calendarText = type === 'booking_confirmation'
+      ? `PT session booked.\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\nAppointment-ID: ${appointment.id}\nStart-ISO: ${appointment.start_at}\nEnd-ISO: ${appointment.end_at}`
+      : `PT session cancelled.\nClient: ${client.name} <${client.email}>\nWhen: ${formatDateTime(new Date(appointment.start_at))}\nAppointment-ID: ${appointment.id}\nStart-ISO: ${appointment.start_at}\nEnd-ISO: ${appointment.end_at}`;
+    await sendEmail(calendarEmail, calendarSubject, calendarText);
+  } catch (error) {
+    console.error('Calendar sync notification failed:', error);
+  }
 }
 
 async function sendCreditEmail(adminClient: ReturnType<typeof createClient>, client: PTClientRow, balance: number) {
