@@ -4,7 +4,15 @@
 2026-05-16 by Claude
 
 ## Last completed task
-Email-triggered Google Calendar sync for PT bookings (commit 8bde126):
+Programmes: global template flow + clickable cards + assign-to-client copy (commit bb148af):
+- Wizard now saves to `pt_program_templates` (global). Client selection is now optional - it provides AI generation context; if selected, an assignment copy is also created alongside the template.
+- Programmes list: template cards now link to `/programmes/template/[id]`; assignment cards link to `/programmes/[id]/edit`.
+- New template detail page (`/programmes/template/[id]`): shows name, goal, phase list with workout days, "Edit template" and "Assign to client" buttons.
+- "Assign to client" opens inline dropdown; on confirm calls `POST /api/pt/programmes/assign` which deep-copies the template's `programme` JSON into a new `pt_program_assignments` row with `template_id` reference. Editing the client's copy never touches the template.
+- New template edit page (`/programmes/template/[id]/edit`): full phase/workout editor saving to `pt_program_templates`.
+- New `/api/pt/programmes/assign` route: reads template, inserts assignment copy, fires `programme_assigned` event.
+
+Previous task: Email-triggered Google Calendar sync for PT bookings (commit 8bde126):
 - edge function sends calendar-sync emails to avila.phm@gmail.com on booking/cancellation
 - ~/.cerebro/gmail-calendar-sync.py checks Gmail every 5 min via gws, creates/deletes calendar events
 - ~/Library/LaunchAgents/au.cerebroai.gmail-calendar-sync.plist runs it automatically
