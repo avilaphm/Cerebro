@@ -86,16 +86,6 @@ export default async function WebsiteStats() {
     .map(([src, d]) => ({ src, visitors: d.visitors.size, chats: d.chats, emails: d.emails }))
     .sort((a, b) => b.visitors - a.visitors);
 
-  // UTM links for each channel
-  const base = 'https://www.cerebroai.au';
-  const utmLinks = [
-    { channel: 'Instagram', url: `${base}/?utm_source=instagram&utm_medium=bio&utm_campaign=organic` },
-    { channel: 'YouTube', url: `${base}/?utm_source=youtube&utm_medium=description&utm_campaign=organic` },
-    { channel: 'LinkedIn', url: `${base}/?utm_source=linkedin&utm_medium=bio&utm_campaign=organic` },
-    { channel: 'X', url: `${base}/?utm_source=x&utm_medium=bio&utm_campaign=organic` },
-    { channel: 'TikTok', url: `${base}/?utm_source=tiktok&utm_medium=bio&utm_campaign=organic` },
-  ];
-
   return (
     <section className="mb-10">
       <div className="mb-4 flex items-baseline justify-between">
@@ -141,22 +131,9 @@ export default async function WebsiteStats() {
         </div>
       ) : (
         <p className="mb-4 text-sm text-black/30 border border-black/8 px-4 py-3">
-          No visitors tracked yet. Tag your links with UTM parameters below and share them on your socials.
+          No visitors tracked yet. Data will appear here once people visit the site.
         </p>
       )}
-
-      {/* UTM tracking links */}
-      <div className="border border-black/10 bg-white p-4">
-        <p className="mb-3 text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Tracking links — copy and use in bio / posts</p>
-        <div className="space-y-2">
-          {utmLinks.map(({ channel, url }) => (
-            <div key={channel} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
-              <p className="w-20 shrink-0 text-xs font-medium text-black/60">{channel}</p>
-              <p className="flex-1 truncate font-mono text-[0.65rem] text-black/40 select-all">{url}</p>
-            </div>
-          ))}
-        </div>
-      </div>
     </section>
   );
 }

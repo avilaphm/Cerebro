@@ -1,6 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
 import SocialChannels from './components/SocialChannels';
-import TrafficSources from './components/TrafficSources';
 import WebsiteStats from './components/WebsiteStats';
 
 async function getStats() {
@@ -70,8 +69,6 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
-
-      <TrafficSources />
 
       <SocialChannels />
 
