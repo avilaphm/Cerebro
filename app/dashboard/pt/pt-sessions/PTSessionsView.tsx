@@ -487,6 +487,32 @@ export default function PTSessionsView({
       },
     });
 
+    const sessionSummary = rows
+      .map((row) =>
+        `${row.exercise_name} set ${row.set_number}: ${row.weight ?? '-'}kg x ${row.reps ?? '-'} reps`,
+      )
+      .join('; ');
+
+    void supabase.functions.invoke('update-client-brain', {
+      body: {
+        client_id: selectedClient.id,
+        trigger_type: 'workout_logged',
+        content: `Coach logged ${day.title} for ${selectedClient.name}. ${sessionSummary || 'No set details recorded.'}`,
+        structured_data: {
+          source: 'pt_sessions',
+          workout_log_id: workoutId,
+          assignment_id: assignment.id,
+          programme_name: assignment.name,
+          workout_title: day.title,
+          phase_index: selectedWorkout.phaseIndex,
+          day_index: selectedWorkout.dayIndex,
+          block_index: blockIndex,
+          week_number: weekWithinBlock,
+          sets: rows,
+        },
+      },
+    });
+
     // Update programme progression if block advanced
     if (progress && !progress.allBlocksDone) {
       const updatedLogs: WorkoutLog[] = [

@@ -14,7 +14,7 @@ export default async function PTSessionsPage() {
     supabase
       .from('pt_clients')
       .select('*')
-      .eq('status', 'active')
+      .in('status', ['invited', 'active'])
       .order('name', { ascending: true }),
     supabase
       .from('pt_exercises')

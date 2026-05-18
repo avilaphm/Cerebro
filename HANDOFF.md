@@ -4,7 +4,15 @@
 2026-05-18 by Codex
 
 ## Last completed task
-Dashboard contrast and padding audit (commit: current HEAD):
+PT Sessions new-client/programme visibility and workout brain memory (commit: current HEAD):
+- Fixed `/dashboard/pt/pt-sessions` so clients with `invited` status now appear alongside active clients. This makes newly added clients available for session tracking before they complete client-login setup.
+- Verified in the browser that newly created client Mira Juka appears in PT Sessions and her assigned workout programme loads.
+- New clients created from `/dashboard/pt/clients` now start with `use_brain: true`.
+- Coach-logged workouts from PT Sessions now call `update-client-brain` with the workout title, phase/day/block/week, and all logged set rows after saving `pt_workout_logs` and `pt_set_logs`.
+- Updated and redeployed `update-client-brain` so `workout_logged` updates the client brain even if an older client has `use_brain` disabled. Other trigger types still respect the feature flag.
+- Verification: `npm run build` passes; `supabase functions deploy update-client-brain` succeeded. Targeted lint still reports pre-existing React 19 `set-state-in-effect` errors in `PTSessionsView.tsx`.
+
+Previous completed task: Dashboard contrast and padding audit (commit: ae8ab38):
 - Fixed the shared liquid dashboard/client CSS so solid black buttons use true white text instead of the warm page background token.
 - Raised muted dashboard text tokens (`text-black/15` through `text-black/70`) to readable contrast levels inside the Cerebro dashboard and PT dashboard skins.
 - Added minimum control height and fallback padding for dashboard/client buttons and bordered action links so cramped controls have a consistent tap target.

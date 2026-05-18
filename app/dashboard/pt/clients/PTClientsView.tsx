@@ -41,6 +41,7 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
         goals: form.goals.trim() || null,
         notes: form.notes.trim() || null,
         status: 'invited',
+        use_brain: true,
       })
       .select()
       .single();

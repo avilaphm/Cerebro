@@ -316,7 +316,7 @@ Deno.serve(async (req: Request) => {
       .eq('id', client_id)
       .single();
 
-    if (!clientRow?.use_brain) {
+    if (!clientRow?.use_brain && trigger_type !== 'workout_logged') {
       return json({ ok: true, brain_updated: false });
     }
 
