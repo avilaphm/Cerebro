@@ -4,7 +4,14 @@
 2026-05-18 by Codex
 
 ## Last completed task
-Seed exercise library auth fix (commit: this commit):
+Dashboard contrast and padding audit (commit: current HEAD):
+- Fixed the shared liquid dashboard/client CSS so solid black buttons use true white text instead of the warm page background token.
+- Raised muted dashboard text tokens (`text-black/15` through `text-black/70`) to readable contrast levels inside the Cerebro dashboard and PT dashboard skins.
+- Added minimum control height and fallback padding for dashboard/client buttons and bordered action links so cramped controls have a consistent tap target.
+- Strengthened input text and placeholder contrast, and kept light/glass action controls on stronger off-white surfaces.
+- Verification: `npm run build` passes; browser contrast scan across `/dashboard`, `/dashboard/leads`, `/dashboard/bookings`, `/dashboard/pt/overview`, `/dashboard/pt/clients`, `/dashboard/pt/programmes`, `/dashboard/pt/exercises`, and `/dashboard/pt/settings` returned zero failures.
+
+Previous completed task: Seed exercise library auth fix (commit: edadd01):
 - Fixed `seed-exercise-library` Edge Function auth after it had been changed to a hardcoded `x-trigger-token`.
 - Restored the standard `Authorization: Bearer ${INTERNAL_SECRET}` check used by the rest of the project.
 - Preserved the new optional `{ "limit": number }` request body support and `remaining` response field.
@@ -184,7 +191,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-69c7092 - Add exercise library: 400-exercise DB, card UI, YouTube video search, rich client workout view
+current HEAD - Improve dashboard contrast and control spacing
 
 ## Current state
 

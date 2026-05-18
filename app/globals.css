@@ -89,11 +89,11 @@ body::before {
 .client-liquid {
   --liquid-bg: #ece9e2;
   --liquid-fg-1: rgba(0, 0, 0, 0.92);
-  --liquid-fg-2: rgba(0, 0, 0, 0.62);
-  --liquid-fg-3: rgba(0, 0, 0, 0.38);
+  --liquid-fg-2: rgba(0, 0, 0, 0.94);
+  --liquid-fg-3: rgba(0, 0, 0, 0.78);
   --liquid-fg-4: rgba(0, 0, 0, 0.18);
   --liquid-glass: rgba(255, 255, 255, 0.46);
-  --liquid-glass-strong: rgba(255, 255, 255, 0.76);
+  --liquid-glass-strong: rgba(255, 255, 255, 0.82);
   --liquid-border: rgba(0, 0, 0, 0.08);
   --liquid-border-strong: rgba(0, 0, 0, 0.15);
   --liquid-highlight: rgba(255, 255, 255, 0.92);
@@ -135,6 +135,26 @@ body::before {
   border-radius: 999px;
 }
 
+.liquid-dashboard main button,
+.liquid-dashboard main a[class*="border"],
+.liquid-dashboard main a[class*="bg-black"],
+.liquid-dashboard main a[class*="bg-white"],
+.client-liquid button,
+.client-liquid a[class*="border"],
+.client-liquid a[class*="bg-black"],
+.client-liquid a[class*="bg-white"] {
+  min-height: 2.35rem;
+  align-items: center;
+}
+
+.liquid-dashboard main button:not([class*="px-"]):not([class*="p-"]),
+.liquid-dashboard main a[class*="border"]:not([class*="px-"]):not([class*="p-"]),
+.client-liquid button:not([class*="px-"]):not([class*="p-"]),
+.client-liquid a[class*="border"]:not([class*="px-"]):not([class*="p-"]) {
+  padding-inline: 0.85rem;
+  padding-block: 0.5rem;
+}
+
 .liquid-dashboard input,
 .liquid-dashboard textarea,
 .liquid-dashboard select,
@@ -146,6 +166,14 @@ body::before {
   border-radius: 14px !important;
   box-shadow: inset 0 1px 0 var(--liquid-highlight);
   font-size: 16px; /* Prevent iOS Safari auto-zoom on focus */
+  color: #050505 !important;
+}
+
+.liquid-dashboard input::placeholder,
+.liquid-dashboard textarea::placeholder,
+.client-liquid input::placeholder,
+.client-liquid textarea::placeholder {
+  color: rgba(0, 0, 0, 0.52) !important;
 }
 
 .liquid-dashboard [class*="text-black/40"],
@@ -163,12 +191,39 @@ body::before {
   color: var(--liquid-fg-2) !important;
 }
 
+.liquid-dashboard [class*="text-black/15"],
+.liquid-dashboard [class*="text-black/20"],
 .liquid-dashboard [class*="text-black/25"],
 .liquid-dashboard [class*="text-black/30"],
 .liquid-dashboard [class*="text-black/35"],
+.client-liquid [class*="text-black/15"],
+.client-liquid [class*="text-black/20"],
 .client-liquid [class*="text-black/25"],
 .client-liquid [class*="text-black/30"],
 .client-liquid [class*="text-black/35"] {
+  color: var(--liquid-fg-3) !important;
+}
+
+.liquid-dashboard main a[class*="text-black/15"],
+.liquid-dashboard main a[class*="text-black/20"],
+.liquid-dashboard main a[class*="text-black/25"],
+.liquid-dashboard main a[class*="text-black/30"],
+.liquid-dashboard main a[class*="text-black/35"],
+.liquid-dashboard main button[class*="text-black/15"],
+.liquid-dashboard main button[class*="text-black/20"],
+.liquid-dashboard main button[class*="text-black/25"],
+.liquid-dashboard main button[class*="text-black/30"],
+.liquid-dashboard main button[class*="text-black/35"],
+.client-liquid a[class*="text-black/15"],
+.client-liquid a[class*="text-black/20"],
+.client-liquid a[class*="text-black/25"],
+.client-liquid a[class*="text-black/30"],
+.client-liquid a[class*="text-black/35"],
+.client-liquid button[class*="text-black/15"],
+.client-liquid button[class*="text-black/20"],
+.client-liquid button[class*="text-black/25"],
+.client-liquid button[class*="text-black/30"],
+.client-liquid button[class*="text-black/35"] {
   color: var(--liquid-fg-3) !important;
 }
 
@@ -183,13 +238,49 @@ body::before {
 
 .liquid-dashboard .bg-black,
 .client-liquid .bg-black {
-  background: var(--liquid-fg-1) !important;
-  color: var(--liquid-bg) !important;
+  background: #080808 !important;
+  color: #ffffff !important;
 }
 
 .liquid-dashboard .text-white,
 .client-liquid .text-white {
-  color: var(--liquid-bg) !important;
+  color: #ffffff !important;
+}
+
+.liquid-dashboard .bg-black *,
+.client-liquid .bg-black *,
+.liquid-dashboard [class*="bg-black"] .text-white,
+.client-liquid [class*="bg-black"] .text-white {
+  color: inherit !important;
+}
+
+.liquid-dashboard main .bg-black:hover,
+.liquid-dashboard main button:hover[class*="hover:bg-white"],
+.liquid-dashboard main a:hover[class*="hover:bg-white"],
+.client-liquid .bg-black:hover,
+.client-liquid button:hover[class*="hover:bg-white"],
+.client-liquid a:hover[class*="hover:bg-white"] {
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #050505 !important;
+}
+
+.liquid-dashboard main button[class*="bg-white"],
+.liquid-dashboard main a[class*="bg-white"],
+.liquid-dashboard main button[class*="bg-[#fbfbf8]"],
+.liquid-dashboard main a[class*="bg-[#fbfbf8]"],
+.client-liquid button[class*="bg-white"],
+.client-liquid a[class*="bg-white"],
+.client-liquid button[class*="bg-[#fbfbf8]"],
+.client-liquid a[class*="bg-[#fbfbf8]"] {
+  background: var(--liquid-glass-strong) !important;
+  color: #050505 !important;
+}
+
+.liquid-dashboard main button[class*="border-black"],
+.liquid-dashboard main a[class*="border-black"],
+.client-liquid button[class*="border-black"],
+.client-liquid a[class*="border-black"] {
+  border-color: rgba(0, 0, 0, 0.18) !important;
 }
 
 .liquid-dashboard .border-black,
