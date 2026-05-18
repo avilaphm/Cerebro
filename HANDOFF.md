@@ -4,7 +4,13 @@
 2026-05-18 by Codex
 
 ## Last completed task
-Client workout UI refinements (commit: this commit):
+Client booking calendar UI spacing (commit: this commit):
+- Added more top breathing room before the first 6am row in the client booking day/week calendar grid.
+- Moved booking slots, time labels, and grid lines down together so the first available slot no longer crowds the date header.
+- Month view now starts from today for the current month instead of showing past/blank days before today. Previous months are still reachable with the left arrow.
+- Verification: `npm run lint -- app/client/ClientPortal.tsx` passes with existing warnings only; `npm run build` passes; mobile browser smoke test on `/client` booking tab passed.
+
+Previous completed task: Client workout UI refinements (commit: 6aefdd3):
 - Workout preview section cards now have consistent padding, rounded off-white surfaces, and exercise counts in the card header.
 - Exercise logger sheet now uses off-white instead of grey and keeps set labels/inputs at black text contrast.
 - Logged set rows visually soften once reps are entered, while unlogged rows remain white/black.

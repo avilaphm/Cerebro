@@ -113,7 +113,7 @@ type BookingCalendarView = '3days' | 'week' | 'month';
 const BOOKING_CALENDAR_START_HOUR = 6;
 const BOOKING_CALENDAR_END_HOUR = 14;
 const BOOKING_HOUR_HEIGHT = 72;
-const BOOKING_GRID_TOP_PAD = 20;
+const BOOKING_GRID_TOP_PAD = 44;
 
 function calcPhaseProgress(
   logs: WorkoutLog[],
@@ -767,9 +767,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const month = bookingMonth.getMonth();
     const first = new Date(year, month, 1);
     const last = new Date(year, month + 1, 0);
-    const startDay = new Date(first);
-    const dow = startDay.getDay();
-    startDay.setDate(startDay.getDate() - (dow === 0 ? 6 : dow - 1));
+    const today = new Date();
+    const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+    const startDay = isCurrentMonth ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : new Date(first);
+    if (!isCurrentMonth) {
+      const dow = startDay.getDay();
+      startDay.setDate(startDay.getDate() - (dow === 0 ? 6 : dow - 1));
+    }
     const endDay = new Date(last);
     const endDow = endDay.getDay();
     endDay.setDate(endDay.getDate() + (endDow === 0 ? 5 : endDow <= 5 ? 5 - endDow : 6));
@@ -777,7 +781,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const current = new Date(startDay);
     while (current <= endDay) {
       const d = current.getDay();
-      if (d >= 1 && d <= 5) days.push(new Date(current));
+      if (d >= 1 && d <= 5 && (!isCurrentMonth || current >= startDay)) days.push(new Date(current));
       current.setDate(current.getDate() + 1);
     }
     return days;
@@ -2287,7 +2291,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
     const renderCalendarSlot = (slot: PTBookableSlot, compact = false) => {
       const duration = Math.max(25, (new Date(slot.end_at).getTime() - new Date(slot.start_at).getTime()) / 60000);
-      const top = Math.max(0, (calendarOffsetMinutes(slot.start_at) / 60) * BOOKING_HOUR_HEIGHT);
+      const top = BOOKING_GRID_TOP_PAD + Math.max(0, (calendarOffsetMinutes(slot.start_at) / 60) * BOOKING_HOUR_HEIGHT);
       const height = Math.max(34, (duration / 60) * BOOKING_HOUR_HEIGHT);
       const isOwn = slot.reason === 'You booked this';
 
@@ -2340,14 +2344,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             style={{
               gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))`,
               height: (BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR) * BOOKING_HOUR_HEIGHT + BOOKING_GRID_TOP_PAD,
-              paddingTop: BOOKING_GRID_TOP_PAD,
             }}
           >
             <div className="relative bg-white">
               {Array.from({ length: BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR + 1 }, (_, index) => {
                 const hour = BOOKING_CALENDAR_START_HOUR + index;
                 return (
-                  <div key={hour} className="absolute right-2 -translate-y-1/2 text-xs text-black/35" style={{ top: index * BOOKING_HOUR_HEIGHT }}>
+                  <div key={hour} className="absolute right-2 -translate-y-1/2 text-xs text-black/35" style={{ top: BOOKING_GRID_TOP_PAD + index * BOOKING_HOUR_HEIGHT }}>
                     {new Date(2026, 0, 1, hour).toLocaleTimeString('en-AU', { hour: 'numeric' })}
                   </div>
                 );
@@ -2362,7 +2365,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               return (
                 <div key={key} className="relative border-l border-black/10">
                   {Array.from({ length: BOOKING_CALENDAR_END_HOUR - BOOKING_CALENDAR_START_HOUR + 1 }, (_, index) => (
-                    <div key={index} className="absolute inset-x-0 border-t border-black/10" style={{ top: index * BOOKING_HOUR_HEIGHT }} />
+                    <div key={index} className="absolute inset-x-0 border-t border-black/10" style={{ top: BOOKING_GRID_TOP_PAD + index * BOOKING_HOUR_HEIGHT }} />
                   ))}
                   {daySlots.map((slot) => renderCalendarSlot(slot, days.length > 1))}
                 </div>
