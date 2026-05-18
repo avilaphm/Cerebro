@@ -13,7 +13,11 @@ export interface PTExercise {
 export interface PTClient {
   id: string;
   name: string;
+  last_name: string | null;
   email: string;
+  phone: string | null;
+  gender: 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | null;
+  date_of_birth: string | null;
   status: 'invited' | 'active' | 'paused' | 'archived';
   goals: string | null;
   notes: string | null;

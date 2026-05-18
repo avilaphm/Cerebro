@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Salad, Wrench, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Salad, Settings, Wrench } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock, CANONICAL_SECTION_ORDER } from '@/utils/pt/programme';
@@ -43,6 +43,7 @@ import type {
 import MacroWidget from './MacroWidget';
 import MessageBubble from './MessageBubble';
 import NutritionTab from './NutritionTab';
+import SettingsTab from './SettingsTab';
 import WeeklyCheckinModal from './WeeklyCheckinModal';
 
 const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
@@ -96,11 +97,6 @@ interface WorkoutSectionView {
   exercises: WorkoutExerciseView[];
 }
 
-interface VideoState {
-  id: string;
-  title: string;
-}
-
 interface MetricDraft {
   measured_at: string;
   weight_kg: string;
@@ -111,7 +107,7 @@ interface MetricDraft {
   notes: string;
 }
 
-type ClientScreen = 'overview' | 'nutrition' | 'workout' | 'tools';
+type ClientScreen = 'overview' | 'nutrition' | 'workout' | 'booking' | 'settings';
 type BookingCalendarView = '3days' | 'week' | 'month';
 const BOOKING_CALENDAR_START_HOUR = 6;
 const BOOKING_CALENDAR_END_HOUR = 14;
@@ -349,11 +345,14 @@ function getYouTubeEmbedUrl(videoId: string, autoplay = false) {
     rel: '0',
     modestbranding: '1',
     playsinline: '1',
+    mute: '1',
     enablejsapi: '1',
     playerapiid: videoId,
   });
   if (typeof window !== 'undefined') params.set('origin', window.location.origin);
   if (autoplay) params.set('autoplay', '1');
+  if (autoplay) params.set('loop', '1');
+  if (autoplay) params.set('playlist', videoId);
   return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 }
 
@@ -440,6 +439,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [movingBookingId, setMovingBookingId] = useState<string | null>(null);
   const [bookingView, setBookingView] = useState<BookingCalendarView>('3days');
   const [bookingDate, setBookingDate] = useState(() => getNextWeekday(new Date()));
+  const [nowMs] = useState(() => Date.now());
   const [bookingMonth, setBookingMonth] = useState(() => {
     const date = new Date();
     date.setDate(1);
@@ -468,10 +468,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
   const [submittedSectionNotes, setSubmittedSectionNotes] = useState<Record<string, boolean>>({});
   const [submittingSectionNote, setSubmittingSectionNote] = useState<string | null>(null);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [openCues, setOpenCues] = useState<Record<string, boolean>>({});
+  const [openLastTime, setOpenLastTime] = useState<Record<string, boolean>>({});
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
-  const [activeVideo, setActiveVideo] = useState<VideoState | null>(null);
+  const [activeWorkoutExerciseId, setActiveWorkoutExerciseId] = useState<string | null>(null);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingWorkout, setSavingWorkout] = useState(false);
@@ -627,21 +627,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   }, [loadPortal]);
 
   useEffect(() => {
-    if (!activeVideo) return;
+    if (!selectedWorkout?.started) return;
 
-    const handleMessage = (event: MessageEvent) => {
-      if (typeof event.data !== 'string') return;
-      try {
-        const payload = JSON.parse(event.data) as { event?: string; info?: number };
-        if (payload.event === 'onStateChange' && payload.info === 0) setActiveVideo(null);
-      } catch {
-        return;
-      }
-    };
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>('[data-workout-exercise-id]'));
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      const nextId = (visible?.target as HTMLElement | undefined)?.dataset.workoutExerciseId ?? null;
+      if (nextId) setActiveWorkoutExerciseId(nextId);
+    }, { threshold: [0.35, 0.55, 0.75] });
 
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [activeVideo]);
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [selectedWorkout?.started, selectedWorkout?.phaseIndex, selectedWorkout?.dayIndex]);
 
   const assignment = assignments[0] ?? null;
   const phaseProgress = useMemo(() => {
@@ -708,8 +707,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     ? activePhase.days.findIndex((_, i) => !workoutIsDone(workoutLogs, activePhaseIndex, i, activeProgress))
     : -1;
   const nextWorkoutDay = nextWorkoutDayIndex >= 0 ? (activePhase?.days[nextWorkoutDayIndex] ?? null) : null;
-  const activeBookings = bookings.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(booking.status));
-  const nextBooking = activeBookings.find((booking) => new Date(booking.start_at).getTime() > Date.now()) ?? null;
+  const activeBookings = useMemo(
+    () => bookings.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(booking.status)),
+    [bookings],
+  );
+  const nextBooking = activeBookings.find((booking) => new Date(booking.start_at).getTime() > nowMs) ?? null;
   const heldCredits = activeBookingHoldCount(bookings);
   const availableCredits = availableSessionCredits(client, bookings);
   const bookableSlots = useMemo(
@@ -733,7 +735,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       }
     });
     activeBookings.forEach((booking) => {
-      if (new Date(booking.start_at).getTime() <= Date.now()) return;
+      if (new Date(booking.start_at).getTime() <= nowMs) return;
       const covered = Array.from(byStart.values()).some((s) => s.booking_id === booking.id);
       if (covered) return;
       byStart.set(booking.start_at, {
@@ -747,7 +749,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       });
     });
     return Array.from(byStart.values()).sort((a, b) => a.start_at.localeCompare(b.start_at));
-  }, [bookableSlots, activeBookings]);
+  }, [bookableSlots, activeBookings, nowMs]);
   const slotsByDate = useMemo(() => {
     const map = new Map<string, PTBookableSlot[]>();
     enrichedBookableSlots.forEach((slot) => {
@@ -878,15 +880,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setActiveContext({ phase_index: phaseIndex, phase_title: phase.title, day_index: dayIndex, day_title: day.title });
 
     const initialCounts: Record<string, number> = {};
-    const initialSections: Record<string, boolean> = {};
-    getWorkoutSections(day, phase, blockIndex).forEach((section, index) => {
-      initialSections[section.id] = index === 0;
+    getWorkoutSections(day, phase, blockIndex).forEach((section) => {
       section.exercises.forEach(({ exercise, values }) => {
         initialCounts[exercise.id] = parseSets(values.sets);
       });
     });
     setSetCounts((current) => ({ ...initialCounts, ...current }));
-    setOpenSections(initialSections);
     setSetDrafts((current) => {
       const next = { ...current };
       getWorkoutSections(day, phase, blockIndex).forEach((section) => {
@@ -1607,208 +1606,204 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const renderWorkoutLogger = () => {
     if (!selectedWorkout || !selectedPhase || !selectedDay) return null;
     const sections = getWorkoutSections(selectedDay, selectedPhase, selectedProgress?.blockIndex ?? 0);
+    const exerciseScreens = sections.flatMap((section, sectionIndex) =>
+      section.exercises.map((exerciseView, exerciseIndex) => ({
+        ...exerciseView,
+        section,
+        sectionIndex,
+        exerciseIndex,
+      })),
+    );
 
     return (
-      <div className="mx-auto max-w-3xl pb-28">
-        <button
-          type="button"
-          onClick={() => setSelectedWorkout({ ...selectedWorkout, started: false })}
-          className="mb-5 inline-flex items-center gap-2 text-sm text-black/45 hover:text-black"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Preview
-        </button>
-
-        <div className="mb-5">
-          <p className="text-[0.65rem] uppercase tracking-[0.18em] text-black/35">Logging</p>
-          <h2 className="mt-1 font-display text-2xl font-light md:text-3xl">{selectedDay.title}</h2>
+      <div className="mx-auto max-w-md pb-28 md:max-w-3xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setSelectedWorkout({ ...selectedWorkout, started: false })}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white/75 text-black/55 backdrop-blur hover:text-black"
+            aria-label="Back to workout preview"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 text-right">
+            <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Logging</p>
+            <h2 className="truncate font-display text-xl font-light md:text-2xl">{selectedDay.title}</h2>
+          </div>
         </div>
 
-        <div className="space-y-4">
-          {sections.map((section) => {
-            const noteKey = sectionNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, section.id);
-            const isOpen = openSections[section.id] ?? false;
+        <div className="space-y-6 md:space-y-8">
+          {exerciseScreens.map(({ exercise, values, section, exerciseIndex }, screenIndex) => {
+            const count = setCounts[exercise.id] ?? parseSets(values.sets);
+            const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
+            const videoId = getYouTubeId(exercise.video_url);
+            const cueKey = `${section.id}-${exercise.id}`;
+            const lastTimeKey = `${cueKey}-last`;
+            const cuesAreOpen = openCues[cueKey] ?? false;
+            const lastTimeIsOpen = openLastTime[lastTimeKey] ?? false;
+            const nextScreen = exerciseScreens[screenIndex + 1] ?? null;
+            const nextVideoId = nextScreen ? getYouTubeId(nextScreen.exercise.video_url) : null;
+            const videoIsActive = activeWorkoutExerciseId ? activeWorkoutExerciseId === exercise.id : screenIndex === 0;
+
             return (
-              <section key={section.id} className="border border-black/10 bg-white">
-                <button
-                  type="button"
-                  onClick={() => setOpenSections((current) => ({ ...current, [section.id]: !isOpen }))}
-                  className="flex w-full items-center justify-between gap-4 px-4 py-4 text-left"
-                >
-                  <div>
-                    <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">{section.title}</p>
-                    <p className="mt-1 text-sm text-black/55">{section.exercises.length} exercise{section.exercises.length === 1 ? '' : 's'}</p>
+              <section key={exercise.id} data-workout-exercise-id={exercise.id} className="min-h-[calc(100dvh-8rem)] scroll-mt-4">
+                <div className="relative overflow-hidden rounded-[2rem] bg-black shadow-[0_24px_70px_rgba(0,0,0,0.16)] md:rounded-[2.25rem]">
+                  <div className="relative aspect-[4/5] bg-black md:aspect-video">
+                    {videoId && videoIsActive ? (
+                      <iframe
+                        title={`${exercise.name} demo`}
+                        src={getYouTubeEmbedUrl(videoId, true)}
+                        className="absolute inset-0 h-full w-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                      />
+                    ) : videoId ? (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black px-6 text-center text-sm text-white/50">
+                        Demo starts as this exercise comes into view
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/45">
+                        No video added
+                      </div>
+                    )}
+                    <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4 text-white md:p-5">
+                      <div className="rounded-full bg-black/25 px-3 py-1 text-[0.56rem] uppercase tracking-[0.16em] backdrop-blur">
+                        {section.title}
+                      </div>
+                      <div className="rounded-full bg-black/25 px-3 py-1 text-[0.56rem] uppercase tracking-[0.16em] backdrop-blur">
+                        {screenIndex + 1}/{exerciseScreens.length}
+                      </div>
+                    </div>
                   </div>
-                  <ChevronRight className={`h-5 w-5 text-black/35 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                </button>
 
-                {isOpen && (
-                  <div className="border-t border-black/8 px-3 pb-5 pt-1 md:px-4">
-                    <div className="space-y-4">
-                      {section.exercises.map(({ exercise, values }) => {
-                        const count = setCounts[exercise.id] ?? parseSets(values.sets);
-                        const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
-                        const last = history[0] ?? null;
-                        const videoId = getYouTubeId(exercise.video_url);
-                        const cueKey = `${section.id}-${exercise.id}`;
-                        const cuesAreOpen = openCues[cueKey] ?? false;
+                  <div className="relative z-10 -mt-9 rounded-t-[2rem] border border-white/70 bg-[#fbfbf8]/95 p-4 shadow-[0_-18px_45px_rgba(0,0,0,0.18)] backdrop-blur md:-mt-12 md:p-5">
+                    <div className="mb-4">
+                      <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Exercise {exerciseIndex + 1}</p>
+                      <h3 className="mt-1 text-xl font-medium leading-tight text-black md:text-2xl">{exercise.name}</h3>
+                      <p className="mt-1 text-sm text-black/45">
+                        Target: {values.sets || '?'} sets - {values.reps || '?'} reps
+                        {exercise.rest ? ` - ${exercise.rest}` : ''}
+                      </p>
+                    </div>
 
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setOpenCues((current) => ({ ...current, [cueKey]: !cuesAreOpen }))}
+                        className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white/85 px-4 py-3 text-left text-sm text-black/65 shadow-sm transition-colors hover:border-black/25 hover:text-black"
+                      >
+                        <span>Verbal cues</span>
+                        <ChevronRight className={`h-5 w-5 text-black/45 transition-transform ${cuesAreOpen ? 'rotate-90' : ''}`} />
+                      </button>
+
+                      {cuesAreOpen && (
+                        <ul className="rounded-[1.35rem] border border-black/8 bg-white/80 px-6 py-4">
+                          {(exercise.cues.length > 0 ? exercise.cues : ['Move with control', 'Keep the target muscles loaded', 'Use a range you can own', 'Stop if pain changes your form']).slice(0, 4).map((cue) => (
+                            <li key={cue} className="list-disc text-sm leading-relaxed text-black/60">
+                              {cue}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setOpenLastTime((current) => ({ ...current, [lastTimeKey]: !lastTimeIsOpen }))}
+                        className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white/85 px-4 py-3 text-left text-sm text-black/65 shadow-sm transition-colors hover:border-black/25 hover:text-black"
+                      >
+                        <span>Last time</span>
+                        <ChevronRight className={`h-5 w-5 text-black/45 transition-transform ${lastTimeIsOpen ? 'rotate-90' : ''}`} />
+                      </button>
+
+                      {lastTimeIsOpen && (
+                        <div className="rounded-[1.35rem] border border-black/8 bg-white/80 px-4 py-4">
+                          {history.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {history.slice(0, Math.max(count, history.length)).map((log) => (
+                                <span key={`${log.id}-${log.set_number}`} className="rounded-full border border-black/8 bg-[#fbfbf8] px-3 py-2 text-xs text-black/55">
+                                  Set {log.set_number}: {log.weight ?? '-'}kg x {log.reps ?? '-'}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-black/40">No previous sets logged for this exercise yet.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+                      {Array.from({ length: count }).map((_, setIndex) => {
+                        const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
+                        const draft = setDrafts[key] ?? { reps: '', weight: '' };
                         return (
-                          <div key={exercise.id} className="border border-black/8 bg-[#fbfbf8] p-3 md:p-4">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-medium">{exercise.name}</p>
-                                <p className="mt-1 text-xs text-black/45">
-                                  Target: {values.sets || '?'} sets · {values.reps || '?'} reps
-                                </p>
-                                {last && (
-                                  <p className="mt-1 text-xs text-black/35">
-                                    Last: {last.weight ?? '-'}kg x {last.reps ?? '-'}
-                                  </p>
-                                )}
-                              </div>
+                          <div key={key} className="grid grid-cols-[4.5rem_1fr_1fr] gap-2 md:grid-cols-[5rem_1fr_1fr]">
+                            <div className="flex h-16 items-center rounded-[1.35rem] border border-black/10 bg-white/80 px-3 text-sm text-black/45">
+                              Set {setIndex + 1}
                             </div>
-
-                            {(videoId || exercise.cues.length > 0) && (
-                              <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,16rem)_1fr] md:items-start">
-                                {videoId ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setActiveVideo({ id: videoId, title: exercise.name })}
-                                    className="group relative aspect-video overflow-hidden border border-black/10 bg-black text-left"
-                                  >
-                                    <iframe
-                                      title={`${exercise.name} demo`}
-                                      src={getYouTubeEmbedUrl(videoId)}
-                                      className="h-full w-full pointer-events-none opacity-90 transition-opacity group-hover:opacity-100"
-                                      allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                    />
-                                    <span className="absolute inset-0 flex items-center justify-center bg-black/20 text-white transition-colors group-hover:bg-black/10">
-                                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-black shadow-sm">
-                                        <Play className="h-4 w-4 fill-black" />
-                                      </span>
-                                    </span>
-                                  </button>
-                                ) : (
-                                  <div className="flex aspect-video items-center justify-center border border-black/10 bg-white text-xs text-black/30">
-                                    No video added
-                                  </div>
-                                )}
-
-                                <div>
-                                  {exercise.cues.length > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setOpenCues((current) => ({ ...current, [cueKey]: !cuesAreOpen }))}
-                                      className={`flex w-full items-center justify-between border px-3 py-2 text-left text-xs transition-colors ${
-                                        cuesAreOpen
-                                          ? 'border-black bg-white text-black'
-                                          : 'border-black/10 bg-white/60 text-black/45 hover:border-black/25 hover:text-black'
-                                      }`}
-                                    >
-                                      <span>Verbal cues</span>
-                                      <ChevronRight className={`h-4 w-4 transition-transform ${cuesAreOpen ? 'rotate-90' : ''}`} />
-                                    </button>
-                                  )}
-
-                                  {cuesAreOpen && (
-                                    <ul className="mt-2 list-disc space-y-1 border border-black/8 bg-white px-6 py-3">
-                                      {exercise.cues.slice(0, 5).map((cue) => (
-                                        <li key={cue} className="text-xs leading-relaxed text-black/60">
-                                          {cue}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {history.length > 0 && (
-                              <div className="mt-4 border border-black/8 bg-white px-3 py-2">
-                                <p className="text-[0.58rem] uppercase tracking-[0.14em] text-black/30">Last time</p>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {history.slice(0, Math.max(count, history.length)).map((log) => (
-                                    <span key={`${log.id}-${log.set_number}`} className="border border-black/8 bg-[#fbfbf8] px-2 py-1 text-xs text-black/50">
-                                      Set {log.set_number}: {log.weight ?? '-'}kg x {log.reps ?? '-'}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            <div className="mt-4 space-y-2">
-                              {Array.from({ length: count }).map((_, setIndex) => {
-                                const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
-                                const draft = setDrafts[key] ?? { reps: '', weight: '' };
-                                return (
-                                  <div key={key} className="grid grid-cols-[3.25rem_1fr_1fr] gap-2">
-                                    <div className="border border-black/10 bg-white px-2 py-3 text-xs text-black/40">Set {setIndex + 1}</div>
-                                    <input
-                                      value={draft.weight}
-                                      onChange={(event) => updateSetDraft(key, { weight: event.target.value })}
-                                      className="min-w-0 border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
-                                      placeholder="Weight"
-                                      inputMode="decimal"
-                                    />
-                                    <input
-                                      value={draft.reps}
-                                      onChange={(event) => updateSetDraft(key, { reps: event.target.value })}
-                                      className="min-w-0 border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
-                                      placeholder="Reps"
-                                      inputMode="decimal"
-                                    />
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            <div className="mt-3 flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setExerciseCount(exercise.id, count - 1)}
-                                className="inline-flex h-8 w-8 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black disabled:opacity-30"
-                                disabled={count <= 1}
-                                aria-label="Remove set"
-                              >
-                                <Minus className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => addExerciseSet(exercise, count)}
-                                className="inline-flex h-8 w-8 items-center justify-center border border-black/10 text-black/45 hover:border-black/30 hover:text-black"
-                                aria-label="Add set"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </button>
-                            </div>
+                            <input
+                              value={draft.weight}
+                              onChange={(event) => updateSetDraft(key, { weight: event.target.value })}
+                              className="min-w-0 rounded-[1.35rem] border border-black/10 bg-white/80 px-4 text-lg outline-none focus:border-black/35"
+                              placeholder="Weight"
+                              inputMode="decimal"
+                            />
+                            <input
+                              value={draft.reps}
+                              onChange={(event) => updateSetDraft(key, { reps: event.target.value })}
+                              className="min-w-0 rounded-[1.35rem] border border-black/10 bg-white/80 px-4 text-lg outline-none focus:border-black/35"
+                              placeholder="Reps"
+                              inputMode="decimal"
+                            />
                           </div>
                         );
                       })}
                     </div>
 
-                    <label className="mt-4 block">
-                      <span className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Notes for Pedro</span>
-                      <textarea
-                        value={sectionNotes[noteKey] ?? ''}
-                        onChange={(event) => setSectionNotes((current) => ({ ...current, [noteKey]: event.target.value }))}
-                        rows={3}
-                        className="mt-2 w-full resize-none border border-black/10 bg-[#fbfbf8] px-3 py-3 text-sm outline-none focus:border-black/35"
-                        placeholder="Anything that felt off, easy, painful, or worth changing."
-                      />
-                    </label>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <p className="text-xs text-black/35">
-                        {submittedSectionNotes[noteKey] ? 'Sent to Pedro.' : 'Send this without waiting until the end.'}
-                      </p>
+                    <div className="mt-4 flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => void submitSectionNote(section, noteKey)}
-                        disabled={submittingSectionNote === noteKey || !sectionNotes[noteKey]?.trim()}
-                        className="border border-black bg-black px-4 py-2 text-xs text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-30"
+                        onClick={() => setExerciseCount(exercise.id, count - 1)}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white/80 text-black/45 hover:border-black/30 hover:text-black disabled:opacity-30"
+                        disabled={count <= 1}
+                        aria-label="Remove set"
                       >
-                        {submittingSectionNote === noteKey ? 'Sending...' : 'Submit note'}
+                        <Minus className="h-4 w-4" />
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => addExerciseSet(exercise, count)}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white/80 text-black/45 hover:border-black/30 hover:text-black"
+                        aria-label="Add set"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {nextScreen && (
+                  <div className="mx-2 mt-4 rounded-[1.5rem] border border-black/10 bg-black px-4 py-4 text-white shadow-[0_18px_45px_rgba(0,0,0,0.16)]">
+                    <p className="text-[0.58rem] uppercase tracking-[0.18em] text-white/45">Next exercise</p>
+                    <div className="mt-3 flex items-center gap-3">
+                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-white/10">
+                        {nextVideoId ? (
+                          <img
+                            src={`https://img.youtube.com/vi/${nextVideoId}/hqdefault.jpg`}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center">
+                            <Dumbbell className="h-5 w-5 text-white/40" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{nextScreen.exercise.name}</p>
+                        <p className="mt-1 text-xs text-white/45">{nextScreen.section.title}</p>
+                      </div>
+                      <ChevronDown className="ml-auto h-5 w-5 shrink-0 text-white/45" />
                     </div>
                   </div>
                 )}
@@ -1817,11 +1812,45 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           })}
         </div>
 
+        <div className="mt-6 space-y-3 rounded-[1.75rem] border border-black/10 bg-white/85 p-4 shadow-sm backdrop-blur">
+          <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Notes for Pedro</p>
+          {sections.map((section) => {
+            const noteKey = sectionNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, section.id);
+            return (
+              <div key={section.id} className="border-t border-black/8 pt-3 first:border-t-0 first:pt-0">
+                <label className="block">
+                  <span className="text-xs font-medium text-black/45">{section.title}</span>
+                  <textarea
+                    value={sectionNotes[noteKey] ?? ''}
+                    onChange={(event) => setSectionNotes((current) => ({ ...current, [noteKey]: event.target.value }))}
+                    rows={3}
+                    className="mt-2 w-full resize-none rounded-[1.25rem] border border-black/10 bg-[#fbfbf8] px-3 py-3 text-sm outline-none focus:border-black/35"
+                    placeholder="Anything that felt off, easy, painful, or worth changing."
+                  />
+                </label>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p className="text-xs text-black/35">
+                    {submittedSectionNotes[noteKey] ? 'Sent to Pedro.' : 'Send this without waiting until the end.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void submitSectionNote(section, noteKey)}
+                    disabled={submittingSectionNote === noteKey || !sectionNotes[noteKey]?.trim()}
+                    className="rounded-full border border-black bg-black px-4 py-2 text-xs text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    {submittingSectionNote === noteKey ? 'Sending...' : 'Submit note'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         <button
           type="button"
           onClick={() => void finishWorkout()}
           disabled={savingWorkout}
-          className="mt-6 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 text-sm font-medium text-white transition-colors hover:bg-black/80 disabled:cursor-wait disabled:opacity-50"
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-black px-5 py-4 text-sm font-medium text-white transition-colors hover:bg-black/80 disabled:cursor-wait disabled:opacity-50"
         >
           <Check className="h-4 w-4" />
           {savingWorkout ? 'Saving...' : 'Finish workout'}
@@ -2137,7 +2166,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     </div>
   );
 
-  const renderToolsScreen = () => {
+  const renderBookingScreen = () => {
     const title =
       bookingView === '3days'
         ? `${formatBookingDate(threeDayDays[0])} - ${formatBookingDate(threeDayDays[2])}`
@@ -2741,7 +2770,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         )}
 
-        {renderBodyMetricsPanel()}
       </div>
     );
   };
@@ -2750,12 +2778,17 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     <NutritionTab clientId={client!.id} />
   );
 
+  const renderSettingsScreen = () => (
+    <SettingsTab clientId={client!.id} userEmail={client?.email ?? ''} />
+  );
+
   const renderActiveScreen = () => {
     if (selectedWorkout?.started) return renderWorkoutLogger();
     if (selectedWorkout) return renderWorkoutPreview();
     if (activeScreen === 'workout') return renderWorkoutHome();
     if (activeScreen === 'nutrition') return renderNutritionScreen();
-    if (activeScreen === 'tools') return renderToolsScreen();
+    if (activeScreen === 'booking') return renderBookingScreen();
+    if (activeScreen === 'settings') return renderSettingsScreen();
     return renderOverviewScreen();
   };
 
@@ -2782,13 +2815,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       </div>
 
       {client && (
-        <nav className="client-bottom-nav fixed inset-x-3 bottom-5 z-40 border border-black/10 bg-white/95 px-2 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur md:inset-x-auto md:left-1/2 md:w-[28rem] md:-translate-x-1/2">
-          <div className="mx-auto grid max-w-sm grid-cols-4 gap-1">
+        <nav className="client-bottom-nav fixed inset-x-2 bottom-4 z-40 border border-black/10 bg-white/95 px-1.5 py-1.5 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur md:inset-x-auto md:left-1/2 md:w-[32rem] md:-translate-x-1/2">
+          <div className="mx-auto grid max-w-sm grid-cols-5 gap-0.5">
             {([
               ['overview', Home, 'Overview'],
               ['nutrition', Salad, 'Nutrition'],
               ['workout', Dumbbell, 'Workout'],
-              ['tools', Wrench, 'Tools'],
+              ['booking', Wrench, 'Booking'],
+              ['settings', Settings, 'Settings'],
             ] as const).map(([screen, Icon, label]) => (
               <button
                 key={screen}
@@ -2797,46 +2831,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   setSelectedWorkout(null);
                   setActiveScreen(screen);
                 }}
-                className={`flex h-12 flex-col items-center justify-center gap-1 border text-[0.68rem] uppercase tracking-[0.08em] transition-colors ${
+                className={`flex h-11 flex-col items-center justify-center gap-0.5 border text-[0.58rem] uppercase tracking-[0.06em] transition-colors ${
                   activeScreen === screen
                     ? 'border-black bg-black text-white'
                     : 'border-transparent text-black/40 hover:border-black/10 hover:text-black'
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5" />
                 {label}
               </button>
             ))}
           </div>
         </nav>
-      )}
-
-      {activeVideo && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/95 p-4">
-          <div className="w-full max-w-5xl">
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <p className="truncate text-sm font-medium text-white">{activeVideo.title}</p>
-              <button
-                type="button"
-                onClick={() => setActiveVideo(null)}
-                className="inline-flex h-10 w-10 items-center justify-center border border-white/20 text-white transition-colors hover:bg-white hover:text-black"
-                aria-label="Close video"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="aspect-video w-full overflow-hidden bg-black">
-              <iframe
-                key={activeVideo.id}
-                title={`${activeVideo.title} full video`}
-                src={getYouTubeEmbedUrl(activeVideo.id, true)}
-                className="h-full w-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowFullScreen
-              />
-            </div>
-          </div>
-        </div>
       )}
 
       {client && !isPedro && (

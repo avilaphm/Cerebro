@@ -27,6 +27,37 @@ interface KnowledgeChunk {
 }
 
 // Detects food-logging intent in client message
+// Returns the weight in kg if explicitly stated, null if weight is mentioned but no value given, or undefined if no weight topic
+function detectWeightMention(message: string): { mentioned: boolean; kg: number | null } {
+  const lower = message.toLowerCase();
+  // Explicit value patterns: "I'm 78kg", "down to 75 kilos", "lost 3kg", "weigh 80", "weight 79.5"
+  const valuePatterns = [
+    /(?:now|currently|weigh(?:ing)?|weight(?:s)?|am|i'm|i am)\s+(?:about\s+)?(\d{2,3}(?:\.\d)?)\s*(?:kg|kilos?|kgs|pounds?|lbs?)/i,
+    /(\d{2,3}(?:\.\d)?)\s*(?:kg|kilos?|kgs)\b/i,
+    /(?:lost|gained|dropped|put on)\s+(\d+(?:\.\d)?)\s*(?:kg|kilos?|kgs|pounds?|lbs?)/i,
+  ];
+  for (const pattern of valuePatterns) {
+    const match = lower.match(pattern);
+    if (match) {
+      const raw = parseFloat(match[1]);
+      // Convert lbs to kg if needed
+      const isLbs = /pounds?|lbs?/.test(match[0]);
+      const kg = isLbs ? Math.round(raw * 0.453592 * 10) / 10 : raw;
+      if (kg > 30 && kg < 300) return { mentioned: true, kg };
+    }
+  }
+  // Mentioned without value
+  const generalPatterns = [
+    /\b(lost|gained|dropped|put on|losing|gaining)\s+(?:some\s+)?weight\b/i,
+    /\b(?:my\s+)?weight\s+(?:has\s+)?(?:gone|come|is\s+going)\s+(?:down|up)\b/i,
+    /\bslimmer\b|\bbigger\b|\bleaner\b|\bbulk(?:ing|ed)\b/i,
+  ];
+  if (generalPatterns.some((p) => p.test(message))) {
+    return { mentioned: true, kg: null };
+  }
+  return { mentioned: false, kg: null };
+}
+
 function detectFoodIntent(message: string): boolean {
   const lower = message.toLowerCase();
   const patterns = [
@@ -277,6 +308,8 @@ If the client is describing food they ate or are about to eat (e.g. "just had X"
 - Never pretend to be Pedro himself -- you are his AI assistant.
 - If you don't know something specific about the client, say so and give general guidance.
 - For medical concerns or injuries, always recommend the client consult a healthcare professional.
+- If the client mentions losing or gaining weight but does NOT state a specific number, ask: "That's great progress! What's your current weight so I can update your profile?"
+- If the client mentions a specific weight (e.g. "I'm now 78kg"), acknowledge it positively and confirm it has been noted for their progress record.
 - Respond in plain conversational text. No markdown headers. Keep it chat-like.`;
 }
 
@@ -324,6 +357,7 @@ Deno.serve(async (req: Request) => {
 
     const wantsPedro = /\b(hey|hi|hello)\s+pedro\b/i.test(body.content);
     const hasFoodIntent = detectFoodIntent(body.content);
+    const weightSignal = detectWeightMention(body.content);
 
     // Fetch all context in parallel
     const [
@@ -495,6 +529,27 @@ Deno.serve(async (req: Request) => {
     if (insertError) {
       console.error('ai-client-chat insert error:', insertError);
       return json({ error: 'Failed to save AI response.' }, 500);
+    }
+
+    // If a specific weight was mentioned, log it to pt_client_metrics and notify Pedro
+    if (weightSignal.mentioned && weightSignal.kg !== null) {
+      const today = new Date().toISOString().split('T')[0];
+      adminClient.from('pt_client_metrics').insert({
+        client_id: body.client_id,
+        measured_at: today,
+        weight_kg: weightSignal.kg,
+        source: 'chat',
+        notes: `Auto-captured from chat: "${body.content.slice(0, 120)}"`,
+      }).then(() => {
+        return adminClient.from('pt_coaching_tasks').insert({
+          client_id: body.client_id,
+          source_type: 'weight_update',
+          title: `${client.name} weight update: ${weightSignal.kg}kg`,
+          details: `Captured from chat message: "${body.content.slice(0, 200)}"`,
+          status: 'open',
+          priority: 'normal',
+        });
+      }).catch(() => { /* non-blocking */ });
     }
 
     // Fire-and-forget: update client brain async (do not await)
