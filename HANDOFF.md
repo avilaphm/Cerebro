@@ -43,8 +43,7 @@ Previous task: Client Brain System - Phase 1 (commit 5106644):
 - Storage bucket: pt-nutrition-logs created for photo/audio files
 
 NEXT STEPS:
-1. DB migration needed: add last_name/phone/gender/date_of_birth columns to pt_clients + client UPDATE RLS policy (SettingsTab.tsx profile save will fail without this)
-2. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
+1. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
 3. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
 4. Weekly email content: weight delta from pt_client_metrics should appear in weekly progress email (coaching task is created on weight detection, but email content not yet built)
 5. PT dashboard: add ability to set per-client daily macro targets (currently defaults: 150g P / 200g C / 65g F / 30g fibre / 2000 kcal)
