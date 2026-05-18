@@ -29,6 +29,14 @@ interface Props {
   workoutContext: WorkoutContext | null;
 }
 
+interface NutritionLog {
+  meal_description: string;
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+}
+
 export default function MessageBubble({ clientId, workoutContext }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [open, setOpen] = useState(false);
@@ -37,7 +45,19 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
   const [sending, setSending] = useState(false);
   const [aiThinking, setAiThinking] = useState(false);
   const [unread, setUnread] = useState(0);
+
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const [voiceSecs, setVoiceSecs] = useState(0);
+  const [logError, setLogError] = useState<string | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
 
   const mergeMessages = useCallback((incoming: Message[]) => {
     setMessages((current) => {
@@ -105,6 +125,134 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
     return () => { void supabase.removeChannel(channel); };
   }, [clientId, mergeMessages, open, supabase]);
 
+  useEffect(() => () => { if (timerRef.current) window.clearInterval(timerRef.current); }, []);
+
+  const toBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  const dispatchAIChat = (messageId: string, content: string) => {
+    setAiThinking(true);
+    void supabase.functions.invoke('ai-client-chat', {
+      body: { client_id: clientId, message_id: messageId, content },
+    }).then(() => {
+      void loadMessages();
+      setAiThinking(false);
+    }).catch(() => setAiThinking(false));
+  };
+
+  const logFood = async (inputType: 'photo' | 'voice', blob: Blob, mimeType: string) => {
+    setSending(true);
+    setLogError(null);
+    try {
+      const base64 = await toBase64(blob);
+      const { data, error } = await supabase.functions.invoke<{ ok: boolean; nutrition: NutritionLog }>('log-nutrition', {
+        body: {
+          client_id: clientId,
+          input_type: inputType,
+          content: '',
+          file_base64: base64,
+          file_mime_type: mimeType,
+        },
+      });
+
+      if (error || !data?.ok || !data.nutrition) {
+        setLogError("Couldn't read that — try again or type what you ate.");
+        return;
+      }
+
+      const n = data.nutrition;
+      const parts: string[] = [`Logged: ${n.meal_description}`];
+      if (n.calories) parts.push(`${n.calories} kcal`);
+      const macros = [
+        n.protein_g != null ? `${n.protein_g}g P` : null,
+        n.carbs_g != null ? `${n.carbs_g}g C` : null,
+        n.fat_g != null ? `${n.fat_g}g F` : null,
+      ].filter(Boolean).join(' · ');
+      if (macros) parts.push(macros);
+      const content = parts.join(' · ');
+
+      const { data: inserted, error: msgErr } = await supabase
+        .from('pt_messages')
+        .insert({ client_id: clientId, sender: 'client', content, context: workoutContext ?? null })
+        .select('id, sender, content, created_at, context')
+        .single();
+
+      if (msgErr || !inserted) return;
+
+      const msg = inserted as Message;
+      mergeMessages([msg]);
+
+      void supabase.functions.invoke('extract-client-note', {
+        body: { message_id: msg.id, client_id: clientId, content, context: workoutContext },
+      });
+
+      dispatchAIChat(msg.id, content);
+    } finally {
+      setPhotoFile(null);
+      setPhotoPreview(null);
+      setVoiceBlob(null);
+      setVoiceSecs(0);
+      setSending(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : '';
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        setVoiceBlob(blob);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+      setVoiceSecs(0);
+      timerRef.current = window.setInterval(() => setVoiceSecs((s) => s + 1), 1000);
+    } catch {
+      // mic permission denied — silent fail
+    }
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    setRecording(false);
+    if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
+  };
+
+  const cancelAttachment = () => {
+    stopRecording();
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    setVoiceBlob(null);
+    setVoiceSecs(0);
+    setLogError(null);
+  };
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setLogError(null);
+    const reader = new FileReader();
+    reader.onload = () => setPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const send = async () => {
     if (!text.trim() || sending) return;
     setSending(true);
@@ -132,7 +280,6 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       const message = inserted as Message;
       mergeMessages([message]);
       setSending(false);
-      setAiThinking(true);
 
       void supabase.functions.invoke('extract-client-note', {
         body: {
@@ -143,18 +290,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
         },
       });
 
-      void supabase.functions.invoke('ai-client-chat', {
-        body: {
-          client_id: clientId,
-          message_id: message.id,
-          content,
-        },
-      }).then(() => {
-        void loadMessages();
-        setAiThinking(false);
-      }).catch(() => {
-        setAiThinking(false);
-      });
+      dispatchAIChat(message.id, content);
       return;
     }
 
@@ -170,6 +306,10 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
 
   const formatTime = (iso: string) =>
     new Date(iso).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+
+  const fmtSecs = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+  const isAttaching = !!photoFile || !!voiceBlob || recording;
 
   return (
     <>
@@ -216,7 +356,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-3">
             {messages.length === 0 ? (
               <p className="text-xs text-black/30 text-center py-6">
-                Ask anything about your programme, exercises, or nutrition. Say "hey Pedro" to reach your coach directly.
+                Ask anything about your programme, exercises, or nutrition. Say &quot;hey Pedro&quot; to reach your coach directly.
               </p>
             ) : (
               messages.map((m) => {
@@ -264,23 +404,115 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
             <div ref={bottomRef} />
           </div>
 
-          <div className="flex shrink-0 gap-2 border-t border-black/8 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={handleKey}
-              placeholder="Type a message…"
-              rows={1}
-              className="flex-1 resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/30 rounded-xl"
+          <div className="shrink-0 border-t border-black/8 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3">
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoSelect}
+              className="hidden"
             />
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={!text.trim() || sending}
-              className="bg-black text-white px-3 py-2 text-sm rounded-xl disabled:opacity-30"
-            >
-              {sending ? '…' : '↑'}
-            </button>
+
+            {logError && (
+              <p className="px-3 pb-2 text-[0.65rem] text-red-500">{logError}</p>
+            )}
+
+            {isAttaching && (
+              <div className="flex items-center gap-2 px-3 pb-2">
+                {photoPreview && (
+                  <img src={photoPreview} alt="food" className="h-12 w-12 flex-none rounded-lg object-cover" />
+                )}
+                {recording && (
+                  <div className="flex items-center gap-1.5 text-xs text-red-500">
+                    <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                    {fmtSecs(voiceSecs)}
+                  </div>
+                )}
+                {voiceBlob && !recording && (
+                  <div className="flex items-center gap-1.5 text-xs text-black/40">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
+                      <rect x="4" y="1" width="4" height="6" rx="2" />
+                      <path d="M2 6a4 4 0 008 0M6 10v1.5" />
+                    </svg>
+                    {fmtSecs(voiceSecs)} ready
+                  </div>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={cancelAttachment}
+                    className="text-[0.7rem] text-black/30 hover:text-black transition-colors"
+                  >
+                    cancel
+                  </button>
+                  {recording ? (
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      className="bg-red-500 text-white px-3 py-1.5 text-xs rounded-xl"
+                    >
+                      Stop
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={sending}
+                      onClick={() => {
+                        if (photoFile) void logFood('photo', photoFile, photoFile.type);
+                        else if (voiceBlob) void logFood('voice', voiceBlob, voiceBlob.type || 'audio/webm');
+                      }}
+                      className="bg-black text-white px-3 py-1.5 text-xs rounded-xl disabled:opacity-30"
+                    >
+                      {sending ? '…' : 'Log food'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {!isAttaching && (
+              <div className="flex gap-2 px-3">
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  className="flex-none text-black/25 hover:text-black transition-colors self-end pb-2"
+                  aria-label="Log food photo"
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
+                    <path d="M1.5 5.5h2.5l1.5-2h7l1.5 2H16.5v9.5h-15V5.5z" />
+                    <circle cx="9" cy="10.5" r="2.5" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={recording ? stopRecording : () => void startRecording()}
+                  className={`flex-none transition-colors self-end pb-2 ${recording ? 'text-red-500' : 'text-black/25 hover:text-black'}`}
+                  aria-label="Log food voice"
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
+                    <rect x="6" y="1" width="6" height="9" rx="3" />
+                    <path d="M3 9a6 6 0 0012 0M9 15v2" />
+                  </svg>
+                </button>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={handleKey}
+                  placeholder="Type a message…"
+                  rows={1}
+                  className="flex-1 resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/30 rounded-xl"
+                />
+                <button
+                  type="button"
+                  onClick={() => void send()}
+                  disabled={!text.trim() || sending}
+                  className="bg-black text-white px-3 py-2 text-sm rounded-xl disabled:opacity-30 self-end"
+                >
+                  {sending ? '…' : '↑'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
