@@ -1362,16 +1362,46 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const renderJourneyTimeline = () => {
     const hasProgramme = !!assignment && assignment.programme.phases.length > 0;
-    const phaseLabels = hasProgramme
-      ? assignment.programme.phases.map((p) => p.title)
-      : DEFAULT_PROGRAMME_PHASES;
-    const phaseCount = phaseLabels.length;
+    type JourneyStep = { type: 'phase' | 'test'; label: string; phaseIndex: number | null; milestone?: 'initial' | 'retest' };
+    const journeySteps: JourneyStep[] = hasProgramme
+      ? assignment.programme.phases.flatMap((phase, phaseIndex) => {
+        const steps: JourneyStep[] = [
+          { type: 'phase', label: phase.title, phaseIndex },
+        ];
+        if (phaseIndex === 0) {
+          steps.push({ type: 'test', label: '1RM Test', phaseIndex: null, milestone: 'initial' });
+        }
+        if (phaseIndex === assignment.programme.phases.length - 1) {
+          steps.push({ type: 'test', label: '1RM Re-test', phaseIndex: null, milestone: 'retest' });
+        }
+        return steps;
+      })
+      : DEFAULT_PROGRAMME_PHASES.map((label): JourneyStep => ({ type: label.toLowerCase().includes('1 rm') ? 'test' : 'phase', label, phaseIndex: null }));
+    const phaseCount = journeySteps.length;
     const activePi = hasProgramme ? activePhaseIndex : -1;
+    const activeStepIndex = hasProgramme
+      ? journeySteps.findIndex((step) => step.type === 'phase' && step.phaseIndex === activePi)
+      : -1;
     const doneFill = hasProgramme && phaseCount > 1
-      ? `${(activePi / (phaseCount - 1)) * 100}%`
+      ? `${(Math.max(activeStepIndex, 0) / (phaseCount - 1)) * 100}%`
       : hasProgramme && (phaseProgress[0]?.allBlocksDone ? '100%' : '0%')
         ? hasProgramme ? (phaseProgress[0]?.allBlocksDone ? '100%' : '0%') : '0%'
         : '0%';
+
+    const stepState = (step: (typeof journeySteps)[number]) => {
+      if (!hasProgramme) return { isDone: false, isActive: false };
+      if (step.type === 'phase') {
+        const pp = step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
+        return { isDone: pp?.allBlocksDone ?? false, isActive: step.phaseIndex === activePi };
+      }
+      if (step.milestone === 'initial') {
+        const firstDone = phaseProgress[0]?.allBlocksDone ?? false;
+        const nextStarted = activePi > 0;
+        return { isDone: nextStarted, isActive: firstDone && !nextStarted };
+      }
+      const allDone = phaseProgress.every((progress) => progress?.allBlocksDone);
+      return { isDone: allDone, isActive: false };
+    };
 
     return (
       <div className="mx-auto max-w-5xl">
@@ -1389,12 +1419,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 style={{ width: doneFill }}
               />
               <div className="relative flex justify-between">
-                {phaseLabels.map((label, pi) => {
-                  const pp = hasProgramme ? (phaseProgress[pi] ?? null) : null;
-                  const isDone = pp?.allBlocksDone ?? false;
-                  const isActive = pi === activePi;
+                {journeySteps.map((step, index) => {
+                  const { isDone, isActive } = stepState(step);
                   return (
-                    <div key={pi} className="flex flex-col items-center gap-1.5">
+                    <div key={`${step.type}-${index}`} className="flex flex-col items-center gap-1.5">
                       <div
                         className={`h-3.5 w-3.5 rounded-full border-2 transition-colors ${
                           isDone
@@ -1405,7 +1433,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         }`}
                       />
                       <span className="max-w-[3.5rem] text-center text-[0.44rem] uppercase leading-tight tracking-[0.06em] text-black/35">
-                        {label}
+                        {step.label}
                       </span>
                     </div>
                   );
@@ -1420,20 +1448,21 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
         {progressExpanded && (
           <div className="space-y-5 border border-t-0 border-black/10 bg-white px-5 py-5 md:px-6">
-            {phaseLabels.map((label, pi) => {
-              const pp = hasProgramme ? (phaseProgress[pi] ?? null) : null;
+            {journeySteps.map((step, index) => {
+              const pp = hasProgramme && step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
               const isDonePhase = pp?.allBlocksDone ?? false;
-              const isActivePhase = pi === activePi;
-              const blocks = hasProgramme
-                ? (assignment.programme.phases[pi]?.week_blocks ?? [])
+              const state = stepState(step);
+              const isActivePhase = state.isActive;
+              const blocks = hasProgramme && step.phaseIndex !== null
+                ? (assignment.programme.phases[step.phaseIndex]?.week_blocks ?? [])
                 : [];
 
               return (
-                <div key={pi}>
+                <div key={`${step.type}-detail-${index}`}>
                   <div className="flex items-center gap-2.5">
                     <div
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
-                        isDonePhase
+                        state.isDone || isDonePhase
                           ? 'bg-[rgb(46,213,115)]'
                           : isActivePhase
                             ? 'border-2 border-black bg-white'
@@ -1444,15 +1473,22 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     </div>
                     <p
                       className={`text-xs font-medium ${
-                        isActivePhase ? 'text-black' : isDonePhase ? 'text-black/60' : 'text-black/30'
+                        isActivePhase ? 'text-black' : state.isDone || isDonePhase ? 'text-black/60' : 'text-black/30'
                       }`}
                     >
-                      {label}
+                      {step.label}
                     </p>
                     {isActivePhase && (
                       <span className="ml-1 text-[0.55rem] uppercase tracking-[0.1em] text-[rgb(46,213,115)]">Current</span>
                     )}
                   </div>
+                  {step.type === 'test' && (
+                    <p className="ml-8 mt-1 text-xs leading-relaxed text-black/35">
+                      {step.milestone === 'initial'
+                        ? 'Strength benchmark before the next training phase.'
+                        : 'Retest strength after the full training block.'}
+                    </p>
+                  )}
 
                   {blocks.length > 0 && (
                     <div className="ml-8 mt-3 flex gap-4">
@@ -1569,11 +1605,16 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <h2 className="mt-2 font-display text-2xl font-light md:text-3xl">{selectedDay.title}</h2>
           {selectedDay.focus && <p className="mt-2 text-sm leading-relaxed text-black/55">{selectedDay.focus}</p>}
 
-          <div className="mt-6 space-y-5">
+          <div className="mt-6 space-y-4">
             {sections.map((section) => (
-              <div key={section.id} className="border-t border-black/8 pt-4">
-                <p className="text-[0.65rem] uppercase tracking-[0.18em] text-black/35">{section.title}</p>
-                <div className="mt-3 space-y-3">
+              <div key={section.id} className="rounded-[1.75rem] border border-black/8 bg-[#fbfbf8] p-4 md:p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[0.65rem] uppercase tracking-[0.18em] text-black/35">{section.title}</p>
+                  <p className="text-xs text-black/35">
+                    {section.exercises.length} exercise{section.exercises.length === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <div className="mt-4 space-y-4">
                   {section.exercises.map(({ exercise, values }, index) => (
                     <div key={exercise.id} className="grid grid-cols-[2rem_1fr] gap-3">
                       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-xs text-white">{index + 1}</div>
@@ -1626,6 +1667,36 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         exerciseIndex,
       })),
     );
+    const renderSectionNoteCard = (section: WorkoutSectionView) => {
+      const noteKey = sectionNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, section.id);
+      return (
+        <div className="mt-4 rounded-[1.5rem] border border-black/10 bg-white p-4 shadow-sm">
+          <label className="block">
+            <span className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">{section.title} notes</span>
+            <textarea
+              value={sectionNotes[noteKey] ?? ''}
+              onChange={(event) => setSectionNotes((current) => ({ ...current, [noteKey]: event.target.value }))}
+              rows={3}
+              className="mt-3 w-full resize-none rounded-[1.2rem] border border-black/10 bg-[#fbfbf8] px-4 py-3 text-sm text-black outline-none placeholder:text-black/35 focus:border-black/35"
+              placeholder="Anything that felt off, easy, painful, or worth changing."
+            />
+          </label>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-black/40">
+              {submittedSectionNotes[noteKey] ? 'Sent to Pedro.' : 'Send this without waiting until the end.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void submitSectionNote(section, noteKey)}
+              disabled={submittingSectionNote === noteKey || !sectionNotes[noteKey]?.trim()}
+              className="rounded-full border border-black bg-black px-4 py-2 text-xs text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              {submittingSectionNote === noteKey ? 'Sending...' : 'Submit note'}
+            </button>
+          </div>
+        </div>
+      );
+    };
 
     return (
       <div className="mx-auto max-w-md pb-28 md:max-w-3xl">
@@ -1657,8 +1728,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             const cuesAreOpen = openCues[cueKey] ?? false;
             const lastTimeIsOpen = openLastTime[lastTimeKey] ?? false;
             const nextScreen = exerciseScreens[screenIndex + 1] ?? null;
-            const nextVideoId = nextScreen ? getYouTubeId(nextScreen.exercise.video_url) : null;
             const videoIsActive = activeWorkoutExerciseId ? activeWorkoutExerciseId === exercise.id : screenIndex === 0;
+            const endsSection = !nextScreen || nextScreen.section.id !== section.id;
+            const supersetRounds = exercise.superset_id && nextScreen?.exercise.superset_id === exercise.superset_id
+              ? Math.max(parseSets(values.sets), parseSets(nextScreen.values.sets))
+              : null;
+            const transitionText = nextScreen
+              ? supersetRounds
+                ? `Superset with ${nextScreen.exercise.name}. Repeat ${supersetRounds} rounds before moving on.`
+                : endsSection
+                  ? `Next section: ${nextScreen.section.title}.`
+                  : `Next exercise: ${nextScreen.exercise.name}. Scroll when ready.`
+              : null;
 
             return (
               <section key={exercise.id} data-workout-exercise-id={exercise.id} className="min-h-[calc(100dvh-8rem)] scroll-mt-4">
@@ -1691,7 +1772,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     </div>
                   </div>
 
-                  <div className="relative z-10 -mt-9 rounded-t-[2rem] border border-white/70 bg-[#fbfbf8]/95 p-4 shadow-[0_-18px_45px_rgba(0,0,0,0.18)] backdrop-blur md:-mt-12 md:p-5">
+                  <div className="relative z-10 -mt-9 rounded-t-[2rem] border border-white/80 bg-[#fbfbf8] p-4 shadow-[0_-18px_45px_rgba(0,0,0,0.12)] md:-mt-12 md:p-5">
                     <div className="mb-4">
                       <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Exercise {screenIndex + 1}</p>
                       <h3 className="mt-1 text-xl font-medium leading-tight text-black md:text-2xl">{exercise.name}</h3>
@@ -1718,16 +1799,16 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                             <button
                               type="button"
                               onClick={() => setOpenCues((current) => ({ ...current, [setupKey]: !setupOpen }))}
-                              className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white/85 px-4 py-3 text-left text-sm text-black/65 shadow-sm transition-colors hover:border-black/25 hover:text-black"
+                              className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white px-4 py-3 text-left text-sm text-black shadow-sm transition-colors hover:border-black/25"
                             >
                               <span>Setup</span>
                               <ChevronRight className={`h-5 w-5 text-black/45 transition-transform ${setupOpen ? 'rotate-90' : ''}`} />
                             </button>
                             {setupOpen && (
-                              <ol className="rounded-[1.35rem] border border-black/8 bg-white/80 px-6 py-4 space-y-2">
+                              <ol className="rounded-[1.35rem] border border-black/8 bg-white px-6 py-4 space-y-2">
                                 {setupCues.map((cue, idx) => (
-                                  <li key={idx} className="flex gap-2.5 text-sm text-black/60">
-                                    <span className="shrink-0 text-xs font-semibold text-black/30 mt-0.5">{idx + 1}</span>
+                                  <li key={idx} className="flex gap-2.5 text-sm text-black">
+                                    <span className="shrink-0 text-xs font-semibold text-black mt-0.5">{idx + 1}</span>
                                     {cue}
                                   </li>
                                 ))}
@@ -1739,16 +1820,16 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       <button
                         type="button"
                         onClick={() => setOpenCues((current) => ({ ...current, [cueKey]: !cuesAreOpen }))}
-                        className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white/85 px-4 py-3 text-left text-sm text-black/65 shadow-sm transition-colors hover:border-black/25 hover:text-black"
+                        className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white px-4 py-3 text-left text-sm text-black shadow-sm transition-colors hover:border-black/25"
                       >
                         <span>Verbal cues</span>
                         <ChevronRight className={`h-5 w-5 text-black/45 transition-transform ${cuesAreOpen ? 'rotate-90' : ''}`} />
                       </button>
 
                       {cuesAreOpen && (
-                        <ul className="rounded-[1.35rem] border border-black/8 bg-white/80 px-6 py-4">
+                        <ul className="rounded-[1.35rem] border border-black/8 bg-white px-6 py-4">
                           {(exercise.cues.length > 0 ? exercise.cues : ['Move with control', 'Keep the target muscles loaded', 'Use a range you can own', 'Stop if pain changes your form']).slice(0, 4).map((cue) => (
-                            <li key={cue} className="list-disc text-sm leading-relaxed text-black/60">
+                            <li key={cue} className="list-disc text-sm leading-relaxed text-black">
                               {cue}
                             </li>
                           ))}
@@ -1758,18 +1839,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       <button
                         type="button"
                         onClick={() => setOpenLastTime((current) => ({ ...current, [lastTimeKey]: !lastTimeIsOpen }))}
-                        className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white/85 px-4 py-3 text-left text-sm text-black/65 shadow-sm transition-colors hover:border-black/25 hover:text-black"
+                        className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white px-4 py-3 text-left text-sm text-black shadow-sm transition-colors hover:border-black/25"
                       >
                         <span>Last time</span>
                         <ChevronRight className={`h-5 w-5 text-black/45 transition-transform ${lastTimeIsOpen ? 'rotate-90' : ''}`} />
                       </button>
 
                       {lastTimeIsOpen && (
-                        <div className="rounded-[1.35rem] border border-black/8 bg-white/80 px-4 py-4">
+                        <div className="rounded-[1.35rem] border border-black/8 bg-white px-4 py-4">
                           {history.length > 0 ? (
                             <div className="flex flex-wrap gap-2">
                               {history.slice(0, Math.max(count, history.length)).map((log) => (
-                                <span key={`${log.id}-${log.set_number}`} className="rounded-full border border-black/8 bg-[#fbfbf8] px-3 py-2 text-xs text-black/55">
+                                <span key={`${log.id}-${log.set_number}`} className="rounded-full border border-black/8 bg-[#fbfbf8] px-3 py-2 text-xs text-black">
                                   Set {log.set_number}: {log.weight ?? '-'}kg x {log.reps ?? '-'}
                                 </span>
                               ))}
@@ -1785,22 +1866,26 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       {Array.from({ length: count }).map((_, setIndex) => {
                         const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
                         const draft = setDrafts[key] ?? { reps: '', weight: '' };
+                        const setIsLogged = draft.reps.trim().length > 0;
+                        const setSurface = setIsLogged
+                          ? 'border-black/10 bg-black/[0.06] text-black'
+                          : 'border-black/10 bg-white text-black';
                         return (
                           <div key={key} className="grid grid-cols-[4.5rem_1fr_1fr] gap-2 md:grid-cols-[5rem_1fr_1fr]">
-                            <div className="flex h-16 items-center rounded-[1.35rem] border border-black/10 bg-white/80 px-3 text-sm text-black/45">
+                            <div className={`flex h-16 items-center rounded-[1.35rem] border px-3 text-sm font-medium ${setSurface}`}>
                               Set {setIndex + 1}
                             </div>
                             <input
                               value={draft.weight}
                               onChange={(event) => updateSetDraft(key, { weight: event.target.value })}
-                              className="min-w-0 rounded-[1.35rem] border border-black/10 bg-white/80 px-4 text-lg outline-none focus:border-black/35"
+                              className={`min-w-0 rounded-[1.35rem] border px-4 text-lg text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
                               placeholder="Weight"
                               inputMode="decimal"
                             />
                             <input
                               value={draft.reps}
                               onChange={(event) => updateSetDraft(key, { reps: event.target.value })}
-                              className="min-w-0 rounded-[1.35rem] border border-black/10 bg-white/80 px-4 text-lg outline-none focus:border-black/35"
+                              className={`min-w-0 rounded-[1.35rem] border px-4 text-lg text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
                               placeholder="Reps"
                               inputMode="decimal"
                             />
@@ -1831,66 +1916,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   </div>
                 </div>
 
-                {nextScreen && (
-                  <div className="mx-2 mt-4 rounded-[1.5rem] border border-black/10 bg-black px-4 py-4 text-white shadow-[0_18px_45px_rgba(0,0,0,0.16)]">
-                    <p className="text-[0.58rem] uppercase tracking-[0.18em] text-white/45">Next exercise</p>
-                    <div className="mt-3 flex items-center gap-3">
-                      <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-white/10">
-                        {nextVideoId ? (
-                          <img
-                            src={`https://img.youtube.com/vi/${nextVideoId}/hqdefault.jpg`}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center">
-                            <Dumbbell className="h-5 w-5 text-white/40" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{nextScreen.exercise.name}</p>
-                        <p className="mt-1 text-xs text-white/45">{nextScreen.section.title}</p>
-                      </div>
-                      <ChevronDown className="ml-auto h-5 w-5 shrink-0 text-white/45" />
-                    </div>
+                {endsSection && renderSectionNoteCard(section)}
+
+                {transitionText && (
+                  <div className={`mx-3 mt-4 flex items-center justify-between gap-3 rounded-full border px-4 py-3 text-sm ${
+                    supersetRounds || endsSection
+                      ? 'border-black bg-black text-white'
+                      : 'border-black/10 bg-white text-black/55'
+                  }`}>
+                    <span>{transitionText}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 ${supersetRounds || endsSection ? 'text-white/70' : 'text-black/35'}`} />
                   </div>
                 )}
               </section>
-            );
-          })}
-        </div>
-
-        <div className="mt-6 space-y-3 rounded-[1.75rem] border border-black/10 bg-white/85 p-4 shadow-sm backdrop-blur">
-          <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Notes for Pedro</p>
-          {sections.map((section) => {
-            const noteKey = sectionNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, section.id);
-            return (
-              <div key={section.id} className="border-t border-black/8 pt-3 first:border-t-0 first:pt-0">
-                <label className="block">
-                  <span className="text-xs font-medium text-black/45">{section.title}</span>
-                  <textarea
-                    value={sectionNotes[noteKey] ?? ''}
-                    onChange={(event) => setSectionNotes((current) => ({ ...current, [noteKey]: event.target.value }))}
-                    rows={3}
-                    className="mt-2 w-full resize-none rounded-[1.25rem] border border-black/10 bg-[#fbfbf8] px-3 py-3 text-sm outline-none focus:border-black/35"
-                    placeholder="Anything that felt off, easy, painful, or worth changing."
-                  />
-                </label>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="text-xs text-black/35">
-                    {submittedSectionNotes[noteKey] ? 'Sent to Pedro.' : 'Send this without waiting until the end.'}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => void submitSectionNote(section, noteKey)}
-                    disabled={submittingSectionNote === noteKey || !sectionNotes[noteKey]?.trim()}
-                    className="rounded-full border border-black bg-black px-4 py-2 text-xs text-white transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    {submittingSectionNote === noteKey ? 'Sending...' : 'Submit note'}
-                  </button>
-                </div>
-              </div>
             );
           })}
         </div>

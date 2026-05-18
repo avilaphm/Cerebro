@@ -1,10 +1,19 @@
 # Handoff
 
 ## Last updated
-2026-05-18 by Claude
+2026-05-18 by Codex
 
 ## Last completed task
-Exercise library - 400 exercises, card UI, YouTube search, rich client workout view (commit 69c7092):
+Client workout UI refinements (commit: this commit):
+- Workout preview section cards now have consistent padding, rounded off-white surfaces, and exercise counts in the card header.
+- Exercise logger sheet now uses off-white instead of grey and keeps set labels/inputs at black text contrast.
+- Logged set rows visually soften once reps are entered, while unlogged rows remain white/black.
+- Removed the bulky black next-exercise preview card between exercises. Replaced it with compact direction strips: next exercise, next section, or superset instructions with rounds based on programmed set count.
+- Section notes now appear inline at the end of each section instead of all grouped at the bottom.
+- Journey progress now includes 1RM Test after Phase 1 and 1RM Re-test after the final phase.
+- Verification: `npm run lint -- app/client/ClientPortal.tsx` passes with warnings only; `npm run build` passes; mobile browser smoke test on `/client` passed.
+
+Previous completed task: Exercise library - 400 exercises, card UI, YouTube search, rich client workout view (commit 69c7092):
 - DB migration: primary_muscles, secondary_muscles, conditions, setup_cues, progression_ids, regression_ids added to pt_exercises (with GIN indexes)
 - PTExercise type extended with all 6 new fields
 - Edge function seed-exercise-library: seeds 400 exercises across 8 categories (strength compound/isolation, core, mobility, cardio, golf, running, pilates), Claude Haiku generates metadata per batch of 15; trigger via curl with INTERNAL_SECRET
