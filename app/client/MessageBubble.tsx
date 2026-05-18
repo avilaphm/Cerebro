@@ -3,6 +3,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 
+// Local Web Speech API types
+interface SpeechRecognitionResultItemLike { transcript: string; }
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionResultItemLike;
+}
+interface SpeechRecognitionEventLike extends Event {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+  resultIndex: number;
+}
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+function getSpeechRecognition(): (new () => SpeechRecognitionLike) | null {
+  const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 interface Message {
   id: string;
   sender: 'pt' | 'client' | 'ai';
@@ -35,6 +63,7 @@ interface NutritionLog {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fibre_g: number | null;
 }
 
 export default function MessageBubble({ clientId, workoutContext }: Props) {
@@ -49,15 +78,12 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
-  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
-  const [voiceSecs, setVoiceSecs] = useState(0);
   const [logError, setLogError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<number | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const interimRef = useRef('');
 
   const mergeMessages = useCallback((incoming: Message[]) => {
     setMessages((current) => {
@@ -125,7 +151,53 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
     return () => { void supabase.removeChannel(channel); };
   }, [clientId, mergeMessages, open, supabase]);
 
-  useEffect(() => () => { if (timerRef.current) window.clearInterval(timerRef.current); }, []);
+  // Clean up speech recognition on unmount
+  useEffect(() => () => { recognitionRef.current?.abort(); }, []);
+
+  const startVoice = () => {
+    const SpeechRecog = getSpeechRecognition();
+    if (!SpeechRecog) return;
+
+    const rec = new SpeechRecog();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-AU';
+
+    rec.onresult = (e: SpeechRecognitionEventLike) => {
+      let final = '';
+      let interim = '';
+      const len = e.results.length;
+      for (let i = 0; i < len; i++) {
+        const r = e.results[i];
+        const transcript = r[0].transcript;
+        if (r.isFinal) final += transcript;
+        else interim += transcript;
+      }
+      interimRef.current = interim;
+      setText(final + interim);
+    };
+
+    rec.onend = () => {
+      setRecording(false);
+      // Keep only the final text (no interim suffix)
+      setText((t) => t.replace(interimRef.current, '').trim());
+      interimRef.current = '';
+    };
+
+    rec.onerror = () => {
+      setRecording(false);
+      interimRef.current = '';
+    };
+
+    rec.start();
+    recognitionRef.current = rec;
+    setRecording(true);
+  };
+
+  const stopVoice = () => {
+    recognitionRef.current?.stop();
+    // onend will fire and clean up state
+  };
 
   const toBase64 = (blob: Blob): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -145,23 +217,23 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
     }).catch(() => setAiThinking(false));
   };
 
-  const logFood = async (inputType: 'photo' | 'voice', blob: Blob, mimeType: string) => {
+  const logPhotoFood = async (file: File) => {
     setSending(true);
     setLogError(null);
     try {
-      const base64 = await toBase64(blob);
+      const base64 = await toBase64(file);
       const { data, error } = await supabase.functions.invoke<{ ok: boolean; nutrition: NutritionLog }>('log-nutrition', {
         body: {
           client_id: clientId,
-          input_type: inputType,
+          input_type: 'photo',
           content: '',
           file_base64: base64,
-          file_mime_type: mimeType,
+          file_mime_type: file.type,
         },
       });
 
       if (error || !data?.ok || !data.nutrition) {
-        setLogError("Couldn't read that — try again or type what you ate.");
+        setLogError("Couldn't read that photo — try again or type what you ate.");
         return;
       }
 
@@ -172,6 +244,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
         n.protein_g != null ? `${n.protein_g}g P` : null,
         n.carbs_g != null ? `${n.carbs_g}g C` : null,
         n.fat_g != null ? `${n.fat_g}g F` : null,
+        n.fibre_g != null ? `${n.fibre_g}g fibre` : null,
       ].filter(Boolean).join(' · ');
       if (macros) parts.push(macros);
       const content = parts.join(' · ');
@@ -195,51 +268,8 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
     } finally {
       setPhotoFile(null);
       setPhotoPreview(null);
-      setVoiceBlob(null);
-      setVoiceSecs(0);
       setSending(false);
     }
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : '';
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        setVoiceBlob(blob);
-        stream.getTracks().forEach((t) => t.stop());
-      };
-      recorder.start();
-      recorderRef.current = recorder;
-      setRecording(true);
-      setVoiceSecs(0);
-      timerRef.current = window.setInterval(() => setVoiceSecs((s) => s + 1), 1000);
-    } catch {
-      // mic permission denied — silent fail
-    }
-  };
-
-  const stopRecording = () => {
-    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
-    setRecording(false);
-    if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
-  };
-
-  const cancelAttachment = () => {
-    stopRecording();
-    setPhotoFile(null);
-    setPhotoPreview(null);
-    setVoiceBlob(null);
-    setVoiceSecs(0);
-    setLogError(null);
   };
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,6 +285,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
 
   const send = async () => {
     if (!text.trim() || sending) return;
+    if (recording) stopVoice();
     setSending(true);
     const content = text.trim();
     setText('');
@@ -306,10 +337,6 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
 
   const formatTime = (iso: string) =>
     new Date(iso).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-
-  const fmtSecs = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-
-  const isAttaching = !!photoFile || !!voiceBlob || recording;
 
   return (
     <>
@@ -418,101 +445,87 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
               <p className="px-3 pb-2 text-[0.65rem] text-red-500">{logError}</p>
             )}
 
-            {isAttaching && (
-              <div className="flex items-center gap-2 px-3 pb-2">
-                {photoPreview && (
-                  <img src={photoPreview} alt="food" className="h-12 w-12 flex-none rounded-lg object-cover" />
-                )}
-                {recording && (
-                  <div className="flex items-center gap-1.5 text-xs text-red-500">
-                    <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                    {fmtSecs(voiceSecs)}
-                  </div>
-                )}
-                {voiceBlob && !recording && (
-                  <div className="flex items-center gap-1.5 text-xs text-black/40">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
-                      <rect x="4" y="1" width="4" height="6" rx="2" />
-                      <path d="M2 6a4 4 0 008 0M6 10v1.5" />
-                    </svg>
-                    {fmtSecs(voiceSecs)} ready
-                  </div>
-                )}
-                <div className="ml-auto flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={cancelAttachment}
-                    className="text-[0.7rem] text-black/30 hover:text-black transition-colors"
-                  >
-                    cancel
-                  </button>
-                  {recording ? (
-                    <button
-                      type="button"
-                      onClick={stopRecording}
-                      className="bg-red-500 text-white px-3 py-1.5 text-xs rounded-xl"
-                    >
-                      Stop
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={sending}
-                      onClick={() => {
-                        if (photoFile) void logFood('photo', photoFile, photoFile.type);
-                        else if (voiceBlob) void logFood('voice', voiceBlob, voiceBlob.type || 'audio/webm');
-                      }}
-                      className="bg-black text-white px-3 py-1.5 text-xs rounded-xl disabled:opacity-30"
-                    >
-                      {sending ? '…' : 'Log food'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {!isAttaching && (
-              <div className="flex gap-2 px-3">
+            {/* Photo preview strip */}
+            {photoPreview && (
+              <div className="flex items-center gap-3 px-3 pb-2">
+                <img src={photoPreview} alt="food" className="h-12 w-12 flex-none rounded-lg object-cover" />
+                <p className="flex-1 text-xs text-black/50">Ready to log — tap &ldquo;Log food&rdquo;</p>
                 <button
                   type="button"
-                  onClick={() => photoInputRef.current?.click()}
-                  className="flex-none text-black/25 hover:text-black transition-colors self-end pb-2"
-                  aria-label="Log food photo"
+                  onClick={() => { setPhotoFile(null); setPhotoPreview(null); setLogError(null); }}
+                  className="text-[0.7rem] text-black/30 hover:text-black"
                 >
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
-                    <path d="M1.5 5.5h2.5l1.5-2h7l1.5 2H16.5v9.5h-15V5.5z" />
-                    <circle cx="9" cy="10.5" r="2.5" />
-                  </svg>
+                  cancel
                 </button>
                 <button
                   type="button"
-                  onClick={recording ? stopRecording : () => void startRecording()}
-                  className={`flex-none transition-colors self-end pb-2 ${recording ? 'text-red-500' : 'text-black/25 hover:text-black'}`}
-                  aria-label="Log food voice"
+                  disabled={sending}
+                  onClick={() => photoFile && void logPhotoFood(photoFile)}
+                  className="bg-black text-white px-3 py-1.5 text-xs rounded-xl disabled:opacity-30"
                 >
+                  {sending ? '…' : 'Log food'}
+                </button>
+              </div>
+            )}
+
+            {/* Main input row */}
+            <div className="flex gap-2 px-3">
+              {/* Camera */}
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={sending}
+                className="flex-none text-black/25 hover:text-black transition-colors self-end pb-2 disabled:opacity-30"
+                aria-label="Log food photo"
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
+                  <path d="M1.5 5.5h2.5l1.5-2h7l1.5 2H16.5v9.5h-15V5.5z" />
+                  <circle cx="9" cy="10.5" r="2.5" />
+                </svg>
+              </button>
+
+              {/* Mic — click to start/stop live transcription */}
+              <button
+                type="button"
+                onClick={recording ? stopVoice : startVoice}
+                disabled={sending}
+                className={`flex-none transition-colors self-end pb-2 disabled:opacity-30 ${recording ? 'text-red-500' : 'text-black/25 hover:text-black'}`}
+                aria-label={recording ? 'Stop recording' : 'Start voice input'}
+              >
+                {recording ? (
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                  </span>
+                ) : (
                   <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
                     <rect x="6" y="1" width="6" height="9" rx="3" />
                     <path d="M3 9a6 6 0 0012 0M9 15v2" />
                   </svg>
-                </button>
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={handleKey}
-                  placeholder="Type a message…"
-                  rows={1}
-                  className="flex-1 resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/30 rounded-xl"
-                />
-                <button
-                  type="button"
-                  onClick={() => void send()}
-                  disabled={!text.trim() || sending}
-                  className="bg-black text-white px-3 py-2 text-sm rounded-xl disabled:opacity-30 self-end"
-                >
-                  {sending ? '…' : '↑'}
-                </button>
-              </div>
-            )}
+                )}
+              </button>
+
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder={recording ? 'Listening…' : 'Type a message…'}
+                rows={1}
+                className={`flex-1 resize-none border px-3 py-2 text-sm outline-none rounded-xl transition-colors ${
+                  recording
+                    ? 'border-red-200 bg-red-50/50 focus:border-red-300'
+                    : 'border-black/10 focus:border-black/30'
+                }`}
+              />
+
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={!text.trim() || sending}
+                className="bg-black text-white px-3 py-2 text-sm rounded-xl disabled:opacity-30 self-end"
+              >
+                {sending ? '…' : '↑'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Wrench, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Salad, Wrench, X } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock, CANONICAL_SECTION_ORDER } from '@/utils/pt/programme';
@@ -40,7 +40,9 @@ import type {
   PTCheckinSession,
   CheckinWeeklyFocus,
 } from '@/utils/pt/types';
+import MacroWidget from './MacroWidget';
 import MessageBubble from './MessageBubble';
+import NutritionTab from './NutritionTab';
 import WeeklyCheckinModal from './WeeklyCheckinModal';
 
 const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
@@ -109,7 +111,7 @@ interface MetricDraft {
   notes: string;
 }
 
-type ClientScreen = 'overview' | 'workout' | 'tools';
+type ClientScreen = 'overview' | 'nutrition' | 'workout' | 'tools';
 type BookingCalendarView = '3days' | 'week' | 'month';
 const BOOKING_CALENDAR_START_HOUR = 6;
 const BOOKING_CALENDAR_END_HOUR = 14;
@@ -1876,6 +1878,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </section>
       </div>
 
+      {client && (
+        <div className="mx-auto max-w-5xl">
+          <MacroWidget clientId={client.id} onNutritionTabOpen={() => setActiveScreen('nutrition')} />
+        </div>
+      )}
+
       <div className="mx-auto max-w-5xl">
         <button
           type="button"
@@ -2738,10 +2746,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     );
   };
 
+  const renderNutritionScreen = () => (
+    <NutritionTab clientId={client!.id} />
+  );
+
   const renderActiveScreen = () => {
     if (selectedWorkout?.started) return renderWorkoutLogger();
     if (selectedWorkout) return renderWorkoutPreview();
     if (activeScreen === 'workout') return renderWorkoutHome();
+    if (activeScreen === 'nutrition') return renderNutritionScreen();
     if (activeScreen === 'tools') return renderToolsScreen();
     return renderOverviewScreen();
   };
@@ -2769,10 +2782,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       </div>
 
       {client && (
-        <nav className="client-bottom-nav fixed inset-x-4 bottom-5 z-40 border border-black/10 bg-white/95 px-3 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur md:inset-x-auto md:left-1/2 md:w-[24rem] md:-translate-x-1/2">
-          <div className="mx-auto grid max-w-sm grid-cols-3 gap-2">
+        <nav className="client-bottom-nav fixed inset-x-3 bottom-5 z-40 border border-black/10 bg-white/95 px-2 py-2 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur md:inset-x-auto md:left-1/2 md:w-[28rem] md:-translate-x-1/2">
+          <div className="mx-auto grid max-w-sm grid-cols-4 gap-1">
             {([
               ['overview', Home, 'Overview'],
+              ['nutrition', Salad, 'Nutrition'],
               ['workout', Dumbbell, 'Workout'],
               ['tools', Wrench, 'Tools'],
             ] as const).map(([screen, Icon, label]) => (

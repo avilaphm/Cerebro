@@ -30,6 +30,7 @@ interface NutritionResult {
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
+  fibre_g: number | null;
   calories: number | null;
   meal_type: string | null;
   confidence: 'high' | 'medium' | 'low';
@@ -46,6 +47,7 @@ Return ONLY valid JSON:
   "protein_g": number or null,
   "carbs_g": number or null,
   "fat_g": number or null,
+  "fibre_g": number or null,
   "calories": number or null,
   "meal_type": "breakfast" | "lunch" | "dinner" | "snack" | null,
   "confidence": "high" | "medium" | "low"
@@ -238,6 +240,7 @@ Deno.serve(async (req: Request) => {
         protein_g: nutrition.protein_g,
         carbs_g: nutrition.carbs_g,
         fat_g: nutrition.fat_g,
+        fibre_g: nutrition.fibre_g,
         calories: nutrition.calories,
         confidence: nutrition.confidence,
         meal_type: nutrition.meal_type,
@@ -245,6 +248,15 @@ Deno.serve(async (req: Request) => {
       })
       .select('id')
       .single();
+
+    // 4-week rolling window: purge entries older than 28 days
+    const purgeDate = new Date();
+    purgeDate.setDate(purgeDate.getDate() - 28);
+    void adminClient
+      .from('pt_nutrition_logs')
+      .delete()
+      .eq('client_id', client_id)
+      .lt('logged_at', purgeDate.toISOString());
 
     if (insertError) {
       console.error('log-nutrition insert error:', insertError);
@@ -257,17 +269,18 @@ Deno.serve(async (req: Request) => {
 
     const { data: recentLogs } = await adminClient
       .from('pt_nutrition_logs')
-      .select('protein_g, carbs_g, fat_g, calories')
+      .select('protein_g, carbs_g, fat_g, fibre_g, calories')
       .eq('client_id', client_id)
       .gte('logged_at', sevenDaysAgo.toISOString())
       .not('calories', 'is', null);
 
     if (recentLogs && recentLogs.length > 0) {
-      const logs = recentLogs as Array<{ protein_g: number | null; carbs_g: number | null; fat_g: number | null; calories: number | null }>;
+      const logs = recentLogs as Array<{ protein_g: number | null; carbs_g: number | null; fat_g: number | null; fibre_g: number | null; calories: number | null }>;
       const avg = {
         protein_g: Math.round(logs.reduce((s, l) => s + (l.protein_g ?? 0), 0) / logs.length),
         carbs_g: Math.round(logs.reduce((s, l) => s + (l.carbs_g ?? 0), 0) / logs.length),
         fat_g: Math.round(logs.reduce((s, l) => s + (l.fat_g ?? 0), 0) / logs.length),
+        fibre_g: Math.round(logs.reduce((s, l) => s + (l.fibre_g ?? 0), 0) / logs.length),
         calories: Math.round(logs.reduce((s, l) => s + (l.calories ?? 0), 0) / logs.length),
         entries: logs.length,
       };
