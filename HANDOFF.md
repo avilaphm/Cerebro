@@ -4,7 +4,16 @@
 2026-05-18 by Claude
 
 ## Last completed task
-Client Brain System - Phase 1 (commit TBD):
+Photo and voice food logging in client chat (commit 73877c1):
+- Camera icon in MessageBubble.tsx opens image picker (capture="environment" opens camera on mobile)
+- Mic icon click-to-start/stop records voice via MediaRecorder API (prefers audio/webm;codecs=opus)
+- Both paths: file converted to base64, sent to log-nutrition edge function
+- On success: food-log summary message inserted into pt_messages ("Logged: [meal] - [kcal] - [P/C/F]"), then ai-client-chat triggered to respond
+- extract-client-note also fired for brain doc updates
+- Error state shown if log-nutrition can't parse ("try again or type what you ate")
+- log-nutrition edge function redeployed to project otcnrkfvgyvwolironoz
+
+Previous task: Client Brain System - Phase 1 (commit 5106644):
 - 7 new Supabase tables: pt_client_brain, pt_client_nutrition_doc, pt_client_exercise_doc, pt_client_lifestyle_doc, pt_client_recent_activity, pt_nutrition_logs, pt_conversation_summaries
 - DB trigger auto-creates all 4 brain doc rows when a client is created
 - Existing 2 clients seeded with empty brain docs
@@ -17,10 +26,10 @@ Client Brain System - Phase 1 (commit TBD):
 - Storage bucket: pt-nutrition-logs created for photo/audio files
 
 NEXT STEPS:
-1. Enable use_brain=true on one test client via Supabase Dashboard to verify
-2. Frontend: add photo/voice attachment support to MessageBubble.tsx for food logging
-3. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
-4. Add weekly-pt-summary update to read from pt_client_recent_activity
+1. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
+2. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
+3. Add weekly-pt-summary update to read from pt_client_recent_activity
+4. Consider adding a Nutrition tab in the client portal to show logged meals history from pt_nutrition_logs
 
 Previous task: AI coach chat fix (commit 0b8719a):
 - Root cause: `pt_messages.sender` CHECK constraint only allowed `'pt'` and `'client'`. The `ai-client-chat` edge function inserts with `sender='ai'`, which was rejected by the constraint. The function returned 200 regardless (no error check on the insert), so the thinking indicator cleared but no message ever appeared.
@@ -115,7 +124,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-c95cbce - Add per-client AI coach, voice brain dump, and PT knowledge brain chat
+73877c1 - Add photo and voice food logging to client chat
 
 ## Current state
 
