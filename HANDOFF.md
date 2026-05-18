@@ -4,7 +4,14 @@
 2026-05-18 by Codex
 
 ## Last completed task
-Client booking calendar UI spacing (commit: this commit):
+Seed exercise library auth fix (commit: this commit):
+- Fixed `seed-exercise-library` Edge Function auth after it had been changed to a hardcoded `x-trigger-token`.
+- Restored the standard `Authorization: Bearer ${INTERNAL_SECRET}` check used by the rest of the project.
+- Preserved the new optional `{ "limit": number }` request body support and `remaining` response field.
+- Redeployed `seed-exercise-library` to project `otcnrkfvgyvwolironoz`.
+- Verification: `npm run build` passes; unauthenticated deployed function request returns `401` as expected. Local `.env.local` does not include `INTERNAL_SECRET`, so authorized seed invocation was not run locally.
+
+Previous completed task: Client booking calendar UI spacing (commit: 7de4b13):
 - Added more top breathing room before the first 6am row in the client booking day/week calendar grid.
 - Moved booking slots, time labels, and grid lines down together so the first available slot no longer crowds the date header.
 - Month view now starts from today for the current month instead of showing past/blank days before today. Previous months are still reachable with the left arrow.

@@ -454,6 +454,10 @@ Deno.serve(async (req) => {
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY')!;
 
+  let body: { limit?: number } = {};
+  try { body = await req.json(); } catch { /* ok */ }
+  const limit = body.limit ?? 100;
+
   const adminClient = createClient(supabaseUrl, supabaseKey);
   const anthropic = new Anthropic({ apiKey: anthropicKey });
 
@@ -463,10 +467,11 @@ Deno.serve(async (req) => {
     .select('name');
   const existingNames = new Set((existing ?? []).map((e: { name: string }) => e.name.toLowerCase()));
 
-  const toSeed = EXERCISE_LIST.filter((e) => !existingNames.has(e.name.toLowerCase()));
+  const allToSeed = EXERCISE_LIST.filter((e) => !existingNames.has(e.name.toLowerCase()));
+  const toSeed = allToSeed.slice(0, limit);
 
   if (toSeed.length === 0) {
-    return json({ seeded: 0, skipped: EXERCISE_LIST.length, message: 'All exercises already exist' });
+    return json({ seeded: 0, skipped: EXERCISE_LIST.length, remaining: 0, message: 'All exercises already exist' });
   }
 
   let seeded = 0;
@@ -542,7 +547,8 @@ Be medically accurate. For "conditions", think about what physical problems or g
 
   return json({
     seeded,
-    skipped: EXERCISE_LIST.length - toSeed.length,
+    skipped: EXERCISE_LIST.length - allToSeed.length,
+    remaining: allToSeed.length - toSeed.length,
     errors: errors.length > 0 ? errors : undefined,
   });
 });
