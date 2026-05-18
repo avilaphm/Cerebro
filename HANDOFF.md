@@ -4,7 +4,15 @@
 2026-05-18 by Claude
 
 ## Last completed task
-Nutrition tab, macro widget, live voice transcription, fibre tracking (commit f8d16dc):
+Settings tab, Booking rename, 5-item nav, weight detection in chat (commit 32a4d05):
+- Renamed Tools tab to Booking in ClientPortal
+- Added Settings tab (5th nav item): Profile (name/last_name/phone/gender/date_of_birth saved to pt_clients), Change Password (re-verify current pw then updateUser; reset email option), Body Metrics (collapsible, moved from booking screen)
+- PTClient type updated with last_name/phone/gender/date_of_birth fields
+- ai-client-chat: detectWeightMention() auto-logs specific weight to pt_client_metrics (source=chat) + coaching task for Pedro; if vague weight mention, AI asks for number
+- Bottom nav is now 5 items (Overview / Nutrition / Workout / Booking / Settings), compact sizing (h-11, text-[0.58rem])
+- DB: pt_clients needs profile columns for Settings Profile to work - see pending tasks below
+
+Previous task: Nutrition tab, macro widget, live voice transcription, fibre tracking (commit f8d16dc):
 - Voice input replaced with Web Speech API live transcription - words appear in textarea as client speaks, editable before send, normal send flow (ai-client-chat detects food intent from text)
 - Photo food logging now also extracts fibre_g in response
 - New NutritionTab.tsx: 7-day selector (navigate back weeks), macro progress bars (protein/carbs/fat/fibre/calories vs daily targets from pt_client_nutrition_doc.daily_targets), meals grouped by Breakfast/Snack/Lunch/Dinner sections
@@ -35,11 +43,12 @@ Previous task: Client Brain System - Phase 1 (commit 5106644):
 - Storage bucket: pt-nutrition-logs created for photo/audio files
 
 NEXT STEPS:
-1. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
-2. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
-3. Add weekly-pt-summary update to read from pt_client_recent_activity
-4. PT dashboard: add ability to set per-client daily macro targets (currently defaults: 150g P / 200g C / 65g F / 30g fibre / 2000 kcal)
-5. Consider PT-side nutrition log view in client detail page (show recent meal logs from pt_nutrition_logs)
+1. DB migration needed: add last_name/phone/gender/date_of_birth columns to pt_clients + client UPDATE RLS policy (SettingsTab.tsx profile save will fail without this)
+2. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
+3. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
+4. Weekly email content: weight delta from pt_client_metrics should appear in weekly progress email (coaching task is created on weight detection, but email content not yet built)
+5. PT dashboard: add ability to set per-client daily macro targets (currently defaults: 150g P / 200g C / 65g F / 30g fibre / 2000 kcal)
+6. Consider changing Booking tab icon from Wrench to CalendarDays
 
 Previous task: AI coach chat fix (commit 0b8719a):
 - Root cause: `pt_messages.sender` CHECK constraint only allowed `'pt'` and `'client'`. The `ai-client-chat` edge function inserts with `sender='ai'`, which was rejected by the constraint. The function returned 200 regardless (no error check on the insert), so the thinking indicator cleared but no message ever appeared.
@@ -134,7 +143,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-f8d16dc - Add Nutrition tab, macro widget, live voice transcription, and fibre tracking
+32a4d05 - Add Settings tab, Booking rename, 5-item nav, weight detection in chat
 
 ## Current state
 
