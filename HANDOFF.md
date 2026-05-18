@@ -1,10 +1,19 @@
 # Handoff
 
 ## Last updated
-2026-05-18 by Codex
+2026-05-18 by Claude
 
 ## Last completed task
-Client workout logger mobile UI overhaul (commit: current HEAD):
+Exercise library - 400 exercises, card UI, YouTube search, rich client workout view (commit 69c7092):
+- DB migration: primary_muscles, secondary_muscles, conditions, setup_cues, progression_ids, regression_ids added to pt_exercises (with GIN indexes)
+- PTExercise type extended with all 6 new fields
+- Edge function seed-exercise-library: seeds 400 exercises across 8 categories (strength compound/isolation, core, mobility, cardio, golf, running, pilates), Claude Haiku generates metadata per batch of 15; trigger via curl with INTERNAL_SECRET
+- Edge function search-exercise-videos: YouTube Data API v3 searches for short demo videos per exercise, updates video_url; requires YOUTUBE_API_KEY secret; callable for single exercise (from dashboard Find video button) or batch
+- PT dashboard: new /dashboard/pt/exercises page with grid (YouTube thumbnails), search + filters, slide-over detail panel (video embed, muscles, setup cues, verbal cues, conditions, progressions/regressions), full edit mode with Find Video button, autocomplete progression/regression linker
+- PTNav: Exercises link between Programmes and Knowledge
+- ClientPortal: workout logger batch-fetches rich exercise data on Begin Workout; shows primary muscles; Setup cues collapsible above Verbal cues
+
+Previous completed task: Client workout logger mobile UI overhaul (commit: current HEAD):
 - Reworked client workout logging after "Begin workout" into exercise-by-exercise mobile screens.
 - Each exercise now leads with a large demo area, with YouTube embeds configured for muted autoplay/loop when the exercise is active.
 - Added scroll-aware active exercise detection so only the exercise currently in view loads its autoplay video.
@@ -52,7 +61,9 @@ Previous task: Client Brain System - Phase 1 (commit 5106644):
 - Storage bucket: pt-nutrition-logs created for photo/audio files
 
 NEXT STEPS:
-1. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
+1. IMMEDIATE: Add YOUTUBE_API_KEY to Supabase edge function secrets (Google Cloud Console -> YouTube Data API v3), then trigger search-exercise-videos batch run via curl to populate all 400 exercise videos
+2. Run seed-exercise-library once via curl with INTERNAL_SECRET to seed all 400 exercises (if not already done via dashboard trigger)
+3. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
 3. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
 4. Weekly email content: weight delta from pt_client_metrics should appear in weekly progress email (coaching task is created on weight detection, but email content not yet built)
 5. PT dashboard: add ability to set per-client daily macro targets (currently defaults: 150g P / 200g C / 65g F / 30g fibre / 2000 kcal)
@@ -151,7 +162,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-32a4d05 - Add Settings tab, Booking rename, 5-item nav, weight detection in chat
+69c7092 - Add exercise library: 400-exercise DB, card UI, YouTube video search, rich client workout view
 
 ## Current state
 
