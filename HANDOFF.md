@@ -1,10 +1,19 @@
 # Handoff
 
 ## Last updated
-2026-05-18 by Claude
+2026-05-18 by Codex
 
 ## Last completed task
-Settings tab, Booking rename, 5-item nav, weight detection in chat (commit 32a4d05):
+Client workout logger mobile UI overhaul (commit: current HEAD):
+- Reworked client workout logging after "Begin workout" into exercise-by-exercise mobile screens.
+- Each exercise now leads with a large demo area, with YouTube embeds configured for muted autoplay/loop when the exercise is active.
+- Added scroll-aware active exercise detection so only the exercise currently in view loads its autoplay video.
+- Replaced the old section accordion logger with an overlapping rounded logging sheet: exercise title, target, Verbal cues toggle, Last time toggle, and the existing set/weight/reps inputs.
+- Added black "Next exercise" preview cards below each exercise screen.
+- Preserved existing set draft, add/remove set, section notes, and Finish workout save behavior.
+- Verification: `npm run lint -- app/client/ClientPortal.tsx` passes with warnings only; `npm run build` passes; mobile browser smoke test on `/client` passed.
+
+Previous task: Settings tab, Booking rename, 5-item nav, weight detection in chat (commit 32a4d05):
 - Renamed Tools tab to Booking in ClientPortal
 - Added Settings tab (5th nav item): Profile (name/last_name/phone/gender/date_of_birth saved to pt_clients), Change Password (re-verify current pw then updateUser; reset email option), Body Metrics (collapsible, moved from booking screen)
 - PTClient type updated with last_name/phone/gender/date_of_birth fields

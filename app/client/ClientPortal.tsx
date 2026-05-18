@@ -1592,7 +1592,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
           <button
             type="button"
-            onClick={() => setSelectedWorkout({ ...selectedWorkout, started: true })}
+            onClick={() => {
+              setActiveWorkoutExerciseId(sections[0]?.exercises[0]?.exercise.id ?? null);
+              setSelectedWorkout({ ...selectedWorkout, started: true });
+            }}
             className="mt-7 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 text-sm font-medium text-white transition-colors hover:bg-black/80 active:scale-[0.99]"
           >
             <Play className="h-4 w-4" />
@@ -1620,7 +1623,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         <div className="mb-4 flex items-center justify-between gap-3">
           <button
             type="button"
-            onClick={() => setSelectedWorkout({ ...selectedWorkout, started: false })}
+            onClick={() => {
+              setActiveWorkoutExerciseId(null);
+              setSelectedWorkout({ ...selectedWorkout, started: false });
+            }}
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white/75 text-black/55 backdrop-blur hover:text-black"
             aria-label="Back to workout preview"
           >
@@ -1633,7 +1639,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </div>
 
         <div className="space-y-6 md:space-y-8">
-          {exerciseScreens.map(({ exercise, values, section, exerciseIndex }, screenIndex) => {
+          {exerciseScreens.map(({ exercise, values, section }, screenIndex) => {
             const count = setCounts[exercise.id] ?? parseSets(values.sets);
             const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
             const videoId = getYouTubeId(exercise.video_url);
@@ -1678,7 +1684,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
                   <div className="relative z-10 -mt-9 rounded-t-[2rem] border border-white/70 bg-[#fbfbf8]/95 p-4 shadow-[0_-18px_45px_rgba(0,0,0,0.18)] backdrop-blur md:-mt-12 md:p-5">
                     <div className="mb-4">
-                      <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Exercise {exerciseIndex + 1}</p>
+                      <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Exercise {screenIndex + 1}</p>
                       <h3 className="mt-1 text-xl font-medium leading-tight text-black md:text-2xl">{exercise.name}</h3>
                       <p className="mt-1 text-sm text-black/45">
                         Target: {values.sets || '?'} sets - {values.reps || '?'} reps
