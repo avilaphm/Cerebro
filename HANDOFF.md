@@ -4,7 +4,16 @@
 2026-05-18 by Claude
 
 ## Last completed task
-Photo and voice food logging in client chat (commit 73877c1):
+Nutrition tab, macro widget, live voice transcription, fibre tracking (commit f8d16dc):
+- Voice input replaced with Web Speech API live transcription - words appear in textarea as client speaks, editable before send, normal send flow (ai-client-chat detects food intent from text)
+- Photo food logging now also extracts fibre_g in response
+- New NutritionTab.tsx: 7-day selector (navigate back weeks), macro progress bars (protein/carbs/fat/fibre/calories vs daily targets from pt_client_nutrition_doc.daily_targets), meals grouped by Breakfast/Snack/Lunch/Dinner sections
+- New MacroWidget.tsx on Overview screen above workout card: compact 4-macro grid, taps to open Nutrition tab
+- Bottom nav expanded to 4 items: Overview / Nutrition / Workout / Tools (Salad icon from lucide)
+- DB migration applied: fibre_g added to pt_nutrition_logs, daily_targets jsonb to pt_client_nutrition_doc (default: 150g P / 200g C / 65g F / 30g fibre / 2000 kcal), client-read RLS policy on pt_client_nutrition_doc, index on (client_id, logged_at DESC)
+- log-nutrition edge function: fibre in all parse paths + prompt, 28-day rolling purge, redeployed
+
+Previous task: Photo and voice food logging in client chat (commit 73877c1):
 - Camera icon in MessageBubble.tsx opens image picker (capture="environment" opens camera on mobile)
 - Mic icon click-to-start/stop records voice via MediaRecorder API (prefers audio/webm;codecs=opus)
 - Both paths: file converted to base64, sent to log-nutrition edge function
@@ -29,7 +38,8 @@ NEXT STEPS:
 1. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
 2. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
 3. Add weekly-pt-summary update to read from pt_client_recent_activity
-4. Consider adding a Nutrition tab in the client portal to show logged meals history from pt_nutrition_logs
+4. PT dashboard: add ability to set per-client daily macro targets (currently defaults: 150g P / 200g C / 65g F / 30g fibre / 2000 kcal)
+5. Consider PT-side nutrition log view in client detail page (show recent meal logs from pt_nutrition_logs)
 
 Previous task: AI coach chat fix (commit 0b8719a):
 - Root cause: `pt_messages.sender` CHECK constraint only allowed `'pt'` and `'client'`. The `ai-client-chat` edge function inserts with `sender='ai'`, which was rejected by the constraint. The function returned 200 regardless (no error check on the insert), so the thinking indicator cleared but no message ever appeared.
@@ -124,7 +134,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-73877c1 - Add photo and voice food logging to client chat
+f8d16dc - Add Nutrition tab, macro widget, live voice transcription, and fibre tracking
 
 ## Current state
 
