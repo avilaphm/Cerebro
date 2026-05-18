@@ -1,10 +1,28 @@
 # Handoff
 
 ## Last updated
-2026-05-16 by Claude
+2026-05-18 by Claude
 
 ## Last completed task
-AI coach chat fix (commit 0b8719a):
+Client Brain System - Phase 1 (commit TBD):
+- 7 new Supabase tables: pt_client_brain, pt_client_nutrition_doc, pt_client_exercise_doc, pt_client_lifestyle_doc, pt_client_recent_activity, pt_nutrition_logs, pt_conversation_summaries
+- DB trigger auto-creates all 4 brain doc rows when a client is created
+- Existing 2 clients seeded with empty brain docs
+- use_brain boolean column added to pt_clients (default false, feature-flagged rollout)
+- New edge function: update-client-brain - writes every interaction to hot inbox (pt_client_recent_activity), then if use_brain=true runs Claude Haiku extraction and updates the relevant specialist doc
+- New edge function: log-nutrition - parses food from text/photo/voice using Claude, stores in pt_nutrition_logs, updates pt_client_nutrition_doc weekly averages
+- Updated edge function: ai-client-chat (v4) - now reads all 4 brain docs when use_brain=true and adds them to AI context as "Long-Term Client Memory"; detects food intent and routes to log-nutrition; calls update-client-brain async after every response
+- TypeScript types added: PTClientBrain, PTClientNutritionDoc, PTClientExerciseDoc, PTClientLifestyleDoc, PTClientRecentActivity, PTNutritionLog, PTConversationSummary
+- Git tag: stable-baseline-pre-brain (safe rollback point before this work)
+- Storage bucket: pt-nutrition-logs created for photo/audio files
+
+NEXT STEPS:
+1. Enable use_brain=true on one test client via Supabase Dashboard to verify
+2. Frontend: add photo/voice attachment support to MessageBubble.tsx for food logging
+3. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
+4. Add weekly-pt-summary update to read from pt_client_recent_activity
+
+Previous task: AI coach chat fix (commit 0b8719a):
 - Root cause: `pt_messages.sender` CHECK constraint only allowed `'pt'` and `'client'`. The `ai-client-chat` edge function inserts with `sender='ai'`, which was rejected by the constraint. The function returned 200 regardless (no error check on the insert), so the thinking indicator cleared but no message ever appeared.
 - Fixed: applied migration `20260516000600_allow_ai_sender_in_pt_messages.sql` to extend the constraint to include `'ai'`. Also added insert error handling in the edge function so future failures surface in logs.
 - Redeployed `ai-client-chat` edge function.

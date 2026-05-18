@@ -26,6 +26,18 @@ interface KnowledgeChunk {
   similarity: number;
 }
 
+// Detects food-logging intent in client message
+function detectFoodIntent(message: string): boolean {
+  const lower = message.toLowerCase();
+  const patterns = [
+    /\b(just had|about to have|having|ate|eating|had .+ for (breakfast|lunch|dinner|snack))\b/,
+    /\b(breakfast|lunch|dinner|snack)\s*:/,
+    /\b(calories|protein|carbs|macros)\b/,
+    /log (my|this) (meal|food|lunch|dinner|breakfast)/,
+  ];
+  return patterns.some((p) => p.test(lower));
+}
+
 async function embedText(text: string, openai: OpenAI): Promise<number[]> {
   const res = await openai.embeddings.create({ model: 'text-embedding-3-small', input: text });
   return res.data[0].embedding;
@@ -52,6 +64,140 @@ async function searchKnowledgeBase(
   }
 }
 
+interface BrainContext {
+  lastSessionSummary: string | null;
+  summary12m: string | null;
+  openLoops: string[];
+  milestones: string[];
+  keyPhrases: string[];
+  nutritionProfile: {
+    currentWeekAvg: Record<string, number>;
+    favouriteFoods: string[];
+    obstacles: string | null;
+    recentWins: string[];
+  };
+  exerciseProfile: {
+    current1rm: Record<string, number>;
+    currentPhase: string | null;
+    injuryHistory: Array<{ description: string; resolved: string }>;
+    strongMovements: string[];
+    weakMovements: string[];
+    currentLimitations: string | null;
+    last30dSummary: string | null;
+  };
+  lifestyleProfile: {
+    recurringChallenges: string[];
+    last30dAvg: Record<string, number>;
+    goalsContext: string | null;
+  };
+}
+
+async function readBrainDocs(
+  clientId: string,
+  adminClient: ReturnType<typeof createClient>,
+): Promise<BrainContext | null> {
+  const [brainRes, nutritionRes, exerciseRes, lifestyleRes] = await Promise.all([
+    adminClient
+      .from('pt_client_brain')
+      .select('last_session_summary, summary_12m, open_loops, milestones, key_phrases')
+      .eq('client_id', clientId)
+      .single(),
+    adminClient
+      .from('pt_client_nutrition_doc')
+      .select('current_week_avg, favourite_foods, nutrition_obstacles, recent_wins')
+      .eq('client_id', clientId)
+      .single(),
+    adminClient
+      .from('pt_client_exercise_doc')
+      .select('current_1rm, current_phase, injury_history, strong_movements, weak_movements, current_limitations, last_30d_summary')
+      .eq('client_id', clientId)
+      .single(),
+    adminClient
+      .from('pt_client_lifestyle_doc')
+      .select('recurring_challenges, last_30d_avg, goals_context')
+      .eq('client_id', clientId)
+      .single(),
+  ]);
+
+  if (!brainRes.data) return null;
+
+  return {
+    lastSessionSummary: (brainRes.data.last_session_summary as string | null),
+    summary12m: (brainRes.data.summary_12m as string | null),
+    openLoops: (brainRes.data.open_loops as string[]) ?? [],
+    milestones: ((brainRes.data.milestones as string[]) ?? []).slice(-5),
+    keyPhrases: ((brainRes.data.key_phrases as string[]) ?? []).slice(-10),
+    nutritionProfile: {
+      currentWeekAvg: (nutritionRes.data?.current_week_avg as Record<string, number>) ?? {},
+      favouriteFoods: ((nutritionRes.data?.favourite_foods as string[]) ?? []).slice(-10),
+      obstacles: (nutritionRes.data?.nutrition_obstacles as string | null),
+      recentWins: ((nutritionRes.data?.recent_wins as string[]) ?? []).slice(-5),
+    },
+    exerciseProfile: {
+      current1rm: (exerciseRes.data?.current_1rm as Record<string, number>) ?? {},
+      currentPhase: (exerciseRes.data?.current_phase as string | null),
+      injuryHistory: ((exerciseRes.data?.injury_history as Array<{ description: string; resolved: string }>) ?? []).filter((i) => i.resolved !== 'true'),
+      strongMovements: ((exerciseRes.data?.strong_movements as string[]) ?? []).slice(-8),
+      weakMovements: ((exerciseRes.data?.weak_movements as string[]) ?? []).slice(-8),
+      currentLimitations: (exerciseRes.data?.current_limitations as string | null),
+      last30dSummary: (exerciseRes.data?.last_30d_summary as string | null),
+    },
+    lifestyleProfile: {
+      recurringChallenges: ((lifestyleRes.data?.recurring_challenges as string[]) ?? []).slice(-8),
+      last30dAvg: (lifestyleRes.data?.last_30d_avg as Record<string, number>) ?? {},
+      goalsContext: (lifestyleRes.data?.goals_context as string | null),
+    },
+  };
+}
+
+function formatBrainContext(brain: BrainContext): string {
+  const lines: string[] = ['## Long-Term Client Memory'];
+
+  if (brain.summary12m) {
+    lines.push(`**12-month overview:** ${brain.summary12m}`);
+  }
+  if (brain.lastSessionSummary) {
+    lines.push(`**Last interaction:** ${brain.lastSessionSummary}`);
+  }
+  if (brain.openLoops.length > 0) {
+    lines.push(`**Follow-up items:** ${brain.openLoops.slice(-3).join('; ')}`);
+  }
+  if (brain.milestones.length > 0) {
+    lines.push(`**Recent milestones:** ${brain.milestones.join('; ')}`);
+  }
+  if (brain.keyPhrases.length > 0) {
+    lines.push(`**What they've said:** "${brain.keyPhrases.slice(-3).join('" / "')}"`);
+  }
+
+  const { exerciseProfile: ex, nutritionProfile: nu, lifestyleProfile: ls } = brain;
+
+  if (Object.keys(ex.current1rm).length > 0) {
+    const rms = Object.entries(ex.current1rm).map(([k, v]) => `${k}: ${v}kg`).join(', ');
+    lines.push(`**Current 1RMs:** ${rms}`);
+  }
+  if (ex.currentLimitations) lines.push(`**Active injury/limitation:** ${ex.currentLimitations}`);
+  if (ex.injuryHistory.length > 0) {
+    lines.push(`**Injury history:** ${ex.injuryHistory.map((i) => i.description).join('; ')}`);
+  }
+  if (ex.strongMovements.length > 0) lines.push(`**Strong at:** ${ex.strongMovements.join(', ')}`);
+  if (ex.weakMovements.length > 0) lines.push(`**Needs work:** ${ex.weakMovements.join(', ')}`);
+  if (ex.last30dSummary) lines.push(`**Last 30 days training:** ${ex.last30dSummary}`);
+
+  if (Object.keys(nu.currentWeekAvg).length > 0) {
+    const avg = nu.currentWeekAvg;
+    lines.push(`**Nutrition this week (avg):** ${avg.protein_g ?? '?'}g protein, ${avg.carbs_g ?? '?'}g carbs, ${avg.fat_g ?? '?'}g fat, ${avg.calories ?? '?'} cals`);
+  }
+  if (nu.obstacles) lines.push(`**Nutrition challenge:** ${nu.obstacles}`);
+  if (nu.favouriteFoods.length > 0) lines.push(`**Favourite foods:** ${nu.favouriteFoods.join(', ')}`);
+
+  if (ls.recurringChallenges.length > 0) {
+    lines.push(`**Life challenges:** ${ls.recurringChallenges.join('; ')}`);
+  }
+  if (ls.goalsContext) lines.push(`**Deeper goal context:** ${ls.goalsContext}`);
+
+  return lines.join('\n');
+}
+
 function buildSystemPrompt(params: {
   clientName: string;
   goals: string | null;
@@ -63,11 +209,12 @@ function buildSystemPrompt(params: {
   recentCheckins: Array<{ week_start: string; ai_weekly_focus: unknown }>;
   clientNotes: Array<{ content: string; created_at: string }>;
   knowledgeContext: string;
+  brainContext: string | null;
 }): string {
   const {
     clientName, goals, coachingFocus, lifestyleContext,
     activeGoals, programmeSummary, recentLogs, recentCheckins,
-    clientNotes, knowledgeContext,
+    clientNotes, knowledgeContext, brainContext,
   } = params;
 
   const goalsText = activeGoals.length > 0
@@ -92,7 +239,7 @@ function buildSystemPrompt(params: {
     ? clientNotes.map((n) => `- ${n.content}`).join('\n')
     : 'No coaching notes';
 
-  return `You are Pedro Avila's AI coaching assistant — the client's personal virtual trainer inside the Cerebro coaching app.
+  return `You are Pedro Avila's AI coaching assistant -- the client's personal virtual trainer inside the Cerebro coaching app.
 
 Pedro is a Brazilian-born, Sydney-based personal trainer and AI founder. You embody Pedro's coaching philosophy: evidence-based programming, progressive overload, and holistic health habits.
 
@@ -100,8 +247,9 @@ Pedro is a Brazilian-born, Sydney-based personal trainer and AI founder. You emb
 - You are the client's always-available AI coach. You know everything about them.
 - Answer questions about their programme, exercises, nutrition, recovery, and lifestyle.
 - Give specific, actionable advice grounded in their current programme and history.
-- You are warm, direct, and encouraging — not robotic or overly formal.
+- You are warm, direct, and encouraging -- not robotic or overly formal.
 - Keep responses concise and practical unless asked for detail.
+- When you reference past events, weights, or conversations, do it naturally as if you remember them.
 
 ## Client: ${clientName}
 **Goals:** ${goalsText}
@@ -120,11 +268,13 @@ ${checkinsText}
 ## Pedro's Coaching Notes
 ${notesText}
 
-${knowledgeContext ? `## Pedro's Knowledge Base (relevant excerpts)\n${knowledgeContext}\n` : ''}
+${brainContext ? `${brainContext}\n` : ''}${knowledgeContext ? `## Pedro's Knowledge Base (relevant excerpts)\n${knowledgeContext}\n` : ''}
+## Nutrition Logging
+If the client is describing food they ate or are about to eat (e.g. "just had X", "about to have X", "had X for lunch"), acknowledge that you'll log it and confirm: "[meal description] -- looks like ~Xg protein, Xg carbs, Xg fat (~X cals). Logged." Then ask a brief follow-up if useful.
 
 ## Important rules
 - If the client mentions "hey pedro", "hi pedro", or explicitly asks to speak to Pedro directly, always reply: "I'll flag this for Pedro so he can follow up with you directly. In the meantime, [brief helpful note]."
-- Never pretend to be Pedro himself — you are his AI assistant.
+- Never pretend to be Pedro himself -- you are his AI assistant.
 - If you don't know something specific about the client, say so and give general guidance.
 - For medical concerns or injuries, always recommend the client consult a healthcare professional.
 - Respond in plain conversational text. No markdown headers. Keep it chat-like.`;
@@ -159,7 +309,7 @@ Deno.serve(async (req: Request) => {
     // Verify client belongs to this user
     const { data: clientRow } = await adminClient
       .from('pt_clients')
-      .select('id, name, goals, coaching_focus, lifestyle_context')
+      .select('id, name, goals, coaching_focus, lifestyle_context, use_brain')
       .eq('id', body.client_id)
       .eq('user_id', authData.user.id)
       .single();
@@ -169,12 +319,13 @@ Deno.serve(async (req: Request) => {
     const client = clientRow as {
       id: string; name: string; goals: string | null;
       coaching_focus: string | null; lifestyle_context: string | null;
+      use_brain: boolean;
     };
 
-    // Detect "hey pedro" / handoff request
     const wantsPedro = /\b(hey|hi|hello)\s+pedro\b/i.test(body.content);
+    const hasFoodIntent = detectFoodIntent(body.content);
 
-    // Fetch all client context in parallel with knowledge search
+    // Fetch all context in parallel
     const [
       goalsRes,
       assignmentRes,
@@ -183,6 +334,7 @@ Deno.serve(async (req: Request) => {
       notesRes,
       historyRes,
       knowledgeContext,
+      brainDocs,
     ] = await Promise.all([
       adminClient
         .from('pt_client_goals')
@@ -224,28 +376,57 @@ Deno.serve(async (req: Request) => {
         .order('created_at', { ascending: false })
         .limit(30),
       searchKnowledgeBase(body.content, openai, adminClient),
+      client.use_brain ? readBrainDocs(body.client_id, adminClient) : Promise.resolve(null),
     ]);
 
     const activeAssignment = (assignmentRes.data ?? [])[0] ?? null;
 
-    // Build programme summary from assignment
     let programmeSummary: string | null = null;
     if (activeAssignment) {
       const prog = activeAssignment.programme as {
         phases?: Array<{ title: string; focus: string; weeks: string }>;
       } | null;
       const phases = prog?.phases ?? [];
-      const phaseList = phases.map((p) => `${p.title} (${p.weeks}w)`).join(' → ');
+      const phaseList = phases.map((p) => `${p.title} (${p.weeks}w)`).join(' -> ');
       const currentBlock = activeAssignment.current_block_index ?? 0;
       const phaseTitle = phases[currentBlock]?.title ?? 'Unknown phase';
       programmeSummary = `Programme: ${activeAssignment.name} | Goal: ${activeAssignment.goal ?? 'Not set'}\nCurrent phase: ${phaseTitle} (week ${activeAssignment.current_week ?? 1})\nProgramme structure: ${phaseList}`;
     }
 
-    // Build conversation history for OpenAI (oldest first, exclude the just-sent message)
+    // If food intent detected and brain is on, call log-nutrition in parallel with chat
+    let nutritionResult: { meal_description: string; protein_g: number | null; carbs_g: number | null; fat_g: number | null; calories: number | null } | null = null;
+    if (hasFoodIntent && client.use_brain) {
+      try {
+        const logRes = await fetch(`${supabaseUrl}/functions/v1/log-nutrition`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            client_id: body.client_id,
+            input_type: 'text',
+            content: body.content,
+            source_message_id: body.message_id,
+          }),
+        });
+        if (logRes.ok) {
+          const logData = await logRes.json() as { ok: boolean; nutrition?: typeof nutritionResult };
+          if (logData.ok && logData.nutrition) {
+            nutritionResult = logData.nutrition;
+          }
+        }
+      } catch {
+        // Non-blocking -- proceed without nutrition data
+      }
+    }
+
     const history = ((historyRes.data ?? []) as Array<{ sender: string; content: string; created_at: string }>)
       .reverse()
       .filter((m) => m.content !== body.content)
       .slice(-20);
+
+    const brainContext = brainDocs ? formatBrainContext(brainDocs) : null;
 
     const systemPrompt = buildSystemPrompt({
       clientName: client.name,
@@ -258,7 +439,14 @@ Deno.serve(async (req: Request) => {
       recentCheckins: (checkinsRes.data ?? []) as Array<{ week_start: string; ai_weekly_focus: unknown }>,
       clientNotes: (notesRes.data ?? []) as Array<{ content: string; created_at: string }>,
       knowledgeContext,
+      brainContext,
     });
+
+    // Inject nutrition context into the user message if food was logged
+    let userContent = body.content;
+    if (nutritionResult) {
+      userContent = `${body.content}\n\n[System: nutrition logged -- ${nutritionResult.meal_description}, ~${nutritionResult.protein_g ?? '?'}g protein, ~${nutritionResult.carbs_g ?? '?'}g carbs, ~${nutritionResult.fat_g ?? '?'}g fat, ~${nutritionResult.calories ?? '?'} cals]`;
+    }
 
     const chatMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
@@ -266,7 +454,7 @@ Deno.serve(async (req: Request) => {
         role: m.sender === 'client' ? 'user' : 'assistant',
         content: m.content,
       })),
-      { role: 'user', content: body.content },
+      { role: 'user', content: userContent },
     ];
 
     const completion = await openai.chat.completions.create({
@@ -276,9 +464,8 @@ Deno.serve(async (req: Request) => {
       messages: chatMessages,
     });
 
-    const aiResponse = completion.choices[0]?.message?.content?.trim() ?? "I'm here to help — could you rephrase that?";
+    const aiResponse = completion.choices[0]?.message?.content?.trim() ?? "I'm here to help -- could you rephrase that?";
 
-    // If handoff requested, mark the original client message and create a coaching task
     if (wantsPedro) {
       await Promise.all([
         adminClient
@@ -290,17 +477,13 @@ Deno.serve(async (req: Request) => {
           .insert({
             client_id: body.client_id,
             title: `${client.name} wants to speak with you directly`,
-            description: `Client message: "${body.content}"`,
-            status: 'pending',
+            details: `Client message: "${body.content}"`,
+            status: 'open',
             priority: 'high',
-            due_date: new Date().toISOString().split('T')[0],
-          })
-          .select('id')
-          .single(),
+          }),
       ]);
     }
 
-    // Insert the AI response into pt_messages
     const { error: insertError } = await adminClient
       .from('pt_messages')
       .insert({
@@ -314,7 +497,25 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Failed to save AI response.' }, 500);
     }
 
-    return json({ ok: true, response: aiResponse, handoff_requested: wantsPedro });
+    // Fire-and-forget: update client brain async (do not await)
+    fetch(`${supabaseUrl}/functions/v1/update-client-brain`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: body.client_id,
+        trigger_type: 'message',
+        content: body.content,
+        ai_response: aiResponse,
+        source_message_id: body.message_id,
+      }),
+    }).catch(() => {
+      // Non-blocking -- brain update failure never surfaces to the client
+    });
+
+    return json({ ok: true, response: aiResponse, handoff_requested: wantsPedro, nutrition_logged: !!nutritionResult });
   } catch (err) {
     console.error('ai-client-chat error:', err);
     return json({ error: 'Internal error.' }, 500);

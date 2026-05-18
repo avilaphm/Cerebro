@@ -317,3 +317,129 @@ export interface PTCoachingReview {
   created_at: string;
   updated_at?: string;
 }
+
+// ---- Client Brain System ----
+
+export interface PTClientBrain {
+  id: string;
+  client_id: string;
+  personality_notes: Record<string, string>;
+  key_phrases: string[];
+  open_loops: string[];
+  milestones: string[];
+  summary_current: string | null;
+  summary_30d: string | null;
+  summary_60d: string | null;
+  summary_12m: string | null;
+  last_session_summary: string | null;
+  total_interactions: number;
+  brain_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PTClientNutritionDoc {
+  id: string;
+  client_id: string;
+  typical_meals: Array<Record<string, unknown>>;
+  favourite_foods: string[];
+  foods_to_avoid: string[];
+  nutrition_obstacles: string | null;
+  eating_habits: Record<string, unknown>;
+  current_week_avg: { protein_g?: number; carbs_g?: number; fat_g?: number; calories?: number; entries?: number };
+  last_30d_avg: { protein_g?: number; carbs_g?: number; fat_g?: number; calories?: number };
+  prev_60d_avg: { protein_g?: number; carbs_g?: number; fat_g?: number; calories?: number };
+  last_12m_summary: string | null;
+  recent_wins: string[];
+  recurring_gaps: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PTClientExerciseDoc {
+  id: string;
+  client_id: string;
+  strong_movements: string[];
+  weak_movements: string[];
+  disliked_exercises: string[];
+  injury_history: Array<{ description: string; date: string; resolved: string }>;
+  current_limitations: string | null;
+  current_phase: string | null;
+  current_week: number | null;
+  current_1rm: Record<string, number>;
+  current_week_summary: string | null;
+  last_30d_summary: string | null;
+  prev_60d_summary: string | null;
+  last_12m_summary: string | null;
+  best_training_days: string[];
+  adherence_trend: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PTClientLifestyleDoc {
+  id: string;
+  client_id: string;
+  sleep_baseline: Record<string, unknown>;
+  stress_patterns: string | null;
+  schedule_notes: string | null;
+  social_context: string | null;
+  current_week_avg: { energy?: number; sleep?: number; stress?: number; soreness?: number };
+  last_30d_avg: { energy?: number; sleep?: number; stress?: number; soreness?: number };
+  prev_60d_avg: { energy?: number; sleep?: number; stress?: number; soreness?: number };
+  last_12m_summary: string | null;
+  recurring_challenges: string[];
+  wins: Array<Record<string, unknown>>;
+  goals_context: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PTClientRecentActivity {
+  id: string;
+  client_id: string;
+  week_start: string | null;
+  activity_type: 'message' | 'food_log' | 'workout_logged' | 'checkin' | 'metric_added' | 'goal_updated' | 'note' | 'booking';
+  raw_content: string | null;
+  ai_response: string | null;
+  structured_data: Record<string, unknown>;
+  routed_to: string[];
+  routed_at: string | null;
+  importance: 'critical' | 'high' | 'normal' | 'low';
+  pruned: boolean;
+  source_message_id: string | null;
+  created_at: string;
+}
+
+export interface PTNutritionLog {
+  id: string;
+  client_id: string;
+  logged_at: string;
+  input_type: 'photo' | 'voice' | 'text';
+  raw_input_url: string | null;
+  raw_transcript: string | null;
+  meal_description: string | null;
+  food_items: Array<{ name: string; quantity: string; unit: string }>;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  calories: number | null;
+  confidence: 'high' | 'medium' | 'low' | null;
+  meal_type: string | null;
+  notes: string | null;
+  source_message_id: string | null;
+  created_at: string;
+}
+
+export interface PTConversationSummary {
+  id: string;
+  client_id: string;
+  period_start: string | null;
+  period_end: string | null;
+  message_count: number | null;
+  summary: string | null;
+  insights_extracted: Array<Record<string, unknown>>;
+  applied_to_brain: boolean;
+  created_at: string;
+}
+
