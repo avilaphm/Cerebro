@@ -8,6 +8,12 @@ export interface PTExercise {
   cues: string[];
   tags: string[];
   source: 'manual' | 'spreadsheet' | 'ai';
+  primary_muscles: string[];
+  secondary_muscles: string[];
+  conditions: string[];
+  setup_cues: string[];
+  progression_ids: string[];
+  regression_ids: string[];
 }
 
 export interface PTClient {

@@ -26,6 +26,7 @@ import {
 import type {
   PTClient,
   PTClientGoal,
+  PTExercise,
   PTClientMetric,
   PTProgramAssignment,
   PTProgrammeDay,
@@ -472,6 +473,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [openLastTime, setOpenLastTime] = useState<Record<string, boolean>>({});
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
   const [activeWorkoutExerciseId, setActiveWorkoutExerciseId] = useState<string | null>(null);
+  const [richExerciseMap, setRichExerciseMap] = useState<Record<string, PTExercise>>({});
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingWorkout, setSavingWorkout] = useState(false);
@@ -1595,6 +1597,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             onClick={() => {
               setActiveWorkoutExerciseId(sections[0]?.exercises[0]?.exercise.id ?? null);
               setSelectedWorkout({ ...selectedWorkout, started: true });
+              // Batch-fetch rich card data (muscles, setup cues, conditions) for all exercises in this workout
+              const ids = sections.flatMap((s) => s.exercises.map((ev) => ev.exercise.exercise_id)).filter((id): id is string => Boolean(id));
+              if (ids.length > 0) {
+                supabase.from('pt_exercises').select('id,primary_muscles,secondary_muscles,conditions,setup_cues,progression_ids,regression_ids').in('id', ids).then(({ data: richData }) => {
+                  if (richData) setRichExerciseMap(Object.fromEntries((richData as PTExercise[]).map((e) => [e.id, e])));
+                });
+              }
             }}
             className="mt-7 flex w-full items-center justify-center gap-2 bg-black px-5 py-4 text-sm font-medium text-white transition-colors hover:bg-black/80 active:scale-[0.99]"
           >
@@ -1686,6 +1695,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     <div className="mb-4">
                       <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Exercise {screenIndex + 1}</p>
                       <h3 className="mt-1 text-xl font-medium leading-tight text-black md:text-2xl">{exercise.name}</h3>
+                      {richExerciseMap[exercise.exercise_id ?? '']?.primary_muscles?.length > 0 && (
+                        <p className="mt-0.5 text-[0.65rem] uppercase tracking-wide text-black/35">
+                          {richExerciseMap[exercise.exercise_id ?? ''].primary_muscles.join(' · ')}
+                        </p>
+                      )}
                       <p className="mt-1 text-sm text-black/45">
                         Target: {values.sets || '?'} sets - {values.reps || '?'} reps
                         {exercise.rest ? ` - ${exercise.rest}` : ''}
@@ -1693,6 +1707,35 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     </div>
 
                     <div className="space-y-2">
+                      {(() => {
+                        const richEx = richExerciseMap[exercise.exercise_id ?? ''];
+                        const setupCues = richEx?.setup_cues ?? [];
+                        if (setupCues.length === 0) return null;
+                        const setupKey = `setup-${cueKey}`;
+                        const setupOpen = openCues[setupKey] ?? false;
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setOpenCues((current) => ({ ...current, [setupKey]: !setupOpen }))}
+                              className="flex w-full items-center justify-between rounded-full border border-black/10 bg-white/85 px-4 py-3 text-left text-sm text-black/65 shadow-sm transition-colors hover:border-black/25 hover:text-black"
+                            >
+                              <span>Setup</span>
+                              <ChevronRight className={`h-5 w-5 text-black/45 transition-transform ${setupOpen ? 'rotate-90' : ''}`} />
+                            </button>
+                            {setupOpen && (
+                              <ol className="rounded-[1.35rem] border border-black/8 bg-white/80 px-6 py-4 space-y-2">
+                                {setupCues.map((cue, idx) => (
+                                  <li key={idx} className="flex gap-2.5 text-sm text-black/60">
+                                    <span className="shrink-0 text-xs font-semibold text-black/30 mt-0.5">{idx + 1}</span>
+                                    {cue}
+                                  </li>
+                                ))}
+                              </ol>
+                            )}
+                          </>
+                        );
+                      })()}
                       <button
                         type="button"
                         onClick={() => setOpenCues((current) => ({ ...current, [cueKey]: !cuesAreOpen }))}
