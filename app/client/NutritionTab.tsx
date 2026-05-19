@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import NutritionChatModal from './NutritionChatModal';
 
 interface NutritionLog {
   id: string;
@@ -120,6 +121,8 @@ export default function NutritionTab({ clientId }: Props) {
   const [logs, setLogs] = useState<NutritionLog[]>([]);
   const [targets, setTargets] = useState<DailyTargets>(DEFAULT_TARGETS);
   const [loading, setLoading] = useState(true);
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const weekDays = useMemo(() => {
     const base = addDays(new Date(), weekOffset * 7);
@@ -175,6 +178,13 @@ export default function NutritionTab({ clientId }: Props) {
     return map;
   }, [logs]);
 
+  const deleteLog = async (id: string) => {
+    setDeletingId(id);
+    await supabase.from('pt_nutrition_logs').delete().eq('id', id);
+    setLogs((prev) => prev.filter((l) => l.id !== id));
+    setDeletingId(null);
+  };
+
   const today = new Date();
   const canGoForward = weekOffset < 0;
 
@@ -219,6 +229,28 @@ export default function NutritionTab({ clientId }: Props) {
         {logs.length > 0 && (
           <p className="mt-3 text-[0.6rem] text-black/30">{logs.length} meal{logs.length !== 1 ? 's' : ''} logged</p>
         )}
+      </div>
+
+      {/* Track food CTA */}
+      <div className="mx-auto max-w-5xl">
+        <button
+          type="button"
+          onClick={() => setShowLogModal(true)}
+          className="group flex w-full items-center justify-between border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:border-black/25"
+        >
+          <div>
+            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Log food</p>
+            <p className="mt-0.5 text-sm font-medium">Track your food here</p>
+            <p className="mt-0.5 text-[0.65rem] text-black/35">Voice dump, photos, or type — AI splits it into meals</p>
+          </div>
+          <svg
+            width="20" height="20" viewBox="0 0 20 20" fill="none"
+            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+            className="shrink-0 text-black/25 transition-transform group-hover:translate-x-0.5"
+          >
+            <path d="M7 10h6M10 7l3 3-3 3" />
+          </svg>
+        </button>
       </div>
 
       {/* Day selector */}
@@ -295,7 +327,7 @@ export default function NutritionTab({ clientId }: Props) {
                     {items.map((log) => (
                       <div key={log.id} className="px-4 py-3">
                         <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="text-sm leading-snug">{log.meal_description}</p>
                             {log.food_items && log.food_items.length > 0 && (
                               <p className="mt-0.5 text-[0.65rem] text-black/35 truncate">
@@ -303,20 +335,37 @@ export default function NutritionTab({ clientId }: Props) {
                               </p>
                             )}
                           </div>
-                          <div className="shrink-0 text-right">
-                            {log.calories != null && (
-                              <p className="text-xs font-medium tabular-nums">{log.calories} kcal</p>
-                            )}
-                            <p className="text-[0.6rem] text-black/35 tabular-nums">
-                              {[
-                                log.protein_g != null ? `${log.protein_g}g P` : null,
-                                log.carbs_g != null ? `${log.carbs_g}g C` : null,
-                                log.fat_g != null ? `${log.fat_g}g F` : null,
-                              ].filter(Boolean).join(' · ')}
-                            </p>
-                            {log.fibre_g != null && (
-                              <p className="text-[0.6rem] text-black/30 tabular-nums">{log.fibre_g}g fibre</p>
-                            )}
+                          <div className="flex shrink-0 items-start gap-3">
+                            <div className="text-right">
+                              {log.calories != null && (
+                                <p className="text-xs font-medium tabular-nums">{log.calories} kcal</p>
+                              )}
+                              <p className="text-[0.6rem] text-black/35 tabular-nums">
+                                {[
+                                  log.protein_g != null ? `${log.protein_g}g P` : null,
+                                  log.carbs_g != null ? `${log.carbs_g}g C` : null,
+                                  log.fat_g != null ? `${log.fat_g}g F` : null,
+                                ].filter(Boolean).join(' · ')}
+                              </p>
+                              {log.fibre_g != null && (
+                                <p className="text-[0.6rem] text-black/30 tabular-nums">{log.fibre_g}g fibre</p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void deleteLog(log.id)}
+                              disabled={deletingId === log.id}
+                              className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-black/20 transition-colors hover:bg-red-50 hover:text-red-400 disabled:opacity-30"
+                              aria-label="Delete entry"
+                            >
+                              {deletingId === log.id ? (
+                                <span className="h-3 w-3 animate-spin rounded-full border border-black/20 border-t-black/60" />
+                              ) : (
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                                  <path d="M2 2l8 8M10 2L2 10" />
+                                </svg>
+                              )}
+                            </button>
                           </div>
                         </div>
                         <p className="mt-1 text-[0.55rem] text-black/20">
@@ -332,6 +381,14 @@ export default function NutritionTab({ clientId }: Props) {
           })
         )}
       </div>
+
+      {showLogModal && (
+        <NutritionChatModal
+          clientId={clientId}
+          onClose={() => setShowLogModal(false)}
+          onLogged={() => void loadLogs(selectedDate)}
+        />
+      )}
     </div>
   );
 }
