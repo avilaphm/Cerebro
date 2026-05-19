@@ -340,6 +340,13 @@ Deno.serve(async (req: Request) => {
         .eq('client_id', client_id);
     }
 
+    const metricsUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/compute-client-metrics`;
+    fetch(metricsUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+      body: JSON.stringify({ client_id }),
+    }).catch((e) => console.error('compute-client-metrics fire-and-forget error:', e));
+
     return json({
       ok: true,
       log_id: (logRow as { id: string }).id,

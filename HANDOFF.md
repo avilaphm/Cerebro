@@ -4,6 +4,14 @@
 2026-05-19 by Claude
 
 ## Last completed task
+Client Metrics Tracking System - compute-client-metrics edge function deployed:
+- DB migration applied: `training_metrics` JSONB column on `pt_client_exercise_doc`, `adherence_metrics` JSONB column on `pt_client_nutrition_doc`.
+- New edge function `compute-client-metrics` (deployed v1, --no-verify-jwt): accepts `{ client_id }`, queries last 28 days of `pt_set_logs` to classify exercises as push/pull/hinge/squat/core/other by keyword matching and compute volume (weight x reps) per category per ISO week. Queries `pt_workout_logs` for workout frequency and all-time count. Queries last 30 days of `pt_nutrition_logs` for tracking rate, daily avg macros, and protein/calorie hit rates vs `daily_targets`. Writes structured JSON to `training_metrics` on exercise doc and `adherence_metrics` on nutrition doc.
+- `update-client-brain` (v7): after `applyBrainUpdates()`, fires compute-client-metrics as fire-and-forget when `trigger_type === 'workout_logged'` or `trigger_type === '1rm_result'`.
+- `log-nutrition` (v6): fires compute-client-metrics as fire-and-forget after every meal log.
+- `skills/client-metrics-retrieval/SKILL.md`: new skill documenting the full metrics schema, movement classification keywords, hit rate definition, recomputation triggers, and single-query retrieval pattern.
+
+Previous completed task:
 pt-programming-agent v11 deployed - Mandatory week_blocks for all 3 phases + full knowledge base retrieval:
 - `programming-principles.md`: Phase 2 Hypertrophy and Phase 3 Strength week_blocks are now MANDATORY (not examples). Both phases now require BOTH `sets` AND `weight_pct` in every block. Phase 2 default: 4 blocks at 65/68/72/75% with 3/4/4/5 sets (12 weeks). Phase 3 default: 4 blocks at 77/80/85/88% with 4/4/5/6 sets (10 weeks). Added Knowledge Base section listing all 19 docs with mandatory cross-reference rules.
 - `pt-programming-agent/index.ts`: DEFAULT_PRINCIPLES updated to match. SYSTEM_PROMPT updated to mandate week_blocks and require all knowledge docs referenced. `buildContext()` now fetches full `pt_knowledge_documents` catalog. `compactGenerationContext()` passes `knowledge_base_catalog` to AI. `validateProgramme()` adds hard rule failures if Hypertrophy or Strength phases are missing `week_blocks`, `weight_pct`, or `sets`.

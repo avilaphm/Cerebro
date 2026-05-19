@@ -602,6 +602,15 @@ Deno.serve(async (req: Request) => {
 
     await applyBrainUpdates(client_id, extraction, adminClient);
 
+    if (trigger_type === 'workout_logged' || trigger_type === '1rm_result') {
+      const metricsUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/compute-client-metrics`;
+      fetch(metricsUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+        body: JSON.stringify({ client_id }),
+      }).catch((e) => console.error('compute-client-metrics fire-and-forget error:', e));
+    }
+
     return json({ ok: true, brain_updated: true, structured_updated: structuredUpdated });
   } catch (err) {
     console.error('update-client-brain error:', err);
