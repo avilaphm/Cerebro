@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
-const DEFAULT_MATCH_COUNT = 12;
+const DEFAULT_MATCH_COUNT = 18;
 const DEFAULT_MATCH_THRESHOLD = 0.28;
 const LOW_CONFIDENCE_THRESHOLD = 0.55;
 
@@ -68,13 +68,23 @@ const DOCUMENT_PRIORITY = [
       'programming system',
     ],
   },
-  { rank: 2, label: 'Pedro Coaching Philosophy', patterns: ['pedro', 'coaching', 'voice note', 'matt duncan'] },
-  { rank: 3, label: 'Eric Helms Training Pyramid', patterns: ['muscle and strength pyramid training', 'helms training'] },
-  { rank: 4, label: 'Eric Helms Nutrition Pyramid', patterns: ['muscle and strength pyramid nutrition', 'helms nutrition'] },
-  { rank: 5, label: 'ACSM', patterns: ['acsm', 'exercise physiology', 'chronic disease'] },
-  { rank: 6, label: 'Musculoskeletal Research', patterns: ['musculoskeletal', 'rotator cuff', 'shoulder instability'] },
-  { rank: 7, label: 'Precision Nutrition', patterns: ['precision nutrition', 'pn certification', 'nutrition big picture'] },
-  { rank: 8, label: 'Pedro Writing Voice', patterns: ['writing voice', 'pedro writing'] },
+  { rank: 2, label: 'Pedro Coaching Philosophy', patterns: ['pedro pt coaching', 'pedro coaching'] },
+  { rank: 3, label: 'Matt Duncan Coaching Tips', patterns: ['matt duncan'] },
+  { rank: 4, label: 'Voice Notes', patterns: ['voice note'] },
+  { rank: 5, label: 'Eric Helms Training Pyramid', patterns: ['muscle and strength training pyra', 'helms training', 'strength training pyra'] },
+  { rank: 6, label: 'Eric Helms Nutrition Pyramid', patterns: ['muscle and strength pyramid', 'nutrition v2', 'helms nutrition'] },
+  { rank: 7, label: 'ACSM Exercise Physiology', patterns: ['basics in exercise physiology', 'acsm'] },
+  { rank: 8, label: 'Basic Training Principles', patterns: ['10 basic principles', 'basic principles of training'] },
+  { rank: 9, label: 'Sports Nutrition', patterns: ['11 sports nutrition', 'sports nutrition'] },
+  { rank: 10, label: 'Exercise Prescription', patterns: ['12 exercise prescription', 'exercise prescription'] },
+  { rank: 11, label: 'Chronic Disease ACSM', patterns: ['41 exercise and chronic', 'exercise and chronic disease'] },
+  { rank: 12, label: 'Shoulder Instability', patterns: ['47 shoulder instability', 'shoulder instability'] },
+  { rank: 13, label: 'Rotator Cuff', patterns: ['48 rotator cuff', 'rotator cuff'] },
+  { rank: 14, label: 'Nutrition Big Picture', patterns: ['intro', 'nutrition the big picture', 'nutrition big picture'] },
+  { rank: 15, label: 'Musculoskeletal Fitness', patterns: ['musculoskeletal fitness and health'] },
+  { rank: 16, label: 'Precision Nutrition', patterns: ['pn certification', 'precision nutrition'] },
+  { rank: 17, label: 'Prescribing Exercise Preventive', patterns: ['prescribing exercise as preventive', 'preventive therapy'] },
+  { rank: 18, label: 'Musculoskeletal Fitness Changes', patterns: ['effects of changes in musculoskeletal', 'musculoskeletal fitness on health'] },
 ];
 
 const BASE_PROGRAMMING_RULES: AppliedRule[] = [
@@ -252,7 +262,7 @@ function normalizeInput(body: RetrievalRequest):
   if (!taskType) return { error: 'Missing taskType.' };
   if (!questionOrDecision) return { error: 'Missing questionOrDecision.' };
 
-  const matchCount = clampNumber(body.matchCount ?? body.match_count ?? DEFAULT_MATCH_COUNT, 3, 20);
+  const matchCount = clampNumber(body.matchCount ?? body.match_count ?? DEFAULT_MATCH_COUNT, 3, 25);
   const matchThreshold = clampNumber(body.matchThreshold ?? body.match_threshold ?? DEFAULT_MATCH_THRESHOLD, 0.1, 0.8);
 
   return {
@@ -286,11 +296,21 @@ function buildRetrievalQuery(input: {
   const priorityHint = [
     'Cerebro Programming Architecture',
     'Pedro coaching philosophy',
+    'Matt Duncan coaching tips',
     'Eric Helms training pyramid',
-    'Eric Helms nutrition pyramid',
-    'ACSM',
-    'musculoskeletal research',
+    'Eric Helms nutrition pyramid v2',
+    'ACSM exercise physiology',
+    'basic training principles',
+    'sports nutrition',
+    'exercise prescription',
+    'chronic disease exercise',
+    'shoulder instability',
+    'rotator cuff injury',
+    'nutrition big picture',
+    'musculoskeletal fitness and health',
     'Precision Nutrition',
+    'prescribing exercise preventive therapy',
+    'musculoskeletal fitness changes health',
   ].join(', ');
 
   return [

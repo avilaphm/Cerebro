@@ -15,10 +15,11 @@ Every new programme MUST use this exact phase order: Foundations (6-7w), 1RM Tes
 
 ## Phase 1 Foundations
 ALWAYS exactly 3 workout days. Full body every session.
+week_blocks MANDATORY: [{"weeks":2,"sets":"2"},{"weeks":2,"sets":"3"},{"weeks":2,"sets":"3"}]
 Weeks 1-2: 2 sets. Slow tempo. Movement quality. Weeks 3-4: 3 sets. Controlled tempo. Weeks 5-7: Introduce Big 5 compounds (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up).
 
 ## Warm-Up (every day)
-Exactly 4 warm-up exercises. 1 set each. 10-12 reps. Use section_start "Warm Up" on first warm-up only. Select from approved pool: 90/90 hip switches, cobra to child pose, Spider-Man lunges, best stretch in the world, T-spine rotations, thread the needle, glute bridge marchers, dead bugs, bird dogs, bodyweight squats, band pull-aparts.
+Exactly 4 warm-up exercises. 1 set each. 10-12 reps. Use section_start "Warm Up" on first warm-up only.
 
 ## Workout Structure
 6 main exercises standard in 3 supersets. Max 9 exercises. 45 min session. Use section_start "Workout" on first main exercise.
@@ -26,14 +27,21 @@ Exactly 4 warm-up exercises. 1 set each. 10-12 reps. Use section_start "Warm Up"
 ## Compound Tempos
 BB Squat: 3s down, 2-3s pause. Deadlift: 2-3s controlled descent. Shoulder Press: 3s eccentric, pause overhead. Pull-up: 3s eccentric. Bench Press: 3s eccentric, 2s pause at chest.
 
-## Hypertrophy
-65-75% 1RM. 8-15 reps. 3-5 sets. Include supersets, progression, nutrition sync (higher carbs, protein support).
+## Hypertrophy Phase (MANDATORY week_blocks - both sets AND weight_pct required in every block)
+65-75% 1RM. 8-15 reps. 3-5 sets.
+week_blocks MANDATORY: [{"weeks":3,"sets":"3","weight_pct":"65%"},{"weeks":3,"sets":"4","weight_pct":"68%"},{"weeks":3,"sets":"4","weight_pct":"72%"},{"weeks":3,"sets":"5","weight_pct":"75%"}]
+Include supersets, progression, nutrition sync (higher carbs, protein support).
 
-## Strength
-75-90% 1RM. 3-8 reps. 4-6 sets. Include heavier loading progression, nutrition sync (nervous system, sleep, hydration).
+## Strength Phase (MANDATORY week_blocks - both sets AND weight_pct required in every block)
+75-90% 1RM. 3-8 reps. 4-6 sets.
+week_blocks MANDATORY: [{"weeks":2,"sets":"4","weight_pct":"77%"},{"weeks":3,"sets":"4","weight_pct":"80%"},{"weeks":3,"sets":"5","weight_pct":"85%"},{"weeks":2,"sets":"6","weight_pct":"88%"}]
+Include heavier loading progression, nutrition sync (nervous system, sleep, hydration).
 
 ## Nutrition Sync
-Phase 1: habits, hydration, protein consistency. Hypertrophy: higher carbs, protein support, slight surplus. Strength: nervous system recovery, sleep, hydration. Taper: maintain protein, recovery focus. Use LEAST restrictive strategy.
+Phase 1: habits, hydration, protein consistency. Hypertrophy: higher carbs, protein support, slight surplus (Nutrition Pyramid reference). Strength: nervous system recovery, sleep, hydration. Taper: maintain protein, recovery focus. Use LEAST restrictive strategy.
+
+## Knowledge Base (ALL documents must be referenced)
+Reference every indexed document: Cerebro architecture, Training Pyramid, Nutrition Pyramid, ACSM physiology, sports nutrition, exercise prescription, chronic disease, shoulder/rotator cuff, musculoskeletal fitness, Precision Nutrition, preventive therapy, Pedro coaching voice notes.
 
 ## Core Rules
 Movement quality before load. Full ROM. Longevity over ego. Unilateral weekly. Prefer library exercise_id, cues, video_url. Every exercise needs 3-5 cues and a tempo/intent note. Output is always a draft for Pedro.`;
@@ -196,8 +204,20 @@ Rules:
 - For a revision, preserve useful parts of the current programme and change only what client feedback, logs, or Pedro's instruction justify.
 - Explain the coaching reasoning, movement priorities, injury precautions, and progression strategy.
 - Sync nutrition to each phase. Do not produce generic nutrition advice disconnected from training demand.
-- Use phase-level week_blocks for set progressions or percentage progressions.
-- A week block should use "sets" for set progressions or "weight_pct" for percentage progressions.
+
+WEEK_BLOCKS ARE MANDATORY FOR ALL THREE MAIN PHASES:
+- Phase 1 Foundations: week_blocks MUST use "sets" progression: [{"weeks":2,"sets":"2"},{"weeks":2,"sets":"3"},{"weeks":2,"sets":"3"}]
+- Phase 2 Hypertrophy: week_blocks MUST include BOTH "sets" AND "weight_pct" in every block: [{"weeks":3,"sets":"3","weight_pct":"65%"},{"weeks":3,"sets":"4","weight_pct":"68%"},{"weeks":3,"sets":"4","weight_pct":"72%"},{"weeks":3,"sets":"5","weight_pct":"75%"}]
+- Phase 3 Strength: week_blocks MUST include BOTH "sets" AND "weight_pct" in every block: [{"weeks":2,"sets":"4","weight_pct":"77%"},{"weeks":3,"sets":"4","weight_pct":"80%"},{"weeks":3,"sets":"5","weight_pct":"85%"},{"weeks":2,"sets":"6","weight_pct":"88%"}]
+- Adjust block week counts proportionally if Pedro sets a different phase duration. Never omit week_blocks. Never omit weight_pct from Hypertrophy or Strength blocks.
+
+KNOWLEDGE BASE — MANDATORY:
+The context includes knowledge_base_catalog listing ALL indexed documents. You MUST reference ALL of them. In coaching_reasoning, explicitly cite which documents informed your exercise selection, loading parameters, nutrition strategy, and phase progression. Do not write generic programming that ignores the knowledge base. Key mandatory cross-references:
+- Nutrition: cite Nutrition Pyramid AND Precision Nutrition sources
+- Exercise/loading: cite Training Pyramid AND ACSM physiology
+- Any shoulder/upper body issues: cite shoulder instability AND rotator cuff documents
+- Preventive notes: cite Prescribing exercise as preventive therapy
+
 - Use exercise week_overrides only when a specific exercise needs to differ from the phase block.
 - Prefer supplied exercise library IDs. Copy library cues and video URLs when available.
 - Respect injuries, pain, dislikes, schedule, equipment, and recent performance.
@@ -414,7 +434,7 @@ async function buildContext(
 
   if (clientError || !client) return { error: 'Client not found.', status: 404 };
 
-  const [assignmentsRes, notesRes, messagesRes, workoutsRes, setsRes, exercisesRes] = await Promise.all([
+  const [assignmentsRes, notesRes, messagesRes, workoutsRes, setsRes, exercisesRes, knowledgeDocsRes] = await Promise.all([
     adminClient
       .from('pt_program_assignments')
       .select('id, name, goal, duration_weeks, phase_count, status, programme, current_week, current_block_index, created_at')
@@ -451,6 +471,10 @@ async function buildContext(
       .select('id, name, muscles, purpose, equipment, video_url, cues, tags')
       .order('name')
       .limit(350),
+    adminClient
+      .from('pt_knowledge_documents')
+      .select('id, title, description, chunk_count')
+      .order('created_at', { ascending: true }),
   ]);
 
   const assignments = Array.isArray(assignmentsRes.data) ? assignmentsRes.data : [];
@@ -473,6 +497,10 @@ async function buildContext(
     recent_workouts: workoutsRes.data ?? [],
     recent_sets: setsRes.data ?? [],
     exercise_library: exercisesRes.data ?? [],
+    knowledge_catalog: (knowledgeDocsRes.data ?? []).map((doc) => {
+      const d = doc as { id: string; title: string; description: string | null; chunk_count: number };
+      return { id: d.id, title: d.title, description: d.description, chunk_count: d.chunk_count };
+    }),
   };
 }
 
@@ -482,6 +510,8 @@ function compactGenerationContext(context: Record<string, unknown>): Record<stri
   const recentMessages = Array.isArray(context.recent_messages) ? context.recent_messages : [];
   const recentWorkouts = Array.isArray(context.recent_workouts) ? context.recent_workouts : [];
   const feedbackNotes = Array.isArray(context.active_feedback_notes) ? context.active_feedback_notes : [];
+
+  const knowledgeCatalog = Array.isArray(context.knowledge_catalog) ? context.knowledge_catalog : [];
 
   return {
     mode: context.mode,
@@ -493,6 +523,7 @@ function compactGenerationContext(context: Record<string, unknown>): Record<stri
     recent_messages: recentMessages.slice(0, 12),
     recent_workouts: recentWorkouts.slice(0, 12),
     recent_sets: recentSets.slice(0, 50),
+    knowledge_base_catalog: knowledgeCatalog,
     exercise_library: exerciseLibrary.slice(0, 140).map((item) => {
       const exercise = safeRecord(item);
       return {
@@ -1016,6 +1047,28 @@ function validateProgramme(
     const isFoundations = phase.title.toLowerCase().includes('foundation') || phaseIndex === 0;
     if (isFoundations && phase.days.length !== 3) {
       hardRuleFailures.push(`${phase.title || 'Phase 1'} must have exactly 3 full-body workout days (currently has ${phase.days.length}).`);
+    }
+
+    const isHypertrophy = phase.title.toLowerCase().includes('hypertrophy');
+    if (isHypertrophy) {
+      if (!phase.week_blocks || phase.week_blocks.length === 0) {
+        hardRuleFailures.push(`${phase.title}: Hypertrophy phase is missing week_blocks. Must include blocks with both sets and weight_pct for every progression block.`);
+      } else if (!phase.week_blocks.every((block) => block.weight_pct)) {
+        hardRuleFailures.push(`${phase.title}: Every Hypertrophy week_block must include weight_pct. Missing percentage on one or more blocks.`);
+      } else if (!phase.week_blocks.every((block) => block.sets)) {
+        hardRuleFailures.push(`${phase.title}: Every Hypertrophy week_block must include sets. Missing set count on one or more blocks.`);
+      }
+    }
+
+    const isStrength = phase.title.toLowerCase().includes('strength') && !phase.title.toLowerCase().includes('muscle');
+    if (isStrength) {
+      if (!phase.week_blocks || phase.week_blocks.length === 0) {
+        hardRuleFailures.push(`${phase.title}: Strength phase is missing week_blocks. Must include blocks with both sets and weight_pct for every progression block.`);
+      } else if (!phase.week_blocks.every((block) => block.weight_pct)) {
+        hardRuleFailures.push(`${phase.title}: Every Strength week_block must include weight_pct. Missing percentage on one or more blocks.`);
+      } else if (!phase.week_blocks.every((block) => block.sets)) {
+        hardRuleFailures.push(`${phase.title}: Every Strength week_block must include sets. Missing set count on one or more blocks.`);
+      }
     }
 
     phase.days.forEach((day, dayIndex) => {
