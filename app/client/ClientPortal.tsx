@@ -2946,7 +2946,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         <MessageBubble
           clientId={client.id}
           workoutContext={
-            activeContext && assignment
+            activeScreen === 'workout' && activeContext && assignment
               ? {
                   assignment_id: assignment.id,
                   assignment_name: assignment.name,
