@@ -4,6 +4,24 @@
 2026-05-19 by Claude
 
 ## Last completed task
+PT programming architecture Phase 10 - Final integration (OVERHAUL COMPLETE):
+- `PTClientDetail.tsx`: `saveOneRmResults()` now inserts a `STORE_1RM_RESULTS` step (step_order 19) into `pt_program_generation_steps` when the active assignment has a `generation_run_id`. `recalculateLoads()` inserts a `RECALCULATE_PERCENTAGE_LOADS` step (step_order 20) on success. Both are fire-and-forget (`void`) so they never block the UI.
+- RLS verified: Pedro's auth emails have full access to `pt_program_generation_steps` via the `pt admins full generation steps` policy.
+- DB smoke test: 1 generation run, 18 steps, 4 retrieval logs, 3 review outputs (all connected). Phase nutrition and 1RM counts are zero because no live client has run the full flow yet (expected).
+- Commit: 8d93689. Build passes.
+- **All 10 phases of the PT Programming System Overhaul are now complete.**
+
+**MANUAL TEST CHECKLIST (full end-to-end):**
+1. Go to a client detail page → Programming Agent → Generate new programme
+2. Review it at `/dashboard/pt/programmes/review/[run_id]`, approve each review output
+3. Open draft in editor → Phase Nutrition panel appears → expand, approve each phase
+4. Save programme → `pt_phase_nutrition` rows created, assignment saved
+5. Back on client detail → 1RM entry panel → enter Big 5 results → Save results
+6. Click "Recalculate programme loads" → confirm kg hints appear in programme editor
+7. Go to review page → Command trail should now show STORE_1RM_RESULTS (step 19) and RECALCULATE_PERCENTAGE_LOADS (step 20)
+8. Apply to client daily targets → confirm client sees updated macros in NutritionTab
+
+Previous completed task:
 PT programming architecture Phase 8/9 - Review output approval:
 - `PTProgrammeReviewView.tsx`: `reviewOutputs` prop converted to local state so approvals reflect immediately.
 - `approveOutput()`: updates `pt_program_review_outputs.status = 'approved'` for a single row, then patches local state.
