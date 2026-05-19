@@ -488,6 +488,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [journeyPopup, setJourneyPopup] = useState<{ key: string; text: string; label: string } | null>(null);
   const [journeyLoadingKey, setJourneyLoadingKey] = useState<string | null>(null);
   const [journeyExplanations, setJourneyExplanations] = useState<Record<string, string>>({});
+  useEffect(() => {
+    document.body.style.overflow = journeyPopup !== null ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [journeyPopup]);
   const [recordingNoteKey, setRecordingNoteKey] = useState<string | null>(null);
   const noteRecognitionRef = useRef<SpeechRecogLike | null>(null);
   const noteInterimRef = useRef('');
@@ -3259,7 +3263,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 ×
               </button>
             </div>
-            <div className="overflow-y-auto px-6 pb-10 pt-3">
+            <div className="overflow-y-auto overscroll-contain px-6 pb-10 pt-3">
               {journeyLoadingKey !== null ? (
                 <div className="flex flex-col items-center gap-3 py-8">
                   <div className="h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-black" />
