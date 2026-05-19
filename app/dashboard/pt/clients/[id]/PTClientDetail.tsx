@@ -562,6 +562,26 @@ export default function PTClientDetail({
       },
     }).catch(() => {});
 
+    if (activeAssignment?.generation_run_id) {
+      void supabase.from('pt_program_generation_steps').insert({
+        run_id: activeAssignment.generation_run_id,
+        step_order: 19,
+        command_name: 'STORE_1RM_RESULTS',
+        status: 'succeeded',
+        input_json: {
+          test_id: testRow.id,
+          exercises: resultRows.map((r) => ({
+            exercise: r.exercise_name,
+            tested_weight_kg: r.tested_weight_kg,
+            tested_reps: r.tested_reps,
+            estimated_1rm_kg: r.estimated_1rm_kg,
+          })),
+        },
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      });
+    }
+
     const newTest: PT1RMTest = { id: testRow.id, client_id: client.id, assignment_id: activeAssignment?.id ?? null, tested_at: new Date().toISOString().slice(0, 10), notes: null, created_at: new Date().toISOString(), results: resultRows.map((r, i) => ({ id: `temp-${i}`, test_id: testRow.id, client_id: client.id, exercise_name: r.exercise_name, tested_weight_kg: r.tested_weight_kg, tested_reps: r.tested_reps, estimated_1rm_kg: r.estimated_1rm_kg, notes: null, created_at: new Date().toISOString() })) };
     setOneRmTests((prev) => [newTest, ...prev]);
     setOneRmStatus('Saved.');
@@ -577,6 +597,17 @@ export default function PTClientDetail({
     const { error } = await supabase.functions.invoke('recalculate-percentage-loads', {
       body: { client_id: client.id, assignment_id: activeAssignment.id },
     });
+    if (!error && activeAssignment.generation_run_id) {
+      void supabase.from('pt_program_generation_steps').insert({
+        run_id: activeAssignment.generation_run_id,
+        step_order: 20,
+        command_name: 'RECALCULATE_PERCENTAGE_LOADS',
+        status: 'succeeded',
+        input_json: { client_id: client.id, assignment_id: activeAssignment.id },
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      });
+    }
     setRecalcBusy(false);
     setOneRmStatus(error ? `Error: ${error.message}` : 'Loads recalculated. Refresh the programme editor to see kg targets.');
   };
