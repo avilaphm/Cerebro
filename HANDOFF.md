@@ -4,7 +4,17 @@
 2026-05-19 by Claude
 
 ## Last completed task
-PT programming architecture Phase 6 - Percentage Engine:
+PT programming architecture Phase 7 - Nutrition Synchronization Engine:
+- `app/dashboard/pt/programmes/[id]/edit/page.tsx`: now loads `pt_phase_nutrition` rows by assignment_id. If no rows exist and `generation_run_id` is set, fetches `nutrition_draft` from `pt_program_generation_runs` as fallback. Passes both as props to PTProgrammeEditView.
+- `PTProgrammeEditView.tsx`: replaced `phaseNutritionDraft` (untyped unknown[]) with `nutritionRows: PhaseNutritionRow[]`. Initialized from DB rows → generation run draft → sessionStorage revision draft (in priority order). Added `PhaseNutritionRow` interface and `toNutritionRows()` / `extractRecText()` helpers at module level.
+- Phase Nutrition panel added to editor (between Phases and Workouts sections): collapsible card per phase showing training_context and an editable recommendations textarea. Editing a phase resets it to 'draft' status.
+- Approve button per phase: immediately upserts the row to `pt_phase_nutrition` with `review_status: 'approved'`.
+- When all phases approved: "Apply to client daily targets" button appears.
+- Apply modal: pre-fills 5 macro fields (protein_g, carbs_g, fat_g, fibre_g, calories) from current `pt_client_nutrition_doc.daily_targets`. Pedro edits and confirms → updates the client's nutrition doc. Client sees updated targets in NutritionTab.
+- `save()` now preserves each row's `review_status` instead of forcing 'approved' on all phases.
+- Commit: a17ab5c. Build passes.
+
+Previous completed task (Phase 6 - Percentage Engine):
 - Added `PT1RMTest` and `PT1RMResult` types to `utils/pt/types.ts`.
 - `PTClientDetail.tsx`: 1RM entry panel with the Big 5 exercises (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up). Pedro enters tested weight + reps. Epley formula computes estimated 1RM live. Warm-up ramp shown per exercise (empty bar 6 reps, then 50/65/75/85% chips, then 1RM target). Saves to `pt_client_1rm_tests` + `pt_client_1rm_results`. Calls `update-client-brain` with `trigger_type: '1rm_result'`. Test history displays below.
 - `page.tsx`: queries `pt_client_1rm_tests` with nested `pt_client_1rm_results` and passes as `oneRmTests` prop.
