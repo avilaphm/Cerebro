@@ -40,6 +40,38 @@ interface ProgrammingAgentDraft {
   programme?: unknown;
 }
 
+interface PhaseNutritionRow {
+  id?: string;
+  phase_index: number;
+  phase_title: string;
+  phase_type: string;
+  training_context: Record<string, unknown>;
+  recommendations: Record<string, unknown>;
+  review_status: string;
+}
+
+function toNutritionRows(items: unknown[]): PhaseNutritionRow[] {
+  return items.map((item, index) => {
+    const record = typeof item === 'object' && item !== null && !Array.isArray(item)
+      ? item as Record<string, unknown> : {};
+    return {
+      id: typeof record.id === 'string' ? record.id : undefined,
+      phase_index: typeof record.phase_index === 'number' ? record.phase_index : index,
+      phase_title: typeof record.phase_title === 'string' ? record.phase_title : `Phase ${index + 1}`,
+      phase_type: typeof record.phase_type === 'string' ? record.phase_type : 'general',
+      training_context: typeof record.training_context === 'object' && record.training_context !== null
+        ? record.training_context as Record<string, unknown> : {},
+      recommendations: typeof record.recommendations === 'object' && record.recommendations !== null
+        ? record.recommendations as Record<string, unknown> : {},
+      review_status: typeof record.review_status === 'string' ? record.review_status : 'draft',
+    };
+  });
+}
+
+function extractRecText(rec: Record<string, unknown>): string {
+  return Object.values(rec).filter((v) => typeof v === 'string').join('\n\n');
+}
+
 function draftReviewSummary(draft: ProgrammingAgentDraft, fallback: string) {
   const failures = Array.isArray(draft.validation_summary?.hard_rule_failures)
     ? draft.validation_summary.hard_rule_failures.length
@@ -60,10 +92,14 @@ export default function PTProgrammeEditView({
   assignment: initial,
   exercises,
   highlight,
+  phaseNutrition,
+  nutritionDraftFromRun,
 }: {
   assignment: PTProgramAssignment;
   exercises: PTExercise[];
   highlight?: { note?: string; phase?: string; day?: string; section?: string };
+  phaseNutrition?: unknown[];
+  nutritionDraftFromRun?: unknown[] | null;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -85,7 +121,18 @@ export default function PTProgrammeEditView({
   const [agentDraftSummary, setAgentDraftSummary] = useState('');
   const [generationRunId, setGenerationRunId] = useState<string | null>(initial.generation_run_id ?? null);
   const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>(initial.validation_summary ?? {});
-  const [phaseNutritionDraft, setPhaseNutritionDraft] = useState<unknown[]>([]);
+  const [nutritionRows, setNutritionRows] = useState<PhaseNutritionRow[]>(
+    (phaseNutrition ?? []).length > 0
+      ? toNutritionRows(phaseNutrition as unknown[])
+      : (nutritionDraftFromRun ?? []).length > 0
+      ? toNutritionRows(nutritionDraftFromRun as unknown[])
+      : []
+  );
+  const [nutritionExpanded, setNutritionExpanded] = useState<Record<number, boolean>>({});
+  const [nutritionApplyOpen, setNutritionApplyOpen] = useState(false);
+  const [applyPhaseIdx, setApplyPhaseIdx] = useState(0);
+  const [applyTargets, setApplyTargets] = useState({ protein_g: 150, carbs_g: 200, fat_g: 65, fibre_g: 30, calories: 2000 });
+  const [applyBusy, setApplyBusy] = useState(false);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
 
@@ -108,7 +155,7 @@ export default function PTProgrammeEditView({
       if (typeof draft.goal === 'string') setProgGoal(draft.goal);
       if (typeof draft.run_id === 'string') setGenerationRunId(draft.run_id);
       if (draft.validation_summary) setValidationSummary(draft.validation_summary);
-      if (Array.isArray(draft.phase_nutrition)) setPhaseNutritionDraft(draft.phase_nutrition);
+      if (Array.isArray(draft.phase_nutrition)) setNutritionRows(toNutritionRows(draft.phase_nutrition));
       setProgramme(safeProgramme(draft.programme));
       setAgentDraftSummary(draftReviewSummary(draft, 'AI revision draft loaded. Review before saving.'));
       setStatus('AI draft loaded.');
@@ -202,24 +249,20 @@ export default function PTProgrammeEditView({
       setStatus(`Error: ${error.message}`);
       setSaving(false);
     } else {
-      if (phaseNutritionDraft.length > 0) {
+      if (nutritionRows.length > 0) {
         await supabase.from('pt_phase_nutrition').upsert(
-          phaseNutritionDraft.map((item, index) => {
-            const record = typeof item === 'object' && item !== null && !Array.isArray(item) ? item as Record<string, unknown> : {};
-            const recommendations = typeof record.recommendations === 'object' && record.recommendations !== null ? record.recommendations as Record<string, unknown> : {};
-            const trainingContext = typeof record.training_context === 'object' && record.training_context !== null ? record.training_context as Record<string, unknown> : {};
-            return {
-              client_id: initial.client_id,
-              assignment_id: initial.id,
-              generation_run_id: generationRunId,
-              phase_index: typeof record.phase_index === 'number' ? record.phase_index : index,
-              phase_title: typeof record.phase_title === 'string' ? record.phase_title : programme.phases[index]?.title ?? `Phase ${index + 1}`,
-              phase_type: typeof record.phase_type === 'string' ? record.phase_type : 'general',
-              training_context: trainingContext,
-              recommendations,
-              review_status: 'approved',
-            };
-          }),
+          nutritionRows.map((row) => ({
+            ...(row.id ? { id: row.id } : {}),
+            client_id: initial.client_id,
+            assignment_id: initial.id,
+            generation_run_id: generationRunId,
+            phase_index: row.phase_index,
+            phase_title: row.phase_title,
+            phase_type: row.phase_type,
+            training_context: row.training_context,
+            recommendations: row.recommendations,
+            review_status: row.review_status,
+          })),
           { onConflict: 'assignment_id,phase_index' },
         );
       }
@@ -236,6 +279,58 @@ export default function PTProgrammeEditView({
     setSaving(true);
     await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', highlight.note);
     router.push(`/dashboard/pt/clients/${initial.client_id}`);
+  };
+
+  const approvePhase = async (phaseIndex: number) => {
+    const updated = nutritionRows.map((row) =>
+      row.phase_index === phaseIndex ? { ...row, review_status: 'approved' } : row
+    );
+    setNutritionRows(updated);
+    const row = updated.find((r) => r.phase_index === phaseIndex);
+    if (!row) return;
+    await supabase.from('pt_phase_nutrition').upsert({
+      ...(row.id ? { id: row.id } : {}),
+      client_id: initial.client_id,
+      assignment_id: initial.id,
+      generation_run_id: generationRunId,
+      phase_index: row.phase_index,
+      phase_title: row.phase_title,
+      phase_type: row.phase_type,
+      training_context: row.training_context,
+      recommendations: row.recommendations,
+      review_status: 'approved',
+    }, { onConflict: 'assignment_id,phase_index' });
+  };
+
+  const openApplyTargets = async (defaultPhaseIdx: number) => {
+    setApplyPhaseIdx(defaultPhaseIdx);
+    const { data } = await supabase
+      .from('pt_client_nutrition_doc')
+      .select('daily_targets')
+      .eq('client_id', initial.client_id)
+      .single();
+    if (data?.daily_targets) {
+      const t = data.daily_targets as Record<string, number>;
+      setApplyTargets({
+        protein_g: t.protein_g ?? 150,
+        carbs_g: t.carbs_g ?? 200,
+        fat_g: t.fat_g ?? 65,
+        fibre_g: t.fibre_g ?? 30,
+        calories: t.calories ?? 2000,
+      });
+    }
+    setNutritionApplyOpen(true);
+  };
+
+  const applyToClient = async () => {
+    setApplyBusy(true);
+    await supabase
+      .from('pt_client_nutrition_doc')
+      .update({ daily_targets: applyTargets })
+      .eq('client_id', initial.client_id);
+    setApplyBusy(false);
+    setNutritionApplyOpen(false);
+    setStatus('Nutrition targets applied to client.');
   };
 
   const phase = programme.phases[activePhaseTab] ?? null;
@@ -456,6 +551,83 @@ export default function PTProgrammeEditView({
         </button>
       </div>
 
+      {/* Phase Nutrition section */}
+      {nutritionRows.length > 0 && (
+        <div className="mb-8">
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Phase Nutrition</p>
+          <div className="space-y-2">
+            {nutritionRows.map((row) => {
+              const approved = row.review_status === 'approved';
+              const expanded = nutritionExpanded[row.phase_index] ?? false;
+              const recText = extractRecText(row.recommendations);
+              return (
+                <div key={row.phase_index} className={`border ${approved ? 'border-green-200' : 'border-black/10'}`}>
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-black/2 transition-colors"
+                    onClick={() => setNutritionExpanded((cur) => ({ ...cur, [row.phase_index]: !cur[row.phase_index] }))}
+                  >
+                    <div className="flex items-center gap-3">
+                      {approved && <span className="text-green-600 text-xs font-medium">✓</span>}
+                      <span className="text-sm font-medium">{row.phase_title}</span>
+                      <span className="text-[0.55rem] text-black/30 uppercase tracking-[0.1em]">{row.phase_type}</span>
+                    </div>
+                    <span className="text-black/25 text-[0.6rem]">{expanded ? '▲' : '▼'}</span>
+                  </button>
+                  {expanded && (
+                    <div className="border-t border-black/10 px-4 py-4 space-y-3">
+                      {Object.keys(row.training_context).length > 0 && (
+                        <div>
+                          <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Training context</p>
+                          <p className="text-xs text-black/50">
+                            {Object.entries(row.training_context).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                          </p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Recommendations</p>
+                        <textarea
+                          value={recText}
+                          onChange={(e) => {
+                            setNutritionRows((cur) => cur.map((r) =>
+                              r.phase_index === row.phase_index
+                                ? { ...r, recommendations: { notes: e.target.value }, review_status: 'draft' }
+                                : r
+                            ));
+                          }}
+                          rows={3}
+                          className="w-full border border-black/10 px-3 py-2 text-xs outline-none focus:border-black/40 resize-none"
+                        />
+                      </div>
+                      {approved ? (
+                        <span className="text-xs text-green-600">Phase approved</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void approvePhase(row.phase_index)}
+                          className="text-xs border border-green-600 text-green-700 px-4 py-1.5 hover:bg-green-50 transition-colors"
+                        >
+                          Approve this phase
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {nutritionRows.every((r) => r.review_status === 'approved') && (
+            <button
+              type="button"
+              onClick={() => void openApplyTargets(activePhaseTab)}
+              className="mt-3 w-full border border-black bg-black text-white px-5 py-3 text-sm hover:bg-white hover:text-black transition-colors"
+            >
+              Apply to client daily targets
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Workouts section */}
       <div>
         <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Workouts</p>
@@ -542,6 +714,49 @@ export default function PTProgrammeEditView({
           )
         )}
       </div>
+
+      {/* Apply nutrition modal */}
+      {nutritionApplyOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <p className="font-medium text-sm">Apply nutrition targets to client</p>
+              <button type="button" onClick={() => setNutritionApplyOpen(false)}
+                className="text-black/30 hover:text-black text-lg leading-none">✕</button>
+            </div>
+            {nutritionRows.find((r) => r.phase_index === applyPhaseIdx) && (
+              <p className="text-xs text-black/45">
+                Phase: {nutritionRows.find((r) => r.phase_index === applyPhaseIdx)?.phase_title}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              {(['protein_g', 'carbs_g', 'fat_g', 'fibre_g', 'calories'] as const).map((key) => (
+                <div key={key}>
+                  <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">
+                    {key === 'calories' ? 'Calories (kcal)' : key.replace('_g', ' (g)')}
+                  </label>
+                  <input
+                    type="number"
+                    value={applyTargets[key]}
+                    onChange={(e) => setApplyTargets((cur) => ({ ...cur, [key]: Number(e.target.value) }))}
+                    className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => setNutritionApplyOpen(false)}
+                className="flex-1 border border-black/20 px-4 py-2.5 text-sm hover:bg-black/5 transition-colors">
+                Cancel
+              </button>
+              <button type="button" onClick={() => void applyToClient()} disabled={applyBusy}
+                className="flex-1 border border-black bg-black text-white px-4 py-2.5 text-sm hover:bg-white hover:text-black disabled:opacity-30 transition-colors">
+                {applyBusy ? 'Applying…' : 'Apply targets'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
