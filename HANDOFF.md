@@ -1,9 +1,19 @@
 # Handoff
 
 ## Last updated
-2026-05-19 by Claude
+2026-05-19 by Codex
 
 ## Last completed task
+PT programming architecture Phase 3 knowledge retrieval system:
+- Added and deployed `retrieve-knowledge-context` Edge Function to Supabase project `otcnrkfvgyvwolironoz`.
+- Implements the `RETRIEVE_KNOWLEDGE_CONTEXT` command for later programming phases. Inputs support `taskType`, `phaseType`, `clientGoal`, `questionOrDecision`, optional `runId`, optional `stepId`, and optional retrieval tuning.
+- Uses existing `pt_knowledge_documents`, `pt_knowledge_chunks`, and hardened `match_knowledge_chunks` RPC. No second knowledge-base table or duplicate persistence system was introduced.
+- Writes every retrieval to `pt_knowledge_retrieval_logs` with excerpts, applied rules, referenced documents, confidence score, and low-confidence flag.
+- Auth supports service-role orchestration and Pedro/admin dashboard users only.
+- Verification: `npm run build` passes; Supabase function deploy succeeded; live smoke test returned 12 excerpts, logged row `9d8ec662-0419-4341-a85b-2391dbe6f97d`, confidence `0.576`, `low_confidence=false`; MCP SQL verified the retrieval-log row.
+- Note: legacy functions (`generate-pt-programme`, `parse-client-document`, `ai-client-chat`, `query-knowledge-brain`) still contain their older inline retrieval logic. Phase 4+ programming orchestration should call `retrieve-knowledge-context` before generation, then older generation paths can be retired or refactored once the deterministic engine replaces them.
+
+Previous completed task:
 Client dashboard UI overhaul (commits ed6a526 through 963fd40):
 - Chat (MessageBubble.tsx): scroll lock on open (targets `.client-liquid > div`), context-aware workout banner only when on Workout screen, full-screen overlay on mobile + floating panel on desktop, Claude-style input card (warm gray bg, textarea + icon row), live voice transcription via Web Speech API shown in real time, icon sizes updated to iOS standard (44px touch targets, 22px SVGs, 48px send circle)
 - Overview screen: Workout widget now before MacroWidget; Goals section hidden (not deleted); "Next workout" mini-card is now a button navigating to Workout tab
@@ -225,13 +235,14 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-963fd40 - Chat inputs: increase icon sizes to match Claude app reference (HEAD)
+current HEAD - PT programming architecture Phase 3 knowledge retrieval system
 
 ## Current state
 
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped most recently:
+- PT programming architecture Phase 3 is complete: `retrieve-knowledge-context` is deployed and writes auditable retrieval logs for deterministic programming generation. No coach-review UI or programme-generation engine changes were made in this phase.
 - PT programming architecture Phase 2 is complete at the database layer. The system now has persistent structures for intake/assessment documents, deterministic generation runs and command steps, retrieval logs, 1RM testing/results, phase-linked nutrition, review-agent outputs, and extra sessions. No frontend workflow or generation engine implementation has been added yet.
 - AI weekly check-in system: `pt_checkin_sessions` table (migration applied to remote), `client-ai-checkin` edge function (deployed), `WeeklyCheckinModal.tsx` component, Goals card "Weekly Check-in" button with pulsing DUE badge, This Week's Focus card (3-col exercise/nutrition/sleep). Removed all `WeeklyResetDraft` / `submitWeeklyReset` dead code from `ClientPortal.tsx`.
 - Edge function reads Pedro's `pt_booking_availability` + `pt_booking_blocks` to generate open PT slots, passes client context + calendar screenshot (Claude vision) to `claude-sonnet-4-6`, auto-creates `pt_weekly_plan_items` for activities, upserts `pt_weekly_checkins`, and creates a coaching task for Pedro on completion.
