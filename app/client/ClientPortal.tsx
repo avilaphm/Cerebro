@@ -495,6 +495,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
   const [activeWorkoutExerciseId, setActiveWorkoutExerciseId] = useState<string | null>(null);
   const [richExerciseMap, setRichExerciseMap] = useState<Record<string, PTExercise>>({});
+  const [richExerciseByName, setRichExerciseByName] = useState<Record<string, PTExercise>>({});
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadProgress, setLoadProgress] = useState(0);
@@ -1717,11 +1718,38 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             onClick={() => {
               setActiveWorkoutExerciseId(sections[0]?.exercises[0]?.exercise.id ?? null);
               setSelectedWorkout({ ...selectedWorkout, started: true });
-              // Batch-fetch rich card data (muscles, setup cues, conditions) for all exercises in this workout
-              const ids = sections.flatMap((s) => s.exercises.map((ev) => ev.exercise.exercise_id)).filter((id): id is string => Boolean(id));
+              // Batch-fetch rich card data for all exercises in this workout.
+              // Exercises with exercise_id → look up by ID (exact, always correct).
+              // Exercises without exercise_id → look up by name (case-insensitive fallback for
+              // programmes built before library linking was introduced).
+              const allExercises = sections.flatMap((s) => s.exercises.map((ev) => ev.exercise));
+              const ids = allExercises.map((e) => e.exercise_id).filter((id): id is string => Boolean(id));
+              const namesWithoutId = [...new Set(
+                allExercises.filter((e) => !e.exercise_id).map((e) => e.name.trim()).filter(Boolean)
+              )];
+
+              const COLS = 'id,name,video_url,primary_muscles,secondary_muscles,conditions,setup_cues,progression_ids,regression_ids';
+
+              const fetches: PromiseLike<PTExercise[]>[] = [];
               if (ids.length > 0) {
-                supabase.from('pt_exercises').select('id,video_url,primary_muscles,secondary_muscles,conditions,setup_cues,progression_ids,regression_ids').in('id', ids).then(({ data: richData }) => {
-                  if (richData) setRichExerciseMap(Object.fromEntries((richData as PTExercise[]).map((e) => [e.id, e])));
+                fetches.push(
+                  supabase.from('pt_exercises').select(COLS).in('id', ids)
+                    .then(({ data }) => (data ?? []) as PTExercise[])
+                );
+              }
+              if (namesWithoutId.length > 0) {
+                const orFilter = namesWithoutId.map((n) => `name.ilike.${n}`).join(',');
+                fetches.push(
+                  supabase.from('pt_exercises').select(COLS).or(orFilter)
+                    .then(({ data }) => (data ?? []) as PTExercise[])
+                );
+              }
+
+              if (fetches.length > 0) {
+                void Promise.all(fetches).then((results) => {
+                  const all = results.flat();
+                  setRichExerciseMap(Object.fromEntries(all.map((e) => [e.id, e])));
+                  setRichExerciseByName(Object.fromEntries(all.map((e) => [e.name.trim().toLowerCase(), e])));
                 });
               }
             }}
@@ -1813,7 +1841,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           {exerciseScreens.map(({ exercise, values, section }, screenIndex) => {
             const count = setCounts[exercise.id] ?? parseSets(values.sets);
             const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
-            const videoId = getYouTubeId(richExerciseMap[exercise.exercise_id ?? '']?.video_url ?? exercise.video_url);
+            const richEx = richExerciseMap[exercise.exercise_id ?? ''] ?? richExerciseByName[exercise.name.trim().toLowerCase()];
+            const videoId = getYouTubeId(richEx?.video_url ?? exercise.video_url);
             const cueKey = `${section.id}-${exercise.id}`;
             const lastTimeKey = `${cueKey}-last`;
             const cuesAreOpen = openCues[cueKey] ?? false;
@@ -1897,9 +1926,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     <div className="mb-4">
                       <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Exercise {screenIndex + 1}</p>
                       <h3 className="mt-1 text-xl font-medium leading-tight text-black md:text-2xl">{exercise.name}</h3>
-                      {richExerciseMap[exercise.exercise_id ?? '']?.primary_muscles?.length > 0 && (
+                      {richEx?.primary_muscles?.length > 0 && (
                         <p className="mt-0.5 text-[0.65rem] uppercase tracking-wide text-black/35">
-                          {richExerciseMap[exercise.exercise_id ?? ''].primary_muscles.join(' · ')}
+                          {richEx.primary_muscles.join(' · ')}
                         </p>
                       )}
                       <p className="mt-1 text-sm text-black/45">
@@ -1910,7 +1939,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
                     <div className="space-y-2">
                       {(() => {
-                        const richEx = richExerciseMap[exercise.exercise_id ?? ''];
                         const setupCues = richEx?.setup_cues ?? [];
                         if (setupCues.length === 0) return null;
                         const setupKey = `setup-${cueKey}`;
