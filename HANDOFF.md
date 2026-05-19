@@ -1,9 +1,20 @@
 # Handoff
 
 ## Last updated
-2026-05-19 by Claude
+2026-05-19 by Codex
 
 ## Last completed task
+PT programming architecture Phase 2 Supabase extensions:
+- Added and applied migrations `20260519015541_pt_programming_architecture_phase_2.sql` and `20260519020058_pt_programming_phase_2_fk_indexes.sql` to Supabase project `otcnrkfvgyvwolironoz`.
+- New PT programming tables: `pt_client_documents`, `pt_program_generation_runs`, `pt_program_generation_steps`, `pt_knowledge_retrieval_logs`, `pt_client_1rm_tests`, `pt_client_1rm_results`, `pt_phase_nutrition`, `pt_program_review_outputs`, and `pt_extra_sessions`.
+- Extended existing architecture instead of duplicating it: `pt_clients` now references intake/assessment documents; programme assignments/templates can link back to generation runs and validation summaries; client brain docs now have coaching reasoning, important decisions, movement assessment summary, progression strategy, and phase nutrition strategy fields.
+- Hardened existing Supabase functions `create_client_brain_docs` and `match_knowledge_chunks` with explicit `search_path` and restricted execute grants. Supabase security advisors no longer flag those functions.
+- Added missing indexes for all new Phase 2 foreign keys after Supabase performance advisors flagged them.
+- Verification: MCP migrations applied successfully; new tables have RLS enabled and policies; rollback smoke insert covered documents, generation runs, steps, and retrieval logs; `npm run build` passes.
+- Remaining Supabase advisor warnings are pre-existing and outside this phase: `pg_net` in public, public `blog-headers` bucket listing, leaked password protection disabled, and older RLS/index performance warnings on existing tables.
+- Note: `supabase db push --dry-run` is still blocked by remote migration history drift. Until local/remote migration history is reconciled, use MCP `apply_migration` or direct SQL for phase migrations and verify manually.
+
+Previous completed task:
 Exercise library seed completed + YouTube video batch (this session):
 - Seeded all 398 exercises (400 list, 2 minor duplicates skipped) with AI-generated metadata: primary_muscles, secondary_muscles, conditions, setup_cues, equipment, tags
 - Fixed Haiku name-suffix bug (was appending category in parens to name); deleted 95 bad rows, redeployed with `name: batch[idx].name` fix
@@ -205,13 +216,14 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-current HEAD - Improve dashboard contrast and control spacing
+current HEAD - PT programming architecture Phase 2 Supabase extensions
 
 ## Current state
 
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped most recently:
+- PT programming architecture Phase 2 is complete at the database layer. The system now has persistent structures for intake/assessment documents, deterministic generation runs and command steps, retrieval logs, 1RM testing/results, phase-linked nutrition, review-agent outputs, and extra sessions. No frontend workflow or generation engine implementation has been added yet.
 - AI weekly check-in system: `pt_checkin_sessions` table (migration applied to remote), `client-ai-checkin` edge function (deployed), `WeeklyCheckinModal.tsx` component, Goals card "Weekly Check-in" button with pulsing DUE badge, This Week's Focus card (3-col exercise/nutrition/sleep). Removed all `WeeklyResetDraft` / `submitWeeklyReset` dead code from `ClientPortal.tsx`.
 - Edge function reads Pedro's `pt_booking_availability` + `pt_booking_blocks` to generate open PT slots, passes client context + calendar screenshot (Claude vision) to `claude-sonnet-4-6`, auto-creates `pt_weekly_plan_items` for activities, upserts `pt_weekly_checkins`, and creates a coaching task for Pedro on completion.
 - `PTClientDetail.tsx` and `page.tsx` already include AI Check-in Sessions section (last 8 sessions, per-session focus card, activity list, health tips).
