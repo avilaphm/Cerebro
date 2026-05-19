@@ -4,6 +4,16 @@
 2026-05-19 by Claude
 
 ## Last completed task
+PT programming architecture Phase 6 - Percentage Engine:
+- Added `PT1RMTest` and `PT1RMResult` types to `utils/pt/types.ts`.
+- `PTClientDetail.tsx`: 1RM entry panel with the Big 5 exercises (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up). Pedro enters tested weight + reps. Epley formula computes estimated 1RM live. Warm-up ramp shown per exercise (empty bar 6 reps, then 50/65/75/85% chips, then 1RM target). Saves to `pt_client_1rm_tests` + `pt_client_1rm_results`. Calls `update-client-brain` with `trigger_type: '1rm_result'`. Test history displays below.
+- `page.tsx`: queries `pt_client_1rm_tests` with nested `pt_client_1rm_results` and passes as `oneRmTests` prop.
+- New edge function `recalculate-percentage-loads` (deployed `--no-verify-jwt`): reads latest `pt_client_1rm_results`, fuzzy-matches exercise names to Big 5, resolves every `weight_pct` in `week_blocks` and exercise `week_overrides` to kg, stores `one_rm_map` on `pt_program_assignments.validation_summary`, updates `pt_client_exercise_doc.current_1rm`.
+- `PTDayEditor.tsx`: when a block is active and `weight_pct` is set, shows `~Xkg` hint below the input if 1RM is stored.
+- `PTProgrammeEditView.tsx`: phase block summary chips show kg resolution per exercise (e.g. "Squat ~62.5kg | Deadlift ~80kg") when `one_rm_map` is present on the assignment.
+- Commit: b00eea3. Build passes.
+
+Previous completed task:
 PT programming architecture Phase 5 deterministic orchestration:
 - Extended `pt-programming-agent` from session-only draft generation into the first deterministic programme orchestration path.
 - The function now creates a `pt_program_generation_runs` row, writes the full ordered command audit trail in `pt_program_generation_steps`, calls `retrieve-knowledge-context` with run/step IDs, generates a coach-review programme draft, stores coaching reasoning, phase roadmap, programme draft, phase nutrition draft, and validation summary on the run, and creates `pt_program_review_outputs` rows for program/nutrition/system review.
