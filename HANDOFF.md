@@ -1,10 +1,17 @@
 # Handoff
 
 ## Last updated
-2026-05-18 by Codex
+2026-05-19 by Claude
 
 ## Last completed task
-PT Sessions new-client/programme visibility and workout brain memory (commit: current HEAD):
+Exercise library seed completed + YouTube video batch (this session):
+- Seeded all 398 exercises (400 list, 2 minor duplicates skipped) with AI-generated metadata: primary_muscles, secondary_muscles, conditions, setup_cues, equipment, tags
+- Fixed Haiku name-suffix bug (was appending category in parens to name); deleted 95 bad rows, redeployed with `name: batch[idx].name` fix
+- Both edge functions redeployed with updated auth: `--no-verify-jwt` + service role JWT accepted via JWT payload decode (role: 'service_role')
+- YouTube batch run: 87/398 exercises now have video_url. YouTube free-tier quota (10k units/day = 100 searches/day) exhausted. Run again daily until all are populated.
+- Video batch command: `curl -s "https://otcnrkfvgyvwolironoz.supabase.co/rest/v1/pt_exercises?select=id&video_url=is.null&limit=100" -H "Authorization: Bearer $SERVICE_KEY" -H "apikey: $SERVICE_KEY" | python3 -c "import json,sys; data=json.load(sys.stdin); print(json.dumps({'exercise_ids': [r['id'] for r in data]}))" | curl -s -X POST "https://otcnrkfvgyvwolironoz.supabase.co/functions/v1/search-exercise-videos" -H "Authorization: Bearer $SERVICE_KEY" -H "Content-Type: application/json" -d @- --max-time 120`
+
+Previous completed task: PT Sessions new-client/programme visibility and workout brain memory (commit: current HEAD):
 - Fixed `/dashboard/pt/pt-sessions` so clients with `invited` status now appear alongside active clients. This makes newly added clients available for session tracking before they complete client-login setup.
 - Verified in the browser that newly created client Mira Juka appears in PT Sessions and her assigned workout programme loads.
 - New clients created from `/dashboard/pt/clients` now start with `use_brain: true`.
@@ -98,9 +105,8 @@ Previous task: Client Brain System - Phase 1 (commit 5106644):
 - Storage bucket: pt-nutrition-logs created for photo/audio files
 
 NEXT STEPS:
-1. IMMEDIATE: Add YOUTUBE_API_KEY to Supabase edge function secrets (Google Cloud Console -> YouTube Data API v3), then trigger search-exercise-videos batch run via curl to populate all 400 exercise videos
-2. Run seed-exercise-library once via curl with INTERNAL_SECRET to seed all 400 exercises (if not already done via dashboard trigger)
-3. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
+1. TOMORROW: Re-run YouTube video batch (quota resets daily) until all 398 exercises have video_url. Command above. Run daily until populated. Currently: 87/398 done, 311 remaining.
+2. Enable use_brain=true on one test client via Supabase Dashboard to verify the brain system end-to-end
 3. Add workout log trigger to call update-client-brain with trigger_type: 'workout_logged'
 4. Weekly email content: weight delta from pt_client_metrics should appear in weekly progress email (coaching task is created on weight detection, but email content not yet built)
 5. PT dashboard: add ability to set per-client daily macro targets (currently defaults: 150g P / 200g C / 65g F / 30g fibre / 2000 kcal)

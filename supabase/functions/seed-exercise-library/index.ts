@@ -444,12 +444,7 @@ interface ExerciseMeta {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const internalSecret = Deno.env.get('INTERNAL_SECRET');
-  const authHeader = req.headers.get('Authorization');
-  if (!internalSecret || authHeader !== `Bearer ${internalSecret}`) {
-    return json({ error: 'Unauthorized' }, 401);
-  }
-
+  // Auth handled by platform verify_jwt: true (pass service role JWT as Bearer token)
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY')!;
@@ -515,8 +510,9 @@ Be medically accurate. For "conditions", think about what physical problems or g
 
       const results: ExerciseMeta[] = JSON.parse(jsonMatch[0]);
 
-      const rows = results.map((r) => ({
-        name: r.name,
+      // Use canonical EXERCISE_LIST name (not r.name — Haiku sometimes appends category suffix)
+      const rows = results.map((r, idx) => ({
+        name: batch[idx]?.name ?? r.name,
         primary_muscles: r.primary_muscles ?? [],
         secondary_muscles: r.secondary_muscles ?? [],
         conditions: r.conditions ?? [],

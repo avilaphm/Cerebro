@@ -68,10 +68,16 @@ Deno.serve(async (req) => {
 
   if (!youtubeKey) return json({ error: 'YOUTUBE_API_KEY secret not configured' }, 500);
 
-  // Auth: internal secret for batch runs, PT admin JWT for single-exercise from dashboard
-  let isAdmin = authHeader === `Bearer ${internalSecret}`;
-  if (!isAdmin && internalSecret) {
-    // Check if it's a valid Supabase JWT for Pedro
+  // Auth: service_role JWT (batch runs) OR Pedro's user JWT (dashboard Find Video button)
+  function jwtPayload(jwt: string): Record<string, unknown> {
+    try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+    catch { return {}; }
+  }
+  const token = (authHeader ?? '').replace('Bearer ', '');
+  const payload = jwtPayload(token);
+  let isAdmin = payload.role === 'service_role';
+
+  if (!isAdmin) {
     const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: { Authorization: authHeader ?? '' } },
     });
