@@ -53,6 +53,7 @@ export default function PTProgrammeReviewView({
   const supabase = createClient();
   const [status, setStatus] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [outputs, setOutputs] = useState(reviewOutputs);
 
   const client = run.pt_clients as { name: string; email: string; goals?: string | null } | null;
   const assignment = run.pt_program_assignments as { id: string; name: string; goal: string | null } | null;
@@ -93,6 +94,18 @@ export default function PTProgrammeReviewView({
     } else {
       router.push(`/dashboard/pt/programmes/new?draftKey=${encodeURIComponent(draftKey)}`);
     }
+  };
+
+  const approveOutput = async (outputId: string) => {
+    setUpdating(true);
+    const { error } = await supabase
+      .from('pt_program_review_outputs')
+      .update({ status: 'approved' })
+      .eq('id', outputId);
+    if (!error) {
+      setOutputs((cur) => cur.map((o) => o.id === outputId ? { ...o, status: 'approved' } : o));
+    }
+    setUpdating(false);
   };
 
   const updateRunStatus = async (nextStatus: 'approved' | 'needs_review' | 'archived') => {
@@ -234,26 +247,74 @@ export default function PTProgrammeReviewView({
 
       <section className="mb-8">
         <p className="mb-4 text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Evidence</p>
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-          <div className="border-y border-black/10 py-4 lg:border lg:px-4">
-            <p className="text-xs font-medium text-black/60">Referenced documents</p>
-            <div className="mt-3 space-y-2">
-              {retrievedDocs.length > 0 ? retrievedDocs.map((doc) => (
-                <p key={text(doc.title)} className="text-sm text-black/50">{text(doc.title)}</p>
-              )) : <p className="text-sm text-black/35">No referenced documents recorded.</p>}
-            </div>
+        <div className="border-y border-black/10 py-4 lg:border lg:px-4">
+          <p className="text-xs font-medium text-black/60">Referenced documents</p>
+          <div className="mt-3 space-y-2">
+            {retrievedDocs.length > 0 ? retrievedDocs.map((doc) => (
+              <p key={text(doc.title)} className="text-sm text-black/50">{text(doc.title)}</p>
+            )) : <p className="text-sm text-black/35">No referenced documents recorded.</p>}
           </div>
-          <div className="border-y border-black/10 py-4 lg:border lg:px-4">
-            <p className="text-xs font-medium text-black/60">Review outputs</p>
-            <div className="mt-3 space-y-2">
-              {reviewOutputs.map((review) => (
-                <div key={review.id} className="flex items-center justify-between gap-3">
-                  <p className="text-sm capitalize text-black/50">{review.review_type}</p>
-                  <StatusPill status={review.status} />
+        </div>
+      </section>
+
+      <section className="mb-8">
+        <p className="mb-4 text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Review outputs</p>
+        <div className="space-y-3">
+          {outputs.map((output) => {
+            const approved = output.status === 'approved';
+            const outputFailures = asArray(output.hard_rule_failures).map(String);
+            const outputFindings = asArray(output.findings).map(String);
+            return (
+              <div key={output.id} className={`border ${approved ? 'border-green-200' : outputFailures.length > 0 ? 'border-red-200' : 'border-black/10'}`}>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    {approved && <span className="text-green-600 text-xs font-medium">✓</span>}
+                    <p className="text-sm font-medium capitalize">{output.review_type}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <StatusPill status={output.status} />
+                    {!approved && (
+                      <button
+                        type="button"
+                        onClick={() => void approveOutput(output.id)}
+                        disabled={updating}
+                        className="text-xs border border-green-600 text-green-700 px-3 py-1 hover:bg-green-50 disabled:opacity-40 transition-colors"
+                      >
+                        Approve
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
+                {(outputFailures.length > 0 || outputFindings.length > 0) && (
+                  <div className="border-t border-black/8 px-4 pb-4 pt-3 space-y-3">
+                    {outputFailures.length > 0 && (
+                      <div>
+                        <p className="text-[0.6rem] uppercase tracking-[0.15em] text-red-500 mb-2">Hard failures</p>
+                        <div className="space-y-1.5">
+                          {outputFailures.map((f) => (
+                            <p key={f} className="text-xs text-red-700 bg-red-50 border border-red-100 px-3 py-1.5">{f}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {outputFindings.length > 0 && (
+                      <div>
+                        <p className="text-[0.6rem] uppercase tracking-[0.15em] text-amber-600 mb-2">Findings</p>
+                        <div className="space-y-1.5">
+                          {outputFindings.map((f) => (
+                            <p key={f} className="text-xs text-amber-800 bg-amber-50 border border-amber-100 px-3 py-1.5">{f}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {outputs.length === 0 && (
+            <p className="text-sm text-black/35">No review outputs recorded for this run.</p>
+          )}
         </div>
       </section>
 

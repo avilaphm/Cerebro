@@ -163,7 +163,7 @@ export interface PTProgramReviewOutput {
   assignment_id: string | null;
   client_id: string;
   review_type: 'program' | 'nutrition' | 'system' | 'full';
-  status: 'passed' | 'failed' | 'needs_review';
+  status: 'passed' | 'failed' | 'needs_review' | 'approved';
   findings: unknown;
   hard_rule_failures: unknown;
   repaired_output: unknown;
