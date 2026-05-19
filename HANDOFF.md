@@ -1,9 +1,19 @@
 # Handoff
 
 ## Last updated
-2026-05-19 by Codex
+2026-05-19 by Claude
 
 ## Last completed task
+Exercise library expansion - 105 new exercises added with full data + YouTube video URLs:
+- Added 105 exercises across 8 categories: dumbbell variations, single arm, single leg, mobility (CARs, Jefferson Curl, etc.), flexibility, bodyweight (Pike Push Up, Archer Push Up, Wall Walk, etc.), banded loop, resistance band with handle
+- Each exercise has: name, primary_muscles, secondary_muscles, muscles, equipment, tags, purpose, conditions, setup_cues, cues, source="ai", video_url
+- 103/105 got YouTube video URLs via yt-dlp; 2 (Wall Walk, Banded Overhead Press) had no video found
+- Script: `scripts/add-new-exercises.py` - pass SERVICE_ROLE_KEY as arg; uses curl for Supabase calls, yt-dlp for YouTube search
+- Bug fixed in script: `source` column has a check constraint - must be "ai" not custom values
+- Exercise library now has ~503 exercises total (was 398)
+- Also this session: food logging progress ring (SVG circular progress, 0-95% easing), client portal loading screen with greeting + progress, PT dashboard loading screens via loading.tsx + PTPageLoading.tsx, all 398 original exercises populated with video_url via populate-exercise-videos.py (310/311 done, "Banded Pull Apart" failed)
+
+Previous completed task:
 PT programming architecture Phase 4 Client Brain architecture:
 - Extended the existing Client Master Brain instead of creating a duplicate memory system.
 - `update-client-brain` now accepts structured programming-memory triggers: `client_document_analysis`, `program_generation`, `phase_nutrition`, `coach_decision`, and `1rm_result`.
