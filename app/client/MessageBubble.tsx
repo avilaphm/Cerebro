@@ -81,6 +81,8 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
   const [logError, setLogError] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const interimRef = useRef('');
@@ -93,6 +95,20 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
     const prev = scrollEl.style.overflowY;
     scrollEl.style.overflowY = 'hidden';
     return () => { scrollEl.style.overflowY = prev; };
+  }, [open]);
+
+  // iOS: non-passive touchmove on the overlay blocks scroll pass-through
+  // to the background page when touching non-scrollable areas of the chat.
+  useEffect(() => {
+    if (!open) return;
+    const el = overlayRef.current;
+    if (!el) return;
+    const prevent = (e: TouchEvent) => {
+      if (messagesRef.current?.contains(e.target as Node)) return;
+      e.preventDefault();
+    };
+    el.addEventListener('touchmove', prevent, { passive: false });
+    return () => el.removeEventListener('touchmove', prevent);
   }, [open]);
 
   const mergeMessages = useCallback((incoming: Message[]) => {
@@ -371,7 +387,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-[#f2f2f0] sm:inset-auto sm:right-6 sm:top-24 sm:max-h-[calc(100dvh-8rem)] sm:w-96 sm:overflow-hidden sm:rounded-3xl sm:border sm:border-black/10 sm:shadow-2xl">
+        <div ref={overlayRef} className="fixed inset-0 z-50 flex flex-col bg-[#f2f2f0] sm:inset-auto sm:right-6 sm:top-24 sm:max-h-[calc(100dvh-8rem)] sm:w-96 sm:overflow-hidden sm:rounded-3xl sm:border sm:border-black/10 sm:shadow-2xl">
 
           {/* Header */}
           <div className="flex shrink-0 items-center px-4 pb-3 pt-14 sm:pt-4">
@@ -400,7 +416,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
           </div>
 
           {/* Messages */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">
+          <div ref={messagesRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2">
             {messages.length === 0 ? (
               <p className="py-10 text-center text-xs text-black/30">
                 Ask anything about your programme, exercises, or nutrition.
