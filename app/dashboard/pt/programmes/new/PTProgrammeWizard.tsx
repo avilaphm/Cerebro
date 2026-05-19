@@ -56,6 +56,19 @@ function getSR() {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+function inferPhaseWeeks(phases: PTProgrammePhase[]): { foundation: number; hypertrophy: number; strength: number } {
+  const pick = (matcher: (title: string) => boolean, fallback: number): number => {
+    const ph = phases.find((p) => matcher(p.title.toLowerCase()));
+    const n = ph ? parseInt(ph.weeks, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  return {
+    foundation: pick((t) => t.includes('foundation') || t.includes('phase 1'), 7),
+    hypertrophy: pick((t) => t.includes('hypertrophy') || t.includes('phase 2'), 12),
+    strength: pick((t) => t.includes('strength') || t.includes('phase 3'), 10),
+  };
+}
+
 export default function PTProgrammeWizard({ clients, exercises }: { clients: PTClient[]; exercises: PTExercise[] }) {
   const supabase = createClient();
   const router = useRouter();
@@ -143,21 +156,63 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
   const generateFromDump = async () => {
     if (!brainDump.trim()) return;
+    if (!clientId) {
+      setGenStatus('Pick a client first — the 3-AI orchestrator needs the client brain to generate.');
+      return;
+    }
     setGenerating(true);
-    setGenStatus('Generating programme…');
-    const phaseTemplate = programme.phases.map(({ id, title, focus, weeks }) => ({ id, title, focus, weeks }));
-    const { data, error } = await supabase.functions.invoke('generate-pt-programme', {
-      body: { notes: brainDump, exercises: exercises.slice(0, 300), phase_template: phaseTemplate },
+    setGenStatus('Analysing client…');
+
+    const phaseWeeks = inferPhaseWeeks(programme.phases);
+
+    const statusTimer = setInterval(() => {
+      setGenStatus((s) => {
+        if (s.startsWith('Analysing')) return 'Planning methodology (knowledge base RAG)…';
+        if (s.startsWith('Planning')) return 'Synthesising programme (exercise library)…';
+        if (s.startsWith('Synthesising')) return 'Validating…';
+        return s;
+      });
+    }, 12000);
+
+    const { data, error } = await supabase.functions.invoke('pt-programme-orchestrator', {
+      body: { client_id: clientId, phase_weeks: phaseWeeks, intake_text: brainDump },
     });
-    if (error) {
-      setGenStatus(error.message);
+    clearInterval(statusTimer);
+
+    if (error || (data as { error?: string })?.error) {
+      setGenStatus((data as { error?: string })?.error ?? error?.message ?? 'Generation failed.');
       setGenerating(false);
       return;
     }
-    const parsed = data as { name?: string; goal?: string; programme?: unknown };
+    const parsed = data as {
+      name?: string;
+      goal?: string;
+      programme?: unknown;
+      run_id?: string;
+      validation?: { passed: boolean; hard_failures: string[]; findings: string[] };
+      missing_exercises?: string[];
+    };
     setProgramme(safeProgramme(parsed.programme));
     setProgName(parsed.name ?? '');
     setProgGoal(parsed.goal ?? '');
+    if (parsed.run_id) setGenerationRunId(parsed.run_id);
+    if (parsed.validation) {
+      setValidationSummary({
+        passed: parsed.validation.passed,
+        hard_rule_failures: parsed.validation.hard_failures,
+        findings: parsed.validation.findings,
+        missing_exercises: parsed.missing_exercises ?? [],
+      });
+      const fails = parsed.validation.hard_failures.length;
+      const finds = parsed.validation.findings.length;
+      setAgentDraftSummary(
+        fails
+          ? `Generated with ${fails} hard rule failure${fails === 1 ? '' : 's'}. Review the orange chip on Phase tab and the run audit before saving.`
+          : finds
+          ? `Generated. ${finds} review note${finds === 1 ? '' : 's'} to skim.`
+          : 'Generated cleanly. Review and save.',
+      );
+    }
     setGenStatus('');
     setGenerating(false);
     setStep(2);

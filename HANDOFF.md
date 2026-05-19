@@ -1,9 +1,50 @@
 # Handoff
 
 ## Last updated
-2026-05-19 by Claude
+2026-05-20 by Claude
 
 ## Last completed task
+PT Programme Creation - v1 of the new 3-AI orchestrator deployed end-to-end:
+
+**Migration applied:**
+- `20260520000000_pt_client_brain_chunks.sql` - new `pt_client_brain_chunks` table (id, client_id, doc_type, chunk_index, chunk_text, embedding vector(1536), source_columns) + `match_client_brain_chunks` RPC, scoped by client_id. ivfflat index, RLS for Pedro/admins. The 4 brain doc tables (pt_client_brain, pt_client_nutrition_doc, pt_client_exercise_doc, pt_client_lifestyle_doc) ALREADY exist on remote with 3 rows each - not in local migrations (drift). Did not recreate.
+
+**Edge functions deployed (all v1, verify_jwt=true):**
+- `client-analysis-agent` - reads 4 brain docs + pt_client_documents, single Claude (sonnet-4-6) call, returns ClientAnalysis JSON with goals/constraints/preferences/emphasis (needs_cardio_block, needs_mobility_block, compound_readiness) and cited_sources.
+- `methodology-plan-agent` - scales canonical week_blocks to chosen phase weeks (pure function inline), calls `retrieve-knowledge-context` 5x for phase-specific rules, single Claude call, returns MethodologyPlan JSON.
+- `programme-synthesis-agent` - loads full `pt_exercises` library (505 rows), single Claude call (max_tokens=16000), enforces exercise_id linking + Big 5 + compound substitution + warm-up count + cardio/mobility blocks. Server post-process attaches video_url + cues from library; unresolved exercises returned in missing_exercises[].
+- `programme-validation-agent` - pure-code validation: ≥5 phases, Foundations=3 days, Hypertrophy/Strength have weight_pct+sets in every block, Big 5 present in every workout day, 1RM Test/Retest=Big 5 only 5 sets, exercise_id non-null, cardio/mobility blocks when emphasis-flagged.
+- `pt-programme-orchestrator` - creates pt_program_generation_runs row, chains 4 agents sequentially, logs one pt_program_generation_steps row per agent, writes pt_program_review_outputs on failures, returns full bundle.
+
+**Wizard rewired:**
+- `PTProgrammeWizard.tsx`: `generateFromDump` now calls `pt-programme-orchestrator` instead of `generate-pt-programme`. Requires clientId. Infers phase_weeks from template (default 7/12/10). Status timer cycles progress chips per agent. Sets run_id + validation_summary on draft for review page.
+- New helper: `inferPhaseWeeks()` in same file.
+- New util: `utils/pt/methodologyScaler.ts` (canonical block tables + scaler + Big 5 names + substitution rule).
+
+**Skill updates:**
+- `skills/pt-programming-workflow/SKILL.md`: added Phase 1 compound substitution rule (last 2 weeks: goblet squat → BB Squat, KB/DB deadlift → BB Deadlift, DB bench → BB Bench Press, lat pull-down → Pull-up, DB shoulder press → BB Shoulder Press). Added Big 5 in Phase 2/3 enforcement section. Added conditional cardio/mobility block rules. Updated validation list to match new agent.
+- Memory: `project_pt_programming_overhaul_vision.md` saved (full target architecture, Pedro approved 2026-05-20).
+- Plan file: `~/.claude/plans/we-need-to-run-drifting-waffle.md` (rebuild plan, approved).
+
+**NOT done yet (follow-up):**
+- Step 1 file upload UI (3 docs + voice combined with text) - wizard currently uses brain dump textarea only. Tracked as task #3 + #4: `ingest-client-intake` + `embed-client-brain` edge functions.
+- Review UI 4-agent breakdown cards (task #13) - current PTProgrammeReviewView still shows old shape.
+- Smoke test full flow against a real client (task #14).
+- Delete old `generate-pt-programme` function (do after smoke test passes).
+
+**MANUAL SMOKE TEST CHECKLIST:**
+1. Pick one of the 3 existing clients on /dashboard/pt/programmes/new. Their brain docs already have data - the client-analysis-agent will read them.
+2. Type some intake notes ("client wants fat loss, has lower back stiffness, 3x/week schedule").
+3. Click Generate. Watch status: "Analysing client… Planning methodology… Synthesising programme… Validating…" (each agent takes 10-30s).
+4. On success: Step 2 loads with the generated programme. Inspect:
+   - Phase 1 has 3 workout days, week_blocks with sets
+   - Phase 2 & 3 every day has Big 5 + accessories
+   - Every exercise has a video_url (visible in PTDayEditor)
+   - 1RM Test/Retest have Big 5 only, 5 sets each
+5. Check Supabase: `select * from pt_program_generation_runs order by created_at desc limit 1;` - should show status='needs_review', programme_draft populated, validation_summary with hard_failures/findings/missing_exercises.
+6. `select * from pt_program_generation_steps where run_id = '...' order by step_order;` - 4 step rows, all 'succeeded'.
+
+Previous completed task:
 Client Metrics Tracking System - compute-client-metrics edge function deployed:
 - DB migration applied: `training_metrics` JSONB column on `pt_client_exercise_doc`, `adherence_metrics` JSONB column on `pt_client_nutrition_doc`.
 - New edge function `compute-client-metrics` (deployed v1, --no-verify-jwt): accepts `{ client_id }`, queries last 28 days of `pt_set_logs` to classify exercises as push/pull/hinge/squat/core/other by keyword matching and compute volume (weight x reps) per category per ISO week. Queries `pt_workout_logs` for workout frequency and all-time count. Queries last 30 days of `pt_nutrition_logs` for tracking rate, daily avg macros, and protein/calorie hit rates vs `daily_targets`. Writes structured JSON to `training_metrics` on exercise doc and `adherence_metrics` on nutrition doc.
