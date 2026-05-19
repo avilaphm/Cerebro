@@ -344,6 +344,8 @@ export interface PTClientBrain {
   last_session_summary: string | null;
   total_interactions: number;
   brain_version: number;
+  coaching_reasoning: Record<string, unknown>;
+  important_decisions: Array<Record<string, unknown>>;
   created_at: string;
   updated_at: string;
 }
@@ -362,6 +364,8 @@ export interface PTClientNutritionDoc {
   last_12m_summary: string | null;
   recent_wins: string[];
   recurring_gaps: string[];
+  daily_targets?: { protein_g?: number; carbs_g?: number; fat_g?: number; fibre_g?: number; calories?: number } | null;
+  phase_nutrition_strategy: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -376,13 +380,15 @@ export interface PTClientExerciseDoc {
   current_limitations: string | null;
   current_phase: string | null;
   current_week: number | null;
-  current_1rm: Record<string, number>;
+  current_1rm: Record<string, number | { value_kg?: number; result_type?: string; confidence?: string | null; updated_at?: string }>;
   current_week_summary: string | null;
   last_30d_summary: string | null;
   prev_60d_summary: string | null;
   last_12m_summary: string | null;
   best_training_days: string[];
   adherence_trend: string | null;
+  movement_assessment_summary: Record<string, unknown>;
+  progression_strategy: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -452,4 +458,3 @@ export interface PTConversationSummary {
   applied_to_brain: boolean;
   created_at: string;
 }
-

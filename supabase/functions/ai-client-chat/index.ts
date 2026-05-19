@@ -101,20 +101,25 @@ interface BrainContext {
   openLoops: string[];
   milestones: string[];
   keyPhrases: string[];
+  coachingReasoning: Record<string, unknown>;
+  importantDecisions: Array<Record<string, unknown>>;
   nutritionProfile: {
     currentWeekAvg: Record<string, number>;
     favouriteFoods: string[];
     obstacles: string | null;
     recentWins: string[];
+    phaseNutritionStrategy: Record<string, unknown>;
   };
   exerciseProfile: {
-    current1rm: Record<string, number>;
+    current1rm: Record<string, unknown>;
     currentPhase: string | null;
     injuryHistory: Array<{ description: string; resolved: string }>;
     strongMovements: string[];
     weakMovements: string[];
     currentLimitations: string | null;
     last30dSummary: string | null;
+    movementAssessmentSummary: Record<string, unknown>;
+    progressionStrategy: Record<string, unknown>;
   };
   lifestyleProfile: {
     recurringChallenges: string[];
@@ -130,17 +135,17 @@ async function readBrainDocs(
   const [brainRes, nutritionRes, exerciseRes, lifestyleRes] = await Promise.all([
     adminClient
       .from('pt_client_brain')
-      .select('last_session_summary, summary_12m, open_loops, milestones, key_phrases')
+      .select('last_session_summary, summary_12m, open_loops, milestones, key_phrases, coaching_reasoning, important_decisions')
       .eq('client_id', clientId)
       .single(),
     adminClient
       .from('pt_client_nutrition_doc')
-      .select('current_week_avg, favourite_foods, nutrition_obstacles, recent_wins')
+      .select('current_week_avg, favourite_foods, nutrition_obstacles, recent_wins, phase_nutrition_strategy')
       .eq('client_id', clientId)
       .single(),
     adminClient
       .from('pt_client_exercise_doc')
-      .select('current_1rm, current_phase, injury_history, strong_movements, weak_movements, current_limitations, last_30d_summary')
+      .select('current_1rm, current_phase, injury_history, strong_movements, weak_movements, current_limitations, last_30d_summary, movement_assessment_summary, progression_strategy')
       .eq('client_id', clientId)
       .single(),
     adminClient
@@ -158,20 +163,25 @@ async function readBrainDocs(
     openLoops: (brainRes.data.open_loops as string[]) ?? [],
     milestones: ((brainRes.data.milestones as string[]) ?? []).slice(-5),
     keyPhrases: ((brainRes.data.key_phrases as string[]) ?? []).slice(-10),
+    coachingReasoning: (brainRes.data.coaching_reasoning as Record<string, unknown>) ?? {},
+    importantDecisions: ((brainRes.data.important_decisions as Array<Record<string, unknown>>) ?? []).slice(-8),
     nutritionProfile: {
       currentWeekAvg: (nutritionRes.data?.current_week_avg as Record<string, number>) ?? {},
       favouriteFoods: ((nutritionRes.data?.favourite_foods as string[]) ?? []).slice(-10),
       obstacles: (nutritionRes.data?.nutrition_obstacles as string | null),
       recentWins: ((nutritionRes.data?.recent_wins as string[]) ?? []).slice(-5),
+      phaseNutritionStrategy: (nutritionRes.data?.phase_nutrition_strategy as Record<string, unknown>) ?? {},
     },
     exerciseProfile: {
-      current1rm: (exerciseRes.data?.current_1rm as Record<string, number>) ?? {},
+      current1rm: (exerciseRes.data?.current_1rm as Record<string, unknown>) ?? {},
       currentPhase: (exerciseRes.data?.current_phase as string | null),
       injuryHistory: ((exerciseRes.data?.injury_history as Array<{ description: string; resolved: string }>) ?? []).filter((i) => i.resolved !== 'true'),
       strongMovements: ((exerciseRes.data?.strong_movements as string[]) ?? []).slice(-8),
       weakMovements: ((exerciseRes.data?.weak_movements as string[]) ?? []).slice(-8),
       currentLimitations: (exerciseRes.data?.current_limitations as string | null),
       last30dSummary: (exerciseRes.data?.last_30d_summary as string | null),
+      movementAssessmentSummary: (exerciseRes.data?.movement_assessment_summary as Record<string, unknown>) ?? {},
+      progressionStrategy: (exerciseRes.data?.progression_strategy as Record<string, unknown>) ?? {},
     },
     lifestyleProfile: {
       recurringChallenges: ((lifestyleRes.data?.recurring_challenges as string[]) ?? []).slice(-8),
@@ -179,6 +189,13 @@ async function readBrainDocs(
       goalsContext: (lifestyleRes.data?.goals_context as string | null),
     },
   };
+}
+
+function compactJson(value: unknown, maxLength = 900): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const objectValue = value as Record<string, unknown>;
+  if (Object.keys(objectValue).length === 0) return null;
+  return JSON.stringify(objectValue).slice(0, maxLength);
 }
 
 function formatBrainContext(brain: BrainContext): string {
@@ -199,13 +216,26 @@ function formatBrainContext(brain: BrainContext): string {
   if (brain.keyPhrases.length > 0) {
     lines.push(`**What they've said:** "${brain.keyPhrases.slice(-3).join('" / "')}"`);
   }
+  const coachingReasoning = compactJson(brain.coachingReasoning);
+  if (coachingReasoning) lines.push(`**Coach reasoning:** ${coachingReasoning}`);
+  if (brain.importantDecisions.length > 0) {
+    lines.push(`**Important coaching decisions:** ${JSON.stringify(brain.importantDecisions).slice(0, 900)}`);
+  }
 
   const { exerciseProfile: ex, nutritionProfile: nu, lifestyleProfile: ls } = brain;
 
   if (Object.keys(ex.current1rm).length > 0) {
-    const rms = Object.entries(ex.current1rm).map(([k, v]) => `${k}: ${v}kg`).join(', ');
+    const rms = Object.entries(ex.current1rm).map(([k, v]) => {
+      if (typeof v === 'number') return `${k}: ${v}kg`;
+      if (v && typeof v === 'object' && 'value_kg' in v) return `${k}: ${(v as { value_kg?: number }).value_kg}kg`;
+      return `${k}: ${JSON.stringify(v)}`;
+    }).join(', ');
     lines.push(`**Current 1RMs:** ${rms}`);
   }
+  const movementAssessment = compactJson(ex.movementAssessmentSummary);
+  if (movementAssessment) lines.push(`**Movement assessment:** ${movementAssessment}`);
+  const progressionStrategy = compactJson(ex.progressionStrategy);
+  if (progressionStrategy) lines.push(`**Progression strategy:** ${progressionStrategy}`);
   if (ex.currentLimitations) lines.push(`**Active injury/limitation:** ${ex.currentLimitations}`);
   if (ex.injuryHistory.length > 0) {
     lines.push(`**Injury history:** ${ex.injuryHistory.map((i) => i.description).join('; ')}`);
@@ -220,6 +250,8 @@ function formatBrainContext(brain: BrainContext): string {
   }
   if (nu.obstacles) lines.push(`**Nutrition challenge:** ${nu.obstacles}`);
   if (nu.favouriteFoods.length > 0) lines.push(`**Favourite foods:** ${nu.favouriteFoods.join(', ')}`);
+  const phaseNutrition = compactJson(nu.phaseNutritionStrategy);
+  if (phaseNutrition) lines.push(`**Phase nutrition strategy:** ${phaseNutrition}`);
 
   if (ls.recurringChallenges.length > 0) {
     lines.push(`**Life challenges:** ${ls.recurringChallenges.join('; ')}`);

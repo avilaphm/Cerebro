@@ -4,6 +4,17 @@
 2026-05-19 by Codex
 
 ## Last completed task
+PT programming architecture Phase 4 Client Brain architecture:
+- Extended the existing Client Master Brain instead of creating a duplicate memory system.
+- `update-client-brain` now accepts structured programming-memory triggers: `client_document_analysis`, `program_generation`, `phase_nutrition`, `coach_decision`, and `1rm_result`.
+- Structured document/program analysis now writes to existing Phase 2 fields: `pt_client_brain.coaching_reasoning`, `pt_client_brain.important_decisions`, `pt_client_exercise_doc.movement_assessment_summary`, `pt_client_exercise_doc.progression_strategy`, `pt_client_nutrition_doc.eating_habits.nutrition_priorities`, `pt_client_nutrition_doc.phase_nutrition_strategy`, and `pt_client_exercise_doc.current_1rm`.
+- `ai-client-chat` now reads those structured brain fields and includes them in the long-term client memory context so the AI coach can use coaching reasoning, movement assessment, progression strategy, phase nutrition, decisions, and structured 1RM entries.
+- Updated shared PT types for the new brain fields.
+- Deployed `update-client-brain` version 5 and `ai-client-chat` version 7 to Supabase project `otcnrkfvgyvwolironoz`.
+- Verification: `npm run build` passes. Temporary client smoke test confirmed structured document analysis, phase nutrition, and 1RM paths write the expected brain fields; temporary client and cascade brain/activity rows were deleted after verification.
+- Note: no new database tables were added in Phase 4. The implementation intentionally uses the existing client brain tables plus Phase 2 columns.
+
+Previous completed task:
 PT programming architecture Phase 3 knowledge retrieval system:
 - Added and deployed `retrieve-knowledge-context` Edge Function to Supabase project `otcnrkfvgyvwolironoz`.
 - Implements the `RETRIEVE_KNOWLEDGE_CONTEXT` command for later programming phases. Inputs support `taskType`, `phaseType`, `clientGoal`, `questionOrDecision`, optional `runId`, optional `stepId`, and optional retrieval tuning.
@@ -245,6 +256,7 @@ current HEAD - PT programming architecture Phase 3 knowledge retrieval system
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped most recently:
+- PT programming architecture Phase 4 is complete: structured programming analysis now updates the existing Client Master Brain, and AI chat reads those fields as long-term coaching memory. No new memory system was introduced.
 - PT programming architecture Phase 3 is complete: `retrieve-knowledge-context` is deployed and writes auditable retrieval logs for deterministic programming generation. No coach-review UI or programme-generation engine changes were made in this phase.
 - PT programming architecture Phase 2 is complete at the database layer. The system now has persistent structures for intake/assessment documents, deterministic generation runs and command steps, retrieval logs, 1RM testing/results, phase-linked nutrition, review-agent outputs, and extra sessions. No frontend workflow or generation engine implementation has been added yet.
 - AI weekly check-in system: `pt_checkin_sessions` table (migration applied to remote), `client-ai-checkin` edge function (deployed), `WeeklyCheckinModal.tsx` component, Goals card "Weekly Check-in" button with pulsing DUE badge, This Week's Focus card (3-col exercise/nutrition/sleep). Removed all `WeeklyResetDraft` / `submitWeeklyReset` dead code from `ClientPortal.tsx`.

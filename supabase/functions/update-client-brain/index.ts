@@ -18,6 +18,11 @@ type TriggerType =
   | 'message'
   | 'food_log'
   | 'workout_logged'
+  | 'client_document_analysis'
+  | 'program_generation'
+  | 'phase_nutrition'
+  | 'coach_decision'
+  | '1rm_result'
   | 'checkin'
   | 'metric_added'
   | 'goal_updated'
@@ -61,12 +66,243 @@ interface BrainExtraction {
   } | null;
 }
 
+interface StructuredBrainData {
+  intake_summary?: Record<string, unknown>;
+  movement_assessment_summary?: Record<string, unknown>;
+  coaching_reasoning?: Record<string, unknown>;
+  movement_priorities?: string[];
+  injury_precautions?: string[];
+  progression_strategy?: Record<string, unknown>;
+  nutrition_priorities?: Record<string, unknown>;
+  phase_nutrition_strategy?: Record<string, unknown>;
+  phase_title?: string;
+  phase_type?: string;
+  training_context?: Record<string, unknown>;
+  recommendations?: Record<string, unknown>;
+  important_decision?: string | Record<string, unknown>;
+  important_decisions?: Array<string | Record<string, unknown>>;
+  current_phase?: string;
+  current_week?: number;
+  current_limitations?: string;
+  strong_movements?: string[];
+  weak_movements?: string[];
+  injury_history?: Array<Record<string, unknown>>;
+  one_rm_results?: Array<{
+    exercise_name?: string;
+    estimated_1rm_kg?: number;
+    load_kg?: number;
+    result_type?: string;
+    confidence?: string;
+  }>;
+}
+
 function getWeekStart(date: Date): string {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
   return d.toISOString().split('T')[0];
+}
+
+function asTextArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function uniqueTail(values: string[], limit: number): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(-limit);
+}
+
+function compactObject(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => {
+      if (item === null || item === undefined) return false;
+      if (typeof item === 'string') return item.trim().length > 0;
+      if (Array.isArray(item)) return item.length > 0;
+      if (typeof item === 'object') return Object.keys(item as Record<string, unknown>).length > 0;
+      return true;
+    }),
+  );
+}
+
+function appendDecision(
+  current: unknown,
+  decision: string | Record<string, unknown>,
+  triggerType: TriggerType,
+): Array<Record<string, unknown>> {
+  const existing = Array.isArray(current) ? current : [];
+  const normalized = typeof decision === 'string'
+    ? { decision }
+    : decision;
+  return [
+    ...existing,
+    {
+      ...normalized,
+      trigger_type: triggerType,
+      recorded_at: new Date().toISOString(),
+    },
+  ].slice(-100);
+}
+
+async function applyStructuredBrainUpdates(
+  clientId: string,
+  triggerType: TriggerType,
+  rawData: Record<string, unknown> | undefined,
+  adminClient: ReturnType<typeof createClient>,
+): Promise<boolean> {
+  const data = (rawData ?? {}) as StructuredBrainData;
+  const updates: Promise<unknown>[] = [];
+  const now = new Date().toISOString();
+  let changed = false;
+
+  const decisionInputs = [
+    ...(Array.isArray(data.important_decisions) ? data.important_decisions : []),
+    ...(data.important_decision ? [data.important_decision] : []),
+  ];
+
+  if (data.coaching_reasoning || data.intake_summary || data.movement_priorities || data.injury_precautions || decisionInputs.length > 0) {
+    const { data: brain } = await adminClient
+      .from('pt_client_brain')
+      .select('coaching_reasoning, important_decisions, total_interactions')
+      .eq('client_id', clientId)
+      .single();
+
+    const coachingReasoning = {
+      ...((brain?.coaching_reasoning as Record<string, unknown>) ?? {}),
+      ...compactObject({
+        intake_summary: data.intake_summary,
+        reasoning: data.coaching_reasoning,
+        movement_priorities: data.movement_priorities,
+        injury_precautions: data.injury_precautions,
+        last_structured_update: {
+          trigger_type: triggerType,
+          updated_at: now,
+        },
+      }),
+    };
+
+    let decisions = (brain?.important_decisions as Array<Record<string, unknown>>) ?? [];
+    for (const decision of decisionInputs) {
+      decisions = appendDecision(decisions, decision, triggerType);
+    }
+
+    updates.push(
+      adminClient
+        .from('pt_client_brain')
+        .update({
+          coaching_reasoning: coachingReasoning,
+          important_decisions: decisions,
+          total_interactions: ((brain?.total_interactions as number) ?? 0) + 1,
+          updated_at: now,
+        })
+        .eq('client_id', clientId),
+    );
+    changed = true;
+  }
+
+  if (
+    data.movement_assessment_summary ||
+    data.progression_strategy ||
+    data.current_phase ||
+    data.current_week ||
+    data.current_limitations ||
+    data.strong_movements ||
+    data.weak_movements ||
+    data.injury_history ||
+    data.one_rm_results
+  ) {
+    const { data: exerciseDoc } = await adminClient
+      .from('pt_client_exercise_doc')
+      .select('movement_assessment_summary, progression_strategy, strong_movements, weak_movements, injury_history, current_1rm, current_phase, current_week, current_limitations')
+      .eq('client_id', clientId)
+      .single();
+
+    const current1rm = { ...((exerciseDoc?.current_1rm as Record<string, unknown>) ?? {}) };
+    for (const result of data.one_rm_results ?? []) {
+      if (!result.exercise_name) continue;
+      const value = result.estimated_1rm_kg ?? result.load_kg;
+      if (typeof value !== 'number') continue;
+      current1rm[result.exercise_name] = {
+        value_kg: value,
+        result_type: result.result_type ?? 'unknown',
+        confidence: result.confidence ?? null,
+        updated_at: now,
+      };
+    }
+
+    updates.push(
+      adminClient
+        .from('pt_client_exercise_doc')
+        .update({
+          movement_assessment_summary: {
+            ...((exerciseDoc?.movement_assessment_summary as Record<string, unknown>) ?? {}),
+            ...(data.movement_assessment_summary ?? {}),
+          },
+          progression_strategy: {
+            ...((exerciseDoc?.progression_strategy as Record<string, unknown>) ?? {}),
+            ...(data.progression_strategy ?? {}),
+          },
+          strong_movements: uniqueTail([
+            ...asTextArray(exerciseDoc?.strong_movements),
+            ...asTextArray(data.strong_movements),
+          ], 40),
+          weak_movements: uniqueTail([
+            ...asTextArray(exerciseDoc?.weak_movements),
+            ...asTextArray(data.weak_movements),
+          ], 40),
+          injury_history: [
+            ...((Array.isArray(exerciseDoc?.injury_history) ? exerciseDoc?.injury_history : []) as Array<Record<string, unknown>>),
+            ...(data.injury_history ?? []),
+          ].slice(-30),
+          current_1rm: current1rm,
+          current_phase: data.current_phase ?? exerciseDoc?.current_phase ?? null,
+          current_week: data.current_week ?? exerciseDoc?.current_week ?? null,
+          current_limitations: data.current_limitations ?? exerciseDoc?.current_limitations ?? null,
+          updated_at: now,
+        })
+        .eq('client_id', clientId),
+    );
+    changed = true;
+  }
+
+  if (data.nutrition_priorities || data.phase_nutrition_strategy || data.training_context || data.recommendations) {
+    const { data: nutritionDoc } = await adminClient
+      .from('pt_client_nutrition_doc')
+      .select('phase_nutrition_strategy, eating_habits')
+      .eq('client_id', clientId)
+      .single();
+
+    const phaseStrategy = { ...((nutritionDoc?.phase_nutrition_strategy as Record<string, unknown>) ?? {}) };
+    if (data.phase_nutrition_strategy || data.training_context || data.recommendations) {
+      const phaseKey = data.phase_title || data.phase_type || 'general';
+      phaseStrategy[phaseKey] = compactObject({
+        phase_title: data.phase_title,
+        phase_type: data.phase_type,
+        training_context: data.training_context,
+        recommendations: data.recommendations,
+        strategy: data.phase_nutrition_strategy,
+        updated_at: now,
+      });
+    }
+
+    updates.push(
+      adminClient
+        .from('pt_client_nutrition_doc')
+        .update({
+          phase_nutrition_strategy: phaseStrategy,
+          eating_habits: compactObject({
+            ...((nutritionDoc?.eating_habits as Record<string, unknown>) ?? {}),
+            nutrition_priorities: data.nutrition_priorities,
+          }),
+          updated_at: now,
+        })
+        .eq('client_id', clientId),
+    );
+    changed = true;
+  }
+
+  if (updates.length > 0) await Promise.allSettled(updates);
+  return changed;
 }
 
 async function extractInsights(
@@ -320,6 +556,13 @@ Deno.serve(async (req: Request) => {
       return json({ ok: true, brain_updated: false });
     }
 
+    const structuredUpdated = await applyStructuredBrainUpdates(
+      client_id,
+      trigger_type,
+      structured_data,
+      adminClient,
+    );
+
     // Read current brain state for extraction context
     const { data: brain } = await adminClient
       .from('pt_client_brain')
@@ -340,7 +583,7 @@ Deno.serve(async (req: Request) => {
 
     await applyBrainUpdates(client_id, extraction, adminClient);
 
-    return json({ ok: true, brain_updated: true });
+    return json({ ok: true, brain_updated: true, structured_updated: structuredUpdated });
   } catch (err) {
     console.error('update-client-brain error:', err);
     return json({ error: 'Internal error.' }, 500);
