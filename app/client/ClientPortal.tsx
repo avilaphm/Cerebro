@@ -1893,7 +1893,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     </div>
                   </div>
 
-                  <div className="relative z-10 -mt-9 rounded-t-[2rem] border border-white/80 bg-[#fbfbf8] p-4 shadow-[0_-18px_45px_rgba(0,0,0,0.12)] md:-mt-12 md:p-5">
+                  <div className="workout-logging-sheet relative z-10 -mt-9 rounded-t-[2rem] border border-white/80 bg-[#fbfbf8] p-4 shadow-[0_-18px_45px_rgba(0,0,0,0.12)] md:-mt-12 md:p-5">
                     <div className="mb-4">
                       <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Exercise {screenIndex + 1}</p>
                       <h3 className="mt-1 text-xl font-medium leading-tight text-black md:text-2xl">{exercise.name}</h3>

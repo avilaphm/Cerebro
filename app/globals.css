@@ -288,6 +288,28 @@ body::before {
   border-color: var(--liquid-fg-1) !important;
 }
 
+/* Workout logging sheet sits over a black video container — keep it opaque white */
+.client-liquid .workout-logging-sheet,
+.client-liquid .workout-logging-sheet [class*="bg-white"],
+.client-liquid .workout-logging-sheet [class*="bg-[#fbfbf8]"] {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+.client-liquid .workout-logging-sheet input,
+.client-liquid .workout-logging-sheet textarea {
+  background: rgba(0, 0, 0, 0.04) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.client-liquid .workout-logging-sheet button[class*="bg-white"],
+.client-liquid .workout-logging-sheet button[class*="bg-[#fbfbf8]"] {
+  background: rgba(0, 0, 0, 0.04) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 .dashboard-glass-sidebar {
   background: rgba(8, 8, 10, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.1);
