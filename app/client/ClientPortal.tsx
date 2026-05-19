@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Salad, Settings, Wrench } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
@@ -422,6 +422,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const supabase = createClient();
   const isPedro = isPedroAdminEmail(userEmail);
   const [activeScreen, setActiveScreen] = useState<ClientScreen>('overview');
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [client, setClient] = useState<PTClient | null>(null);
   const [assignments, setAssignments] = useState<PTProgramAssignment[]>([]);
   const [setLogs, setSetLogs] = useState<PTSetLog[]>([]);
@@ -2882,7 +2883,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     <main className="client-liquid flex h-dvh min-h-0 flex-col overflow-hidden text-black">
       {renderHeader()}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-36 md:p-10 md:pb-28">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 pb-36 md:p-10 md:pb-28">
         {status && (
           <div className="mb-5 border border-black/10 bg-white px-4 py-3 text-sm text-black/60">
             {status}
@@ -2900,36 +2901,53 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         )}
       </div>
 
-      {client && (
-        <nav className="client-bottom-nav fixed inset-x-2 bottom-4 z-40 border border-black/10 bg-white/95 px-1.5 py-1.5 shadow-[0_-10px_30px_rgba(0,0,0,0.06)] backdrop-blur md:inset-x-auto md:left-1/2 md:w-[32rem] md:-translate-x-1/2">
-          <div className="mx-auto grid max-w-sm grid-cols-5 gap-0.5">
-            {([
-              ['overview', Home, 'Overview'],
-              ['nutrition', Salad, 'Nutrition'],
-              ['workout', Dumbbell, 'Workout'],
-              ['booking', Wrench, 'Booking'],
-              ['settings', Settings, 'Settings'],
-            ] as const).map(([screen, Icon, label]) => (
-              <button
-                key={screen}
-                type="button"
-                onClick={() => {
-                  setSelectedWorkout(null);
-                  setActiveScreen(screen);
+      {client && (() => {
+        const navItems = [
+          ['overview', Home, 'Overview'],
+          ['nutrition', Salad, 'Nutrition'],
+          ['workout', Dumbbell, 'Workout'],
+          ['booking', Wrench, 'Booking'],
+          ['settings', Settings, 'Settings'],
+        ] as const;
+        const activeNavIndex = navItems.findIndex(([s]) => s === activeScreen);
+        return (
+          <nav className="client-bottom-nav fixed inset-x-2 bottom-4 z-40 overflow-hidden rounded-2xl border border-black/10 bg-white/90 px-1.5 py-1.5 shadow-[0_8px_32px_rgba(0,0,0,0.10)] backdrop-blur-xl md:inset-x-auto md:left-1/2 md:w-[32rem] md:-translate-x-1/2">
+            <div className="relative mx-auto flex max-w-sm">
+              {/* Sliding active pill — GPU-composited, instant paint on click */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 w-1/5 p-0.5 will-change-transform"
+                style={{
+                  transform: `translateX(${activeNavIndex * 100}%)`,
+                  transitionProperty: 'transform',
+                  transitionDuration: '380ms',
+                  transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
                 }}
-                className={`flex h-11 flex-col items-center justify-center gap-0.5 border text-[0.58rem] uppercase tracking-[0.06em] transition-colors ${
-                  activeScreen === screen
-                    ? 'border-black bg-black text-white'
-                    : 'border-transparent text-black/40 hover:border-black/10 hover:text-black'
-                }`}
               >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </nav>
-      )}
+                <div className="h-full w-full rounded-[0.8rem] bg-black shadow-[0_2px_8px_rgba(0,0,0,0.22)]" />
+              </div>
+
+              {navItems.map(([screen, Icon, label]) => (
+                <button
+                  key={screen}
+                  type="button"
+                  onClick={() => {
+                    setSelectedWorkout(null);
+                    setActiveScreen(screen);
+                    scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+                  }}
+                  className={`relative z-10 flex h-11 flex-1 flex-col items-center justify-center gap-0.5 text-[0.58rem] uppercase tracking-[0.06em] transition-colors duration-150 ${
+                    activeScreen === screen ? 'text-white' : 'text-black/40 hover:text-black'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </nav>
+        );
+      })()}
 
       {client && !isPedro && (
         <div className="fixed right-[4.75rem] top-4 z-50 flex h-12 flex-col items-center justify-center md:right-[5.5rem] md:top-6">
