@@ -4,6 +4,15 @@
 2026-05-19 by Claude
 
 ## Last completed task
+PT programming architecture Phase 8/9 - Review output approval:
+- `PTProgrammeReviewView.tsx`: `reviewOutputs` prop converted to local state so approvals reflect immediately.
+- `approveOutput()`: updates `pt_program_review_outputs.status = 'approved'` for a single row, then patches local state.
+- Review outputs moved from compact 2-column Evidence panel into a dedicated full-width section with expanded `findings`, `hard_rule_failures`, and a per-output Approve button. Green border + checkmark when approved, red border when failures exist.
+- Evidence section simplified to referenced documents full-width only.
+- `PTProgramReviewOutput` type: added `'approved'` to status union in `utils/pt/types.ts`.
+- Commit: 50ab807. Build passes.
+
+Previous completed task:
 PT programming architecture Phase 7 - Nutrition Synchronization Engine:
 - `app/dashboard/pt/programmes/[id]/edit/page.tsx`: now loads `pt_phase_nutrition` rows by assignment_id. If no rows exist and `generation_run_id` is set, fetches `nutrition_draft` from `pt_program_generation_runs` as fallback. Passes both as props to PTProgrammeEditView.
 - `PTProgrammeEditView.tsx`: replaced `phaseNutritionDraft` (untyped unknown[]) with `nutritionRows: PhaseNutritionRow[]`. Initialized from DB rows → generation run draft → sessionStorage revision draft (in priority order). Added `PhaseNutritionRow` interface and `toNutritionRows()` / `extractRecText()` helpers at module level.
