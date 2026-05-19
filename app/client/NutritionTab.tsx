@@ -110,6 +110,11 @@ function MacroBar({ label, current, target, unit, color }: MacroBarProps) {
   );
 }
 
+interface DeletedEntry {
+  log: NutritionLog;
+  undoExpiresAt: number;
+}
+
 interface Props {
   clientId: string;
 }
@@ -123,6 +128,8 @@ export default function NutritionTab({ clientId }: Props) {
   const [loading, setLoading] = useState(true);
   const [showLogModal, setShowLogModal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletedEntries, setDeletedEntries] = useState<DeletedEntry[]>([]);
+  const [undoingId, setUndoingId] = useState<string | null>(null);
 
   const weekDays = useMemo(() => {
     const base = addDays(new Date(), weekOffset * 7);
@@ -178,12 +185,57 @@ export default function NutritionTab({ clientId }: Props) {
     return map;
   }, [logs]);
 
-  const deleteLog = async (id: string) => {
-    setDeletingId(id);
-    await supabase.from('pt_nutrition_logs').delete().eq('id', id);
-    setLogs((prev) => prev.filter((l) => l.id !== id));
+  const softDelete = async (log: NutritionLog) => {
+    setDeletingId(log.id);
+    await supabase.from('pt_nutrition_logs').delete().eq('id', log.id);
+    setLogs((prev) => prev.filter((l) => l.id !== log.id));
+    setDeletedEntries((prev) => [
+      ...prev,
+      { log, undoExpiresAt: Date.now() + 10 * 60 * 1000 },
+    ]);
     setDeletingId(null);
   };
+
+  const undoDelete = async (entry: DeletedEntry) => {
+    setUndoingId(entry.log.id);
+    setDeletedEntries((prev) => prev.filter((e) => e.log.id !== entry.log.id));
+    const { data } = await supabase
+      .from('pt_nutrition_logs')
+      .insert({
+        client_id: clientId,
+        meal_type: entry.log.meal_type,
+        meal_description: entry.log.meal_description,
+        food_items: entry.log.food_items,
+        protein_g: entry.log.protein_g,
+        carbs_g: entry.log.carbs_g,
+        fat_g: entry.log.fat_g,
+        fibre_g: entry.log.fibre_g,
+        calories: entry.log.calories,
+        input_type: entry.log.input_type,
+        logged_at: entry.log.logged_at,
+      })
+      .select('id, meal_type, meal_description, food_items, protein_g, carbs_g, fat_g, fibre_g, calories, input_type, logged_at')
+      .single();
+    if (data) {
+      setLogs((prev) =>
+        [...prev, data as NutritionLog].sort(
+          (a, b) => new Date(a.logged_at).getTime() - new Date(b.logged_at).getTime(),
+        ),
+      );
+    }
+    setUndoingId(null);
+  };
+
+  // Expire undo entries after 10 minutes
+  useEffect(() => {
+    if (deletedEntries.length === 0) return;
+    const nearest = Math.min(...deletedEntries.map((e) => e.undoExpiresAt));
+    const delay = Math.max(0, nearest - Date.now());
+    const timer = setTimeout(() => {
+      setDeletedEntries((prev) => prev.filter((e) => e.undoExpiresAt > Date.now()));
+    }, delay + 100);
+    return () => clearTimeout(timer);
+  }, [deletedEntries]);
 
   const today = new Date();
   const canGoForward = weekOffset < 0;
@@ -335,43 +387,37 @@ export default function NutritionTab({ clientId }: Props) {
                               </p>
                             )}
                           </div>
-                          <div className="flex shrink-0 items-start gap-3">
-                            <div className="text-right">
-                              {log.calories != null && (
-                                <p className="text-xs font-medium tabular-nums">{log.calories} kcal</p>
-                              )}
-                              <p className="text-[0.6rem] text-black/35 tabular-nums">
-                                {[
-                                  log.protein_g != null ? `${log.protein_g}g P` : null,
-                                  log.carbs_g != null ? `${log.carbs_g}g C` : null,
-                                  log.fat_g != null ? `${log.fat_g}g F` : null,
-                                ].filter(Boolean).join(' · ')}
-                              </p>
-                              {log.fibre_g != null && (
-                                <p className="text-[0.6rem] text-black/30 tabular-nums">{log.fibre_g}g fibre</p>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => void deleteLog(log.id)}
-                              disabled={deletingId === log.id}
-                              className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-black/20 transition-colors hover:bg-red-50 hover:text-red-400 disabled:opacity-30"
-                              aria-label="Delete entry"
-                            >
-                              {deletingId === log.id ? (
-                                <span className="h-3 w-3 animate-spin rounded-full border border-black/20 border-t-black/60" />
-                              ) : (
-                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                                  <path d="M2 2l8 8M10 2L2 10" />
-                                </svg>
-                              )}
-                            </button>
+                          <div className="shrink-0 text-right">
+                            {log.calories != null && (
+                              <p className="text-xs font-medium tabular-nums">{log.calories} kcal</p>
+                            )}
+                            <p className="text-[0.6rem] text-black/35 tabular-nums">
+                              {[
+                                log.protein_g != null ? `${log.protein_g}g P` : null,
+                                log.carbs_g != null ? `${log.carbs_g}g C` : null,
+                                log.fat_g != null ? `${log.fat_g}g F` : null,
+                              ].filter(Boolean).join(' · ')}
+                            </p>
+                            {log.fibre_g != null && (
+                              <p className="text-[0.6rem] text-black/30 tabular-nums">{log.fibre_g}g fibre</p>
+                            )}
                           </div>
                         </div>
-                        <p className="mt-1 text-[0.55rem] text-black/20">
-                          {new Date(log.logged_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
-                          {log.input_type === 'photo' ? ' · photo' : log.input_type === 'voice' ? ' · voice' : ''}
-                        </p>
+                        <div className="mt-1.5 flex items-center justify-between">
+                          <p className="text-[0.55rem] text-black/20">
+                            {new Date(log.logged_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
+                            {log.input_type === 'photo' ? ' · photo' : log.input_type === 'voice' ? ' · voice' : ''}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void softDelete(log)}
+                            disabled={deletingId === log.id}
+                            className="text-[0.6rem] font-medium uppercase tracking-[0.1em] text-black/30 transition-colors hover:text-red-400 disabled:opacity-30"
+                            aria-label="Delete entry"
+                          >
+                            {deletingId === log.id ? '…' : 'Delete'}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -379,6 +425,36 @@ export default function NutritionTab({ clientId }: Props) {
               </div>
             );
           })
+        )}
+
+        {/* Recently deleted — undo within 10 min */}
+        {deletedEntries.length > 0 && (
+          <div className="border border-black/10 bg-white">
+            <div className="flex items-center justify-between border-b border-black/6 px-4 py-3">
+              <p className="text-[0.65rem] font-medium uppercase tracking-[0.14em] text-black/40">Recently deleted</p>
+              <p className="text-[0.6rem] text-black/25">Restores within 10 min</p>
+            </div>
+            <div className="divide-y divide-black/5">
+              {deletedEntries.map((entry) => (
+                <div key={entry.log.id} className="flex items-center gap-4 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-snug text-black/45">{entry.log.meal_description}</p>
+                    {entry.log.calories != null && (
+                      <p className="mt-0.5 text-[0.6rem] text-black/25 tabular-nums">{entry.log.calories} kcal</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void undoDelete(entry)}
+                    disabled={undoingId === entry.log.id}
+                    className="shrink-0 text-[0.6rem] font-medium uppercase tracking-[0.1em] text-black/50 transition-colors hover:text-black disabled:opacity-30"
+                  >
+                    {undoingId === entry.log.id ? '…' : 'Restore'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
