@@ -4,6 +4,14 @@
 2026-05-19 by Claude
 
 ## Last completed task
+pt-programming-agent v10 deployed - Programming principles rewrite + Phase 1 day count enforcement:
+- `programming-principles.md` completely rewritten with all Cerebro hard rules: full 6-phase programme arc (mandatory), Phase 1 = exactly 3 full-body days, warm-up pool (17 exercises), compound tempos (exact seconds for all Big 5), Hypertrophy 65-75% / 8-15 reps / 3-5 sets, Strength 75-90% / 3-8 reps / 4-6 sets, nutrition sync per phase, core coaching philosophy.
+- `index.ts` `DEFAULT_PRINCIPLES` updated to compact version of same rules.
+- `validateProgramme()`: Phase 1 / Foundations day count is now a hard rule failure (not a finding). If the AI generates a foundations phase with anything other than 3 days, the run is marked `failed` and Pedro sees the violation immediately.
+- Warm-up count mismatch (not exactly 4) remains a finding (not a hard failure) in case Pedro adjusts.
+- Deployed as v10 to Supabase (project: otcnrkfvgyvwolironoz).
+
+Previous completed task:
 PT programming architecture Phase 10 - Final integration (OVERHAUL COMPLETE):
 - `PTClientDetail.tsx`: `saveOneRmResults()` now inserts a `STORE_1RM_RESULTS` step (step_order 19) into `pt_program_generation_steps` when the active assignment has a `generation_run_id`. `recalculateLoads()` inserts a `RECALCULATE_PERCENTAGE_LOADS` step (step_order 20) on success. Both are fire-and-forget (`void`) so they never block the UI.
 - RLS verified: Pedro's auth emails have full access to `pt_program_generation_steps` via the `pt admins full generation steps` policy.

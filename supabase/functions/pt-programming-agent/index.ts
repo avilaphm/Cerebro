@@ -8,46 +8,35 @@ const corsHeaders = {
 
 const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
 const MAX_DOCUMENT_CHARS = 45000;
-const DEFAULT_PRINCIPLES = `# Pedro PT Programming Principles
+const DEFAULT_PRINCIPLES = `# Cerebro PT Programming Rules
 
-## Role
-- Build practical client programmes Pedro can review and adjust quickly.
-- Preserve the client's goal, available schedule, injuries, dislikes, equipment, and training age.
-- Treat client feedback and logged performance as stronger evidence than a generic template.
-- Never claim a programme is final or saved. The output is a draft for Pedro.
+## Programme Arc (New Clients)
+Every new programme MUST use this exact phase order: Foundations (6-7w), 1RM Testing (1w), Hypertrophy (10-12w), Strength (10-12w), Retesting (1w), Taper.
 
-## Programme Structure
-- Use 2-4 phases unless Pedro asks for something different.
-- Each phase needs a clear focus, duration, progression, days, and block progression where appropriate.
-- Use week_blocks for phase-level progression blocks.
-- A week_blocks item uses either sets or weight_pct, not both unless Pedro explicitly asks.
-- Use weight_pct only when percentage loading makes sense for the exercise and goal.
-- Use set progressions for general strength, hypertrophy, skill, return-to-training, or mixed programmes.
+## Phase 1 Foundations
+ALWAYS exactly 3 workout days. Full body every session.
+Weeks 1-2: 2 sets. Slow tempo. Movement quality. Weeks 3-4: 3 sets. Controlled tempo. Weeks 5-7: Introduce Big 5 compounds (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up).
 
-## Exercise Selection
-- Prefer exercises from the supplied exercise library and copy their exercise_id, cues, and video URL.
-- Choose exercises the client can perform with their available equipment.
-- Avoid exercises the client dislikes unless Pedro explicitly wants to reintroduce them.
-- Regress painful or risky exercises instead of removing the training pattern entirely where possible.
-- Use sections such as Warm Up, Workout, MetCon, Stretches, and Cool Down when they improve clarity.
+## Warm-Up (every day)
+Exactly 4 warm-up exercises. 1 set each. 10-12 reps. Use section_start "Warm Up" on first warm-up only. Select from approved pool: 90/90 hip switches, cobra to child pose, Spider-Man lunges, best stretch in the world, T-spine rotations, thread the needle, glute bridge marchers, dead bugs, bird dogs, bodyweight squats, band pull-aparts.
 
-## Loading And Progression
-- Keep early weeks conservative when the client is new, returning from injury, inconsistent, or feedback shows pain/fatigue.
-- Progress one main variable at a time: sets, load percentage, reps, density, complexity, or range.
-- Use exercise-specific overrides only when a single exercise needs different sets, reps, percentage, or notes from the phase block.
-- If client logs show missed workouts or poor recovery, reduce complexity before increasing intensity.
-- If client logs show consistent completion and stable load, progress gradually.
+## Workout Structure
+6 main exercises standard in 3 supersets. Max 9 exercises. 45 min session. Use section_start "Workout" on first main exercise.
 
-## Client-Facing Detail
-- Every exercise needs concise cues that a client can understand mid-session.
-- Notes should be actionable: tempo, range, setup, substitution, pain rule, or intent.
-- Use simple language. Avoid long coaching essays inside exercise notes.
-- Include rest times that match the goal and difficulty.
+## Compound Tempos
+BB Squat: 3s down, 2-3s pause. Deadlift: 2-3s controlled descent. Shoulder Press: 3s eccentric, pause overhead. Pull-up: 3s eccentric. Bench Press: 3s eccentric, 2s pause at chest.
 
-## Safety
-- Respect injuries, pain, pregnancy, surgery, medication, illness, travel, and schedule changes.
-- For pain signals, use a conservative substitution or note and flag the reason in the change summary.
-- Do not give medical diagnosis. Programme around constraints and leave judgement to Pedro.`;
+## Hypertrophy
+65-75% 1RM. 8-15 reps. 3-5 sets. Include supersets, progression, nutrition sync (higher carbs, protein support).
+
+## Strength
+75-90% 1RM. 3-8 reps. 4-6 sets. Include heavier loading progression, nutrition sync (nervous system, sleep, hydration).
+
+## Nutrition Sync
+Phase 1: habits, hydration, protein consistency. Hypertrophy: higher carbs, protein support, slight surplus. Strength: nervous system recovery, sleep, hydration. Taper: maintain protein, recovery focus. Use LEAST restrictive strategy.
+
+## Core Rules
+Movement quality before load. Full ROM. Longevity over ego. Unilateral weekly. Prefer library exercise_id, cues, video_url. Every exercise needs 3-5 cues and a tempo/intent note. Output is always a draft for Pedro.`;
 
 type AgentMode = 'new_programme' | 'revise_programme';
 
@@ -1023,6 +1012,12 @@ function validateProgramme(
     if (!phase.title.trim()) hardRuleFailures.push(`Phase ${phaseIndex + 1} is missing a title.`);
     if (!phase.weeks.trim()) findings.push(`${phase.title || `Phase ${phaseIndex + 1}`} is missing duration.`);
     if (phase.days.length === 0) hardRuleFailures.push(`${phase.title || `Phase ${phaseIndex + 1}`} has no workout days.`);
+
+    const isFoundations = phase.title.toLowerCase().includes('foundation') || phaseIndex === 0;
+    if (isFoundations && phase.days.length !== 3) {
+      hardRuleFailures.push(`${phase.title || 'Phase 1'} must have exactly 3 full-body workout days (currently has ${phase.days.length}).`);
+    }
+
     phase.days.forEach((day, dayIndex) => {
       if (day.exercises.length === 0) hardRuleFailures.push(`${phase.title} / day ${dayIndex + 1} has no exercises.`);
       const sectionStarts = day.exercises
@@ -1030,6 +1025,13 @@ function validateProgramme(
         .filter((section): section is string => typeof section === 'string' && section.trim().length > 0);
       if (!sectionStarts.includes('Warm Up')) findings.push(`${phase.title} / ${day.title || `day ${dayIndex + 1}`} has no Warm Up section marker.`);
       if (!sectionStarts.includes('Workout')) hardRuleFailures.push(`${phase.title} / ${day.title || `day ${dayIndex + 1}`} has no Workout section marker.`);
+
+      const workoutIdx = day.exercises.findIndex((ex) => ex.section_start === 'Workout');
+      const warmUpCount = workoutIdx > 0 ? workoutIdx : 0;
+      if (sectionStarts.includes('Warm Up') && warmUpCount !== 4) {
+        findings.push(`${phase.title} / ${day.title || `day ${dayIndex + 1}`} warm-up should have exactly 4 exercises (has ${warmUpCount}).`);
+      }
+
       day.exercises.forEach((exercise) => {
         if (!exercise.name.trim()) hardRuleFailures.push(`${phase.title} / ${day.title} has an unnamed exercise.`);
         if (exercise.cues.length === 0) findings.push(`${exercise.name || 'An exercise'} has no client-facing cues.`);
