@@ -1582,48 +1582,57 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         <button
           type="button"
           onClick={() => setProgressExpanded((v) => !v)}
-          className="w-full border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:bg-[#fcfcfa] md:px-6"
+          className="w-full border border-black/10 bg-white px-5 py-5 text-left transition-colors hover:bg-[#fcfcfa] md:px-6"
         >
-          <div className="flex items-center gap-4">
-            <p className="shrink-0 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Your Journey</p>
-            <div className="relative flex-1">
-              <div className="absolute left-0 right-0 top-[0.42rem] h-px bg-black/10" />
-              <div
-                className="absolute left-0 top-[0.42rem] h-px bg-[rgb(46,213,115)] transition-all"
-                style={{ width: doneFill }}
-              />
-              <div className="relative flex justify-between">
-                {journeySteps.map((step, index) => {
-                  const { isDone, isActive } = stepState(step);
-                  return (
-                    <div key={`${step.type}-${index}`} className="flex flex-col items-center gap-1.5">
-                      <div className={`relative flex items-center justify-center ${isActive ? 'h-4 w-4' : 'h-3.5 w-3.5'}`}>
-                        {isActive && (
-                          <div className="absolute inset-0 animate-ping rounded-full bg-black/8" />
-                        )}
-                        <div
-                          className={`rounded-full border-2 transition-all ${
-                            isActive ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5'
-                          } ${
-                            isDone
-                              ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
-                              : isActive
-                                ? 'border-black bg-white'
-                                : 'border-black/20 bg-white'
-                          }`}
-                        />
-                      </div>
-                      <span className={`max-w-[3.5rem] text-center text-[0.44rem] uppercase leading-tight tracking-[0.06em] transition-colors ${isActive ? 'text-black/55' : 'text-black/28'}`}>
-                        {step.label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Your Journey</p>
             <ChevronDown
               className={`h-4 w-4 shrink-0 text-black/25 transition-transform ${progressExpanded ? 'rotate-180' : ''}`}
             />
+          </div>
+          <div className="relative mt-4">
+            <div className="absolute left-0 right-0 top-[0.5rem] h-px bg-black/8" />
+            <div
+              className="absolute left-0 top-[0.5rem] h-px bg-[rgb(46,213,115)] transition-all duration-700"
+              style={{ width: doneFill }}
+            />
+            <div className="relative flex justify-between">
+              {journeySteps.map((step, index) => {
+                const { isDone, isActive } = stepState(step);
+                return (
+                  <div key={`${step.type}-${index}`} className="relative flex items-center justify-center">
+                    {isActive && (
+                      <div className="absolute h-5 w-5 animate-ping rounded-full bg-black/6" />
+                    )}
+                    <div
+                      className={`relative h-4 w-4 rounded-full border-2 transition-all ${
+                        isDone
+                          ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
+                          : isActive
+                            ? 'border-black bg-white'
+                            : 'border-black/18 bg-white'
+                      }`}
+                    >
+                      {isDone && <Check className="absolute inset-0 m-auto h-2 w-2 text-white" />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {(() => {
+              const activeStep = journeySteps.find((s, i) => stepState(s).isActive);
+              const doneCount = journeySteps.filter((s) => stepState(s).isDone).length;
+              return (
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-[0.62rem] font-medium text-black/55">
+                    {activeStep ? activeStep.label : doneCount === journeySteps.length ? 'Programme complete' : 'Not started'}
+                  </p>
+                  <p className="text-[0.58rem] text-black/28">
+                    {doneCount}/{journeySteps.length} done
+                  </p>
+                </div>
+              );
+            })()}
           </div>
         </button>
 
