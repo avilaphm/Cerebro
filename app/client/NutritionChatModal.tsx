@@ -139,12 +139,22 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
 
   const stopVoice = () => { recognitionRef.current?.stop(); };
 
-  const toBase64 = (file: File): Promise<string> =>
+  const compressImage = (file: File, maxDim = 1024, quality = 0.82): Promise<{ base64: string; mimeType: string }> =>
     new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve((reader.result as string).split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve({ base64: dataUrl.split(',')[1], mimeType: 'image/jpeg' });
+      };
+      img.onerror = reject;
+      img.src = url;
     });
 
   const addPhotos = async (files: FileList | null) => {
@@ -155,9 +165,9 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
     const toAdd = Array.from(files).slice(0, remaining);
     const entries = await Promise.all(
       toAdd.map(async (file) => {
-        const base64 = await toBase64(file);
         const preview = URL.createObjectURL(file);
-        return { preview, base64, mimeType: file.type };
+        const { base64, mimeType } = await compressImage(file);
+        return { preview, base64, mimeType };
       }),
     );
     setPhotos((prev) => [...prev, ...entries]);
