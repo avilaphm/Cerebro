@@ -487,6 +487,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [submittingSectionNote, setSubmittingSectionNote] = useState<string | null>(null);
   const [journeyPopup, setJourneyPopup] = useState<{ key: string; text: string; label: string } | null>(null);
   const [journeyLoadingKey, setJourneyLoadingKey] = useState<string | null>(null);
+  const [journeyExplanations, setJourneyExplanations] = useState<Record<string, string>>({});
   const [recordingNoteKey, setRecordingNoteKey] = useState<string | null>(null);
   const noteRecognitionRef = useRef<SpeechRecogLike | null>(null);
   const noteInterimRef = useRef('');
@@ -693,6 +694,51 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     if (next >= 0) return next;
     return 0;
   }, [assignment, phaseProgress]);
+
+  useEffect(() => {
+    if (!client) return;
+    type JStep = { type: 'phase' | 'test'; label: string; phaseIndex: number | null; milestone?: 'initial' | 'retest' };
+    const steps: JStep[] = assignment && assignment.programme.phases.length > 0
+      ? assignment.programme.phases.flatMap((phase, pi) => {
+          const s: JStep[] = [{ type: 'phase', label: phase.title, phaseIndex: pi }];
+          if (pi === 0) s.push({ type: 'test', label: '1RM Test', phaseIndex: null, milestone: 'initial' });
+          if (pi === assignment.programme.phases.length - 1) s.push({ type: 'test', label: '1RM Re-test', phaseIndex: null, milestone: 'retest' });
+          return s;
+        })
+      : [
+          { type: 'phase', label: 'Phase 1 - Foundation', phaseIndex: null },
+          { type: 'test', label: 'Testing 1 RM', phaseIndex: null, milestone: 'initial' as const },
+          { type: 'phase', label: 'Phase 2 - Hypertrophy', phaseIndex: null },
+          { type: 'phase', label: 'Phase 3 - Strength', phaseIndex: null },
+          { type: 'test', label: 'Re-testing 1 RM', phaseIndex: null, milestone: 'retest' as const },
+        ];
+    void Promise.all(
+      steps.map((step, index) => {
+        const stepKey = `${step.type}-${index}`;
+        return supabase.functions.invoke('explain-journey-phase', {
+          body: {
+            client_id: client.id,
+            step_label: step.label,
+            step_type: step.type,
+            milestone: step.milestone,
+            phase_index: step.phaseIndex,
+            total_steps: steps.length,
+            programme_phases: steps.map((s) => s.label),
+            is_active: false,
+            is_done: false,
+          },
+        }).then(({ data }) => {
+          if (data) {
+            setJourneyExplanations((prev) => ({
+              ...prev,
+              [stepKey]: (data as { explanation: string }).explanation,
+            }));
+          }
+        });
+      }),
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client?.id, assignment?.id]);
 
   const activePhase = assignment?.programme.phases[activePhaseIndex] ?? null;
   const activeProgress = phaseProgress[activePhaseIndex] ?? null;
@@ -1453,6 +1499,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     isDone: boolean,
   ) => {
     if (!client) return;
+    if (journeyExplanations[stepKey]) {
+      setJourneyPopup({ key: stepKey, text: journeyExplanations[stepKey], label: stepLabel });
+      return;
+    }
     setJourneyLoadingKey(stepKey);
     setJourneyPopup({ key: stepKey, text: '', label: stepLabel });
     try {
@@ -1470,7 +1520,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         },
       });
       if (error) throw error;
-      setJourneyPopup({ key: stepKey, text: (data as { explanation: string }).explanation, label: stepLabel });
+      const text = (data as { explanation: string }).explanation;
+      setJourneyExplanations((prev) => ({ ...prev, [stepKey]: text }));
+      setJourneyPopup({ key: stepKey, text, label: stepLabel });
     } catch {
       setJourneyPopup({ key: stepKey, text: 'Could not load explanation right now. Try again.', label: stepLabel });
     } finally {
@@ -1578,8 +1630,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               const stepKey = `${step.type}-${index}`;
               const isLoadingThis = journeyLoadingKey === stepKey;
               return (
-                <div key={`${step.type}-detail-${index}`} className="relative">
-                  <div className="flex items-center gap-2.5 pr-8">
+                <div key={`${step.type}-detail-${index}`}>
+                  <div className="flex items-center gap-2.5">
                     <div
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
                         state.isDone || isDonePhase
@@ -1601,19 +1653,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     {isActivePhase && (
                       <span className="ml-1 text-[0.55rem] uppercase tracking-[0.1em] text-[rgb(46,213,115)]">Current</span>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => void explainJourneyStep(
+                        stepKey, step.label, step.type, step.milestone,
+                        step.phaseIndex, journeySteps, isActivePhase, state.isDone || isDonePhase,
+                      )}
+                      disabled={isLoadingThis}
+                      className="inline-flex items-center rounded-full border border-black/12 bg-white px-2.5 py-0.5 text-[0.58rem] uppercase tracking-[0.1em] transition-colors hover:border-black/25 disabled:opacity-50"
+                      aria-label={`Explain ${step.label}`}
+                    >
+                      {isLoadingThis ? <span className="animate-spin text-[0.6rem]">·</span> : 'info'}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void explainJourneyStep(
-                      stepKey, step.label, step.type, step.milestone,
-                      step.phaseIndex, journeySteps, isActivePhase, state.isDone || isDonePhase,
-                    )}
-                    disabled={isLoadingThis}
-                    className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-black/15 bg-white text-[0.55rem] font-semibold text-black/40 transition-colors hover:border-black/35 hover:text-black disabled:opacity-40"
-                    aria-label={`Explain ${step.label}`}
-                  >
-                    {isLoadingThis ? <span className="animate-spin text-[0.6rem]">·</span> : '?'}
-                  </button>
                   {step.type === 'test' && (
                     <p className="ml-8 mt-1 text-xs leading-relaxed text-black/35">
                       {step.milestone === 'initial'
