@@ -1732,18 +1732,48 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             const cuesAreOpen = openCues[cueKey] ?? false;
             const lastTimeIsOpen = openLastTime[lastTimeKey] ?? false;
             const nextScreen = exerciseScreens[screenIndex + 1] ?? null;
+            const nextNextScreen = exerciseScreens[screenIndex + 2] ?? null;
             const videoIsActive = activeWorkoutExerciseId ? activeWorkoutExerciseId === exercise.id : screenIndex === 0;
             const endsSection = !nextScreen || nextScreen.section.id !== section.id;
             const supersetRounds = exercise.superset_id && nextScreen?.exercise.superset_id === exercise.superset_id
               ? Math.max(parseSets(values.sets), parseSets(nextScreen.values.sets))
               : null;
-            const transitionText = nextScreen
-              ? supersetRounds
-                ? `Superset with ${nextScreen.exercise.name}. Repeat ${supersetRounds} rounds before moving on.`
-                : endsSection
-                  ? `Next section: ${nextScreen.section.title}.`
-                  : `Next exercise: ${nextScreen.exercise.name}. Scroll when ready.`
-              : null;
+
+            let transitionLabel: string | null = null;
+            let transitionTitle: string | null = null;
+            let transitionSub: string | null = null;
+            if (nextScreen) {
+              if (supersetRounds) {
+                transitionLabel = `Superset · ${supersetRounds} rounds`;
+                transitionTitle = nextScreen.exercise.name;
+                transitionSub = `Alternate back-to-back with ${exercise.name} — ${supersetRounds} rounds total`;
+              } else if (endsSection) {
+                const nextIsSupersetStart =
+                  nextScreen.exercise.superset_id &&
+                  nextNextScreen &&
+                  nextNextScreen.section.id === nextScreen.section.id &&
+                  nextNextScreen.exercise.superset_id === nextScreen.exercise.superset_id;
+                const nextSupersetRounds = nextIsSupersetStart
+                  ? Math.max(parseSets(nextScreen.values.sets), parseSets(nextNextScreen!.values.sets))
+                  : null;
+                transitionLabel = `Up next: ${nextScreen.section.title}`;
+                if (nextSupersetRounds && nextIsSupersetStart) {
+                  transitionTitle = `${nextScreen.exercise.name} + ${nextNextScreen!.exercise.name}`;
+                  transitionSub = `First superset · ${nextSupersetRounds} rounds`;
+                } else {
+                  transitionTitle = nextScreen.exercise.name;
+                  transitionSub = nextScreen.values.sets && nextScreen.values.reps
+                    ? `${nextScreen.values.sets} sets · ${nextScreen.values.reps} reps`
+                    : null;
+                }
+              } else {
+                transitionLabel = 'Next exercise';
+                transitionTitle = nextScreen.exercise.name;
+                transitionSub = nextScreen.values.sets && nextScreen.values.reps
+                  ? `${nextScreen.values.sets} sets · ${nextScreen.values.reps} reps`
+                  : null;
+              }
+            }
 
             return (
               <section key={exercise.id} data-workout-exercise-id={exercise.id} className="min-h-[calc(100dvh-8rem)] scroll-mt-4">
@@ -1922,14 +1952,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
                 {endsSection && renderSectionNoteCard(section)}
 
-                {transitionText && (
-                  <div className={`mx-3 mt-4 flex items-center justify-between gap-3 rounded-full border px-4 py-3 text-sm ${
-                    supersetRounds || endsSection
-                      ? 'border-black bg-black text-white'
-                      : 'border-black/10 bg-white text-black/55'
-                  }`}>
-                    <span>{transitionText}</span>
-                    <ChevronDown className={`h-4 w-4 shrink-0 ${supersetRounds || endsSection ? 'text-white/70' : 'text-black/35'}`} />
+                {transitionTitle && (
+                  <div className="px-1 py-5">
+                    {transitionLabel && (
+                      <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">{transitionLabel}</p>
+                    )}
+                    <p className="mt-1 text-base font-medium text-black">{transitionTitle}</p>
+                    {transitionSub && (
+                      <p className="mt-0.5 text-sm text-black/45">{transitionSub}</p>
+                    )}
                   </div>
                 )}
               </section>
