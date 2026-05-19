@@ -330,17 +330,17 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
               style={{ maxHeight: '6rem' }}
             />
 
-            <div className="flex items-center gap-1.5 px-2.5 pb-3 pt-0.5">
+            <div className="flex items-center gap-2 px-2 pb-3.5 pt-1">
               {/* Gallery — multiple photos from camera roll */}
               <button
                 type="button"
                 onClick={() => galleryInputRef.current?.click()}
                 disabled={photos.length >= 10 || logging}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-black/40 transition-colors hover:bg-black/5 hover:text-black disabled:opacity-30"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-black/40 transition-colors hover:bg-black/5 hover:text-black disabled:opacity-30"
                 aria-label="Add photos from library"
               >
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M9 3v12M3 9h12" />
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M11 4v14M4 11h14" />
                 </svg>
               </button>
 
@@ -349,12 +349,12 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
                 disabled={photos.length >= 10 || logging}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-black/40 transition-colors hover:bg-black/5 hover:text-black disabled:opacity-30"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-black/40 transition-colors hover:bg-black/5 hover:text-black disabled:opacity-30"
                 aria-label="Take a photo"
               >
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4">
-                  <path d="M1.5 5.5h2.5l1.5-2h7l1.5 2H16.5v9.5h-15V5.5z" />
-                  <circle cx="9" cy="10.5" r="2.5" />
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M2 7h3l2-2.5h9L18 7h2v11.5H2V7z" />
+                  <circle cx="11" cy="13" r="3" />
                 </svg>
               </button>
 
@@ -369,19 +369,19 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
                 type="button"
                 onClick={recording ? stopVoice : startVoice}
                 disabled={logging}
-                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
+                className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
                   recording ? 'bg-red-50 text-red-500' : 'text-black/40 hover:bg-black/5 hover:text-black'
                 }`}
                 aria-label={recording ? 'Stop recording' : 'Start voice input'}
               >
                 {recording ? (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <rect x="4" y="4" width="8" height="8" rx="1.5" />
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                    <rect x="5" y="5" width="10" height="10" rx="2" />
                   </svg>
                 ) : (
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <rect x="6" y="1" width="6" height="9" rx="3" />
-                    <path d="M3 9a6 6 0 0012 0M9 15v2" />
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <rect x="7.5" y="1.5" width="7" height="11" rx="3.5" />
+                    <path d="M3.5 11a7.5 7.5 0 0015 0M11 18.5v2" />
                   </svg>
                 )}
               </button>
@@ -391,16 +391,16 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
                 type="button"
                 onClick={() => void handleLog()}
                 disabled={!hasContent || logging}
-                className="ml-1 flex h-9 items-center gap-1.5 rounded-full bg-black px-4 text-xs font-medium text-white transition-opacity disabled:opacity-20"
+                className="ml-1 flex h-11 items-center gap-2 rounded-full bg-black px-5 text-sm font-medium text-white transition-opacity disabled:opacity-20"
                 aria-label="Log food"
               >
                 {logging ? (
-                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 ) : (
                   <>
                     Log food
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                      <path d="M6 10V2M2 6l4-4 4 4" />
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M7 12V2M2 7l5-5 5 5" />
                     </svg>
                   </>
                 )}
