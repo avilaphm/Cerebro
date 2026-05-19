@@ -57,7 +57,17 @@ interface AppliedRule {
 }
 
 const DOCUMENT_PRIORITY = [
-  { rank: 1, label: 'Cerebro Programming Architecture', patterns: ['cerebro programming', 'program generation', 'programming system'] },
+  {
+    rank: 1,
+    label: 'Cerebro Programming Architecture',
+    patterns: [
+      'cerebro master system prompt',
+      'cerebro client analysis',
+      'program generation system',
+      'cerebro programming',
+      'programming system',
+    ],
+  },
   { rank: 2, label: 'Pedro Coaching Philosophy', patterns: ['pedro', 'coaching', 'voice note', 'matt duncan'] },
   { rank: 3, label: 'Eric Helms Training Pyramid', patterns: ['muscle and strength pyramid training', 'helms training'] },
   { rank: 4, label: 'Eric Helms Nutrition Pyramid', patterns: ['muscle and strength pyramid nutrition', 'helms nutrition'] },
@@ -130,7 +140,9 @@ Deno.serve(async (req: Request) => {
 
     if (error) return json({ error: error.message }, 500);
 
-    const rawChunks = ((data ?? []) as KnowledgeChunk[]).filter((chunk) => chunk.chunk_text?.trim());
+    const vectorChunks = ((data ?? []) as KnowledgeChunk[]).filter((chunk) => chunk.chunk_text?.trim());
+    const architectureChunks = await loadArchitectureChunks(adminClient, input);
+    const rawChunks = mergeChunks(architectureChunks, vectorChunks);
     const excerpts = rankExcerpts(rawChunks).slice(0, input.matchCount);
     const referencedDocuments = buildReferencedDocuments(excerpts);
     const appliedRules = buildAppliedRules(input, excerpts);
@@ -285,6 +297,80 @@ function buildRetrievalQuery(input: {
     `Decision needed: ${input.questionOrDecision}`,
     `Priority sources: ${priorityHint}`,
   ].filter(Boolean).join('\n');
+}
+
+async function loadArchitectureChunks(
+  adminClient: ReturnType<typeof createClient>,
+  input: { taskType: string; phaseType: string | null; clientGoal: string | null; questionOrDecision: string },
+): Promise<KnowledgeChunk[]> {
+  const { data } = await adminClient
+    .from('pt_knowledge_documents')
+    .select('title, content_text')
+    .or('source.eq.cerebro_architecture,title.ilike.%CEREBRO MASTER SYSTEM PROMPT%,title.ilike.%CEREBRO CLIENT ANALYSIS%')
+    .limit(4);
+
+  const docs = ((data ?? []) as Array<{ title: string; content_text: string | null }>)
+    .filter((doc) => doc.content_text?.trim());
+
+  const queryTerms = importantTerms([
+    input.taskType,
+    input.phaseType ?? '',
+    input.clientGoal ?? '',
+    input.questionOrDecision,
+  ].join(' '));
+
+  return docs
+    .flatMap((doc) => {
+      const sections = splitMarkdownSections(doc.content_text ?? '');
+      return sections.map((section) => ({
+        document_title: doc.title,
+        chunk_text: section,
+        similarity: architectureSectionScore(doc.title, section, queryTerms),
+      }));
+    })
+    .filter((chunk) => chunk.similarity >= 0.72)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, 5);
+}
+
+function splitMarkdownSections(text: string): string[] {
+  const sections = text
+    .split(/\n(?=#)/)
+    .map((section) => section.trim())
+    .filter((section) => section.length > 80);
+
+  if (sections.length > 0) return sections.map((section) => section.slice(0, 1800));
+  return text.match(/[\s\S]{1,1800}/g)?.map((section) => section.trim()).filter(Boolean) ?? [];
+}
+
+function importantTerms(text: string): string[] {
+  const stopWords = new Set([
+    'what', 'should', 'with', 'that', 'this', 'from', 'into', 'phase', 'client',
+    'training', 'program', 'programme', 'generation', 'decision', 'needed',
+  ]);
+  return [...new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? [])]
+    .filter((term) => term.length > 3 && !stopWords.has(term))
+    .slice(0, 24);
+}
+
+function architectureSectionScore(title: string, section: string, queryTerms: string[]): number {
+  const normalized = `${title}\n${section}`.toLowerCase();
+  const matches = queryTerms.filter((term) => normalized.includes(term)).length;
+  const titleBonus = documentPriorityRank(title) === 1 ? 0.12 : 0;
+  const score = 0.72 + Math.min(0.16, matches * 0.025) + titleBonus;
+  return roundScore(Math.min(0.96, score));
+}
+
+function mergeChunks(primaryChunks: KnowledgeChunk[], secondaryChunks: KnowledgeChunk[]): KnowledgeChunk[] {
+  const seen = new Set<string>();
+  const merged: KnowledgeChunk[] = [];
+  for (const chunk of [...primaryChunks, ...secondaryChunks]) {
+    const key = `${chunk.document_title}:${chunk.chunk_text.slice(0, 120)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(chunk);
+  }
+  return merged;
 }
 
 async function embedQuery(query: string, openaiKey: string): Promise<number[] | null> {

@@ -8,9 +8,12 @@ PT programming architecture Phase 3 knowledge retrieval system:
 - Added and deployed `retrieve-knowledge-context` Edge Function to Supabase project `otcnrkfvgyvwolironoz`.
 - Implements the `RETRIEVE_KNOWLEDGE_CONTEXT` command for later programming phases. Inputs support `taskType`, `phaseType`, `clientGoal`, `questionOrDecision`, optional `runId`, optional `stepId`, and optional retrieval tuning.
 - Uses existing `pt_knowledge_documents`, `pt_knowledge_chunks`, and hardened `match_knowledge_chunks` RPC. No second knowledge-base table or duplicate persistence system was introduced.
+- Source-of-truth docs now live in stable project folder `../Cerebro Knowledge/`: `CEREBRO MASTER SYSTEM PROMPT.md` and `CEREBRO CLIENT ANALYSIS & PROGRAM GENERATION SYSTEM.md`.
+- Ingested those two docs into the live PT knowledge base as `cerebro_architecture` documents: `CEREBRO MASTER SYSTEM PROMPT` (`190d5eca-83d4-4ea4-86e2-a84251dfa185`, 8 chunks) and `CEREBRO CLIENT ANALYSIS & PROGRAM GENERATION SYSTEM` (`04709fb9-22f0-41a7-8b67-3d1bf586bc46`, 5 chunks).
+- Updated retrieval priority matching so those exact architecture document titles rank as priority 1.
 - Writes every retrieval to `pt_knowledge_retrieval_logs` with excerpts, applied rules, referenced documents, confidence score, and low-confidence flag.
 - Auth supports service-role orchestration and Pedro/admin dashboard users only.
-- Verification: `npm run build` passes; Supabase function deploy succeeded; live smoke test returned 12 excerpts, logged row `9d8ec662-0419-4341-a85b-2391dbe6f97d`, confidence `0.576`, `low_confidence=false`; MCP SQL verified the retrieval-log row.
+- Verification: `npm run build` passes; Supabase function deploy succeeded; initial live smoke test returned 12 excerpts, logged row `9d8ec662-0419-4341-a85b-2391dbe6f97d`, confidence `0.576`, `low_confidence=false`; MCP SQL verified the retrieval-log row. After architecture-doc ingestion and ranking patch, final smoke test logged row `e3aea25b-4cd0-4b0f-9cbe-f932a28e358f` and returned both `CEREBRO MASTER SYSTEM PROMPT` and `CEREBRO CLIENT ANALYSIS & PROGRAM GENERATION SYSTEM` as priority sources.
 - Note: legacy functions (`generate-pt-programme`, `parse-client-document`, `ai-client-chat`, `query-knowledge-brain`) still contain their older inline retrieval logic. Phase 4+ programming orchestration should call `retrieve-knowledge-context` before generation, then older generation paths can be retired or refactored once the deterministic engine replaces them.
 
 Previous completed task:
