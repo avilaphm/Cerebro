@@ -4,6 +4,14 @@
 2026-05-19 by Claude
 
 ## Last completed task
+pt-programming-agent v11 deployed - Mandatory week_blocks for all 3 phases + full knowledge base retrieval:
+- `programming-principles.md`: Phase 2 Hypertrophy and Phase 3 Strength week_blocks are now MANDATORY (not examples). Both phases now require BOTH `sets` AND `weight_pct` in every block. Phase 2 default: 4 blocks at 65/68/72/75% with 3/4/4/5 sets (12 weeks). Phase 3 default: 4 blocks at 77/80/85/88% with 4/4/5/6 sets (10 weeks). Added Knowledge Base section listing all 19 docs with mandatory cross-reference rules.
+- `pt-programming-agent/index.ts`: DEFAULT_PRINCIPLES updated to match. SYSTEM_PROMPT updated to mandate week_blocks and require all knowledge docs referenced. `buildContext()` now fetches full `pt_knowledge_documents` catalog. `compactGenerationContext()` passes `knowledge_base_catalog` to AI. `validateProgramme()` adds hard rule failures if Hypertrophy or Strength phases are missing `week_blocks`, `weight_pct`, or `sets`.
+- `retrieve-knowledge-context/index.ts`: DOCUMENT_PRIORITY expanded from 8 to 18 entries (all 19 indexed docs now have explicit priority ranks). DEFAULT_MATCH_COUNT raised 12 -> 18. Match count cap raised to 25. buildRetrievalQuery priority hint updated to include all document names.
+- `skills/pt-programming-workflow/SKILL.md`: New skill file documenting the exact workflow rules, all mandatory week_block schemes, and the full knowledge base catalog. Lives in `../skills/pt-programming-workflow/`.
+- Both functions redeployed to Supabase project `otcnrkfvgyvwolironoz`. Commit: 72c44c8. Build passes.
+
+Previous completed task:
 pt-programming-agent v10 deployed - Programming principles rewrite + Phase 1 day count enforcement:
 - `programming-principles.md` completely rewritten with all Cerebro hard rules: full 6-phase programme arc (mandatory), Phase 1 = exactly 3 full-body days, warm-up pool (17 exercises), compound tempos (exact seconds for all Big 5), Hypertrophy 65-75% / 8-15 reps / 3-5 sets, Strength 75-90% / 3-8 reps / 4-6 sets, nutrition sync per phase, core coaching philosophy.
 - `index.ts` `DEFAULT_PRINCIPLES` updated to compact version of same rules.
