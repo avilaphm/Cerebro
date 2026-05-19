@@ -2176,8 +2176,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         const draft = setDrafts[key] ?? { reps: '', weight: '' };
                         const setIsLogged = draft.reps.trim().length > 0;
                         const setSurface = setIsLogged
-                          ? 'border-black/10 bg-black/[0.06] text-black'
-                          : 'border-black/10 bg-white text-black';
+                          ? 'border-black/[0.1] bg-black/[0.06] text-black'
+                          : 'border-black/[0.1] bg-white text-black';
                         return (
                           <div key={key} className="grid grid-cols-[4.5rem_1fr_1fr] gap-2 md:grid-cols-[5rem_1fr_1fr]">
                             <div className={`flex h-16 items-center rounded-[1.35rem] border px-3 text-sm font-medium ${setSurface}`}>

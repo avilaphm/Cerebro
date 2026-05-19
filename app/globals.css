@@ -288,7 +288,9 @@ body::before {
   border-color: var(--liquid-fg-1) !important;
 }
 
-/* Workout logging sheet sits over a black video container — keep it opaque white */
+/* Workout logging sheet sits over a black video container — keep it opaque white.
+   Nuclear backdrop-filter removal: iOS Safari composites blur into a separate GPU
+   layer; during scroll the text layer de-syncs and goes invisible. */
 .client-liquid .workout-logging-sheet,
 .client-liquid .workout-logging-sheet [class*="bg-white"],
 .client-liquid .workout-logging-sheet [class*="bg-[#fbfbf8]"] {
@@ -297,17 +299,18 @@ body::before {
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
 }
+.client-liquid .workout-logging-sheet * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
 .client-liquid .workout-logging-sheet input,
 .client-liquid .workout-logging-sheet textarea {
   background: rgba(0, 0, 0, 0.04) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  color: #050505 !important;
 }
 .client-liquid .workout-logging-sheet button[class*="bg-white"],
 .client-liquid .workout-logging-sheet button[class*="bg-[#fbfbf8]"] {
   background: rgba(0, 0, 0, 0.04) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
 
 .dashboard-glass-sidebar {
