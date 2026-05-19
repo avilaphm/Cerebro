@@ -485,6 +485,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
   const [submittedSectionNotes, setSubmittedSectionNotes] = useState<Record<string, boolean>>({});
   const [submittingSectionNote, setSubmittingSectionNote] = useState<string | null>(null);
+  const [journeyPopup, setJourneyPopup] = useState<{ key: string; text: string; label: string } | null>(null);
+  const [journeyLoadingKey, setJourneyLoadingKey] = useState<string | null>(null);
   const [recordingNoteKey, setRecordingNoteKey] = useState<string | null>(null);
   const noteRecognitionRef = useRef<SpeechRecogLike | null>(null);
   const noteInterimRef = useRef('');
@@ -1440,6 +1442,42 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     'Re-testing 1 RM',
   ];
 
+  const explainJourneyStep = async (
+    stepKey: string,
+    stepLabel: string,
+    stepType: 'phase' | 'test',
+    milestone: 'initial' | 'retest' | undefined,
+    phaseIndex: number | null,
+    journeySteps: { label: string }[],
+    isActive: boolean,
+    isDone: boolean,
+  ) => {
+    if (!client) return;
+    setJourneyLoadingKey(stepKey);
+    setJourneyPopup({ key: stepKey, text: '', label: stepLabel });
+    try {
+      const { data, error } = await supabase.functions.invoke('explain-journey-phase', {
+        body: {
+          client_id: client.id,
+          step_label: stepLabel,
+          step_type: stepType,
+          milestone,
+          phase_index: phaseIndex,
+          total_steps: journeySteps.length,
+          programme_phases: journeySteps.map((s) => s.label),
+          is_active: isActive,
+          is_done: isDone,
+        },
+      });
+      if (error) throw error;
+      setJourneyPopup({ key: stepKey, text: (data as { explanation: string }).explanation, label: stepLabel });
+    } catch {
+      setJourneyPopup({ key: stepKey, text: 'Could not load explanation right now. Try again.', label: stepLabel });
+    } finally {
+      setJourneyLoadingKey(null);
+    }
+  };
+
   const renderJourneyTimeline = () => {
     const hasProgramme = !!assignment && assignment.programme.phases.length > 0;
     type JourneyStep = { type: 'phase' | 'test'; label: string; phaseIndex: number | null; milestone?: 'initial' | 'retest' };
@@ -1491,7 +1529,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           className="w-full border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:bg-[#fcfcfa] md:px-6"
         >
           <div className="flex items-center gap-4">
-            <p className="shrink-0 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Journey</p>
+            <p className="shrink-0 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Your Journey</p>
             <div className="relative flex-1">
               <div className="absolute left-0 right-0 top-[0.42rem] h-px bg-black/10" />
               <div
@@ -1537,9 +1575,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 ? (assignment.programme.phases[step.phaseIndex]?.week_blocks ?? [])
                 : [];
 
+              const stepKey = `${step.type}-${index}`;
+              const isLoadingThis = journeyLoadingKey === stepKey;
               return (
-                <div key={`${step.type}-detail-${index}`}>
-                  <div className="flex items-center gap-2.5">
+                <div key={`${step.type}-detail-${index}`} className="relative">
+                  <div className="flex items-center gap-2.5 pr-8">
                     <div
                       className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
                         state.isDone || isDonePhase
@@ -1562,6 +1602,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       <span className="ml-1 text-[0.55rem] uppercase tracking-[0.1em] text-[rgb(46,213,115)]">Current</span>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => void explainJourneyStep(
+                      stepKey, step.label, step.type, step.milestone,
+                      step.phaseIndex, journeySteps, isActivePhase, state.isDone || isDonePhase,
+                    )}
+                    disabled={isLoadingThis}
+                    className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-black/15 bg-white text-[0.55rem] font-semibold text-black/40 transition-colors hover:border-black/35 hover:text-black disabled:opacity-40"
+                    aria-label={`Explain ${step.label}`}
+                  >
+                    {isLoadingThis ? <span className="animate-spin text-[0.6rem]">·</span> : '?'}
+                  </button>
                   {step.type === 'test' && (
                     <p className="ml-8 mt-1 text-xs leading-relaxed text-black/35">
                       {step.milestone === 'initial'
@@ -3129,6 +3181,43 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             void loadPortal();
           }}
         />
+      )}
+
+      {journeyPopup !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center"
+          onClick={() => setJourneyPopup(null)}
+        >
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+          <div
+            className="relative z-10 w-full max-w-lg rounded-t-[2rem] bg-white px-6 pb-10 pt-6 shadow-[0_-24px_60px_rgba(0,0,0,0.18)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-start justify-between gap-3">
+              <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Your Journey</p>
+              <button
+                type="button"
+                onClick={() => setJourneyPopup(null)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-black/10 text-sm text-black/40 hover:text-black"
+              >
+                ×
+              </button>
+            </div>
+            <h3 className="mb-4 text-lg font-medium text-black">{journeyPopup.label}</h3>
+            {journeyLoadingKey !== null ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-black" />
+                <p className="text-xs text-black/40">Reading your programme…</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {journeyPopup.text.split('\n').filter(Boolean).map((para, i) => (
+                  <p key={i} className="text-sm leading-relaxed text-black/80">{para}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </main>
   );
