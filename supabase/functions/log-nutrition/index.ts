@@ -36,9 +36,36 @@ interface NutritionResult {
   confidence: 'high' | 'medium' | 'low';
 }
 
-const NUTRITION_PARSE_PROMPT = `You are a nutrition tracking assistant. Parse the food description and estimate macros.
+interface ClientContext {
+  goals: string | null;
+  favourite_foods: string[];
+  foods_to_avoid: string[];
+  typical_meals: Record<string, unknown> | null;
+  eating_habits: Record<string, unknown> | null;
+  recurring_gaps: string[];
+  daily_targets: Record<string, number> | null;
+}
 
-Be realistic and conservative in estimates. If the portion size is unclear, assume a standard serving.
+function buildContextBlock(ctx: ClientContext): string {
+  const lines: string[] = [];
+  if (ctx.goals) lines.push(`Client goals: ${ctx.goals}`);
+  if (ctx.daily_targets) {
+    const t = ctx.daily_targets;
+    lines.push(`Daily targets: ${t.protein_g ?? '?'}g protein / ${t.carbs_g ?? '?'}g carbs / ${t.fat_g ?? '?'}g fat / ${t.calories ?? '?'} kcal`);
+  }
+  if (ctx.favourite_foods?.length) lines.push(`Foods they regularly eat: ${ctx.favourite_foods.join(', ')}`);
+  if (ctx.foods_to_avoid?.length) lines.push(`Foods to avoid: ${ctx.foods_to_avoid.join(', ')}`);
+  if (ctx.typical_meals) lines.push(`Typical meal patterns: ${JSON.stringify(ctx.typical_meals)}`);
+  if (ctx.eating_habits) lines.push(`Eating habits: ${JSON.stringify(ctx.eating_habits)}`);
+  if (ctx.recurring_gaps?.length) lines.push(`Known nutrition gaps: ${ctx.recurring_gaps.join(', ')}`);
+  if (lines.length === 0) return '';
+  return `\nClient profile (use to calibrate portion estimates to their typical habits):\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
+}
+
+function buildNutritionPrompt(ctx: ClientContext): string {
+  const ctxBlock = buildContextBlock(ctx);
+  return `You are a nutrition tracking assistant. Parse the food description and estimate macros.${ctxBlock}
+Be realistic and conservative in estimates. If the portion size is unclear, assume a standard serving adjusted for the client's typical habits above.
 
 Return ONLY valid JSON:
 {
@@ -54,16 +81,18 @@ Return ONLY valid JSON:
 }
 
 confidence is "high" when specific amounts are given, "medium" for typical servings, "low" for vague descriptions.`;
+}
 
-async function parseTextNutrition(text: string, anthropic: Anthropic): Promise<NutritionResult | null> {
+async function parseTextNutrition(text: string, ctx: ClientContext, anthropic: Anthropic): Promise<NutritionResult | null> {
   try {
+    const prompt = buildNutritionPrompt(ctx);
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
+      max_tokens: 500,
       messages: [
         {
           role: 'user',
-          content: `${NUTRITION_PARSE_PROMPT}\n\nFood description: "${text}"`,
+          content: `${prompt}\n\nFood description: "${text}"`,
         },
       ],
     });
@@ -80,6 +109,7 @@ async function parseTextNutrition(text: string, anthropic: Anthropic): Promise<N
 async function parsePhotoNutrition(
   imageBase64: string,
   mimeType: string,
+  ctx: ClientContext,
   anthropic: Anthropic,
 ): Promise<NutritionResult | null> {
   try {
@@ -89,9 +119,11 @@ async function parsePhotoNutrition(
       ? (mimeType as ValidMime)
       : 'image/jpeg';
 
+    const prompt = buildNutritionPrompt(ctx);
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 400,
+      max_tokens: 500,
       messages: [
         {
           role: 'user',
@@ -106,7 +138,7 @@ async function parsePhotoNutrition(
             },
             {
               type: 'text',
-              text: `${NUTRITION_PARSE_PROMPT}\n\nDescribe the food in this image and estimate the macros.`,
+              text: `${prompt}\n\nDescribe the food in this image and estimate the macros.`,
             },
           ],
         },
@@ -190,15 +222,32 @@ Deno.serve(async (req: Request) => {
 
     if (!client_id || !input_type) return json({ error: 'Missing required fields.' }, 400);
 
-    // Verify client ownership
-    const { data: clientRow } = await adminClient
-      .from('pt_clients')
-      .select('id')
-      .eq('id', client_id)
-      .eq('user_id', authData.user.id)
-      .single();
+    // Verify ownership + fetch client context in parallel
+    const [clientRow, nutritionDoc] = await Promise.all([
+      adminClient
+        .from('pt_clients')
+        .select('id, goals')
+        .eq('id', client_id)
+        .eq('user_id', authData.user.id)
+        .single(),
+      adminClient
+        .from('pt_client_nutrition_doc')
+        .select('favourite_foods, foods_to_avoid, typical_meals, eating_habits, recurring_gaps, daily_targets')
+        .eq('client_id', client_id)
+        .single(),
+    ]);
 
-    if (!clientRow) return json({ error: 'Client not found.' }, 404);
+    if (!clientRow.data) return json({ error: 'Client not found.' }, 404);
+
+    const ctx: ClientContext = {
+      goals: clientRow.data.goals ?? null,
+      favourite_foods: (nutritionDoc.data?.favourite_foods as string[]) ?? [],
+      foods_to_avoid: (nutritionDoc.data?.foods_to_avoid as string[]) ?? [],
+      typical_meals: (nutritionDoc.data?.typical_meals as Record<string, unknown>) ?? null,
+      eating_habits: (nutritionDoc.data?.eating_habits as Record<string, unknown>) ?? null,
+      recurring_gaps: (nutritionDoc.data?.recurring_gaps as string[]) ?? [],
+      daily_targets: (nutritionDoc.data?.daily_targets as Record<string, number>) ?? null,
+    };
 
     let rawInputUrl: string | null = null;
     let rawTranscript: string | null = null;
@@ -207,20 +256,20 @@ Deno.serve(async (req: Request) => {
     if (input_type === 'photo' && file_base64 && file_mime_type) {
       [rawInputUrl, nutrition] = await Promise.all([
         storeFile(file_base64, file_mime_type, client_id, 'photo', adminClient),
-        parsePhotoNutrition(file_base64, file_mime_type, anthropic),
+        parsePhotoNutrition(file_base64, file_mime_type, ctx, anthropic),
       ]);
     } else if (input_type === 'voice' && file_base64 && file_mime_type) {
       rawTranscript = await transcribeVoice(file_base64, file_mime_type, openai);
       const [storedPath, parsedNutrition] = await Promise.all([
         storeFile(file_base64, file_mime_type, client_id, 'voice', adminClient),
-        rawTranscript ? parseTextNutrition(rawTranscript, anthropic) : Promise.resolve(null),
+        rawTranscript ? parseTextNutrition(rawTranscript, ctx, anthropic) : Promise.resolve(null),
       ]);
       rawInputUrl = storedPath;
       nutrition = parsedNutrition;
     } else {
       // text
       rawTranscript = content;
-      nutrition = await parseTextNutrition(content, anthropic);
+      nutrition = await parseTextNutrition(content, ctx, anthropic);
     }
 
     if (!nutrition) {

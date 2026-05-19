@@ -211,6 +211,17 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
         <div className="h-9 w-9 shrink-0" />
       </div>
 
+      {/* Photo tip banner */}
+      <div className="mx-4 mb-1 flex shrink-0 items-start gap-2.5 rounded-2xl border border-black/8 bg-white px-3.5 py-3 shadow-sm">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" className="mt-0.5 shrink-0 text-black/35">
+          <path d="M1.5 5h2l1.5-2h6L12.5 5H14.5v8.5h-13V5z" />
+          <circle cx="8" cy="9" r="2.2" />
+        </svg>
+        <p className="text-[0.65rem] leading-relaxed text-black/45">
+          <span className="font-medium text-black/60">Better photo results:</span> separate ingredients on the plate so each item is visible. Food stacked on top of other food hides depth — the AI can&apos;t judge portion size accurately when items overlap.
+        </p>
+      </div>
+
       {/* Main content area */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">
         {loggedCount !== null ? (
