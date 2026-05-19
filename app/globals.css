@@ -361,6 +361,16 @@ body::before {
   border-radius: 20px;
 }
 
+.client-liquid .journey-info-pill {
+  min-height: auto !important;
+  background: rgba(255, 255, 255, 0.28) !important;
+  backdrop-filter: blur(10px) saturate(130%) !important;
+  -webkit-backdrop-filter: blur(10px) saturate(130%) !important;
+  color: rgba(0, 0, 0, 0.38) !important;
+  border-radius: 999px !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
 /* Opt-out of glass treatment for elements that need a solid background (e.g. dropdowns).
    Scoped under liquid-dashboard/client-liquid to beat the bg-white glass override. */
 .liquid-dashboard .no-glass,

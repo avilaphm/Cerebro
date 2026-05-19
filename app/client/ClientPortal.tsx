@@ -1660,7 +1660,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         step.phaseIndex, journeySteps, isActivePhase, state.isDone || isDonePhase,
                       )}
                       disabled={isLoadingThis}
-                      className="inline-flex items-center rounded-full border border-black/12 bg-white px-2.5 py-0.5 text-[0.58rem] uppercase tracking-[0.1em] transition-colors hover:border-black/25 disabled:opacity-50"
+                      className="journey-info-pill inline-flex items-center rounded-full border border-black/8 bg-white/30 px-2 py-px text-[0.5rem] uppercase tracking-[0.1em] transition-colors hover:bg-white/50 disabled:opacity-50"
                       aria-label={`Explain ${step.label}`}
                     >
                       {isLoadingThis ? <span className="animate-spin text-[0.6rem]">·</span> : 'info'}
@@ -3237,7 +3237,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
       {journeyPopup !== null && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center"
+          className="fixed inset-0 z-[60] flex items-end justify-center"
           onClick={() => setJourneyPopup(null)}
         >
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
