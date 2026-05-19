@@ -90,6 +90,7 @@ export interface PTProgramme {
 
 export interface PTProgramTemplate {
   id: string;
+  generation_run_id?: string | null;
   name: string;
   description: string | null;
   goal: string | null;
@@ -97,6 +98,76 @@ export interface PTProgramTemplate {
   phase_count: number;
   status: 'draft' | 'ready' | 'archived';
   programme: PTProgramme;
+  validation_summary?: Record<string, unknown>;
+}
+
+export type PTProgramGenerationStatus = 'draft' | 'running' | 'needs_review' | 'approved' | 'saved' | 'failed' | 'archived';
+
+export interface PTProgramGenerationRun {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  client_id: string;
+  assignment_id: string | null;
+  task_type: string;
+  phase_type: string | null;
+  client_goal: string | null;
+  current_command: string | null;
+  status: PTProgramGenerationStatus;
+  coaching_reasoning: Record<string, unknown>;
+  phase_roadmap: unknown;
+  programme_draft: PTProgramme;
+  nutrition_draft: unknown;
+  validation_summary: Record<string, unknown>;
+  failure_reason: string | null;
+  pt_clients?: Pick<PTClient, 'name' | 'email' | 'goals'> | null;
+  pt_program_assignments?: Pick<PTProgramAssignment, 'id' | 'name' | 'goal'> | null;
+}
+
+export interface PTProgramGenerationStep {
+  id: string;
+  created_at: string;
+  run_id: string;
+  step_order: number;
+  command_name: string;
+  input_json: Record<string, unknown>;
+  output_json: unknown;
+  validation_json: Record<string, unknown>;
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  failure_reason: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface PTKnowledgeRetrievalLog {
+  id: string;
+  created_at: string;
+  run_id: string | null;
+  step_id: string | null;
+  task_type: string;
+  phase_type: string | null;
+  client_goal: string | null;
+  question_or_decision: string;
+  excerpts: unknown;
+  applied_rules: unknown;
+  referenced_documents: unknown;
+  confidence_score: number | null;
+  low_confidence: boolean;
+}
+
+export interface PTProgramReviewOutput {
+  id: string;
+  created_at: string;
+  run_id: string | null;
+  assignment_id: string | null;
+  client_id: string;
+  review_type: 'program' | 'nutrition' | 'system' | 'full';
+  status: 'passed' | 'failed' | 'needs_review';
+  findings: unknown;
+  hard_rule_failures: unknown;
+  repaired_output: unknown;
+  reviewer_notes: string | null;
 }
 
 export interface PTProgramAssignment {
@@ -461,4 +532,28 @@ export interface PTConversationSummary {
   insights_extracted: Array<Record<string, unknown>>;
   applied_to_brain: boolean;
   created_at: string;
+}
+
+export type PT1RMExercise = 'BB Squat' | 'BB Deadlift' | 'BB Bench Press' | 'BB Shoulder Press' | 'Pull-up';
+
+export interface PT1RMResult {
+  id: string;
+  test_id: string;
+  client_id: string;
+  exercise_name: PT1RMExercise | string;
+  tested_weight_kg: number | null;
+  tested_reps: number | null;
+  estimated_1rm_kg: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface PT1RMTest {
+  id: string;
+  client_id: string;
+  assignment_id: string | null;
+  tested_at: string;
+  notes: string | null;
+  created_at: string;
+  results?: PT1RMResult[];
 }

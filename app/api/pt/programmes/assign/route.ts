@@ -35,6 +35,9 @@ export async function POST(req: NextRequest) {
       phase_count: programme.phases.length,
       status: 'active',
       programme,
+      generation_run_id: template.generation_run_id ?? null,
+      coach_review_status: 'approved',
+      validation_summary: template.validation_summary ?? {},
     })
     .select('id')
     .single();

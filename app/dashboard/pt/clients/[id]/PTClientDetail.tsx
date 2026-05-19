@@ -13,6 +13,7 @@ import {
   monthStartInputValue,
 } from '@/utils/pt/coaching';
 import type {
+  PT1RMTest,
   PTCheckinSession,
   PTClient,
   PTClientGoal,
@@ -103,6 +104,24 @@ interface PTNote {
   context?: Record<string, unknown>;
 }
 
+const ONE_RM_EXERCISES = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'] as const;
+type OneRMExercise = typeof ONE_RM_EXERCISES[number];
+
+function epley1RM(weightKg: number, reps: number): number {
+  if (reps === 1) return weightKg;
+  return Math.round(weightKg * (1 + reps / 30) * 10) / 10;
+}
+
+function warmUpSets(goalKg: number) {
+  return [
+    { label: 'Empty bar', weight: 20, reps: 6, note: 'Movement prep' },
+    { label: '50%', weight: Math.round(goalKg * 0.5 * 2) / 2, reps: 5, note: '' },
+    { label: '65%', weight: Math.round(goalKg * 0.65 * 2) / 2, reps: 3, note: '' },
+    { label: '75%', weight: Math.round(goalKg * 0.75 * 2) / 2, reps: 2, note: '' },
+    { label: '85%', weight: Math.round(goalKg * 0.85 * 2) / 2, reps: 1, note: '' },
+  ];
+}
+
 interface Props {
   client: PTClient;
   templates: PTProgramTemplate[];
@@ -117,6 +136,7 @@ interface Props {
   coachingTasks: PTCoachingTask[];
   reviews: PTCoachingReview[];
   checkinSessions?: PTCheckinSession[];
+  oneRmTests?: PT1RMTest[];
 }
 
 interface SpeechRecognitionResultItemLike { transcript: string; }
@@ -335,6 +355,7 @@ export default function PTClientDetail({
   coachingTasks: initialCoachingTasks,
   reviews: initialReviews,
   checkinSessions = [],
+  oneRmTests: initialOneRmTests = [],
 }: Props) {
   const supabase = createClient();
   const router = useRouter();
@@ -379,6 +400,14 @@ export default function PTClientDetail({
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
   const [agentListening, setAgentListening] = useState(false);
   const [agentStatus, setAgentStatus] = useState('');
+  const [oneRmTests, setOneRmTests] = useState<PT1RMTest[]>(initialOneRmTests);
+  const [oneRmModalOpen, setOneRmModalOpen] = useState(false);
+  const [oneRmSaving, setOneRmSaving] = useState(false);
+  const [oneRmStatus, setOneRmStatus] = useState('');
+  const [oneRmInputs, setOneRmInputs] = useState<Record<OneRMExercise, { weight: string; reps: string }>>(
+    () => Object.fromEntries(ONE_RM_EXERCISES.map((ex) => [ex, { weight: '', reps: '1' }])) as Record<OneRMExercise, { weight: string; reps: string }>,
+  );
+  const [recalcBusy, setRecalcBusy] = useState(false);
   const [newGoal, setNewGoal] = useState({
     goal_type: 'general',
     title: '',
@@ -455,6 +484,9 @@ export default function PTClientDetail({
       phase_count: template.phase_count,
       status: 'active',
       programme: template.programme,
+      generation_run_id: template.generation_run_id ?? null,
+      coach_review_status: 'approved',
+      validation_summary: template.validation_summary ?? {},
     });
     await supabase.from('pt_events').insert({
       client_id: client.id,
@@ -463,6 +495,90 @@ export default function PTClientDetail({
     });
     setAssigningId(null);
     router.refresh();
+  };
+
+  const saveOneRmResults = async () => {
+    const filled = ONE_RM_EXERCISES.filter((ex) => oneRmInputs[ex].weight !== '');
+    if (filled.length === 0) { setOneRmStatus('Enter at least one result.'); return; }
+    setOneRmSaving(true);
+    setOneRmStatus('Saving...');
+
+    const { data: testRow, error: testErr } = await supabase
+      .from('pt_client_1rm_tests')
+      .insert({
+        client_id: client.id,
+        assignment_id: activeAssignment?.id ?? null,
+        tested_at: new Date().toISOString().slice(0, 10),
+        notes: null,
+      })
+      .select('id')
+      .single();
+
+    if (testErr || !testRow) {
+      setOneRmStatus(`Error: ${testErr?.message ?? 'Could not create test session.'}`);
+      setOneRmSaving(false);
+      return;
+    }
+
+    const resultRows = filled.map((ex) => {
+      const w = parseFloat(oneRmInputs[ex].weight);
+      const r = parseInt(oneRmInputs[ex].reps, 10) || 1;
+      const estimated = epley1RM(w, r);
+      return {
+        test_id: testRow.id,
+        client_id: client.id,
+        exercise_name: ex,
+        tested_weight_kg: w,
+        tested_reps: r,
+        estimated_1rm_kg: estimated,
+        notes: null,
+      };
+    });
+
+    const { error: resultErr } = await supabase.from('pt_client_1rm_results').insert(resultRows);
+    if (resultErr) {
+      setOneRmStatus(`Error saving results: ${resultErr.message}`);
+      setOneRmSaving(false);
+      return;
+    }
+
+    await supabase.functions.invoke('update-client-brain', {
+      body: {
+        client_id: client.id,
+        trigger_type: '1rm_result',
+        content: `1RM test recorded for ${filled.join(', ')}.`,
+        structured_data: {
+          '1rm_result': {
+            test_id: testRow.id,
+            tested_at: new Date().toISOString().slice(0, 10),
+            results: resultRows.map((r) => ({
+              exercise: r.exercise_name,
+              tested_weight_kg: r.tested_weight_kg,
+              tested_reps: r.tested_reps,
+              estimated_1rm_kg: r.estimated_1rm_kg,
+            })),
+          },
+        },
+      },
+    }).catch(() => {});
+
+    const newTest: PT1RMTest = { id: testRow.id, client_id: client.id, assignment_id: activeAssignment?.id ?? null, tested_at: new Date().toISOString().slice(0, 10), notes: null, created_at: new Date().toISOString(), results: resultRows.map((r, i) => ({ id: `temp-${i}`, test_id: testRow.id, client_id: client.id, exercise_name: r.exercise_name, tested_weight_kg: r.tested_weight_kg, tested_reps: r.tested_reps, estimated_1rm_kg: r.estimated_1rm_kg, notes: null, created_at: new Date().toISOString() })) };
+    setOneRmTests((prev) => [newTest, ...prev]);
+    setOneRmStatus('Saved.');
+    setOneRmInputs(Object.fromEntries(ONE_RM_EXERCISES.map((ex) => [ex, { weight: '', reps: '1' }])) as Record<OneRMExercise, { weight: string; reps: string }>);
+    setOneRmSaving(false);
+    setTimeout(() => { setOneRmModalOpen(false); setOneRmStatus(''); }, 1200);
+  };
+
+  const recalculateLoads = async () => {
+    if (!activeAssignment) return;
+    setRecalcBusy(true);
+    setOneRmStatus('Recalculating percentage loads...');
+    const { error } = await supabase.functions.invoke('recalculate-percentage-loads', {
+      body: { client_id: client.id, assignment_id: activeAssignment.id },
+    });
+    setRecalcBusy(false);
+    setOneRmStatus(error ? `Error: ${error.message}` : 'Loads recalculated. Refresh the programme editor to see kg targets.');
   };
 
   const sendInvite = async () => {
@@ -1879,6 +1995,131 @@ export default function PTClientDetail({
           </div>
           {agentStatus && <p className="mt-3 text-xs text-black/45">{agentStatus}</p>}
         </div>
+      </div>
+
+      {/* 1RM Testing */}
+      <div className="border-t border-black/8 pt-6 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">1RM Results</h2>
+          <button
+            type="button"
+            onClick={() => setOneRmModalOpen((open) => !open)}
+            className="text-xs border border-black/15 px-3 py-1.5 hover:border-black/30 transition-colors"
+          >
+            {oneRmModalOpen ? 'Close' : 'Enter results'}
+          </button>
+        </div>
+
+        {oneRmModalOpen && (
+          <div className="border border-black/10 bg-[#fbfbf8] px-6 py-5 mb-4">
+            <p className="text-xs text-black/45 mb-4">
+              Enter tested weight and reps. Estimated 1RM uses Epley formula. Protocol: empty bar 6 reps, then 50 / 65 / 75 / 85% warm-up sets, then the max attempt.
+            </p>
+            <div className="space-y-3">
+              {ONE_RM_EXERCISES.map((ex) => {
+                const w = parseFloat(oneRmInputs[ex].weight);
+                const r = parseInt(oneRmInputs[ex].reps, 10) || 1;
+                const est = !Number.isNaN(w) && w > 0 ? epley1RM(w, r) : null;
+                const goal = est ?? (w > 0 ? w : 0);
+                const wuSets = goal > 0 ? warmUpSets(goal) : [];
+                return (
+                  <div key={ex} className="border border-black/8 bg-white px-4 py-3">
+                    <p className="text-xs font-medium text-black mb-2">{ex}</p>
+                    <div className="flex flex-wrap gap-2 items-end">
+                      <div>
+                        <p className="text-[0.58rem] text-black/35 mb-1">Tested weight (kg)</p>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={oneRmInputs[ex].weight}
+                          onChange={(e) => setOneRmInputs((prev) => ({ ...prev, [ex]: { ...prev[ex], weight: e.target.value } }))}
+                          className="w-24 border border-black/15 px-2 py-1.5 text-sm outline-none focus:border-black/40"
+                          placeholder="e.g. 80"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[0.58rem] text-black/35 mb-1">Reps (1 = true max)</p>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          value={oneRmInputs[ex].reps}
+                          onChange={(e) => setOneRmInputs((prev) => ({ ...prev, [ex]: { ...prev[ex], reps: e.target.value } }))}
+                          className="w-16 border border-black/15 px-2 py-1.5 text-sm outline-none focus:border-black/40"
+                        />
+                      </div>
+                      {est !== null && (
+                        <div className="pl-2">
+                          <p className="text-[0.58rem] text-black/35 mb-1">Estimated 1RM</p>
+                          <p className="text-sm font-medium text-black">{est} kg</p>
+                        </div>
+                      )}
+                    </div>
+                    {wuSets.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {wuSets.map((s) => (
+                          <span key={s.label} className="border border-black/8 bg-black/3 px-2 py-0.5 text-[0.58rem] text-black/45">
+                            {s.label}: {s.weight}kg x{s.reps}
+                          </span>
+                        ))}
+                        <span className="border border-black bg-black px-2 py-0.5 text-[0.58rem] text-white">
+                          1RM: {goal}kg x1
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void saveOneRmResults()}
+                disabled={oneRmSaving}
+                className="border border-black bg-black px-5 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-40"
+              >
+                {oneRmSaving ? 'Saving...' : 'Save results'}
+              </button>
+              {activeAssignment && (
+                <button
+                  type="button"
+                  onClick={() => void recalculateLoads()}
+                  disabled={recalcBusy || oneRmTests.length === 0}
+                  className="border border-black/20 px-4 py-2 text-xs hover:border-black/40 transition-colors disabled:opacity-40"
+                >
+                  {recalcBusy ? 'Recalculating...' : 'Recalculate programme loads'}
+                </button>
+              )}
+            </div>
+            {oneRmStatus && <p className="mt-3 text-xs text-black/45">{oneRmStatus}</p>}
+          </div>
+        )}
+
+        {oneRmTests.length > 0 ? (
+          <div className="space-y-3">
+            {oneRmTests.map((test) => (
+              <div key={test.id} className="border border-black/8 px-4 py-3">
+                <p className="text-[0.58rem] uppercase tracking-[0.12em] text-black/35 mb-2">
+                  {new Date(`${test.tested_at}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  {(test.results ?? []).map((r) => (
+                    <div key={r.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2 min-w-[120px]">
+                      <p className="text-[0.58rem] text-black/40">{r.exercise_name}</p>
+                      <p className="text-sm font-medium text-black">{r.estimated_1rm_kg} kg</p>
+                      {r.tested_reps !== 1 && r.tested_weight_kg && (
+                        <p className="text-[0.55rem] text-black/30">{r.tested_weight_kg}kg x{r.tested_reps}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-black/35">No 1RM results yet. Enter after the testing session.</p>
+        )}
       </div>
 
       {notes.length > 0 && (

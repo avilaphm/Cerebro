@@ -36,6 +36,7 @@ interface ProgrammingAgentDraft {
   goal?: string;
   change_summary?: string;
   validation_summary?: Record<string, unknown>;
+  phase_nutrition?: unknown;
   programme?: unknown;
 }
 
@@ -84,6 +85,7 @@ export default function PTProgrammeEditView({
   const [agentDraftSummary, setAgentDraftSummary] = useState('');
   const [generationRunId, setGenerationRunId] = useState<string | null>(initial.generation_run_id ?? null);
   const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>(initial.validation_summary ?? {});
+  const [phaseNutritionDraft, setPhaseNutritionDraft] = useState<unknown[]>([]);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
 
@@ -106,6 +108,7 @@ export default function PTProgrammeEditView({
       if (typeof draft.goal === 'string') setProgGoal(draft.goal);
       if (typeof draft.run_id === 'string') setGenerationRunId(draft.run_id);
       if (draft.validation_summary) setValidationSummary(draft.validation_summary);
+      if (Array.isArray(draft.phase_nutrition)) setPhaseNutritionDraft(draft.phase_nutrition);
       setProgramme(safeProgramme(draft.programme));
       setAgentDraftSummary(draftReviewSummary(draft, 'AI revision draft loaded. Review before saving.'));
       setStatus('AI draft loaded.');
@@ -199,6 +202,27 @@ export default function PTProgrammeEditView({
       setStatus(`Error: ${error.message}`);
       setSaving(false);
     } else {
+      if (phaseNutritionDraft.length > 0) {
+        await supabase.from('pt_phase_nutrition').upsert(
+          phaseNutritionDraft.map((item, index) => {
+            const record = typeof item === 'object' && item !== null && !Array.isArray(item) ? item as Record<string, unknown> : {};
+            const recommendations = typeof record.recommendations === 'object' && record.recommendations !== null ? record.recommendations as Record<string, unknown> : {};
+            const trainingContext = typeof record.training_context === 'object' && record.training_context !== null ? record.training_context as Record<string, unknown> : {};
+            return {
+              client_id: initial.client_id,
+              assignment_id: initial.id,
+              generation_run_id: generationRunId,
+              phase_index: typeof record.phase_index === 'number' ? record.phase_index : index,
+              phase_title: typeof record.phase_title === 'string' ? record.phase_title : programme.phases[index]?.title ?? `Phase ${index + 1}`,
+              phase_type: typeof record.phase_type === 'string' ? record.phase_type : 'general',
+              training_context: trainingContext,
+              recommendations,
+              review_status: 'approved',
+            };
+          }),
+          { onConflict: 'assignment_id,phase_index' },
+        );
+      }
       if (highlight?.note) {
         await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', highlight.note);
       }
@@ -352,16 +376,29 @@ export default function PTProgrammeEditView({
                     </div>
                     {ph.week_blocks && ph.week_blocks.length > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {ph.week_blocks.map((block, bi) => (
-                          <span key={bi} className="flex items-center gap-1">
-                            <span className="border border-black/15 bg-black/3 px-2.5 py-1 text-[0.6rem] uppercase tracking-[0.1em]">
-                              {block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w
+                        {ph.week_blocks.map((block, bi) => {
+                          const oneRmMap = typeof validationSummary.one_rm_map === 'object' && validationSummary.one_rm_map !== null ? validationSummary.one_rm_map as Record<string, number> : null;
+                          const kgHints = oneRmMap && block.weight_pct
+                            ? Object.entries(oneRmMap).map(([ex, oneRm]) => {
+                                const pct = parseFloat(block.weight_pct!.replace('%', ''));
+                                if (!Number.isFinite(pct)) return null;
+                                const kg = Math.round(oneRm * (pct / 100) * 4) / 4;
+                                const short = ex.replace('BB ', '').replace('Pull-up', 'PU');
+                                return `${short} ~${kg}kg`;
+                              }).filter(Boolean).join(' | ')
+                            : null;
+                          return (
+                            <span key={bi} className="flex items-center gap-1">
+                              <span className="flex flex-col border border-black/15 bg-black/3 px-2.5 py-1 text-[0.6rem] uppercase tracking-[0.1em]">
+                                <span>{block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w</span>
+                                {kgHints && <span className="text-amber-700 normal-case tracking-normal">{kgHints}</span>}
+                              </span>
+                              {bi < (ph.week_blocks?.length ?? 0) - 1 && (
+                                <span className="text-black/25 text-xs">→</span>
+                              )}
                             </span>
-                            {bi < (ph.week_blocks?.length ?? 0) - 1 && (
-                              <span className="text-black/25 text-xs">→</span>
-                            )}
-                          </span>
-                        ))}
+                          );
+                        })}
                         <span className="text-[0.6rem] text-black/30 ml-1">= {ph.weeks}w total</span>
                       </div>
                     )}
@@ -496,6 +533,7 @@ export default function PTProgrammeEditView({
                     exercises={currentDay.exercises}
                     libraryExercises={exercises}
                     weekBlocks={phase.week_blocks}
+                    oneRmMap={typeof validationSummary.one_rm_map === 'object' && validationSummary.one_rm_map !== null ? validationSummary.one_rm_map as Record<string, number> : undefined}
                     onChange={(updated) => patchDay(activePhaseTab, activeDay, { exercises: updated })}
                   />
                 </div>

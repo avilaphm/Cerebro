@@ -36,6 +36,7 @@ interface ProgrammingAgentDraft {
   goal?: string;
   change_summary?: string;
   validation_summary?: Record<string, unknown>;
+  phase_nutrition?: unknown;
   programme?: unknown;
 }
 
@@ -82,6 +83,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [agentDraftSummary, setAgentDraftSummary] = useState('');
   const [generationRunId, setGenerationRunId] = useState<string | null>(null);
   const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>({});
+  const [phaseNutritionDraft, setPhaseNutritionDraft] = useState<unknown[]>([]);
 
   const srRef = useRef<SpeechRecognitionLike | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
@@ -108,6 +110,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       if (typeof draft.goal === 'string') setProgGoal(draft.goal);
       if (typeof draft.run_id === 'string') setGenerationRunId(draft.run_id);
       if (draft.validation_summary) setValidationSummary(draft.validation_summary);
+      if (Array.isArray(draft.phase_nutrition)) setPhaseNutritionDraft(draft.phase_nutrition);
       setProgramme(safeProgramme(draft.programme));
       setAgentDraftSummary(draftReviewSummary(draft, 'AI draft loaded. Review and edit before creating.'));
       setStep(2);
@@ -266,7 +269,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     if (tErr || !template) { setSaving(false); return; }
 
     if (clientId) {
-      const { error: aErr } = await supabase.from('pt_program_assignments').insert({
+      const { data: assignment, error: aErr } = await supabase.from('pt_program_assignments').insert({
         client_id: clientId,
         template_id: template.id,
         name: progName.trim(),
@@ -278,8 +281,30 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         generation_run_id: generationRunId,
         coach_review_status: 'approved',
         validation_summary: validationSummary,
-      });
-      if (!aErr) {
+        nutrition_sync: { phase_nutrition: phaseNutritionDraft },
+      }).select('id').single();
+      if (!aErr && assignment) {
+        if (phaseNutritionDraft.length > 0) {
+          await supabase.from('pt_phase_nutrition').upsert(
+            phaseNutritionDraft.map((item, index) => {
+              const record = typeof item === 'object' && item !== null && !Array.isArray(item) ? item as Record<string, unknown> : {};
+              const recommendations = typeof record.recommendations === 'object' && record.recommendations !== null ? record.recommendations as Record<string, unknown> : {};
+              const trainingContext = typeof record.training_context === 'object' && record.training_context !== null ? record.training_context as Record<string, unknown> : {};
+              return {
+                client_id: clientId,
+                assignment_id: assignment.id,
+                generation_run_id: generationRunId,
+                phase_index: typeof record.phase_index === 'number' ? record.phase_index : index,
+                phase_title: typeof record.phase_title === 'string' ? record.phase_title : programme.phases[index]?.title ?? `Phase ${index + 1}`,
+                phase_type: typeof record.phase_type === 'string' ? record.phase_type : 'general',
+                training_context: trainingContext,
+                recommendations,
+                review_status: 'approved',
+              };
+            }),
+            { onConflict: 'assignment_id,phase_index' },
+          );
+        }
         await supabase.from('pt_events').insert({
           client_id: clientId,
           event_type: 'programme_assigned',

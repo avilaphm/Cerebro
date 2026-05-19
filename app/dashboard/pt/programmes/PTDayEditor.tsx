@@ -10,10 +10,34 @@ import type {
   PTProgrammeExerciseBlockOverride,
 } from '@/utils/pt/types';
 
+const BIG_5_ALIASES: Array<[string, string[]]> = [
+  ['BB Squat', ['squat', 'bb squat', 'barbell squat', 'back squat']],
+  ['BB Deadlift', ['deadlift', 'bb deadlift', 'barbell deadlift', 'conventional deadlift']],
+  ['BB Bench Press', ['bench press', 'bb bench', 'barbell bench', 'chest press', 'bb chest press']],
+  ['BB Shoulder Press', ['shoulder press', 'overhead press', 'ohp', 'bb shoulder press', 'barbell shoulder press', 'military press']],
+  ['Pull-up', ['pull-up', 'pullup', 'pull up', 'chin-up', 'chinup']],
+];
+
+function matchCanonical(name: string): string | null {
+  const lower = name.toLowerCase();
+  for (const [canonical, aliases] of BIG_5_ALIASES) {
+    if (aliases.some((alias) => lower.includes(alias))) return canonical;
+  }
+  return null;
+}
+
+function resolveKgFromPct(pctStr: string, oneRmKg: number): number | null {
+  const cleaned = pctStr.replace('%', '').trim();
+  const pct = parseFloat(cleaned);
+  if (!Number.isFinite(pct) || pct <= 0 || pct > 200) return null;
+  return Math.round(oneRmKg * (pct / 100) * 4) / 4;
+}
+
 interface Props {
   exercises: PTProgrammeExercise[];
   libraryExercises: PTExercise[];
   weekBlocks?: PTProgrammeWeekBlock[];
+  oneRmMap?: Record<string, number>;
   onChange: (exercises: PTProgrammeExercise[]) => void;
 }
 
@@ -66,7 +90,7 @@ function calcWeekRanges(blocks: PTProgrammeWeekBlock[]) {
   return ranges;
 }
 
-export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, onChange }: Props) {
+export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, oneRmMap, onChange }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [dragged, setDragged] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -287,10 +311,21 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                 className={`border px-2 py-1.5 text-sm outline-none text-center bg-white ${activeBlock >= 0 ? 'border-amber-300 bg-amber-50' : 'border-black/10 focus:border-black/30'}`} />
 
               {activeBlock >= 0 && (
-                <input value={displayWeightPct}
-                  onChange={(e) => patchOverride(idx, activeBlock, { weight_pct: e.target.value })}
-                  placeholder="% 1RM"
-                  className="border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm outline-none text-center" />
+                <div className="flex flex-col gap-0.5">
+                  <input value={displayWeightPct}
+                    onChange={(e) => patchOverride(idx, activeBlock, { weight_pct: e.target.value })}
+                    placeholder="% 1RM"
+                    className="border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm outline-none text-center" />
+                  {(() => {
+                    if (!displayWeightPct || !oneRmMap) return null;
+                    const canonical = matchCanonical(ex.name);
+                    const oneRm = canonical ? oneRmMap[canonical] : null;
+                    if (!oneRm) return null;
+                    const kg = resolveKgFromPct(displayWeightPct, oneRm);
+                    if (kg === null) return null;
+                    return <span className="text-[0.55rem] text-center text-amber-700">~{kg}kg</span>;
+                  })()}
+                </div>
               )}
 
               <input value={ex.rest}

@@ -1,17 +1,23 @@
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
-import type { PTProgramTemplate, PTProgramAssignment } from '@/utils/pt/types';
+import type { PTProgramTemplate, PTProgramAssignment, PTProgramGenerationRun } from '@/utils/pt/types';
 import { safeProgramme } from '@/utils/pt/programme';
 
 export default async function PTProgrammesPage() {
   const supabase = await createClient();
 
-  const [templatesRes, assignmentsRes] = await Promise.all([
+  const [templatesRes, assignmentsRes, reviewRunsRes] = await Promise.all([
     supabase.from('pt_program_templates').select('*').order('updated_at', { ascending: false }),
     supabase
       .from('pt_program_assignments')
       .select('*, pt_clients(name, email)')
       .order('updated_at', { ascending: false }),
+    supabase
+      .from('pt_program_generation_runs')
+      .select('*, pt_clients(name, email, goals), pt_program_assignments(id, name, goal)')
+      .in('status', ['needs_review', 'failed', 'running'])
+      .order('created_at', { ascending: false })
+      .limit(12),
   ]);
 
   const templates = ((templatesRes.data ?? []) as PTProgramTemplate[]).map((t) => ({
@@ -21,6 +27,10 @@ export default async function PTProgrammesPage() {
   const assignments = ((assignmentsRes.data ?? []) as PTProgramAssignment[]).map((a) => ({
     ...a,
     programme: safeProgramme(a.programme),
+  }));
+  const reviewRuns = ((reviewRunsRes.data ?? []) as PTProgramGenerationRun[]).map((run) => ({
+    ...run,
+    programme_draft: safeProgramme(run.programme_draft),
   }));
 
   return (
@@ -37,6 +47,56 @@ export default async function PTProgrammesPage() {
           + New programme
         </Link>
       </div>
+
+      {reviewRuns.length > 0 && (
+        <section className="mb-10">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Coach review queue</h2>
+              <p className="mt-1 text-xs text-black/40">Generated drafts waiting for Pedro&apos;s review, repair, or approval.</p>
+            </div>
+          </div>
+          <div className="divide-y divide-black/8 border-y border-black/10">
+            {reviewRuns.map((run) => {
+              const client = run.pt_clients as { name: string; email: string; goals?: string | null } | null;
+              const failures = Array.isArray(run.validation_summary?.hard_rule_failures)
+                ? run.validation_summary.hard_rule_failures.length
+                : 0;
+              const findings = Array.isArray(run.validation_summary?.findings)
+                ? run.validation_summary.findings.length
+                : 0;
+              return (
+                <Link
+                  key={run.id}
+                  href={`/dashboard/pt/programmes/review/${run.id}`}
+                  className="grid gap-3 px-1 py-4 transition-colors hover:bg-black/[0.02] sm:grid-cols-[1fr_auto] sm:items-center"
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{client?.name ?? 'Client programme'}</p>
+                      <span className={`border px-2 py-0.5 text-[0.58rem] uppercase tracking-[0.12em] ${
+                        run.status === 'failed'
+                          ? 'border-red-200 bg-red-50 text-red-600'
+                          : run.status === 'running'
+                            ? 'border-blue-200 bg-blue-50 text-blue-600'
+                            : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}>
+                        {run.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-black/40">
+                      {run.task_type.replace('_', ' ')} · {run.current_command ?? 'Review'} · {new Date(run.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                    </p>
+                  </div>
+                  <p className="text-xs text-black/40">
+                    {run.programme_draft.phases.length} phase{run.programme_draft.phases.length !== 1 ? 's' : ''} · {failures} hard issue{failures !== 1 ? 's' : ''} · {findings} note{findings !== 1 ? 's' : ''}
+                  </p>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {templates.length > 0 && (
         <section className="mb-10">

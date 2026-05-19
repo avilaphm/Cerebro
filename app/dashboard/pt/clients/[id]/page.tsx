@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
 import type {
+  PT1RMTest,
   PTClient,
   PTClientGoal,
   PTClientMetric,
@@ -36,7 +37,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const { id } = await params;
   const supabase = await createClient();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -105,6 +106,12 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .order('week_start', { ascending: false })
       .limit(8),
+    supabase
+      .from('pt_client_1rm_tests')
+      .select('*, results:pt_client_1rm_results(*)')
+      .eq('client_id', id)
+      .order('tested_at', { ascending: false })
+      .limit(5),
   ]);
 
   if (clientRes.error || !clientRes.data) notFound();
@@ -128,6 +135,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const coachingTasks = (tasksRes.data ?? []) as PTCoachingTask[];
   const reviews = (reviewsRes.data ?? []) as PTCoachingReview[];
   const checkinSessions = (checkinSessionsRes.data ?? []) as PTCheckinSession[];
+  const oneRmTests = (oneRmTestsRes.data ?? []) as PT1RMTest[];
 
   return (
     <PTClientDetail
@@ -144,6 +152,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       coachingTasks={coachingTasks}
       reviews={reviews}
       checkinSessions={checkinSessions}
+      oneRmTests={oneRmTests}
     />
   );
 }
