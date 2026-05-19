@@ -203,6 +203,9 @@ async function authorizeRequest(
   adminClient: ReturnType<typeof createClient>,
 ): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const token = authHeader.replace('Bearer ', '');
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (serviceKey && token === serviceKey) return { ok: true };
+
   const payload = jwtPayload(token);
   if (payload.role === 'service_role') return { ok: true };
 

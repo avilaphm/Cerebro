@@ -103,6 +103,7 @@ export interface PTProgramAssignment {
   id: string;
   client_id: string;
   template_id: string | null;
+  generation_run_id?: string | null;
   name: string;
   goal: string | null;
   duration_weeks: number;
@@ -110,6 +111,9 @@ export interface PTProgramAssignment {
   start_date: string | null;
   status: 'draft' | 'active' | 'completed' | 'paused' | 'archived';
   programme: PTProgramme;
+  coach_review_status?: 'draft' | 'needs_review' | 'approved' | 'changes_requested';
+  validation_summary?: Record<string, unknown>;
+  nutrition_sync?: Record<string, unknown>;
   current_week: number;
   current_block_index: number;
   pt_clients?: Pick<PTClient, 'name' | 'email'> | null;

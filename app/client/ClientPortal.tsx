@@ -1877,6 +1877,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             onClick={() => {
               setActiveWorkoutExerciseId(sections[0]?.exercises[0]?.exercise.id ?? null);
               setSelectedWorkout({ ...selectedWorkout, started: true });
+              scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' });
               // Batch-fetch rich card data for all exercises in this workout.
               // Exercises with exercise_id → look up by ID (exact, always correct).
               // Exercises without exercise_id → look up by name (case-insensitive fallback for

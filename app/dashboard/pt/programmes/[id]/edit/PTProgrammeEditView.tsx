@@ -31,10 +31,23 @@ interface SpeechRecognitionLike {
 interface ProgrammingAgentDraft {
   mode?: 'new_programme' | 'revise_programme';
   assignment_id?: string | null;
+  run_id?: string;
   name?: string;
   goal?: string;
   change_summary?: string;
+  validation_summary?: Record<string, unknown>;
   programme?: unknown;
+}
+
+function draftReviewSummary(draft: ProgrammingAgentDraft, fallback: string) {
+  const failures = Array.isArray(draft.validation_summary?.hard_rule_failures)
+    ? draft.validation_summary.hard_rule_failures.length
+    : 0;
+  const findings = Array.isArray(draft.validation_summary?.findings)
+    ? draft.validation_summary.findings.length
+    : 0;
+  const review = failures > 0 ? ` Validation flagged ${failures} hard issue${failures === 1 ? '' : 's'}.` : findings > 0 ? ` Validation has ${findings} review note${findings === 1 ? '' : 's'}.` : '';
+  return `${draft.change_summary ?? fallback}${review}`;
 }
 
 function getSR() {
@@ -69,6 +82,8 @@ export default function PTProgrammeEditView({
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
   const [agentDraftSummary, setAgentDraftSummary] = useState('');
+  const [generationRunId, setGenerationRunId] = useState<string | null>(initial.generation_run_id ?? null);
+  const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>(initial.validation_summary ?? {});
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
 
@@ -89,8 +104,10 @@ export default function PTProgrammeEditView({
 
       if (typeof draft.name === 'string') setProgName(draft.name);
       if (typeof draft.goal === 'string') setProgGoal(draft.goal);
+      if (typeof draft.run_id === 'string') setGenerationRunId(draft.run_id);
+      if (draft.validation_summary) setValidationSummary(draft.validation_summary);
       setProgramme(safeProgramme(draft.programme));
-      setAgentDraftSummary(draft.change_summary ?? 'AI revision draft loaded. Review before saving.');
+      setAgentDraftSummary(draftReviewSummary(draft, 'AI revision draft loaded. Review before saving.'));
       setStatus('AI draft loaded.');
     } catch {
       setStatus('Could not load AI draft.');
@@ -173,6 +190,9 @@ export default function PTProgrammeEditView({
         duration_weeks: countProgrammeWeeks(programme),
         phase_count: programme.phases.length,
         programme,
+        generation_run_id: generationRunId,
+        coach_review_status: 'approved',
+        validation_summary: validationSummary,
       })
       .eq('id', initial.id);
     if (error) {

@@ -143,6 +143,9 @@ interface ProgrammingAgentResponse {
   ok?: boolean;
   error?: string;
   mode?: 'new_programme' | 'revise_programme';
+  run_id?: string;
+  review_status?: string;
+  validation_summary?: Record<string, unknown>;
   client_id?: string;
   assignment_id?: string | null;
   name?: string;

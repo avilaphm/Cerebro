@@ -14,6 +14,14 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function jwtPayload(jwt: string): Record<string, unknown> {
+  try {
+    return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return {};
+  }
+}
+
 type TriggerType =
   | 'message'
   | 'food_log'
@@ -525,6 +533,17 @@ Deno.serve(async (req: Request) => {
 
     const adminClient = createClient(supabaseUrl, serviceKey);
     const anthropic = new Anthropic({ apiKey: anthropicKey });
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return json({ error: 'Missing authorization.' }, 401);
+
+    const token = authHeader.replace('Bearer ', '');
+    if (token !== serviceKey && jwtPayload(token).role !== 'service_role') {
+      const userClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: authData, error: authError } = await userClient.auth.getUser();
+      if (authError || !authData.user) return json({ error: 'Unauthorized.' }, 401);
+    }
 
     const body = (await req.json()) as RequestBody;
     const { client_id, trigger_type, content, ai_response, structured_data, source_message_id } = body;

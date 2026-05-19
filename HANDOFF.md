@@ -4,6 +4,18 @@
 2026-05-19 by Claude
 
 ## Last completed task
+PT programming architecture Phase 5 deterministic orchestration:
+- Extended `pt-programming-agent` from session-only draft generation into the first deterministic programme orchestration path.
+- The function now creates a `pt_program_generation_runs` row, writes the full ordered command audit trail in `pt_program_generation_steps`, calls `retrieve-knowledge-context` with run/step IDs, generates a coach-review programme draft, stores coaching reasoning, phase roadmap, programme draft, phase nutrition draft, and validation summary on the run, and creates `pt_program_review_outputs` rows for program/nutrition/system review.
+- Added validation so new programmes that collapse below the full Cerebro phase arc are marked `failed` instead of silently looking usable. Drafts still return to the editor for Pedro review/editing.
+- Programme editor/create flows now preserve `generation_run_id` and `validation_summary` when Pedro saves the template/assignment, and the draft banner shows validation finding counts.
+- `retrieve-knowledge-context` now accepts the configured service key in-function and was redeployed with `--no-verify-jwt` so Phase 5 server-side orchestration can call it while preserving explicit auth checks.
+- `update-client-brain` now has in-function auth and was redeployed with `--no-verify-jwt` so service-key orchestration can request structured brain updates without relying on gateway JWT format.
+- Deployed `pt-programming-agent` version 9, `retrieve-knowledge-context` version 4, and `update-client-brain` version 6 to Supabase project `otcnrkfvgyvwolironoz`.
+- Verification: `npm run build` passes. Live smoke test created a run with 18 command steps, 1 retrieval log, and 3 review outputs; test artifacts were deleted afterward. The smoke prompt intentionally asked for a concise draft and validation correctly marked the one-phase output as `failed`.
+- Also present from the starting worktree: client workout scroll reset on Begin Workout and removal of glass/backdrop treatment from active workout exercise sections to prevent iOS invisible text.
+
+Previous completed task:
 Exercise library expansion - 105 new exercises added with full data + YouTube video URLs:
 - Added 105 exercises across 8 categories: dumbbell variations, single arm, single leg, mobility (CARs, Jefferson Curl, etc.), flexibility, bodyweight (Pike Push Up, Archer Push Up, Wall Walk, etc.), banded loop, resistance band with handle
 - Each exercise has: name, primary_muscles, secondary_muscles, muscles, equipment, tags, purpose, conditions, setup_cues, cues, source="ai", video_url
@@ -259,7 +271,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-current HEAD - PT programming architecture Phase 3 knowledge retrieval system
+current HEAD - PT programming architecture Phase 5 deterministic orchestration
 
 ## Current state
 

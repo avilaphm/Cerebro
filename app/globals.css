@@ -288,6 +288,18 @@ body::before {
   border-color: var(--liquid-fg-1) !important;
 }
 
+/* Exercise section in the active workout view — strip glass treatment.
+   .client-liquid section fires backdrop-filter:blur on the section ancestor,
+   which creates a GPU compositing layer; iOS only paints its children on touch
+   interaction, making text invisible until scrolled over. */
+.client-liquid [data-workout-exercise-id] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
 /* Workout logging sheet sits over a black video container — keep it opaque white.
    Nuclear backdrop-filter removal: iOS Safari composites blur into a separate GPU
    layer; during scroll the text layer de-syncs and goes invisible. */

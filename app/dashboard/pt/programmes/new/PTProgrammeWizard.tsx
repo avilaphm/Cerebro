@@ -31,10 +31,23 @@ interface SpeechRecognitionLike {
 interface ProgrammingAgentDraft {
   mode?: 'new_programme' | 'revise_programme';
   client_id?: string;
+  run_id?: string;
   name?: string;
   goal?: string;
   change_summary?: string;
+  validation_summary?: Record<string, unknown>;
   programme?: unknown;
+}
+
+function draftReviewSummary(draft: ProgrammingAgentDraft, fallback: string) {
+  const failures = Array.isArray(draft.validation_summary?.hard_rule_failures)
+    ? draft.validation_summary.hard_rule_failures.length
+    : 0;
+  const findings = Array.isArray(draft.validation_summary?.findings)
+    ? draft.validation_summary.findings.length
+    : 0;
+  const review = failures > 0 ? ` Validation flagged ${failures} hard issue${failures === 1 ? '' : 's'}.` : findings > 0 ? ` Validation has ${findings} review note${findings === 1 ? '' : 's'}.` : '';
+  return `${draft.change_summary ?? fallback}${review}`;
 }
 
 function getSR() {
@@ -67,6 +80,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
   const [agentDraftSummary, setAgentDraftSummary] = useState('');
+  const [generationRunId, setGenerationRunId] = useState<string | null>(null);
+  const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>({});
 
   const srRef = useRef<SpeechRecognitionLike | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
@@ -91,8 +106,10 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       if (typeof draft.client_id === 'string') setClientId(draft.client_id);
       if (typeof draft.name === 'string') setProgName(draft.name);
       if (typeof draft.goal === 'string') setProgGoal(draft.goal);
+      if (typeof draft.run_id === 'string') setGenerationRunId(draft.run_id);
+      if (draft.validation_summary) setValidationSummary(draft.validation_summary);
       setProgramme(safeProgramme(draft.programme));
-      setAgentDraftSummary(draft.change_summary ?? 'AI draft loaded. Review and edit before creating.');
+      setAgentDraftSummary(draftReviewSummary(draft, 'AI draft loaded. Review and edit before creating.'));
       setStep(2);
     } catch {
       setGenStatus('Could not load the programming agent draft.');
@@ -240,6 +257,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         phase_count: programme.phases.length,
         status: 'ready',
         programme,
+        generation_run_id: generationRunId,
+        validation_summary: validationSummary,
       })
       .select('id')
       .single();
@@ -256,6 +275,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         phase_count: programme.phases.length,
         status: 'active',
         programme,
+        generation_run_id: generationRunId,
+        coach_review_status: 'approved',
+        validation_summary: validationSummary,
       });
       if (!aErr) {
         await supabase.from('pt_events').insert({
