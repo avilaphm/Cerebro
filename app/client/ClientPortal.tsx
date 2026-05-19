@@ -1597,16 +1597,23 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   const { isDone, isActive } = stepState(step);
                   return (
                     <div key={`${step.type}-${index}`} className="flex flex-col items-center gap-1.5">
-                      <div
-                        className={`h-3.5 w-3.5 rounded-full border-2 transition-colors ${
-                          isDone
-                            ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
-                            : isActive
-                              ? 'border-black bg-white'
-                              : 'border-black/20 bg-white'
-                        }`}
-                      />
-                      <span className="max-w-[3.5rem] text-center text-[0.44rem] uppercase leading-tight tracking-[0.06em] text-black/35">
+                      <div className={`relative flex items-center justify-center ${isActive ? 'h-4 w-4' : 'h-3.5 w-3.5'}`}>
+                        {isActive && (
+                          <div className="absolute inset-0 animate-ping rounded-full bg-black/8" />
+                        )}
+                        <div
+                          className={`rounded-full border-2 transition-all ${
+                            isActive ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5'
+                          } ${
+                            isDone
+                              ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
+                              : isActive
+                                ? 'border-black bg-white'
+                                : 'border-black/20 bg-white'
+                          }`}
+                        />
+                      </div>
+                      <span className={`max-w-[3.5rem] text-center text-[0.44rem] uppercase leading-tight tracking-[0.06em] transition-colors ${isActive ? 'text-black/55' : 'text-black/28'}`}>
                         {step.label}
                       </span>
                     </div>
@@ -1621,95 +1628,130 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </button>
 
         {progressExpanded && (
-          <div className="space-y-5 border border-t-0 border-black/10 bg-white px-5 py-5 md:px-6">
-            {journeySteps.map((step, index) => {
-              const pp = hasProgramme && step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
-              const isDonePhase = pp?.allBlocksDone ?? false;
-              const state = stepState(step);
-              const isActivePhase = state.isActive;
-              const blocks = hasProgramme && step.phaseIndex !== null
-                ? (assignment.programme.phases[step.phaseIndex]?.week_blocks ?? [])
-                : [];
+          <div className="border border-t-0 border-black/10 bg-white px-5 pb-8 pt-6 md:px-6">
+            <div className="relative">
+              {/* Vertical rail line — sits behind dots, centered on the 20px dot column */}
+              <div className="absolute bottom-4 left-[0.6rem] top-4 w-px bg-black/8" />
 
-              const stepKey = `${step.type}-${index}`;
-              const isLoadingThis = journeyLoadingKey === stepKey;
-              return (
-                <div key={`${step.type}-detail-${index}`}>
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors ${
-                        state.isDone || isDonePhase
-                          ? 'bg-[rgb(46,213,115)]'
-                          : isActivePhase
-                            ? 'border-2 border-black bg-white'
-                            : 'border-2 border-black/15 bg-white'
-                      }`}
-                    >
-                      {isDonePhase && <Check className="h-2.5 w-2.5 text-white" />}
+              {journeySteps.map((step, index) => {
+                const pp = hasProgramme && step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
+                const isDonePhase = pp?.allBlocksDone ?? false;
+                const state = stepState(step);
+                const isActivePhase = state.isActive;
+                const isDone = state.isDone || isDonePhase;
+                const isTest = step.type === 'test';
+                const blocks = hasProgramme && step.phaseIndex !== null
+                  ? (assignment.programme.phases[step.phaseIndex]?.week_blocks ?? [])
+                  : [];
+                const stepKey = `${step.type}-${index}`;
+                const isLoadingThis = journeyLoadingKey === stepKey;
+
+                return (
+                  <div
+                    key={`${step.type}-detail-${index}`}
+                    className={`flex gap-5 ${isTest ? 'py-4' : 'py-6'}`}
+                  >
+                    {/* Dot — fixed 20px column so rail line centers at left-[10px] = left-[0.6rem] */}
+                    <div className="relative z-10 flex w-5 shrink-0 justify-center pt-0.5">
+                      <div
+                        className={`flex items-center justify-center rounded-full transition-all ${
+                          isTest ? 'h-3.5 w-3.5' : 'h-5 w-5'
+                        } ${
+                          isDone
+                            ? 'bg-[rgb(46,213,115)]'
+                            : isActivePhase
+                              ? 'border-2 border-black bg-white shadow-[0_0_0_3px_rgba(0,0,0,0.06)]'
+                              : 'border border-black/15 bg-white'
+                        }`}
+                      >
+                        {isDone && <Check className={isTest ? 'h-2 w-2 text-white' : 'h-2.5 w-2.5 text-white'} />}
+                        {isActivePhase && !isDone && (
+                          <div className="h-2 w-2 rounded-full bg-black" />
+                        )}
+                      </div>
                     </div>
-                    <p
-                      className={`text-xs font-medium ${
-                        isActivePhase ? 'text-black' : state.isDone || isDonePhase ? 'text-black/60' : 'text-black/30'
-                      }`}
-                    >
-                      {step.label}
-                    </p>
-                    {isActivePhase && (
-                      <span className="ml-1 text-[0.55rem] uppercase tracking-[0.1em] text-[rgb(46,213,115)]">Current</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void explainJourneyStep(
-                        stepKey, step.label, step.type, step.milestone,
-                        step.phaseIndex, journeySteps, isActivePhase, state.isDone || isDonePhase,
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p
+                          className={`font-medium leading-snug transition-colors ${
+                            isActivePhase
+                              ? 'text-sm text-black'
+                              : isDone
+                                ? 'text-xs text-black/40'
+                                : isTest
+                                  ? 'text-[0.7rem] text-black/18'
+                                  : 'text-xs text-black/22'
+                          }`}
+                        >
+                          {step.label}
+                        </p>
+                        {isActivePhase && (
+                          <span className="text-[0.5rem] uppercase tracking-[0.14em] text-[rgb(46,213,115)]">
+                            Current
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void explainJourneyStep(
+                            stepKey, step.label, step.type, step.milestone,
+                            step.phaseIndex, journeySteps, isActivePhase, isDone,
+                          )}
+                          disabled={isLoadingThis}
+                          className="journey-info-pill inline-flex items-center rounded-full border border-black/8 bg-white/30 px-2 py-px text-[0.5rem] uppercase tracking-[0.1em] transition-colors hover:bg-white/50 disabled:opacity-50"
+                          aria-label={`Explain ${step.label}`}
+                        >
+                          {isLoadingThis ? <span className="animate-spin text-[0.6rem]">·</span> : 'info'}
+                        </button>
+                      </div>
+
+                      {isTest && (
+                        <p className="mt-1.5 text-[0.65rem] leading-relaxed text-black/22">
+                          {step.milestone === 'initial'
+                            ? 'Strength benchmark before the next training phase.'
+                            : 'Retest strength after the full training block.'}
+                        </p>
                       )}
-                      disabled={isLoadingThis}
-                      className="journey-info-pill inline-flex items-center rounded-full border border-black/8 bg-white/30 px-2 py-px text-[0.5rem] uppercase tracking-[0.1em] transition-colors hover:bg-white/50 disabled:opacity-50"
-                      aria-label={`Explain ${step.label}`}
-                    >
-                      {isLoadingThis ? <span className="animate-spin text-[0.6rem]">·</span> : 'info'}
-                    </button>
-                  </div>
-                  {step.type === 'test' && (
-                    <p className="ml-8 mt-1 text-xs leading-relaxed text-black/35">
-                      {step.milestone === 'initial'
-                        ? 'Strength benchmark before the next training phase.'
-                        : 'Retest strength after the full training block.'}
-                    </p>
-                  )}
 
-                  {blocks.length > 0 && (
-                    <div className="ml-8 mt-3 flex gap-4">
-                      {blocks.map((block, bi) => {
-                        const blockDone = isDonePhase || (pp !== null && pp.blockIndex > bi);
-                        const isActiveBlock = isActivePhase && pp !== null && pp.blockIndex === bi;
-                        const blockLabel = block.sets
-                          ? `${block.sets} sets`
-                          : block.weight_pct
-                            ? block.weight_pct
-                            : `Block ${bi + 1}`;
-                        return (
-                          <div key={bi} className="flex flex-col items-center gap-1.5">
-                            <div
-                              className={`h-2.5 w-2.5 rounded-full transition-colors ${
-                                blockDone
-                                  ? 'bg-[rgb(46,213,115)]'
-                                  : isActiveBlock
-                                    ? 'border-[1.5px] border-black/60 bg-transparent'
-                                    : 'border border-black/15 bg-transparent'
-                              }`}
-                            />
-                            <span className="max-w-[3rem] text-center text-[0.44rem] uppercase leading-tight tracking-wide text-black/30">
-                              {blockLabel}
-                            </span>
-                          </div>
-                        );
-                      })}
+                      {isActivePhase && !isTest && (
+                        <p className="mt-1.5 text-[0.7rem] leading-relaxed text-black/35">You&apos;re here right now.</p>
+                      )}
+
+                      {blocks.length > 0 && (
+                        <div className="mt-4 flex gap-5">
+                          {blocks.map((block, bi) => {
+                            const blockDone = isDonePhase || (pp !== null && pp.blockIndex > bi);
+                            const isActiveBlock = isActivePhase && pp !== null && pp.blockIndex === bi;
+                            const blockLabel = block.sets
+                              ? `${block.sets} sets`
+                              : block.weight_pct
+                                ? block.weight_pct
+                                : `Block ${bi + 1}`;
+                            return (
+                              <div key={bi} className="flex flex-col items-center gap-1.5">
+                                <div
+                                  className={`h-2.5 w-2.5 rounded-full transition-colors ${
+                                    blockDone
+                                      ? 'bg-[rgb(46,213,115)]'
+                                      : isActiveBlock
+                                        ? 'border-[1.5px] border-black/60 bg-transparent'
+                                        : 'border border-black/12 bg-transparent'
+                                  }`}
+                                />
+                                <span className="max-w-[3rem] text-center text-[0.44rem] uppercase leading-tight tracking-wide text-black/28">
+                                  {blockLabel}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
