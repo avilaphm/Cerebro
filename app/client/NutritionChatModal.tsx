@@ -60,6 +60,7 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const interimRef = useRef('');
   const finalTextRef = useRef('');
+  const sessionFinalRef = useRef(''); // finals accumulated in the current recording session
 
   // Lock background scroll
   useEffect(() => {
@@ -89,28 +90,39 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
         if (r.isFinal) final += r[0].transcript;
         else interim += r[0].transcript;
       }
+      sessionFinalRef.current = final;
       interimRef.current = interim;
-      // Append to existing text
-      setText(finalTextRef.current + (finalTextRef.current && final ? ' ' : '') + final + interim);
+      const base = finalTextRef.current;
+      const parts = [base, final, interim].filter((s) => s.trim());
+      setText(parts.join(' '));
     };
 
     rec.onend = () => {
       setRecording(false);
-      // Commit final text — strip interim suffix
-      const committed = text.replace(interimRef.current, '').trim();
+      // Commit base text + all finals from this session (drop trailing interim)
+      const base = finalTextRef.current;
+      const committed = [base, sessionFinalRef.current].filter((s) => s.trim()).join(' ').trim();
       finalTextRef.current = committed;
       setText(committed);
       interimRef.current = '';
+      sessionFinalRef.current = '';
     };
 
     rec.onerror = () => {
       setRecording(false);
+      // Keep whatever finals were captured before the error
+      const base = finalTextRef.current;
+      const committed = [base, sessionFinalRef.current].filter((s) => s.trim()).join(' ').trim();
+      finalTextRef.current = committed;
+      setText(committed);
       interimRef.current = '';
+      sessionFinalRef.current = '';
     };
 
     rec.start();
     recognitionRef.current = rec;
     finalTextRef.current = text;
+    sessionFinalRef.current = '';
     setRecording(true);
   };
 
@@ -233,6 +245,14 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
             </div>
             <p className="text-sm font-medium">{loggedCount} meal{loggedCount !== 1 ? 's' : ''} logged</p>
           </div>
+        ) : logging ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-4">
+            <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-black/10 border-t-black" />
+            <div className="text-center">
+              <p className="text-sm font-medium">Analysing your food…</p>
+              <p className="mt-1 text-[0.65rem] text-black/35">This usually takes a few seconds</p>
+            </div>
+          </div>
         ) : !hasContent ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
             <p className="text-sm text-black/35 leading-relaxed max-w-[16rem]">
@@ -292,7 +312,7 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
       </div>
 
       {/* Input card */}
-      {loggedCount === null && (
+      {loggedCount === null && !logging && (
         <div className="shrink-0 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-2">
           <input
             ref={galleryInputRef}
