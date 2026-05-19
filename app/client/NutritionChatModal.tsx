@@ -52,6 +52,7 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
   const [photos, setPhotos] = useState<PhotoEntry[]>([]);
   const [recording, setRecording] = useState(false);
   const [logging, setLogging] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loggedCount, setLoggedCount] = useState<number | null>(null);
 
@@ -72,6 +73,16 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
   }, []);
 
   useEffect(() => () => { recognitionRef.current?.abort(); }, []);
+
+  useEffect(() => {
+    if (!logging) { setProgress(0); return; }
+    const start = Date.now();
+    const id = setInterval(() => {
+      const elapsed = Date.now() - start;
+      setProgress(Math.min(95, Math.round(95 * (1 - Math.exp(-elapsed / 5000)))));
+    }, 150);
+    return () => clearInterval(id);
+  }, [logging]);
 
   const startVoice = () => {
     const SpeechRecog = getSpeechRecognition();
@@ -246,10 +257,27 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
             <p className="text-sm font-medium">{loggedCount} meal{loggedCount !== 1 ? 's' : ''} logged</p>
           </div>
         ) : logging ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-4">
-            <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-black/10 border-t-black" />
+          <div className="flex flex-col items-center justify-center py-16 gap-6">
+            <div className="relative h-16 w-16">
+              <svg className="absolute inset-0 -rotate-90" width="64" height="64" viewBox="0 0 64 64">
+                <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="3" className="text-black/10" />
+                <circle
+                  cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="3"
+                  strokeLinecap="round"
+                  className="text-black"
+                  style={{
+                    strokeDasharray: `${2 * Math.PI * 28}`,
+                    strokeDashoffset: `${2 * Math.PI * 28 * (1 - progress / 100)}`,
+                    transition: 'stroke-dashoffset 0.3s ease-out',
+                  }}
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums">{progress}%</span>
+            </div>
             <div className="text-center">
-              <p className="text-sm font-medium">Analysing your food…</p>
+              <p className="text-sm font-medium">
+                {progress < 25 ? 'Reading your food…' : progress < 55 ? 'Identifying meals…' : progress < 80 ? 'Calculating nutrition…' : 'Saving to your log…'}
+              </p>
               <p className="mt-1 text-[0.65rem] text-black/35">This usually takes a few seconds</p>
             </div>
           </div>
