@@ -1987,22 +1987,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 <p className="mt-0.5 text-xs text-black/40">{dueTodayItems[0].title}</p>
               )}
             </div>
-            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+            <button
+              type="button"
+              onClick={() => setActiveScreen('workout')}
+              className="border border-black/8 bg-[#fbfbf8] px-3 py-3 text-left transition-colors hover:border-black/20"
+            >
               <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Next workout</p>
               <p className="mt-1.5 text-sm font-medium">{nextWorkoutDay?.title ?? 'All done'}</p>
               {nextWorkoutDay && activePhase && (
                 <p className="mt-0.5 text-xs text-black/40">Phase {activePhaseIndex + 1}</p>
               )}
-            </div>
+            </button>
           </div>
         </section>
       </div>
-
-      {client && (
-        <div className="mx-auto max-w-5xl">
-          <MacroWidget clientId={client.id} onNutritionTabOpen={() => setActiveScreen('nutrition')} />
-        </div>
-      )}
 
       <div className="mx-auto max-w-5xl">
         <button
@@ -2022,6 +2020,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         </button>
       </div>
+
+      {client && (
+        <div className="mx-auto max-w-5xl">
+          <MacroWidget clientId={client.id} onNutritionTabOpen={() => setActiveScreen('nutrition')} />
+        </div>
+      )}
 
       {currentWeeklyPlan && (
         <div className="mx-auto max-w-5xl">
@@ -2141,41 +2145,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </div>
       )}
 
-      <div className="mx-auto max-w-5xl">
-        <div className="border border-black/10 bg-white p-5 md:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Goals</p>
-            {checkinDue && (
-              <span className="animate-pulse border border-amber-300 bg-amber-50 px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.1em] text-amber-700">
-                Check-in due
-              </span>
-            )}
-          </div>
-          {goals.length > 0 ? (
-            <div className="mt-3 space-y-2">
-              {goals.slice(0, 4).map((goal) => (
-                <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                  <p className="text-sm font-medium">{goal.title}</p>
-                  <p className="mt-1 text-xs text-black/45">
-                    {getGoalProgressLabel(goal, metrics)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-black/45">Pedro will add agreed goals here.</p>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowCheckinModal(true)}
-            className={`mt-4 w-full px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-black/80 ${
-              checkinDue ? 'bg-black' : 'bg-black/60'
-            }`}
-          >
-            Weekly Check-in
-          </button>
-        </div>
-      </div>
     </div>
   );
 
