@@ -477,6 +477,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [richExerciseMap, setRichExerciseMap] = useState<Record<string, PTExercise>>({});
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadProgress, setLoadProgress] = useState(0);
   const [savingWorkout, setSavingWorkout] = useState(false);
   const [submittingMetric, setSubmittingMetric] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
@@ -628,6 +629,16 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const id = window.setTimeout(() => { void loadPortal(); }, 0);
     return () => window.clearTimeout(id);
   }, [loadPortal]);
+
+  useEffect(() => {
+    if (!loading) { setLoadProgress(0); return; }
+    const start = Date.now();
+    const id = setInterval(() => {
+      const elapsed = Date.now() - start;
+      setLoadProgress(Math.min(95, Math.round(95 * (1 - Math.exp(-elapsed / 6000)))));
+    }, 150);
+    return () => clearInterval(id);
+  }, [loading]);
 
   useEffect(() => {
     if (!selectedWorkout?.started) return;
@@ -2891,7 +2902,37 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         )}
 
         {loading ? (
-          <p className="text-sm text-black/40">Loading programme...</p>
+          <div className="flex h-full min-h-[60dvh] flex-col items-center justify-center gap-8">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <p className="text-xl font-semibold tracking-tight">
+                {(() => {
+                  const h = new Date().getHours();
+                  const greeting = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good night';
+                  const firstName = client?.name?.split(' ')[0];
+                  return firstName ? `${greeting}, ${firstName}` : greeting;
+                })()}
+              </p>
+              <p className="text-[0.65rem] text-black/35 uppercase tracking-[0.12em]">
+                {loadProgress < 30 ? 'Loading your profile…' : loadProgress < 65 ? 'Fetching your programme…' : 'Almost ready…'}
+              </p>
+            </div>
+            <div className="relative h-16 w-16">
+              <svg className="absolute inset-0 -rotate-90" width="64" height="64" viewBox="0 0 64 64">
+                <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="3" className="text-black/10" />
+                <circle
+                  cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="3"
+                  strokeLinecap="round"
+                  className="text-black"
+                  style={{
+                    strokeDasharray: `${2 * Math.PI * 28}`,
+                    strokeDashoffset: `${2 * Math.PI * 28 * (1 - loadProgress / 100)}`,
+                    transition: 'stroke-dashoffset 0.3s ease-out',
+                  }}
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold tabular-nums">{loadProgress}%</span>
+            </div>
+          </div>
         ) : !client ? (
           <div className="border border-black/10 bg-white p-6">
             <p className="text-sm text-black/55">No client profile is linked to this login yet. Ask Pedro to send a fresh invite.</p>
