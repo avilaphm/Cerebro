@@ -1720,7 +1720,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               // Batch-fetch rich card data (muscles, setup cues, conditions) for all exercises in this workout
               const ids = sections.flatMap((s) => s.exercises.map((ev) => ev.exercise.exercise_id)).filter((id): id is string => Boolean(id));
               if (ids.length > 0) {
-                supabase.from('pt_exercises').select('id,primary_muscles,secondary_muscles,conditions,setup_cues,progression_ids,regression_ids').in('id', ids).then(({ data: richData }) => {
+                supabase.from('pt_exercises').select('id,video_url,primary_muscles,secondary_muscles,conditions,setup_cues,progression_ids,regression_ids').in('id', ids).then(({ data: richData }) => {
                   if (richData) setRichExerciseMap(Object.fromEntries((richData as PTExercise[]).map((e) => [e.id, e])));
                 });
               }
@@ -1813,7 +1813,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           {exerciseScreens.map(({ exercise, values, section }, screenIndex) => {
             const count = setCounts[exercise.id] ?? parseSets(values.sets);
             const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
-            const videoId = getYouTubeId(exercise.video_url);
+            const videoId = getYouTubeId(richExerciseMap[exercise.exercise_id ?? '']?.video_url ?? exercise.video_url);
             const cueKey = `${section.id}-${exercise.id}`;
             const lastTimeKey = `${cueKey}-last`;
             const cuesAreOpen = openCues[cueKey] ?? false;

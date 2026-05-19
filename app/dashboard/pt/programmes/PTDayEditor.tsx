@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { createClient } from '@/utils/supabase/client';
 import { makeId, sortExercisesBySectionOrder } from '@/utils/pt/programme';
 import type {
   PTExercise,
@@ -66,6 +67,7 @@ function calcWeekRanges(blocks: PTProgrammeWeekBlock[]) {
 }
 
 export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, onChange }: Props) {
+  const supabase = useMemo(() => createClient(), []);
   const [dragged, setDragged] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [activeBlock, setActiveBlock] = useState(-1);
@@ -318,12 +320,21 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
             {/* YouTube URL */}
             {(showVideo || ex.video_url) && (
               <div className="px-2 pb-2 border-t border-black/8">
-                <input value={ex.video_url ?? ''} onChange={(e) => patch(idx, { video_url: e.target.value || null })}
+                <input
+                  value={ex.video_url ?? ''}
+                  onChange={(e) => {
+                    const url = e.target.value || null;
+                    patch(idx, { video_url: url });
+                    if (ex.exercise_id) {
+                      void supabase.from('pt_exercises').update({ video_url: url }).eq('id', ex.exercise_id);
+                    }
+                  }}
                   placeholder="https://youtube.com/watch?v=…"
-                  className="w-full border border-black/10 px-2 py-1.5 text-xs outline-none focus:border-black/30 mt-2" />
-                {ex.video_url?.includes('youtube') && (
-                  <p className="text-[0.55rem] text-black/30 mt-0.5">YouTube link — visible to client</p>
-                )}
+                  className="w-full border border-black/10 px-2 py-1.5 text-xs outline-none focus:border-black/30 mt-2"
+                />
+                <p className="text-[0.55rem] text-black/30 mt-0.5">
+                  {ex.exercise_id ? 'Saved to exercise library — updates all programmes' : 'YouTube link — visible to client'}
+                </p>
               </div>
             )}
 
