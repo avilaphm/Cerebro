@@ -1,10 +1,19 @@
 # Handoff
 
 ## Last updated
-2026-05-19 by Codex
+2026-05-19 by Claude
 
 ## Last completed task
-PT programming architecture Phase 2 Supabase extensions:
+Client dashboard UI overhaul (commits ed6a526 through 963fd40):
+- Chat (MessageBubble.tsx): scroll lock on open (targets `.client-liquid > div`), context-aware workout banner only when on Workout screen, full-screen overlay on mobile + floating panel on desktop, Claude-style input card (warm gray bg, textarea + icon row), live voice transcription via Web Speech API shown in real time, icon sizes updated to iOS standard (44px touch targets, 22px SVGs, 48px send circle)
+- Overview screen: Workout widget now before MacroWidget; Goals section hidden (not deleted); "Next workout" mini-card is now a button navigating to Workout tab
+- Nutrition screen: delete button (x) on each food log entry with spinner + RLS DELETE policy added; "Track your food here" CTA button below Today's Macros; NutritionChatModal (full-screen z-60 overlay) with voice brain dump, gallery multi-photo (up to 10), camera capture, text input, photo tip banner, "Log food" button calling log-nutrition-batch
+- log-nutrition-batch edge function (new, deployed --no-verify-jwt): accepts text + up to 10 photos + current_time, single Claude Sonnet call with all image blocks, returns JSON array of meals split by type, inserts each as separate pt_nutrition_logs row, 28-day purge + weekly avg update; reads client context from pt_clients + pt_client_nutrition_doc to calibrate estimates
+- log-nutrition edge function updated: also reads client context (goals, daily targets, favourite foods, foods to avoid, typical meals, eating habits, recurring gaps), passes to text and photo parse functions
+- Workout screen: programme title card removed; Journey timeline moved to top in both assigned and unassigned states
+- Icon sizes (both chats): touch targets w-11 h-11 (44px), SVGs 22px (+/mic/camera), stop square 20px, send circle w-12 h-12 (48px) with 18px arrow, Log food pill h-11
+
+Previous completed task: PT programming architecture Phase 2 Supabase extensions:
 - Added and applied migrations `20260519015541_pt_programming_architecture_phase_2.sql` and `20260519020058_pt_programming_phase_2_fk_indexes.sql` to Supabase project `otcnrkfvgyvwolironoz`.
 - New PT programming tables: `pt_client_documents`, `pt_program_generation_runs`, `pt_program_generation_steps`, `pt_knowledge_retrieval_logs`, `pt_client_1rm_tests`, `pt_client_1rm_results`, `pt_phase_nutrition`, `pt_program_review_outputs`, and `pt_extra_sessions`.
 - Extended existing architecture instead of duplicating it: `pt_clients` now references intake/assessment documents; programme assignments/templates can link back to generation runs and validation summaries; client brain docs now have coaching reasoning, important decisions, movement assessment summary, progression strategy, and phase nutrition strategy fields.
@@ -216,7 +225,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-current HEAD - PT programming architecture Phase 2 Supabase extensions
+963fd40 - Chat inputs: increase icon sizes to match Claude app reference (HEAD)
 
 ## Current state
 
