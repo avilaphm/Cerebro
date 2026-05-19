@@ -2152,6 +2152,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     <div className="space-y-4 md:space-y-6">
       {!assignment || !activePhase ? (
         <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+          {renderJourneyTimeline()}
           <div className="border border-black/10 bg-white p-6">
             <p className="text-sm font-medium text-black">
               {client?.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
@@ -2160,14 +2161,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               Your programme is being created. It will appear here as soon as it is live.
             </p>
           </div>
-          {renderJourneyTimeline()}
         </div>
       ) : (
         <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
-          <section className="border border-black/10 bg-white p-5 md:p-6">
-            <h2 className="font-display text-2xl font-light">{assignment.name}</h2>
-            {assignment.goal && <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/55">{assignment.goal}</p>}
-          </section>
+          {renderJourneyTimeline()}
 
           <section className="border border-black/10 bg-white p-5 md:p-6">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -2220,7 +2217,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             </div>
           </section>
 
-          {renderJourneyTimeline()}
         </div>
       )}
     </div>
