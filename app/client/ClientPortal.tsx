@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Minus, Play, Plus, Salad, Settings, Wrench } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Mic, MicOff, Minus, Play, Plus, Salad, Settings, Wrench } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock, CANONICAL_SECTION_ORDER } from '@/utils/pt/programme';
@@ -59,6 +59,21 @@ const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
   walk: 'Walk',
   fitness_class: 'Fitness class',
 };
+
+interface SpeechResultItemLike { transcript: string; }
+interface SpeechResultLike { isFinal: boolean; length: number; [index: number]: SpeechResultItemLike; }
+interface SpeechEventLike extends Event { results: ArrayLike<SpeechResultLike>; resultIndex: number; }
+interface SpeechRecogLike {
+  continuous: boolean; interimResults: boolean; lang: string;
+  onresult: ((e: SpeechEventLike) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start(): void; stop(): void; abort(): void;
+}
+function getNotesSpeechRecognition(): (new () => SpeechRecogLike) | null {
+  const w = window as Window & { SpeechRecognition?: new () => SpeechRecogLike; webkitSpeechRecognition?: new () => SpeechRecogLike; };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
 
 interface SetDraft {
   reps: string;
@@ -470,6 +485,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
   const [submittedSectionNotes, setSubmittedSectionNotes] = useState<Record<string, boolean>>({});
   const [submittingSectionNote, setSubmittingSectionNote] = useState<string | null>(null);
+  const [recordingNoteKey, setRecordingNoteKey] = useState<string | null>(null);
+  const noteRecognitionRef = useRef<SpeechRecogLike | null>(null);
+  const noteInterimRef = useRef('');
+  const noteFinalRef = useRef('');
+  const noteSessionFinalRef = useRef('');
   const [openCues, setOpenCues] = useState<Record<string, boolean>>({});
   const [openLastTime, setOpenLastTime] = useState<Record<string, boolean>>({});
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
@@ -963,6 +983,49 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     }
     setSubmittingSectionNote(null);
   };
+
+  const startNoteVoice = (noteKey: string) => {
+    const SR = getNotesSpeechRecognition();
+    if (!SR) return;
+    noteRecognitionRef.current?.abort();
+    const currentText = sectionNotes[noteKey] ?? '';
+    noteFinalRef.current = currentText;
+    noteSessionFinalRef.current = '';
+    noteInterimRef.current = '';
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-AU';
+    rec.onresult = (e: SpeechEventLike) => {
+      let final = '';
+      let interim = '';
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) final += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      noteSessionFinalRef.current = final;
+      noteInterimRef.current = interim;
+      const base = noteFinalRef.current;
+      const parts = [base, final, interim].filter((s) => s.trim());
+      setSectionNotes((prev) => ({ ...prev, [noteKey]: parts.join(' ') }));
+    };
+    const commit = () => {
+      const committed = [noteFinalRef.current, noteSessionFinalRef.current].filter((s) => s.trim()).join(' ').trim();
+      noteFinalRef.current = committed;
+      noteInterimRef.current = '';
+      noteSessionFinalRef.current = '';
+      setSectionNotes((prev) => ({ ...prev, [noteKey]: committed }));
+      setRecordingNoteKey(null);
+    };
+    rec.onend = commit;
+    rec.onerror = commit;
+    rec.start();
+    noteRecognitionRef.current = rec;
+    setRecordingNoteKey(noteKey);
+  };
+
+  const stopNoteVoice = () => { noteRecognitionRef.current?.stop(); };
 
   const patchMetricDraft = (patch: Partial<MetricDraft>) => {
     setMetricDraft((current) => ({ ...current, ...patch }));
@@ -1685,18 +1748,30 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     );
     const renderSectionNoteCard = (section: WorkoutSectionView) => {
       const noteKey = sectionNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, section.id);
+      const isRecording = recordingNoteKey === noteKey;
       return (
         <div className="mt-4 rounded-[1.5rem] border border-black/10 bg-white p-4 shadow-sm">
-          <label className="block">
+          <div className="mb-3 flex items-center justify-between">
             <span className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">{section.title} notes</span>
-            <textarea
-              value={sectionNotes[noteKey] ?? ''}
-              onChange={(event) => setSectionNotes((current) => ({ ...current, [noteKey]: event.target.value }))}
-              rows={3}
-              className="mt-3 w-full resize-none rounded-[1.2rem] border border-black/10 bg-[#fbfbf8] px-4 py-3 text-sm text-black outline-none placeholder:text-black/35 focus:border-black/35"
-              placeholder="Anything that felt off, easy, painful, or worth changing."
-            />
-          </label>
+            <button
+              type="button"
+              onClick={() => isRecording ? stopNoteVoice() : startNoteVoice(noteKey)}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${isRecording ? 'border-red-500 bg-red-500 text-white' : 'border-black/15 bg-[#fbfbf8] text-black/45 hover:border-black/30 hover:text-black'}`}
+              aria-label={isRecording ? 'Stop recording' : 'Record voice note'}
+            >
+              {isRecording ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          {isRecording && (
+            <p className="mb-2 text-[0.6rem] uppercase tracking-[0.14em] text-red-500">Listening...</p>
+          )}
+          <textarea
+            value={sectionNotes[noteKey] ?? ''}
+            onChange={(event) => setSectionNotes((current) => ({ ...current, [noteKey]: event.target.value }))}
+            rows={3}
+            className="w-full resize-none rounded-[1.2rem] border border-black/10 bg-[#fbfbf8] px-4 py-3 text-sm text-black outline-none placeholder:text-black/35 focus:border-black/35"
+            placeholder="Anything that felt off, easy, painful, or worth changing."
+          />
           <div className="mt-3 flex items-center justify-between gap-3">
             <p className="text-xs text-black/40">
               {submittedSectionNotes[noteKey] ? 'Sent to Pedro.' : 'Send this without waiting until the end.'}
