@@ -3242,11 +3242,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         >
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           <div
-            className="relative z-10 w-full max-w-lg rounded-t-[2rem] bg-white px-6 pb-10 pt-6 shadow-[0_-24px_60px_rgba(0,0,0,0.18)]"
+            className="relative z-10 flex w-full max-w-lg flex-col rounded-t-[2rem] bg-white shadow-[0_-24px_60px_rgba(0,0,0,0.18)]"
+            style={{ maxHeight: '85dvh' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-1 flex items-start justify-between gap-3">
-              <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Your Journey</p>
+            <div className="flex shrink-0 items-start justify-between gap-3 px-6 pb-2 pt-6">
+              <div>
+                <p className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">Your Journey</p>
+                <h3 className="mt-1 text-lg font-medium text-black">{journeyPopup.label}</h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setJourneyPopup(null)}
@@ -3255,19 +3259,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 ×
               </button>
             </div>
-            <h3 className="mb-4 text-lg font-medium text-black">{journeyPopup.label}</h3>
-            {journeyLoadingKey !== null ? (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <div className="h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-black" />
-                <p className="text-xs text-black/40">Reading your programme…</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {journeyPopup.text.split('\n').filter(Boolean).map((para, i) => (
-                  <p key={i} className="text-sm leading-relaxed text-black/80">{para}</p>
-                ))}
-              </div>
-            )}
+            <div className="overflow-y-auto px-6 pb-10 pt-3">
+              {journeyLoadingKey !== null ? (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-black" />
+                  <p className="text-xs text-black/40">Reading your programme…</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {journeyPopup.text.split('\n').filter(Boolean).map((para, i) => (
+                    <p key={i} className="text-sm leading-relaxed text-black/80">{para}</p>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
