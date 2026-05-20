@@ -1,25 +1,69 @@
 # Handoff
 
 ## Last updated
-2026-05-20 by Claude (Opus 4.7) - continuing from Codex's commits
+2026-05-21 by Claude (Opus 4.7)
 
 ---
 
 ## FOR THE NEXT AGENT PICKING THIS UP
 
-All 15 tracked tasks for the PT programme creation rebuild are now SHIPPED. The pipeline is end-to-end functional: intake -> distribute to 4 brain docs -> embed for RAG -> orchestrator -> 4 agents -> validated programme draft with videos and Big 5 enforcement. Old lite function deleted.
+The programme creation pipeline is end-to-end working and producing correct programmes. Architecture: intake -> distribute to 4 brain docs -> embed for RAG -> orchestrator -> 4 agents -> validated programme draft with videos, Big 5 enforcement, evidence-based mesocycle progression, and 3/4/5 days-per-week split selection. The structure is solid. The next chapter is **refinement and UX** - making the coach-facing experience match the quality of the data underneath.
 
 ### Last completed task
 
-Tasks #3 + #4 + cleanup (this session, 2026-05-20 by Claude Opus 4.7):
+Task #16 (2026-05-21 by Claude Opus 4.7) - Hardwired Helms-style mesocycle + 3/4/5 days/week selector.
 
-- `ingest-client-intake` deployed v1 (verify_jwt=true, user-facing). Accepts `{ client_id, files[], notes_text, voice_transcript }`, stores raw uploads to `pt_client_documents`, single Claude call distributes content into the 4 brain doc tables (master/nutrition/exercise/lifestyle), fires `embed-client-brain` as fire-and-forget.
-- `embed-client-brain` deployed v1 (verify_jwt=false, internal-only). Reads all 4 brain docs, serializes columns, chunks at 1800 chars with 200-char overlap, embeds via OpenAI text-embedding-3-small, replaces prior chunks for the client, writes to `pt_client_brain_chunks`. Compatible with `match_client_brain_chunks` RPC.
-- Wizard Step 1 now has: file upload UI (up to 3 docs with selectable document_type: intake / movement_assessment / profile / other), brain dump textarea, voice dictation, and a "Save to client brain" button that calls ingest. Coach flow: pick client -> upload + type + dictate -> Save to client brain (-> ingest distributes + queues embedding) -> Generate (orchestrator builds programme).
-- Smoke-tested against Mira: ingest distributed her notes into all 4 brain docs accurately ("new mother", "carry her toddler", "afternoons due to low morning energy" all captured without inventing facts), embed-client-brain produced 5 chunks across all 4 doc_types.
-- Deleted `supabase/functions/generate-pt-programme/` directory. Old lite function dead, nothing references it.
+The previous canonical block scheme for Hypertrophy and Strength (linear set climb across 4 blocks of 3 weeks, no deload) was replaced with the evidence-based mesocycle model from Eric Helms' Muscle & Strength Training Pyramid 2nd edition: 3 build weeks + 1 deload per 4-week meso. %1RM is now treated as a load floor/ceiling within the productive zone; RPE drives day-to-day load.
 
-### Open tasks - all 15 closed
+Canonical 12-week hypertrophy = 12 one-week blocks across 3 mesos:
+
+| Week | Block | Sets | %1RM |
+|---|---|---|---|
+| 1 | M1 build 1 | 3 | 65% |
+| 2 | M1 build 2 | 4 | 70% |
+| 3 | M1 peak | 4 | 75% |
+| 4 | M1 deload | 2 | 60% |
+| 5 | M2 build 1 | 4 | 67.5% |
+| 6 | M2 build 2 | 4 | 72.5% |
+| 7 | M2 peak | 5 | 77.5% |
+| 8 | M2 deload | 2 | 62.5% |
+| 9 | M3 build 1 | 4 | 70% |
+| 10 | M3 build 2 | 5 | 75% |
+| 11 | M3 peak | 5 | 80% |
+| 12 | M3 deload | 3 | 65% |
+
+Strength uses the same shape, 77-92% peak zone. Foundation unchanged (no deload). For non-canonical week counts, the scaler emits full 4-week mesos until close to target, then a partial final meso (build + deload, or build + build + deload).
+
+Days-per-week selector added to the wizard Step 1 (3 / 4 / 5). Big 5 auto-distributes:
+- 3 days: full body x3, all 5 Big 5 each day.
+- 4 days: Upper/Lower split. Squat + Deadlift on Lower A and Lower B. Bench + OHP + Pull-up on Upper A and Upper B. Each Big 5 trained 2x/week.
+- 5 days: Lower A / Push / Pull / Lower B / Upper. Each Big 5 still 2x/week. Day titles: "Day 1 - Lower A (Hypertrophy)", "Day 2 - Push (Hypertrophy)", etc.
+
+Foundation always stays at 3 full-body days regardless of selection.
+
+Validator alias matcher: `pt_exercises` library uses canonical exercise names ("Back Squat", "Conventional Deadlift", "Barbell Bench Press", "Overhead Press"). The validator previously only matched the "BB ..." display label, which fired 40 false-positive hard failures on the 4-day smoke test. Replaced exact-label match with regex alias matching that covers all library variants.
+
+Smoke tests against Mira (client d43808bb):
+- 4-day split (run `9240f7cb`): 12 mesocycle blocks correct, 4 days with Big 5 distributed 2x/week, passed=true.
+- 5-day split (run `fb6b2534`): 5 days with the right titles, all 5 Big 5 present 2x/week, passed=true, 0 hard failures.
+
+### What worked, and why
+
+**3-meso mesocycle scheme worked because the deload week is forced into the structure, not optional.** The previous "linear set climb, no deload" scheme was easy to code but contradicts the consensus from Helms / Schoenfeld / ACSM. Now every 4th week is a built-in recovery, which is what the books recommend (Helms: "every 3rd meso minimum"). For the Cerebro client profile (general population, sleep-disrupted parents, returning lifters) we deload every meso, which is the safe bias.
+
+**Days-per-week auto-distribution worked because the synthesis agent already has a deterministic builder for known phase types.** I extended `buildDeterministicPhase` to read `methodology_phase.days_per_week`, then route through three explicit Big 5 schedules (full body, U/L, P/P/L+U/L). No LLM call needed for the structural decision - same speed, same cost, more reliable output.
+
+**Validator aliasing worked because Big 5 enforcement should be by exercise identity, not display label.** The library is the source of truth for what exists; the display label is just one of many ways to write the name. Regex matching on the actual exercise name (Back Squat / Front Squat / Barbell Squat) is robust against future library renames.
+
+### How to prevent the errors that bit me in this session
+
+1. **Mismatch between display label and library exercise name** is the recurring class of bug here. The synthesis agent picks exercises by regex against the library, then writes back `name = row.name` which is the LIBRARY name. So downstream validators / UI matchers must also use library aliases, never the "BB ..." display label as a literal string match. Lesson: any module that needs to identify a Big 5 lift should call a shared `isBig5(name)` helper, not match a hardcoded string. Right now `BIG_5_PATTERNS` lives inside the validator only; if a third place needs the same check, extract to a shared util.
+
+2. **Hot-reload of edge functions cached old behaviour** never bit us this session but it could - if you deploy a new version and the orchestrator's prior in-flight `EdgeRuntime.waitUntil()` is still running, that one runs the OLD code. Symptom: a run launched at T-30s uses the old scheme even though new code is deployed. Fix: when you deploy, kick off a fresh smoke test, don't trust an already-running one.
+
+3. **The methodology agent's AI call no longer drives the structural numbers.** The scaler is the source of truth for `week_blocks` and the deterministic builder is the source of truth for `days`. The AI is only adding `coaching_notes` and `cited_documents`. Don't refactor the agent to let the AI override these structural fields - that's how we get inconsistent output. If a future contributor wants the AI to be "smarter", make it adjust the FIRST meso's intensity for low compound_readiness clients (a tunable input to the scaler), not generate %s from scratch.
+
+### Open tasks - all 16 closed
 
 - [x] #1 - 4 client brain doc tables (drift on remote, no migration needed)
 - [x] #2 - `pt_client_brain_chunks` table + RPC
@@ -37,6 +81,36 @@ Tasks #3 + #4 + cleanup (this session, 2026-05-20 by Claude Opus 4.7):
 - [x] #14 - Smoke test (Mira run `00354c9e` - status=needs_review, 5 phases, all 5 Big 5 present in every Phase 2/3 day, all exercises have video_url + exercise_id)
 - [x] #15 - Split synthesis per-phase (Codex shipped in `ee13954`)
 - [x] cleanup - deleted `generate-pt-programme/` directory
+- [x] #16 - Helms mesocycle scheme + 3/4/5 days/week selector (commit `a4cfbcd`)
+
+### Next on the list: refine and improve
+
+The structure is solid. The data underneath is now correct. The next phase is making the surface (rules, UX, polish) match the quality of what's underneath. Grouped by area, priority ranked within each:
+
+**Rules (sharpen the methodology):**
+
+- **#17 RPE targets per phase**, surfaced alongside %1RM. Helms 2nd ed: "intensity is primarily guided by repetition range and proximity to failure". The methodology agent should emit `rpe_target: '6-8' | '7-9' | etc` per block; the synthesis agent should write it to each Big 5 exercise as a `rpe` field; the UI should display "75% / RPE 8" not just "75%". Adds RPE to client and coach view without losing the % anchor.
+- **#18 Deload week behaviour spec**. Right now deload weeks just drop sets and %. Helms also recommends drop volume, longer rest, possibly drop one accessory pair. Make the deload week visually distinct in the editor (badge or color) and make the rules explicit in SKILL.md.
+- **#19 Compound readiness adjustment**. ClientAnalysis already emits `compound_readiness: 'low' | 'medium' | 'high'`. Today this output is unused by the scaler. Low readiness should shift the first meso down a tier (e.g. 60/65/70/55% instead of 65/70/75/60%) - delay heavy peaks until the body is ready. Wire the input.
+- **#20 Phase 1 final-block compound substitution.** Validator + skill file already document the swap rule (goblet -> BB squat, etc) but the synthesis agent's deterministic Foundation builder doesn't emit the swap exercises explicitly. Today the same exercise list ships across all Foundation blocks. Add the substitution week so the last week_block visibly contains BB Squat / BB Deadlift / etc.
+- **#21 Accessory selection by goal**. Today `pickAccessories` is a generic regex pool. For a fat-loss client, accessory selection should bias toward unilateral / metabolic finishers. For a strength-focused client, bias toward heavy compound accessories (front squat, pin pulls). Take `client_analysis.emphasis.priority` as input.
+
+**UX (make it readable, editable, and trustworthy):**
+
+- **#22 Programme editor meso/deload labels**. Each phase has 12 (or 10) one-week blocks. The editor should group blocks visually as "Meso 1 (weeks 1-4)" -> Build / Build / Peak / Deload, instead of a flat list of 12 entries. Coach scan time drops massively.
+- **#23 Visible progression chart per phase**. A simple line/bar showing %1RM week-by-week with deload weeks marked. Same chart on coach review and client portal.
+- **#24 Per-exercise edit picker.** When the coach wants to swap an exercise, today they edit the name in a text field. Should be a library autocomplete drawer with video preview and `exercise_id` linkage preserved.
+- **#25 Client-facing weekly view**. Today the client sees their assigned programme but no week-by-week prescription. They should see "Week 5 of 12, Meso 2 build 1, target 67.5% on Big 5 / RPE 7" with their actual kg targets resolved from 1RM.
+- **#26 Approve & Save flow with status messages**. The review page Approve button is there but feedback is minimal. After approve, push to `pt_program_assignments` with a clear "assigned to <client>" confirmation and link to the client detail page.
+- **#27 Missing-exercise inline add**. If the synthesis agent reports `missing_exercises[]`, coach should be able to click "Add to library" inline (the wizard reaches out to `pt_exercises` with a name + suggested fields), then re-run the affected synthesis step without redoing the whole pipeline.
+
+**Improvements (the deferred items from before):**
+
+- **#28 Backfill `pt_client_brain_chunks`** for the 3 existing clients. One curl loop per client_id. Five minutes of work; full RAG coverage of existing clients.
+- **#29 `client-analysis-agent` reads `pt_client_brain_chunks`**. Today the agent reads the 4 brain doc rows directly. With chunks indexed, a targeted RAG query ("injuries", "goals", "schedule", "preferences") would give more focused context when brain docs grow large.
+- **#30 PDF / docx upload parsing**. Today wizard accepts txt/md only. Add browser-side extraction via `pdf.js` and a docx parser, or a new edge function that takes base64 and extracts server-side.
+- **#31 Voice transcript channel split**. Wizard's voice button currently appends to the brain-dump textarea. Pass it as a separate `voice_transcript` field to ingest so the AI knows what was spoken vs typed.
+- **#32 Retire legacy `pt-programming-agent`**. It's still deployed and the 1RM panel writes step rows to old runs. Migrate those touch points to the new orchestrator's runs, then delete the legacy function.
 
 ### What's NOT in scope but worth flagging for Pedro
 
