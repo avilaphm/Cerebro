@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Pencil, Search, Video, X } from 'lucide-react';
+import { useCallback, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, ChevronUp, Pencil, Search, Upload, Video, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTExercise } from '@/utils/pt/types';
 
@@ -56,10 +56,98 @@ export default function PTExercisesView({ initialExercises }: Props) {
   const [showSetupCues, setShowSetupCues] = useState(false);
   const [showCues, setShowCues] = useState(false);
 
+  // Import state
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importStage, setImportStage] = useState('');
+  const [importResult, setImportResult] = useState<{ added: number; skipped: number; exercises: string[] } | null>(null);
+  const [importError, setImportError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   function flash(msg: string) {
     setFlashMsg(msg);
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setFlashMsg(''), 4000);
+  }
+
+  function readFile(file: File) {
+    if (file.size > 5 * 1024 * 1024) {
+      setImportError('File too large — maximum 5 MB');
+      return;
+    }
+    const allowed = ['text/plain', 'text/csv', 'text/markdown', 'application/csv', ''];
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const allowedExts = ['txt', 'csv', 'md', 'tsv'];
+    if (!allowedExts.includes(ext) && !allowed.includes(file.type)) {
+      setImportError('Unsupported file type — use .txt, .csv, or .md');
+      return;
+    }
+    setImportError('');
+    setImportResult(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImportText(e.target?.result as string ?? '');
+      setImportFileName(file.name);
+    };
+    reader.readAsText(file);
+  }
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) readFile(file);
+  }, []);
+
+  function resetImport() {
+    setImportText('');
+    setImportFileName('');
+    setImportResult(null);
+    setImportError('');
+    setImportStage('');
+    setImporting(false);
+  }
+
+  async function runImport() {
+    if (!importText.trim()) { setImportError('Paste text or upload a file first'); return; }
+    setImporting(true);
+    setImportError('');
+    setImportResult(null);
+    setImportStage('Analysing document with AI…');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      setImportStage('Extracting exercises — this may take 30–60 seconds for large documents…');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/import-exercises`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+        },
+        body: JSON.stringify({ document_text: importText }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        setImportError(result.error ?? 'Import failed');
+        setImporting(false);
+        setImportStage('');
+        return;
+      }
+      setImportResult(result);
+      setImportStage('');
+      if (result.added > 0) {
+        // Reload full exercise list
+        const { data } = await supabase.from('pt_exercises').select('*').order('name');
+        if (data) setExercises(data as PTExercise[]);
+        flash(`${result.added} new exercises added to the library`);
+      }
+    } catch (err) {
+      setImportError(String(err));
+    }
+    setImporting(false);
   }
 
   const filtered = exercises.filter((ex) => {
@@ -191,6 +279,14 @@ export default function PTExercisesView({ initialExercises }: Props) {
           <p className="text-xs text-black/40">{exercises.length} exercises</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setShowImport(true); resetImport(); }}
+            className="flex items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 py-1.5 text-xs font-medium hover:bg-black/5"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import exercises
+          </button>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black/30" />
             <input
@@ -604,6 +700,140 @@ export default function PTExercisesView({ initialExercises }: Props) {
           </div>
         )}
       </div>
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="flex w-full max-w-xl flex-col rounded-2xl bg-white shadow-2xl">
+            {/* Modal header */}
+            <div className="flex items-center justify-between border-b border-black/8 px-6 py-4">
+              <div>
+                <h2 className="text-sm font-semibold">Import exercises from document</h2>
+                <p className="text-xs text-black/40">Upload a .txt, .csv, or .md file — or paste content directly</p>
+              </div>
+              <button type="button" onClick={() => setShowImport(false)} className="text-black/30 hover:text-black">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {!importResult ? (
+                <>
+                  {/* Drop zone */}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 cursor-pointer transition-colors ${
+                      dragOver ? 'border-black/40 bg-black/5' : 'border-black/15 hover:border-black/30 hover:bg-black/2'
+                    }`}
+                  >
+                    <Upload className="h-6 w-6 text-black/25" />
+                    {importFileName ? (
+                      <p className="text-sm font-medium text-black">{importFileName}</p>
+                    ) : (
+                      <p className="text-sm text-black/50">Drop your file here or <span className="font-medium text-black">click to browse</span></p>
+                    )}
+                    <p className="text-xs text-black/30">.txt · .csv · .md — max 5 MB</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".txt,.csv,.md,.tsv"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); }}
+                    />
+                  </div>
+
+                  {/* Paste fallback */}
+                  {!importFileName && (
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-black/50">Or paste document text</p>
+                      <textarea
+                        value={importText}
+                        onChange={(e) => { setImportText(e.target.value); setImportFileName(''); }}
+                        placeholder="Paste your exercise list here…"
+                        rows={6}
+                        className="w-full resize-none rounded-xl border border-black/12 bg-white px-3 py-2.5 text-xs outline-none focus:border-black/30"
+                      />
+                    </div>
+                  )}
+
+                  {importFileName && importText && (
+                    <p className="text-xs text-black/40">
+                      {(importText.length / 1000).toFixed(0)} KB loaded · ready to import
+                    </p>
+                  )}
+
+                  {importError && (
+                    <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{importError}</p>
+                  )}
+
+                  {importStage && (
+                    <div className="flex items-center gap-2 rounded-lg bg-black/4 px-3 py-2.5">
+                      <svg className="h-3.5 w-3.5 animate-spin text-black/40" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                      <p className="text-xs text-black/60">{importStage}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Results */
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <div className="flex-1 rounded-xl bg-emerald-50 px-4 py-3 text-center">
+                      <p className="text-2xl font-semibold text-emerald-700">{importResult.added}</p>
+                      <p className="text-xs text-emerald-600">exercises added</p>
+                    </div>
+                    <div className="flex-1 rounded-xl bg-black/4 px-4 py-3 text-center">
+                      <p className="text-2xl font-semibold text-black/60">{importResult.skipped}</p>
+                      <p className="text-xs text-black/40">already existed</p>
+                    </div>
+                  </div>
+                  {importResult.exercises.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto rounded-xl border border-black/8 bg-white px-4 py-3">
+                      <p className="mb-2 text-xs font-medium text-black/50">Added exercises</p>
+                      <ul className="space-y-1">
+                        {importResult.exercises.map((name) => (
+                          <li key={name} className="text-xs text-black/70">{name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 border-t border-black/8 px-6 py-4">
+              {importResult ? (
+                <>
+                  <button type="button" onClick={resetImport} className="rounded-lg border border-black/12 px-4 py-2 text-xs hover:bg-black/5">
+                    Import another
+                  </button>
+                  <button type="button" onClick={() => setShowImport(false)} className="rounded-lg bg-black px-4 py-2 text-xs font-medium text-white">
+                    Done
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setShowImport(false)} className="rounded-lg border border-black/12 px-4 py-2 text-xs hover:bg-black/5">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={runImport}
+                    disabled={importing || !importText.trim()}
+                    className="rounded-lg bg-black px-4 py-2 text-xs font-medium text-white disabled:opacity-40"
+                  >
+                    {importing ? 'Importing…' : 'Start import'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
