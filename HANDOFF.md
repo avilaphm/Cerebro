@@ -7,18 +7,18 @@
 
 ## FOR CODEX (OR ANY AGENT PICKING THIS UP)
 
-You are continuing work on the PT programme creation rebuild for Pedro Avila's Cerebro project. Task #15 is now shipped and smoke-tested. Your job is to move to task #13, then tasks #3 + #4.
+You are continuing work on the PT programme creation rebuild for Pedro Avila's Cerebro project. Tasks #15 and #13 are now shipped. Your job is to move to tasks #3 + #4.
 
 ### Last completed task
 
-Task #15 - split programme synthesis and unblock the pipeline.
+Task #13 - 4-agent review breakdown.
 
-- `pt-programme-orchestrator` now records synthesis as 5 phase steps, with validation as step 8.
-- `programme-synthesis-agent` accepts one phase at a time. Known Cerebro phase types now use deterministic synthesis from ClientAnalysis + MethodologyPlan + `pt_exercises`, with server-side exercise enrichment and conditional cardio/mobility blocks.
-- Wizard polling now shows phase-level synthesis labels and waits up to 7 minutes.
-- Deployed `programme-synthesis-agent` with `--no-verify-jwt` and `pt-programme-orchestrator` with JWT verification.
-- Live Mira smoke run `00354c9e-13cf-4b94-8cea-66332fa493bf` completed as `needs_review`.
-- Smoke result: 5 phases, validation `passed=true`, zero hard failures, zero findings, zero missing exercises, 118 exercise objects, zero missing `exercise_id`, zero missing `video_url`, 8 generation steps all succeeded.
+- `PTProgrammeReviewView` now has 4 collapsible cards: Client Analysis, Methodology Plan, Programme Synthesis, and Validation.
+- Validation gating now reads both `hard_failures` and legacy `hard_rule_failures`, so the new orchestrator's validation summary controls approval correctly.
+- Programme Synthesis card surfaces phase steps, total exercise objects, unresolved links, and missing exercises.
+- Methodology card surfaces phase week blocks and cited documents.
+- Client Analysis card surfaces goals, constraints, preferences, and emphasis flags.
+- `npm run build` passed. Browser route check reached the review URL but showed 404 in the in-app browser because it had no authenticated dashboard session.
 
 ### Open tasks (this is your todo list - work in this order)
 
@@ -36,13 +36,13 @@ The previous Claude session tracked these in Claude Code's internal task system,
 - [x] #10 - pt-programme-orchestrator edge function (deployed v3, async pattern)
 - [x] #11 - Update SKILL.md + programming-principles.md (compound substitution, Big 5 enforcement, cardio/mobility blocks)
 - [x] #12 - Wizard Step 1 new wiring (file upload UI deferred to #3 + #4)
-- [ ] **#13 - Extend PTProgrammeReviewView for 4-agent breakdown** (cards per agent + Approve gating on hard_failures)
+- [x] #13 - Extend PTProgrammeReviewView for 4-agent breakdown (cards per agent + approval gating on hard_failures)
 - [x] #14 - Smoke test (ran end-to-end, found synthesis timeout, documented as #15)
 - [x] #15 - Split programme-synthesis-agent into per-phase calls (smoke test passed against Mira)
 
-**Work order:** #13 next (so Pedro can review the output cleanly), then #3 + #4 together (so the wizard's full Step 1 vision is live). After all four, delete the old `generate-pt-programme` function and run a fresh smoke test.
+**Work order:** #3 + #4 together next (so the wizard's full Step 1 vision is live). After those, delete the old `generate-pt-programme` function and run a fresh smoke test.
 
-Detailed implementation specs for the remaining open tasks are in the "Task #13" and "Tasks #3 + #4" subsections below. Task #15 notes are kept below for historical context.
+Detailed implementation specs for the remaining open tasks are in the "Tasks #3 + #4" subsection below. Task #15 and #13 notes are kept below for historical context.
 
 ### Read these files first, in this order, BEFORE writing any code
 
@@ -455,15 +455,7 @@ Why this is fundamental: each exercise object in the output is ~80-120 tokens (i
 
 ## Next steps and why (priority order)
 
-### Step 1: Coach review UI 4-agent breakdown (task #13) - PRIORITY 1
-**Why:** the orchestrator stores rich audit (client_analysis JSON, methodology_plan JSON, validation hard_failures/findings, missing_exercises). The current `PTProgrammeReviewView` doesn't surface any of it. Pedro needs visibility into what each AI decided.
-
-**How:**
-- 4 collapsible cards in `PTProgrammeReviewView`: Client Analysis (with cited brain excerpts), Methodology Plan (with cited knowledge docs), Programme Synthesis (with missing-exercise warnings), Validation (hard_failures + findings list).
-- "Approve & Save" gated on zero hard_failures.
-- "Re-run agent X" button per card so Pedro can retry one step without regenerating from scratch.
-
-### Step 2: Build Step 1 upload UI + `ingest-client-intake` + `embed-client-brain` (tasks #3 and #4) - PRIORITY 2
+### Step 1: Build Step 1 upload UI + `ingest-client-intake` + `embed-client-brain` (tasks #3 and #4) - PRIORITY 1
 **Why:** today the wizard only takes a text brain-dump in Step 1. Pedro's vision is 3 file uploads + text + voice, with the AI distributing content into the 4 brain doc tables. Without this, generating a programme for a brand-new client requires manually populating their brain docs first.
 
 **How:**
@@ -471,7 +463,7 @@ Why this is fundamental: each exercise object in the output is ~80-120 tokens (i
 - New edge fn `embed-client-brain`: chunks all 4 docs for a client, embeds via OpenAI `text-embedding-3-small`, writes to `pt_client_brain_chunks`.
 - Wizard Step 1: 3 file inputs (PDF/docx/txt), keep text + voice. "Generate" button calls `ingest-client-intake`, transitions to Step 2.
 
-### Step 3: Delete the old lite function and verify production - PRIORITY 3
+### Step 2: Delete the old lite function and verify production - PRIORITY 2
 **Why:** keeps the codebase clean. The wizard no longer calls `generate-pt-programme`, so it's dead code. Removing it forces the new path to be the only path.
 
 **How:** wait until full smoke test passes end-to-end. Then `rm -rf supabase/functions/generate-pt-programme/`, redeploy, run smoke test once more.
@@ -874,7 +866,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-this commit - Split PT programme synthesis by phase
+this commit - Add PT programme review agent breakdown
 
 ## Current state
 
