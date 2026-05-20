@@ -140,13 +140,13 @@ Deno.serve(async (req) => {
     const library: ExerciseRow[] = rawExercises ?? [];
     if (library.length === 0) return json({ error: 'Exercise library is empty' }, 500);
 
-    const compactLibrary = library.map((e) => ({
+    const filtered = filterLibraryForClient(library, body.client_analysis);
+
+    const compactLibrary = filtered.map((e) => ({
       id: e.id,
       name: e.name,
-      muscles: [...(e.primary_muscles ?? []), ...(e.secondary_muscles ?? []), ...(e.muscles ?? [])].slice(0, 6),
+      muscles: [...(e.primary_muscles ?? []), ...(e.secondary_muscles ?? []), ...(e.muscles ?? [])].slice(0, 4),
       equipment: e.equipment,
-      tags: (e.tags ?? []).slice(0, 4),
-      conditions: e.conditions ?? [],
     }));
 
     const userMessage = [
@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
+      max_tokens: 10000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     });
@@ -224,6 +224,39 @@ function enrichProgramme(parsed: Record<string, unknown>, library: ExerciseRow[]
     missing_exercises: allMissing,
     unresolved_count: unresolved.length,
   };
+}
+
+function filterLibraryForClient(library: ExerciseRow[], analysis: Record<string, unknown>): ExerciseRow[] {
+  const big5Names = ['bb squat', 'bb deadlift', 'bb bench', 'bb shoulder press', 'pull-up', 'pull up'];
+  const constraints = (analysis?.constraints ?? {}) as Record<string, unknown>;
+  const injuries = (constraints.injuries as string[] | undefined ?? []).join(' ').toLowerCase();
+  const restrictions = (constraints.mobility_restrictions as string[] | undefined ?? []).join(' ').toLowerCase();
+  const blockers = `${injuries} ${restrictions}`.toLowerCase();
+
+  const isContraindicated = (e: ExerciseRow): boolean => {
+    const tags = (e.conditions ?? []).join(' ').toLowerCase();
+    if (blockers.includes('shoulder') && /overhead|shoulder press|pike|handstand/.test(e.name.toLowerCase())) return true;
+    if (blockers.includes('back') && /sit[- ]?up|crunch|good morning/.test(e.name.toLowerCase())) return true;
+    if (blockers.includes('knee') && /pistol|jump squat|sissy/.test(e.name.toLowerCase())) return true;
+    if (tags.length > 0 && /(avoid|contraindicated)/.test(tags) && blockers.split(' ').some((w) => w && tags.includes(w))) return true;
+    return false;
+  };
+
+  const big5 = library.filter((e) => big5Names.some((n) => e.name.toLowerCase().includes(n)) && !isContraindicated(e));
+  const cardio = library.filter((e) => /(bike|row|tread|jog|run|skip|elliptical|sled|carry|prowler)/i.test(e.name) && !isContraindicated(e)).slice(0, 6);
+  const warmup = library.filter((e) => /(band|mobility|stretch|activation|opener|cat[- ]?cow|world|hip|shoulder dislocate|scap)/i.test((e.tags ?? []).join(' ') + ' ' + e.name) && !isContraindicated(e)).slice(0, 25);
+  const others = library
+    .filter((e) => !big5.includes(e) && !cardio.includes(e) && !warmup.includes(e))
+    .filter((e) => !isContraindicated(e))
+    .slice(0, 150);
+
+  const result = [...big5, ...warmup, ...cardio, ...others];
+  const seen = new Set<string>();
+  return result.filter((e) => {
+    if (seen.has(e.id)) return false;
+    seen.add(e.id);
+    return true;
+  });
 }
 
 function parseJson(text: string): Record<string, unknown> | null {

@@ -161,61 +161,83 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       return;
     }
     setGenerating(true);
-    setGenStatus('Analysing client…');
+    setGenStatus('Starting pipeline…');
 
     const phaseWeeks = inferPhaseWeeks(programme.phases);
-
-    const statusTimer = setInterval(() => {
-      setGenStatus((s) => {
-        if (s.startsWith('Analysing')) return 'Planning methodology (knowledge base RAG)…';
-        if (s.startsWith('Planning')) return 'Synthesising programme (exercise library)…';
-        if (s.startsWith('Synthesising')) return 'Validating…';
-        return s;
-      });
-    }, 12000);
 
     const { data, error } = await supabase.functions.invoke('pt-programme-orchestrator', {
       body: { client_id: clientId, phase_weeks: phaseWeeks, intake_text: brainDump },
     });
-    clearInterval(statusTimer);
 
     if (error || (data as { error?: string })?.error) {
       setGenStatus((data as { error?: string })?.error ?? error?.message ?? 'Generation failed.');
       setGenerating(false);
       return;
     }
-    const parsed = data as {
-      name?: string;
-      goal?: string;
-      programme?: unknown;
-      run_id?: string;
-      validation?: { passed: boolean; hard_failures: string[]; findings: string[] };
-      missing_exercises?: string[];
-    };
-    setProgramme(safeProgramme(parsed.programme));
-    setProgName(parsed.name ?? '');
-    setProgGoal(parsed.goal ?? '');
-    if (parsed.run_id) setGenerationRunId(parsed.run_id);
-    if (parsed.validation) {
-      setValidationSummary({
-        passed: parsed.validation.passed,
-        hard_rule_failures: parsed.validation.hard_failures,
-        findings: parsed.validation.findings,
-        missing_exercises: parsed.missing_exercises ?? [],
-      });
-      const fails = parsed.validation.hard_failures.length;
-      const finds = parsed.validation.findings.length;
-      setAgentDraftSummary(
-        fails
-          ? `Generated with ${fails} hard rule failure${fails === 1 ? '' : 's'}. Review the orange chip on Phase tab and the run audit before saving.`
-          : finds
-          ? `Generated. ${finds} review note${finds === 1 ? '' : 's'} to skim.`
-          : 'Generated cleanly. Review and save.',
-      );
+
+    const kickoff = data as { run_id?: string; status?: string };
+    if (!kickoff.run_id) {
+      setGenStatus('Pipeline did not return a run id.');
+      setGenerating(false);
+      return;
     }
-    setGenStatus('');
+    setGenerationRunId(kickoff.run_id);
+
+    const commandLabel = (cmd: string | null | undefined) => {
+      switch (cmd) {
+        case 'CLIENT_ANALYSIS': return 'Analysing client…';
+        case 'METHODOLOGY_PLAN': return 'Planning methodology (knowledge base RAG)…';
+        case 'PROGRAMME_SYNTHESIS': return 'Synthesising programme (exercise library)…';
+        case 'VALIDATION': return 'Validating…';
+        default: return 'Working…';
+      }
+    };
+
+    const pollDeadline = Date.now() + 4 * 60_000;
+    while (Date.now() < pollDeadline) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const { data: row } = await supabase
+        .from('pt_program_generation_runs')
+        .select('status, current_command, programme_draft, validation_summary, failure_reason')
+        .eq('id', kickoff.run_id)
+        .maybeSingle();
+      if (!row) continue;
+      setGenStatus(commandLabel(row.current_command));
+      if (row.status === 'failed') {
+        setGenStatus(row.failure_reason ?? 'Pipeline failed.');
+        setGenerating(false);
+        return;
+      }
+      if (row.status === 'needs_review' || row.status === 'approved' || row.status === 'saved') {
+        const draft = row.programme_draft as unknown;
+        const vs = (row.validation_summary ?? {}) as Record<string, unknown>;
+        setProgramme(safeProgramme(draft));
+        setProgName(typeof vs.name === 'string' ? vs.name : '');
+        setProgGoal(typeof vs.goal === 'string' ? vs.goal : '');
+        const hf = Array.isArray(vs.hard_failures) ? vs.hard_failures as string[] : [];
+        const fnd = Array.isArray(vs.findings) ? vs.findings as string[] : [];
+        const missing = Array.isArray(vs.missing_exercises) ? vs.missing_exercises as string[] : [];
+        setValidationSummary({
+          passed: vs.passed === true,
+          hard_rule_failures: hf,
+          findings: fnd,
+          missing_exercises: missing,
+        });
+        setAgentDraftSummary(
+          hf.length
+            ? `Generated with ${hf.length} hard rule failure${hf.length === 1 ? '' : 's'}. Review and adjust before saving.`
+            : fnd.length
+            ? `Generated. ${fnd.length} review note${fnd.length === 1 ? '' : 's'} to skim.`
+            : 'Generated cleanly. Review and save.',
+        );
+        setGenStatus('');
+        setGenerating(false);
+        setStep(2);
+        return;
+      }
+    }
+    setGenStatus('Pipeline still running after 4 minutes — open the review page to check progress.');
     setGenerating(false);
-    setStep(2);
   };
 
   const startDictation = () => {

@@ -4,6 +4,38 @@
 2026-05-20 by Claude
 
 ## Last completed task
+PT Programme Creation - 3-AI orchestrator deployed, async pattern, edge-to-edge auth fixed. NOT YET PRODUCTION-READY: synthesis step times out on the 505-exercise library + 16K-token output (exceeds Supabase edge function execution limit of ~400s).
+
+**SMOKE-TEST RESULT (run 67ec6eb5):**
+- Orchestrator kicks off in 4s and returns run_id (async pattern works).
+- Step 1 (client-analysis-agent) succeeds in ~19s.
+- Step 2 (methodology-plan-agent + 5 RAG calls) succeeds in ~42s.
+- Step 3 (programme-synthesis-agent) HANGS - waitUntil() background task gets killed by the platform around 400s with no completion. The Claude call with 505-exercise library context + max_tokens=16000 is too heavy.
+
+**FIXES SHIPPED THIS SESSION:**
+- Auth: edge-to-edge fetches need both `Authorization` and `apikey` headers. Plus the 4 internal agents are now `verify_jwt: false` so service-role-key requests pass through. Pattern matches existing `retrieve-knowledge-context`. Only the orchestrator stays verify_jwt: true (user-facing).
+- Async: orchestrator wraps the pipeline in `EdgeRuntime.waitUntil()` and returns `{ run_id, status: 'running' }` immediately. Wizard polls `pt_program_generation_runs` every 3s for status changes. No more 150s timeout on the kickoff.
+- Schema mismatch: `pt_clients.goals` (not `.goal`), `pt_clients.name` (not first/last_name). Fixed in client-analysis-agent + orchestrator.
+- Prompt syntax bug in synthesis (nested backticks in template literal). Fixed.
+
+**FOLLOW-UP NEEDED (synthesis timeout):**
+1. Pre-filter `pt_exercises` library before passing to AI - drop exercises that don't match ClientAnalysis constraints (e.g. drop overhead press if shoulder injury). Aim for ~150 exercises max in context.
+2. OR split synthesis into per-phase calls - one Claude call per phase (Foundation, 1RM Test, Hypertrophy, Strength, Retest). Each call is small and fits comfortably in execution time. Orchestrator already has per-step pattern.
+3. OR use Anthropic streaming API for the synthesis call - longer wall-clock allowed.
+4. Drop the `"video_url": null` and `"cues": []` placeholders from the synthesis output schema; server attaches these from library, no need for AI to emit them.
+
+**SMOKE TEST CHECKLIST (after synthesis is fixed):**
+1. Pick one of the 3 existing clients on /dashboard/pt/programmes/new. Their brain docs already have data.
+2. Type some intake notes ("client wants fat loss, has lower back stiffness, 3x/week schedule").
+3. Click Generate. Wizard polls run status, shows per-agent progress.
+4. Within ~3 min: Step 2 loads with the generated programme. Inspect:
+   - Phase 1 has 3 workout days, week_blocks with sets
+   - Phase 2 & 3 every day has Big 5 + accessories
+   - Every exercise has a video_url
+   - 1RM Test/Retest have Big 5 only, 5 sets each
+5. Check Supabase: `select * from pt_program_generation_runs order by created_at desc limit 1;`
+
+Previous completed task (within this same session):
 PT Programme Creation - v1 of the new 3-AI orchestrator deployed end-to-end:
 
 **Migration applied:**

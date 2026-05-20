@@ -15,6 +15,8 @@ function json(data: unknown, status = 200) {
 
 const STEP_NAMES = ['CLIENT_ANALYSIS', 'METHODOLOGY_PLAN', 'PROGRAMME_SYNTHESIS', 'VALIDATION'] as const;
 
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
@@ -45,11 +47,35 @@ Deno.serve(async (req) => {
     if (runError || !runRow) return json({ error: `Failed to create run: ${runError?.message}` }, 500);
     const runId = runRow.id;
 
+    // Run the 4-agent pipeline in the background; respond immediately so the wizard can poll.
+    EdgeRuntime.waitUntil(runPipeline({ runId, body, admin, supabaseUrl, serviceKey }));
+
+    return json({ ok: true, run_id: runId, status: 'running' });
+  } catch (error) {
+    console.error('pt-programme-orchestrator error:', error);
+    return json({ error: error instanceof Error ? error.message : 'Orchestration failed' }, 500);
+  }
+});
+
+async function runPipeline(ctx: {
+  runId: string;
+  body: { client_id: string; phase_weeks: { foundation: number; hypertrophy: number; strength: number }; intake_text?: string };
+  admin: ReturnType<typeof createClient>;
+  supabaseUrl: string;
+  serviceKey: string;
+}) {
+  const { runId, body, admin, supabaseUrl, serviceKey } = ctx;
+  try {
+
     const callAgent = async (path: string, input: Record<string, unknown>): Promise<{ ok: boolean; output: Record<string, unknown>; error?: string }> => {
       try {
         const res = await fetch(`${supabaseUrl}/functions/v1/${path}`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+          headers: {
+            Authorization: `Bearer ${serviceKey}`,
+            apikey: serviceKey,
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify(input),
         });
         const data = await res.json();
@@ -80,14 +106,13 @@ Deno.serve(async (req) => {
         failure_reason: reason,
         completed_at: new Date().toISOString(),
       }).eq('id', runId);
-      return json({ ok: false, run_id: runId, error: reason }, 500);
     };
 
     // STEP 1: Client Analysis
     await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[0] }).eq('id', runId);
     const step1 = await callAgent('client-analysis-agent', { client_id: body.client_id, intake_text: body.intake_text });
     await recordStep(1, STEP_NAMES[0], { client_id: body.client_id }, step1.output, step1.ok ? 'succeeded' : 'failed', step1.error);
-    if (!step1.ok) return fail(`Client analysis failed: ${step1.error}`);
+    if (!step1.ok) { await fail(`Client analysis failed: ${step1.error}`); return; }
     const clientAnalysis = step1.output.analysis as Record<string, unknown>;
 
     // STEP 2: Methodology Plan
@@ -98,7 +123,7 @@ Deno.serve(async (req) => {
       run_id: runId,
     });
     await recordStep(2, STEP_NAMES[1], { phase_weeks: body.phase_weeks }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);
-    if (!step2.ok) return fail(`Methodology planning failed: ${step2.error}`);
+    if (!step2.ok) { await fail(`Methodology planning failed: ${step2.error}`); return; }
     const methodologyPlan = step2.output.methodology_plan as Record<string, unknown>;
 
     // STEP 3: Programme Synthesis
@@ -108,7 +133,7 @@ Deno.serve(async (req) => {
       methodology_plan: methodologyPlan,
     });
     await recordStep(3, STEP_NAMES[2], {}, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
-    if (!step3.ok) return fail(`Programme synthesis failed: ${step3.error}`);
+    if (!step3.ok) { await fail(`Programme synthesis failed: ${step3.error}`); return; }
     const programmeName = step3.output.name as string;
     const programmeGoal = step3.output.goal as string;
     const programme = step3.output.programme as Record<string, unknown>;
@@ -119,7 +144,7 @@ Deno.serve(async (req) => {
     const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
     const step4 = await callAgent('programme-validation-agent', { programme, emphasis });
     await recordStep(4, STEP_NAMES[3], {}, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
-    if (!step4.ok) return fail(`Validation failed: ${step4.error}`);
+    if (!step4.ok) { await fail(`Validation failed: ${step4.error}`); return; }
     const validation = step4.output as { passed: boolean; hard_failures: string[]; findings: string[] };
 
     // Final state
@@ -131,6 +156,8 @@ Deno.serve(async (req) => {
       programme_draft: programme,
       coaching_reasoning: { client_analysis: clientAnalysis, methodology_plan: methodologyPlan },
       validation_summary: {
+        name: programmeName,
+        goal: programmeGoal,
         passed: validation.passed,
         hard_failures: validation.hard_failures,
         findings: validation.findings,
@@ -150,19 +177,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    return json({
-      ok: true,
-      run_id: runId,
-      name: programmeName,
-      goal: programmeGoal,
-      programme,
-      client_analysis: clientAnalysis,
-      methodology_plan: methodologyPlan,
-      validation,
-      missing_exercises: missingExercises,
-    });
   } catch (error) {
-    console.error('pt-programme-orchestrator error:', error);
-    return json({ error: error instanceof Error ? error.message : 'Orchestration failed' }, 500);
+    console.error('pt-programme-orchestrator pipeline error:', error);
+    await admin.from('pt_program_generation_runs').update({
+      status: 'failed',
+      failure_reason: error instanceof Error ? error.message : 'Pipeline crashed',
+      completed_at: new Date().toISOString(),
+    }).eq('id', runId);
   }
-});
+}

@@ -147,7 +147,11 @@ Deno.serve(async (req) => {
       try {
         const res = await fetch(`${supabaseUrl}/functions/v1/retrieve-knowledge-context`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+          headers: {
+            Authorization: `Bearer ${serviceKey}`,
+            apikey: serviceKey,
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({ ...q, run_id: body.run_id ?? null }),
         });
         if (!res.ok) continue;
