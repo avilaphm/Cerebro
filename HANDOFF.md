@@ -9,6 +9,30 @@
 
 You are continuing work on the PT programme creation rebuild for Pedro Avila's Cerebro project. The previous Claude session got 80% of the way there but hit a wall on the synthesis step. Your job is to ship task #15 (split synthesis per-phase), then move to tasks #13 and #3+#4.
 
+### Open tasks (this is your todo list - work in this order)
+
+The previous Claude session tracked these in Claude Code's internal task system, which is not visible to other agents. Reproduced here for you:
+
+- [x] #1 - Create 4 client brain doc tables + RLS migration (already on remote as drift, see Database section below)
+- [x] #2 - Create pt_client_brain_chunks table + match RPC (`20260520000000_pt_client_brain_chunks.sql` applied)
+- [ ] **#3 - Build `ingest-client-intake` edge function** (Step 1 file upload UI distributor)
+- [ ] **#4 - Build `embed-client-brain` edge function** (vector-indexes the 4 brain docs for client-scoped RAG)
+- [x] #5 - methodologyScaler pure function (`utils/pt/methodologyScaler.ts`)
+- [x] #6 - client-analysis-agent edge function (deployed v2)
+- [x] #7 - methodology-plan-agent edge function (deployed v3)
+- [x] #8 - programme-synthesis-agent edge function (deployed v3, but times out on single mega-call - see #15)
+- [x] #9 - programme-validation-agent edge function (deployed v2)
+- [x] #10 - pt-programme-orchestrator edge function (deployed v3, async pattern)
+- [x] #11 - Update SKILL.md + programming-principles.md (compound substitution, Big 5 enforcement, cardio/mobility blocks)
+- [x] #12 - Wizard Step 1 new wiring (file upload UI deferred to #3 + #4)
+- [ ] **#13 - Extend PTProgrammeReviewView for 4-agent breakdown** (cards per agent + Approve gating on hard_failures)
+- [x] #14 - Smoke test (ran end-to-end, found synthesis timeout, documented as #15)
+- [ ] **#15 - Split programme-synthesis-agent into per-phase calls** (PRIORITY 1 - unblocks everything else)
+
+**Work order:** #15 first (unblocks the pipeline), then #13 (so Pedro can review the output cleanly), then #3 + #4 together (so the wizard's full Step 1 vision is live). After all four, delete the old `generate-pt-programme` function and run a fresh smoke test.
+
+Detailed implementation specs for each open task are in the "Task #15", "Task #13", and "Tasks #3 + #4" subsections below.
+
 ### Read these files first, in this order, BEFORE writing any code
 
 1. **This file (`cerebro-site/HANDOFF.md`)** - everything below this section. It tells you the goal, why Pedro asked, what shipped, what walls were hit, what's left.
