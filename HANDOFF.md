@@ -84,15 +84,15 @@ If `~/.claude/projects/.../memory/project_pt_programming_overhaul_vision.md` is 
 # 1. Confirm you're on the latest commit
 cd "/Users/pedroavila/Library/CloudStorage/GoogleDrive-avila.phm@gmail.com/My Drive/WORK/Claude/Cerebro Directory Claude Code/cerebro-site"
 git log --oneline -5
-# Latest should be 9b1cea8 "Rewrite HANDOFF.md with full session-1 narrative"
+# Latest should be 17e72ad "Add PT programme review agent breakdown" or newer
 
 # 2. Confirm the 5 new edge functions are deployed
 # Use supabase MCP or CLI to list them. Should see:
 #   client-analysis-agent v2 (verify_jwt: false)
 #   methodology-plan-agent v3 (verify_jwt: false)
-#   programme-synthesis-agent v3 (verify_jwt: false)
+#   programme-synthesis-agent deployed with verify_jwt: false
 #   programme-validation-agent v2 (verify_jwt: false)
-#   pt-programme-orchestrator v3 (verify_jwt: true)
+#   pt-programme-orchestrator deployed with verify_jwt: true
 
 # 3. Confirm the migration applied
 # Via SQL: select * from pt_client_brain_chunks limit 1; -- should not error
@@ -103,17 +103,21 @@ git log --oneline -5
 # Anything in status='running' that's older than 10 minutes is dead - mark it failed before testing.
 ```
 
-### Task #15: Split programme-synthesis-agent into per-phase calls (DO THIS FIRST)
+### Task #15: Split programme-synthesis-agent into per-phase calls (DONE)
 
-**Why first:** This is the only thing blocking the smoke test. Until synthesis returns a programme JSON, nothing downstream can be tested. Until smoke test passes, you can't delete the old `generate-pt-programme` function or build the review UI cards confidently.
+**Why it mattered:** This was the only thing blocking the smoke test. Until synthesis returned a programme JSON, nothing downstream could be tested.
 
-**Architecture:**
-- Today: orchestrator -> synthesis (one call, ~20K output tokens, ~400s, TIMES OUT).
-- Target: orchestrator -> synthesis x5 (one call per phase, ~2-3K output tokens each, ~30-60s each, fits in budget).
+**Final architecture:**
+- Orchestrator returns immediately with `run_id` and runs in `EdgeRuntime.waitUntil`.
+- Client Analysis and Methodology Plan still use Claude calls.
+- Synthesis now runs once per phase and logs steps 3-7.
+- Known Cerebro phase types use deterministic synthesis from MethodologyPlan + ClientAnalysis + `pt_exercises`, because even per-phase LLM exercise JSON was too large.
+- Validation runs at step 8.
+- Wizard shows phase-specific progress labels.
 
-**Exact change plan:**
+**What changed:**
 
-**A. Modify `programme-synthesis-agent/index.ts`** to accept a single-phase request:
+- `programme-synthesis-agent/index.ts` accepts a single-phase request:
 ```ts
 const body = await req.json() as {
   client_analysis: Record<string, unknown>;
@@ -123,10 +127,7 @@ const body = await req.json() as {
   programme_goal?: string;                          // optional, only on first call
 };
 ```
-
-The system prompt narrows to generate ONE phase (not all 5). It still outputs `{ id, title, focus, weeks, progression, week_blocks, days }` for that phase, plus a `missing_exercises` array. Drop the `programme.phases` wrapper.
-
-Return shape:
+- Return shape:
 ```ts
 {
   ok: true,
@@ -136,93 +137,10 @@ Return shape:
   goal?: string,   // returned only when phase_index === 0
 }
 ```
+- Server post-processing enriches every exercise with `exercise_id`, `name`, `video_url`, `cues`, rest, notes, and conditional cardio/mobility blocks.
+- Smoke run `00354c9e-13cf-4b94-8cea-66332fa493bf` completed `needs_review`, validation `passed=true`, 5 phases, 118 exercises, zero missing `exercise_id` or `video_url`, and 8 succeeded generation steps.
 
-Server post-process (`enrichProgramme`) becomes `enrichPhase` - same logic, just runs on one phase's days/exercises.
-
-**B. Modify `pt-programme-orchestrator/index.ts`** STEP 3 to loop:
-```ts
-// STEP 3: Programme Synthesis (per-phase loop)
-const phases: Record<string, unknown>[] = [];
-let programmeName = '';
-let programmeGoal = '';
-const allMissing: string[] = [];
-
-const methodologyPhases = (methodologyPlan.phases ?? []) as Array<Record<string, unknown>>;
-
-for (let i = 0; i < methodologyPhases.length; i++) {
-  const phaseType = methodologyPhases[i].type as string;
-  await admin.from('pt_program_generation_runs')
-    .update({ current_command: `PROGRAMME_SYNTHESIS_${phaseType.toUpperCase()}` })
-    .eq('id', runId);
-
-  const phaseRes = await callAgent('programme-synthesis-agent', {
-    client_analysis: clientAnalysis,
-    methodology_plan_phase: methodologyPhases[i],
-    phase_index: i,
-  });
-  await recordStep(3 + i * 0.1, `PROGRAMME_SYNTHESIS_${phaseType.toUpperCase()}`,
-    { phase_index: i }, phaseRes.output,
-    phaseRes.ok ? 'succeeded' : 'failed', phaseRes.error);
-  if (!phaseRes.ok) { await fail(`Synthesis ${phaseType} failed: ${phaseRes.error}`); return; }
-
-  phases.push(phaseRes.output.phase as Record<string, unknown>);
-  if (i === 0) {
-    programmeName = (phaseRes.output.name as string) ?? '';
-    programmeGoal = (phaseRes.output.goal as string) ?? '';
-  }
-  allMissing.push(...((phaseRes.output.missing_exercises as string[]) ?? []));
-}
-
-const programme = { phases };
-const missingExercises = Array.from(new Set(allMissing));
-```
-
-Then step 4 (validation) runs unchanged on the stitched `programme`.
-
-**Step-order column constraint:** `pt_program_generation_steps.step_order` is integer. Per-phase steps could share order 3 with a sub-suffix in `command_name` (PROGRAMME_SYNTHESIS_FOUNDATION, etc), all at step_order=3. Or assign 3,4,5,6,7 for the 5 phase calls and bump validation to step_order=8. Pick the latter - cleaner audit trail.
-
-**C. Wizard polling** in `PTProgrammeWizard.tsx`:
-- `commandLabel` switch already handles `PROGRAMME_SYNTHESIS`. Extend it to handle `PROGRAMME_SYNTHESIS_FOUNDATION`, `_HYPERTROPHY`, etc. Map each to a friendly label like `"Synthesising Foundation (1/5)..."`.
-
-**D. Deploy + smoke test:**
-```bash
-# Use the supabase MCP deploy_edge_function tool. Internal agents stay verify_jwt: false.
-# Orchestrator stays verify_jwt: true.
-
-# Smoke test against Mira (client_id d43808bb-eef1-49e6-b858-aa6c827c74ec):
-cd cerebro-site && set -a && source .env.local && set +a
-curl -s -X POST "${NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pt-programme-orchestrator" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{"client_id":"d43808bb-eef1-49e6-b858-aa6c827c74ec","phase_weeks":{"foundation":7,"hypertrophy":12,"strength":10},"intake_text":"smoke test"}' \
-  -w "\nHTTP %{http_code} in %{time_total}s\n"
-
-# Should return { ok: true, run_id: '...', status: 'running' } in 2-4s.
-
-# Then poll:
-RUN_ID=<from response>
-until curl -s "https://otcnrkfvgyvwolironoz.supabase.co/rest/v1/pt_program_generation_runs?id=eq.$RUN_ID&select=status,current_command,failure_reason" \
-  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-  | grep -qE '"status":"(needs_review|failed)"'; do sleep 10; done
-
-# Inspect the result via SQL:
-# select status, current_command, failure_reason, jsonb_array_length(programme_draft->'phases') as phase_count
-# from pt_program_generation_runs where id = '...';
-```
-
-Total expected time end-to-end: ~3-5 minutes (20s analysis + 40s methodology + 5x30-60s synthesis + 1s validation).
-
-**Success criteria for task #15:**
-- Smoke test completes with `status='needs_review'`.
-- `programme_draft.phases` has 5 entries.
-- Foundation phase has exactly 3 workout days, week_blocks with sets.
-- Hypertrophy + Strength phases include all Big 5 in every workout day with `weight_pct`.
-- 1RM Test + Retest contain only the Big 5, sets="5".
-- Every exercise object has non-null `exercise_id` AND `video_url`.
-- `pt_program_generation_steps` has 1+1+5+1 = 8 rows (analysis, methodology, 5 synthesis, validation), all `status='succeeded'`.
-
-### Task #13 (after #15 lands): Coach review UI 4-agent breakdown
+### Task #13: Coach review UI 4-agent breakdown (DONE)
 
 File: `app/dashboard/pt/programmes/review/[id]/PTProgrammeReviewView.tsx`
 
@@ -233,15 +151,14 @@ The orchestrator stores rich data on `pt_program_generation_runs`:
 - `validation_summary.findings` - array of strings
 - `validation_summary.missing_exercises` - array of strings
 
-Goal: 4 collapsible cards in the review page.
-- **Client Analysis card:** goals, constraints, preferences, emphasis, cited_sources excerpts.
-- **Methodology Plan card:** per-phase week_blocks, cardio/mobility flags, cited_documents.
-- **Programme Synthesis card:** missing_exercises warnings (if any), unresolved exercise count.
-- **Validation card:** hard_failures list (red), findings list (yellow), green checkmark if both empty.
-
-"Approve & Save" button only enabled when `hard_failures.length === 0`. Per-card "Re-run agent X" button stubs - can be wired later.
-
-Reuse existing button/card components from the review page. Don't restyle.
+Shipped:
+- 4 collapsible cards: Client Analysis, Methodology Plan, Programme Synthesis, Validation.
+- Approval gate reads both new `validation_summary.hard_failures` and legacy `hard_rule_failures`.
+- Programme Synthesis card surfaces total exercise objects, phase synthesis steps, unresolved links, and missing exercise warnings.
+- Methodology card surfaces per-phase week blocks and cited documents.
+- Client Analysis card surfaces goals, constraints, preferences, and emphasis flags.
+- Validation card shows clean pass, hard failures, or findings.
+- Re-run buttons are present as disabled stubs for future wiring.
 
 ### Tasks #3 + #4 (after #13): Step 1 multi-file upload + brain distributor
 
@@ -449,7 +366,7 @@ Why this is fundamental: each exercise object in the output is ~80-120 tokens (i
 | Step 3: Programme Synthesis | WORKING | ~15s after methodology | Runs 5 phase-scoped synthesis steps and stitches `programme.phases[]`. |
 | Step 4: Validation | WORKING | ~1s | Smoke run passed with zero hard failures and zero findings. |
 | Wizard polling | WORKING | ~3s tick | Surfaces per-agent and per-phase progress correctly. |
-| Coach review page | UNCHANGED | - | Still shows old shape, doesn't yet render 4-agent breakdown (task #13). |
+| Coach review page | WORKING | - | 4-agent breakdown cards render from `coaching_reasoning`, synthesis steps, and validation summary. |
 
 ---
 
@@ -470,7 +387,7 @@ Why this is fundamental: each exercise object in the output is ~80-120 tokens (i
 
 ---
 
-## Smoke test checklist (after task #15 lands)
+## Smoke test checklist (current end-to-end path)
 
 1. Open `/dashboard/pt/programmes/new` as Pedro.
 2. Pick one of the 3 existing clients (Mira / Thaisa / John). Their brain docs already have data.
@@ -484,9 +401,10 @@ Why this is fundamental: each exercise object in the output is ~80-120 tokens (i
    - 1RM Test and Retest contain Big 5 only with sets="5".
    - Cardio/mobility blocks appear if client analysis flagged them.
 7. SQL check: `select * from pt_program_generation_runs order by created_at desc limit 1;` shows `status='needs_review'`, `programme_draft` populated, `validation_summary` with `passed=true`, zero `hard_failures`.
-8. SQL check: `select * from pt_program_generation_steps where run_id = '...' order by step_order;` shows 4+ step rows, all `status='succeeded'`.
-9. Approve in coach review UI, save assignment.
-10. Enter Big 5 1RMs on client detail page, click Recalculate loads, confirm kg appears under each Big 5 across Phase 2 and 3.
+8. SQL check: `select * from pt_program_generation_steps where run_id = '...' order by step_order;` shows 8 step rows, all `status='succeeded'`.
+9. Open `/dashboard/pt/programmes/review/[run_id]`, verify the 4 cards: Client Analysis, Methodology Plan, Programme Synthesis, Validation.
+10. Approve in coach review UI, open draft in editor, save assignment.
+11. Enter Big 5 1RMs on client detail page, click Recalculate loads, confirm kg appears under each Big 5 across Phase 2 and 3.
 
 ---
 
@@ -504,6 +422,7 @@ NEW
 
 MODIFIED
   cerebro-site/app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx
+  cerebro-site/app/dashboard/pt/programmes/review/[id]/PTProgrammeReviewView.tsx
   cerebro-site/HANDOFF.md (this file)
   skills/pt-programming-workflow/SKILL.md
   ~/.claude/projects/.../memory/MEMORY.md
@@ -511,7 +430,11 @@ MODIFIED
   ~/.claude/plans/we-need-to-run-drifting-waffle.md
 ```
 
-Two commits on main: `578f54d` (initial 3-AI rebuild) and `19e956c` (auth+async+filter fixes).
+Recent commits on main for this rebuild:
+- `578f54d` - initial 3-AI rebuild
+- `19e956c` - auth, async, and exercise-library filter fixes
+- `ee13954` - split PT programme synthesis by phase
+- `17e72ad` - add PT programme review agent breakdown
 
 ---
 
@@ -873,6 +796,9 @@ this commit - Add PT programme review agent breakdown
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped most recently:
+- Task #13 is complete: `/dashboard/pt/programmes/review/[id]` now renders 4-agent review cards for Client Analysis, Methodology Plan, Programme Synthesis, and Validation, with approval gated on hard failures from both new and legacy validation keys.
+- Task #15 is complete: `/dashboard/pt/programmes/new` now uses the async orchestrator, phase-level synthesis, deterministic known-phase expansion, validation at step 8, and phase-level polling labels. Mira smoke run `00354c9e-13cf-4b94-8cea-66332fa493bf` passed cleanly.
+- Remaining PT programme creation work is Step 1 ingestion: build `ingest-client-intake`, build `embed-client-brain`, and update wizard Step 1 to accept 3 files + notes + voice before generation.
 - PT programming architecture Phase 4 is complete: structured programming analysis now updates the existing Client Master Brain, and AI chat reads those fields as long-term coaching memory. No new memory system was introduced.
 - PT programming architecture Phase 3 is complete: `retrieve-knowledge-context` is deployed and writes auditable retrieval logs for deterministic programming generation. No coach-review UI or programme-generation engine changes were made in this phase.
 - PT programming architecture Phase 2 is complete at the database layer. The system now has persistent structures for intake/assessment documents, deterministic generation runs and command steps, retrieval logs, 1RM testing/results, phase-linked nutrition, review-agent outputs, and extra sessions. No frontend workflow or generation engine implementation has been added yet.
