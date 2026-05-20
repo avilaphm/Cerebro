@@ -29,6 +29,23 @@ interface Programme { phases?: Phase[]; }
 
 const BIG_5 = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'];
 
+// Library exercises don't always use the "BB ..." label. Match by canonical
+// names + common library aliases. Each Big 5 lift must satisfy at least one
+// regex below.
+const BIG_5_PATTERNS: { label: string; pattern: RegExp }[] = [
+  { label: 'BB Squat', pattern: /(bb|barbell|back|front)\s*squat\b/i },
+  { label: 'BB Deadlift', pattern: /(bb|barbell|conventional|romanian|trap bar|sumo)?\s*deadlift\b/i },
+  { label: 'BB Bench Press', pattern: /(bb|barbell)?\s*bench\s*press\b/i },
+  { label: 'BB Shoulder Press', pattern: /(bb|barbell|overhead|ohp)?\s*(shoulder|overhead)?\s*press\b/i },
+  { label: 'Pull-up', pattern: /pull[-\s]?up|chin[-\s]?up/i },
+];
+
+function exerciseMatchesBig5(name: string, big5Label: string): boolean {
+  const entry = BIG_5_PATTERNS.find((p) => p.label === big5Label);
+  if (!entry) return false;
+  return entry.pattern.test(name);
+}
+
 function phaseKind(title: string | undefined): 'foundation' | '1rm_test' | 'hypertrophy' | 'strength' | '1rm_retest' | 'other' {
   if (!title) return 'other';
   const t = title.toLowerCase();
@@ -80,12 +97,18 @@ Deno.serve(async (req) => {
           }
         }
 
-        for (const day of phase.days ?? []) {
-          const exNames = (day.exercises ?? []).map((e) => (e.name ?? '').toLowerCase());
-          for (const big of BIG_5) {
-            if (!exNames.some((n) => n.includes(big.toLowerCase()))) {
-              hard_failures.push(`${phaseLabel} / ${day.title ?? 'day'}: missing Big 5 lift "${big}".`);
-            }
+        // Validate Big 5 distribution at the phase level. Each Big 5 lift must
+        // appear at least once across the whole phase (full body = each every
+        // day; upper/lower = each twice/week; push/pull/legs = each twice/week).
+        // Match via aliases since the library uses names like "Back Squat",
+        // "Conventional Deadlift", "Barbell Bench Press" rather than "BB ...".
+        const phaseExNames = (phase.days ?? []).flatMap((d) => (d.exercises ?? []).map((e) => e.name ?? ''));
+        for (const big of BIG_5) {
+          const occurrences = phaseExNames.filter((n) => exerciseMatchesBig5(n, big)).length;
+          if (occurrences === 0) {
+            hard_failures.push(`${phaseLabel}: Big 5 lift "${big}" never appears across the phase.`);
+          } else if (occurrences === 1 && (phase.days ?? []).length > 1) {
+            findings.push(`${phaseLabel}: Big 5 lift "${big}" only appears in 1 day; consider 2x/week frequency for hypertrophy adaptation.`);
           }
         }
       }
@@ -95,7 +118,7 @@ Deno.serve(async (req) => {
         if (days.length !== 1) hard_failures.push(`${phaseLabel}: 1RM test/retest must be exactly 1 day, has ${days.length}.`);
         if (days[0]) {
           const exs = days[0].exercises ?? [];
-          const big5Found = BIG_5.filter((b) => exs.some((e) => (e.name ?? '').toLowerCase().includes(b.toLowerCase())));
+          const big5Found = BIG_5.filter((b) => exs.some((e) => exerciseMatchesBig5(e.name ?? '', b)));
           if (big5Found.length < 5) hard_failures.push(`${phaseLabel}: 1RM day must contain all 5 Big 5 lifts, found ${big5Found.length}.`);
           for (const e of exs) {
             if (e.sets !== '5') findings.push(`${phaseLabel}: ${e.name ?? 'exercise'} should be 5 sets for 1RM, has ${e.sets ?? '?'}.`);

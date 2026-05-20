@@ -263,20 +263,38 @@ function buildDeterministicPhase(
 
   if (type === 'hypertrophy' || type === 'strength') {
     const sets = String((weekBlocks[0]?.sets as string | undefined) ?? (type === 'hypertrophy' ? '3' : '4'));
-    const reps = type === 'hypertrophy' ? '8-12' : '3-6';
-    const rest = type === 'hypertrophy' ? '60 sec' : '2-3 min';
+    const repsCompound = type === 'hypertrophy' ? '8-12' : '3-6';
+    const repsAccessory = type === 'hypertrophy' ? '10-15' : '6-8';
+    const rest = type === 'hypertrophy' ? '60-90 sec' : '2-3 min';
+    const daysPerWeek = (methodologyPhase.days_per_week === 4 || methodologyPhase.days_per_week === 5) ? methodologyPhase.days_per_week as 4 | 5 : 3;
+    const big5Schedule = scheduleBig5(daysPerWeek, big5);
+    const dayTitles = dayTitlesFor(type, daysPerWeek);
+    const dayFocuses = dayFocusesFor(type, daysPerWeek);
     const accessoryPool = pickAccessories(filteredLibrary, big5);
-    const days = [0, 1, 2].map((dayIndex) => {
-      const exercises = [
+
+    const days = big5Schedule.map((dayBig5, dayIndex) => {
+      const big5Count = dayBig5.length;
+      const accessoryTarget = Math.max(0, 6 - big5Count); // Aim for 6 exercises in Workout section
+      const accessorySlots: ExerciseRow[] = [];
+      for (let i = 0; i < accessoryTarget; i++) {
+        const pick = accessoryPool[(dayIndex * accessoryTarget + i) % Math.max(1, accessoryPool.length)];
+        if (pick && !accessorySlots.includes(pick)) accessorySlots.push(pick);
+      }
+      const exercises: Array<Record<string, unknown>> = [
         ...warmups.map((row, index) => buildExercise(row, index + 1, '1', '10-12', '30 sec', '', index === 0 ? 'Warm Up' : null, null)),
-        ...big5.map((row, index) => buildExercise(row, index + 5, sets, reps, rest, '% of 1RM as per week block', index === 0 ? 'Workout' : null, `ss-${Math.floor(index / 2) + 1}`, BIG_5_LABELS[index])),
       ];
-      const accessory = accessoryPool[dayIndex % accessoryPool.length];
-      if (accessory) exercises.push(buildExercise(accessory, exercises.length + 1, sets, reps, rest, '', null, 'ss-3'));
+      dayBig5.forEach((row, i) => {
+        exercises.push(buildExercise(row, exercises.length + 1, sets, repsCompound, rest, '% of 1RM as per week block', i === 0 ? 'Workout' : null, `ss-${Math.floor(i / 2) + 1}`, row.name));
+      });
+      accessorySlots.forEach((row, i) => {
+        const supersetId = `ss-${Math.floor((big5Count + i) / 2) + 1}`;
+        const sectionStart = big5Count === 0 && i === 0 ? 'Workout' : null;
+        exercises.push(buildExercise(row, exercises.length + 1, sets, repsAccessory, rest, '', sectionStart, supersetId));
+      });
       const day = {
         id: `day-${dayIndex + 1}`,
-        title: `Day ${dayIndex + 1} - ${type === 'hypertrophy' ? 'Hypertrophy' : 'Strength'} ${String.fromCharCode(65 + dayIndex)}`,
-        focus: type === 'hypertrophy' ? 'Big 5 volume with accessory support.' : 'Big 5 strength practice with controlled accessories.',
+        title: dayTitles[dayIndex] ?? `Day ${dayIndex + 1}`,
+        focus: dayFocuses[dayIndex] ?? (type === 'hypertrophy' ? 'Big 5 volume with accessory support.' : 'Big 5 strength practice with controlled accessories.'),
         exercises,
       };
       appendConditionalBlocks(day, filteredLibrary, methodologyPhase);
@@ -288,8 +306,9 @@ function buildDeterministicPhase(
       title: type === 'hypertrophy' ? 'Phase 2 - Hypertrophy' : 'Phase 3 - Strength',
       focus: type === 'hypertrophy' ? 'Build muscle and work capacity through Big 5 volume.' : 'Build force production through heavier Big 5 practice.',
       weeks,
-      progression: 'Progression follows the scaled week blocks from the methodology plan.',
+      progression: `Helms-style mesocycle progression: 3 build weeks + 1 deload per meso, RPE drives day-to-day load within the prescribed %1RM band. Split: ${daysPerWeek === 3 ? 'full body x3' : daysPerWeek === 4 ? 'upper/lower x4' : 'lower/push/pull/lower/upper x5'}.`,
       week_blocks: weekBlocks,
+      days_per_week: daysPerWeek,
       days,
     };
     return { name: phaseIndex === 0 ? programmeNameFromAnalysis(analysis) : '', goal: phaseIndex === 0 ? goalFromAnalysis(analysis) : '', phase, missing_exercises: [], unresolved_count: 0 };
@@ -356,6 +375,60 @@ function buildExercise(
 }
 
 const BIG_5_LABELS = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'];
+
+// Distribute Big 5 lifts across the training days based on chosen split.
+// big5 array is in BIG_5_LABELS order: [Squat, Deadlift, Bench, OHP, Pull-up].
+// Returns one ExerciseRow array per day, listing the Big 5 lifts that day.
+function scheduleBig5(daysPerWeek: 3 | 4 | 5, big5: ExerciseRow[]): ExerciseRow[][] {
+  const [squat, deadlift, bench, ohp, pullup] = big5;
+  switch (daysPerWeek) {
+    case 3:
+      // Full body x3: every day has all 5 Big 5.
+      return [[squat, deadlift, bench, ohp, pullup], [squat, deadlift, bench, ohp, pullup], [squat, deadlift, bench, ohp, pullup]];
+    case 4:
+      // Upper/Lower x4: each Big 5 lift 2x/week.
+      return [
+        [squat, deadlift],          // Day 1 Lower A
+        [bench, ohp, pullup],       // Day 2 Upper A
+        [squat, deadlift],          // Day 3 Lower B
+        [bench, ohp, pullup],       // Day 4 Upper B
+      ];
+    case 5:
+      // Lower / Push / Pull / Lower / Upper. Each Big 5 lift 2x/week.
+      return [
+        [squat],                    // Day 1 Lower A
+        [bench, ohp],               // Day 2 Push
+        [deadlift, pullup],         // Day 3 Pull
+        [squat],                    // Day 4 Lower B
+        [bench, ohp, pullup],       // Day 5 Upper
+      ];
+  }
+}
+
+function dayTitlesFor(type: 'hypertrophy' | 'strength', daysPerWeek: 3 | 4 | 5): string[] {
+  const label = type === 'hypertrophy' ? 'Hypertrophy' : 'Strength';
+  if (daysPerWeek === 3) return [`Day 1 - ${label} A`, `Day 2 - ${label} B`, `Day 3 - ${label} C`];
+  if (daysPerWeek === 4) return [`Day 1 - Lower A (${label})`, `Day 2 - Upper A (${label})`, `Day 3 - Lower B (${label})`, `Day 4 - Upper B (${label})`];
+  return [`Day 1 - Lower A (${label})`, `Day 2 - Push (${label})`, `Day 3 - Pull (${label})`, `Day 4 - Lower B (${label})`, `Day 5 - Upper (${label})`];
+}
+
+function dayFocusesFor(type: 'hypertrophy' | 'strength', daysPerWeek: 3 | 4 | 5): string[] {
+  const intent = type === 'hypertrophy' ? 'Big 5 volume with accessory support' : 'Heavier Big 5 practice with controlled accessories';
+  if (daysPerWeek === 3) return [intent, intent, intent];
+  if (daysPerWeek === 4) return [
+    'Lower body Big 5 plus posterior chain accessories.',
+    'Upper body Big 5 plus pushing/pulling accessories.',
+    'Lower body Big 5 plus unilateral and core accessories.',
+    'Upper body Big 5 plus arm and shoulder accessories.',
+  ];
+  return [
+    'Lower body squat focus plus quad accessories.',
+    'Push focus: chest, shoulder and tricep work.',
+    'Pull focus: back, posterior chain and bicep work.',
+    'Lower body deadlift focus plus hamstring and glute accessories.',
+    'Upper body integration day, all push/pull patterns.',
+  ];
+}
 
 function pickBig5(library: ExerciseRow[]): ExerciseRow[] {
   return [

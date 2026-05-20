@@ -23,6 +23,7 @@ Deno.serve(async (req) => {
     const body = await req.json() as {
       client_id: string;
       phase_weeks: { foundation: number; hypertrophy: number; strength: number };
+      days_per_week?: 3 | 4 | 5;
       intake_text?: string;
     };
     if (!body.client_id || !body.phase_weeks) return json({ error: 'client_id and phase_weeks required' }, 400);
@@ -59,7 +60,7 @@ Deno.serve(async (req) => {
 
 async function runPipeline(ctx: {
   runId: string;
-  body: { client_id: string; phase_weeks: { foundation: number; hypertrophy: number; strength: number }; intake_text?: string };
+  body: { client_id: string; phase_weeks: { foundation: number; hypertrophy: number; strength: number }; days_per_week?: 3 | 4 | 5; intake_text?: string };
   admin: ReturnType<typeof createClient>;
   supabaseUrl: string;
   serviceKey: string;
@@ -120,6 +121,7 @@ async function runPipeline(ctx: {
     const step2 = await callAgent('methodology-plan-agent', {
       client_analysis: clientAnalysis,
       phase_weeks: body.phase_weeks,
+      days_per_week: body.days_per_week ?? 3,
       run_id: runId,
     });
     await recordStep(2, STEP_NAMES[1], { phase_weeks: body.phase_weeks }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);

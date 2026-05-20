@@ -103,6 +103,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [ingesting, setIngesting] = useState(false);
   const [intakeStatus, setIntakeStatus] = useState('');
   const [brainSaved, setBrainSaved] = useState(false);
+  const [daysPerWeek, setDaysPerWeek] = useState<3 | 4 | 5>(3);
 
   const srRef = useRef<SpeechRecognitionLike | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
@@ -172,7 +173,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     const phaseWeeks = inferPhaseWeeks(programme.phases);
 
     const { data, error } = await supabase.functions.invoke('pt-programme-orchestrator', {
-      body: { client_id: clientId, phase_weeks: phaseWeeks, intake_text: brainDump },
+      body: { client_id: clientId, phase_weeks: phaseWeeks, days_per_week: daysPerWeek, intake_text: brainDump },
     });
 
     if (error || (data as { error?: string })?.error) {
@@ -575,6 +576,29 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                     ))}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {selectedClient && (
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Training days per week (Phase 2 & 3)</p>
+              <p className="text-xs text-black/40 mb-3 max-w-2xl">
+                Foundation is always 3 full-body days. For Hypertrophy and Strength, pick the split. 3 days = full body, 4 = upper/lower, 5 = lower/push/pull/lower/upper. Big 5 lifts are auto-distributed so each is trained 2x/week on 4 and 5-day splits.
+              </p>
+              <div className="flex gap-2">
+                {([3, 4, 5] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDaysPerWeek(d)}
+                    className={`border px-4 py-2 text-sm transition-colors ${
+                      daysPerWeek === d ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/30'
+                    }`}
+                  >
+                    {d} days/week
+                  </button>
+                ))}
               </div>
             </div>
           )}

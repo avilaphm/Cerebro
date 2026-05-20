@@ -15,42 +15,82 @@ function json(data: unknown, status = 200) {
 }
 
 type PhaseKind = 'foundation' | 'hypertrophy' | 'strength';
+type DaysPerWeek = 3 | 4 | 5;
 
 interface WeekBlock { weeks: number; sets: string; weight_pct?: string; }
 
-const CANONICAL: Record<PhaseKind, WeekBlock[]> = {
-  foundation: [
-    { sets: '2', weeks: 2 },
-    { sets: '3', weeks: 3 },
-    { sets: '3', weeks: 2 },
-  ],
-  hypertrophy: [
-    { sets: '3', weight_pct: '65%', weeks: 3 },
-    { sets: '4', weight_pct: '68%', weeks: 3 },
-    { sets: '4', weight_pct: '72%', weeks: 3 },
-    { sets: '5', weight_pct: '75%', weeks: 3 },
-  ],
-  strength: [
-    { sets: '4', weight_pct: '77%', weeks: 2 },
-    { sets: '4', weight_pct: '80%', weeks: 3 },
-    { sets: '5', weight_pct: '85%', weeks: 3 },
-    { sets: '6', weight_pct: '88%', weeks: 2 },
-  ],
-};
+// Foundation: linear set climb, no deload (the whole phase is the onramp).
+const FOUNDATION_CANONICAL: WeekBlock[] = [
+  { sets: '2', weeks: 2 },
+  { sets: '3', weeks: 3 },
+  { sets: '3', weeks: 2 },
+];
+const FOUNDATION_TOTAL = 7;
 
-const CANONICAL_TOTAL: Record<PhaseKind, number> = { foundation: 7, hypertrophy: 12, strength: 10 };
+// Hypertrophy and Strength: Eric Helms (M&S Pyramid 2nd ed) mesocycle model.
+// 3 build weeks + 1 deload week per meso. Helms recommends deload every 3rd
+// meso minimum; deloading every meso is safer for the Cerebro client profile.
+// %1RM is the load floor/ceiling within the hypertrophy / strength zone; RPE
+// drives day-to-day. "Intensity is primarily guided by repetition range and
+// proximity to failure, rather than by a percentage of 1RM." - Helms 2nd ed.
+interface MesoBlock { label: 'build1' | 'build2' | 'peak' | 'deload'; sets: string; weight_pct: string; }
+
+const HYPERTROPHY_MESOS: MesoBlock[][] = [
+  [
+    { label: 'build1', sets: '3', weight_pct: '65%' },
+    { label: 'build2', sets: '4', weight_pct: '70%' },
+    { label: 'peak', sets: '4', weight_pct: '75%' },
+    { label: 'deload', sets: '2', weight_pct: '60%' },
+  ],
+  [
+    { label: 'build1', sets: '4', weight_pct: '67.5%' },
+    { label: 'build2', sets: '4', weight_pct: '72.5%' },
+    { label: 'peak', sets: '5', weight_pct: '77.5%' },
+    { label: 'deload', sets: '2', weight_pct: '62.5%' },
+  ],
+  [
+    { label: 'build1', sets: '4', weight_pct: '70%' },
+    { label: 'build2', sets: '5', weight_pct: '75%' },
+    { label: 'peak', sets: '5', weight_pct: '80%' },
+    { label: 'deload', sets: '3', weight_pct: '65%' },
+  ],
+];
+
+const STRENGTH_MESOS: MesoBlock[][] = [
+  [
+    { label: 'build1', sets: '4', weight_pct: '77%' },
+    { label: 'build2', sets: '4', weight_pct: '82%' },
+    { label: 'peak', sets: '5', weight_pct: '87%' },
+    { label: 'deload', sets: '2', weight_pct: '70%' },
+  ],
+  [
+    { label: 'build1', sets: '5', weight_pct: '80%' },
+    { label: 'build2', sets: '5', weight_pct: '85%' },
+    { label: 'peak', sets: '6', weight_pct: '90%' },
+    { label: 'deload', sets: '2', weight_pct: '72%' },
+  ],
+  [
+    { label: 'build1', sets: '5', weight_pct: '82%' },
+    { label: 'build2', sets: '6', weight_pct: '88%' },
+    { label: 'peak', sets: '6', weight_pct: '92%' },
+    { label: 'deload', sets: '3', weight_pct: '72%' },
+  ],
+];
 
 function scaleBlocks(kind: PhaseKind, targetWeeks: number): WeekBlock[] {
   const target = Math.max(1, Math.round(targetWeeks));
-  const canonical = CANONICAL[kind];
-  const total = CANONICAL_TOTAL[kind];
-  if (target === total) return canonical.map((b) => ({ ...b }));
-  if (target < canonical.length) {
-    const trimmed = canonical.slice(0, target);
-    return trimmed.map((b) => ({ ...b, weeks: 1 }));
+  if (kind === 'foundation') return scaleFoundation(target);
+  const mesos = kind === 'hypertrophy' ? HYPERTROPHY_MESOS : STRENGTH_MESOS;
+  return scaleMesoBased(mesos, target);
+}
+
+function scaleFoundation(target: number): WeekBlock[] {
+  if (target === FOUNDATION_TOTAL) return FOUNDATION_CANONICAL.map((b) => ({ ...b }));
+  if (target < FOUNDATION_CANONICAL.length) {
+    return FOUNDATION_CANONICAL.slice(0, target).map((b) => ({ ...b, weeks: 1 }));
   }
-  const ratios = canonical.map((b) => b.weeks / total);
-  let alloc = ratios.map((r) => Math.max(1, Math.round(r * target)));
+  const ratios = FOUNDATION_CANONICAL.map((b) => b.weeks / FOUNDATION_TOTAL);
+  const alloc = ratios.map((r) => Math.max(1, Math.round(r * target)));
   let diff = alloc.reduce((a, b) => a + b, 0) - target;
   while (diff > 0) {
     const idx = alloc.reduce((best, w, i) => (w > alloc[best] ? i : best), 0);
@@ -61,7 +101,35 @@ function scaleBlocks(kind: PhaseKind, targetWeeks: number): WeekBlock[] {
     const idx = alloc.reduce((best, w, i) => (w < alloc[best] ? i : best), 0);
     alloc[idx] += 1; diff += 1;
   }
-  return canonical.map((b, i) => ({ ...b, weeks: alloc[i] })).filter((b) => b.weeks > 0);
+  return FOUNDATION_CANONICAL.map((b, i) => ({ sets: b.sets, weeks: alloc[i] }));
+}
+
+function scaleMesoBased(mesos: MesoBlock[][], target: number): WeekBlock[] {
+  const blocks: WeekBlock[] = [];
+  let weeksUsed = 0;
+  let mesoIdx = 0;
+  while (weeksUsed < target) {
+    const meso = mesos[Math.min(mesoIdx, mesos.length - 1)];
+    const remaining = target - weeksUsed;
+    if (remaining >= 4) {
+      for (const b of meso) blocks.push({ sets: b.sets, weight_pct: b.weight_pct, weeks: 1 });
+      weeksUsed += 4;
+    } else if (remaining === 3) {
+      blocks.push({ sets: meso[0].sets, weight_pct: meso[0].weight_pct, weeks: 1 });
+      blocks.push({ sets: meso[1].sets, weight_pct: meso[1].weight_pct, weeks: 1 });
+      blocks.push({ sets: meso[3].sets, weight_pct: meso[3].weight_pct, weeks: 1 });
+      weeksUsed = target;
+    } else if (remaining === 2) {
+      blocks.push({ sets: meso[0].sets, weight_pct: meso[0].weight_pct, weeks: 1 });
+      blocks.push({ sets: meso[3].sets, weight_pct: meso[3].weight_pct, weeks: 1 });
+      weeksUsed = target;
+    } else {
+      blocks.push({ sets: meso[0].sets, weight_pct: meso[0].weight_pct, weeks: 1 });
+      weeksUsed = target;
+    }
+    mesoIdx += 1;
+  }
+  return blocks;
 }
 
 const SYSTEM_PROMPT = `You are the Methodology Plan AI inside Pedro Avila's Cerebro programming system.
@@ -122,9 +190,13 @@ Deno.serve(async (req) => {
     const body = await req.json() as {
       client_analysis: Record<string, unknown>;
       phase_weeks: { foundation: number; hypertrophy: number; strength: number };
+      days_per_week?: DaysPerWeek;
       run_id?: string;
     };
     if (!body.client_analysis || !body.phase_weeks) return json({ error: 'client_analysis and phase_weeks required' }, 400);
+
+    // Foundation is always 3 full-body days. Hypertrophy/Strength honor the coach's choice (3/4/5).
+    const daysPerWeek: DaysPerWeek = body.days_per_week === 4 || body.days_per_week === 5 ? body.days_per_week : 3;
 
     const foundationBlocks = scaleBlocks('foundation', body.phase_weeks.foundation);
     const hypertrophyBlocks = scaleBlocks('hypertrophy', body.phase_weeks.hypertrophy);
@@ -166,10 +238,11 @@ Deno.serve(async (req) => {
     const userMessage = [
       `CLIENT ANALYSIS:\n${JSON.stringify(body.client_analysis, null, 2)}`,
       `PHASE WEEKS (chosen by coach):\n${JSON.stringify(body.phase_weeks, null, 2)}`,
-      `SCALED WEEK BLOCKS (use these — do not modify):\n${JSON.stringify({ foundation: foundationBlocks, hypertrophy: hypertrophyBlocks, strength: strengthBlocks }, null, 2)}`,
+      `DAYS PER WEEK (chosen by coach, applies to Hypertrophy and Strength; Foundation is always 3):\n${daysPerWeek}`,
+      `SCALED WEEK BLOCKS (use these - do not modify; built from Helms M&S Pyramid 2nd ed mesocycle model: 3 build + 1 deload per meso):\n${JSON.stringify({ foundation: foundationBlocks, hypertrophy: hypertrophyBlocks, strength: strengthBlocks }, null, 2)}`,
       `KNOWLEDGE BASE EXCERPTS:\n${excerpts.map((e, i) => `[${i + 1}] (${e.document_title}, sim=${e.similarity.toFixed(2)})\n${e.chunk_text}`).join('\n\n')}`,
       `DOCUMENTS REFERENCED:\n${Array.from(referenced).join(', ')}`,
-      'Output the MethodologyPlan JSON now. JSON only.',
+      'Output the MethodologyPlan JSON now. JSON only. For Foundation set days_per_week=3, for Hypertrophy and Strength set days_per_week to the chosen value above.',
     ].join('\n\n---\n\n');
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
