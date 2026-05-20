@@ -98,6 +98,12 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>({});
   const [phaseNutritionDraft, setPhaseNutritionDraft] = useState<unknown[]>([]);
 
+  type IntakeFile = { name: string; document_type: 'intake' | 'movement_assessment' | 'profile' | 'other'; content_text: string };
+  const [intakeFiles, setIntakeFiles] = useState<IntakeFile[]>([]);
+  const [ingesting, setIngesting] = useState(false);
+  const [intakeStatus, setIntakeStatus] = useState('');
+  const [brainSaved, setBrainSaved] = useState(false);
+
   const srRef = useRef<SpeechRecognitionLike | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
@@ -245,6 +251,63 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     }
     setGenStatus('Pipeline still running after 7 minutes — open the review page to check progress.');
     setGenerating(false);
+  };
+
+  const addIntakeFile = async (file: File, docType: IntakeFile['document_type']) => {
+    if (intakeFiles.length >= 3) {
+      setIntakeStatus('Maximum 3 documents.');
+      return;
+    }
+    if (file.size > 5_000_000) {
+      setIntakeStatus(`${file.name} is over 5MB. Paste the contents into notes instead.`);
+      return;
+    }
+    try {
+      const text = await file.text();
+      const trimmed = text.trim();
+      if (!trimmed) {
+        setIntakeStatus(`${file.name} appears empty. PDFs and images aren't parsed yet — copy text into notes.`);
+        return;
+      }
+      setIntakeFiles((cur) => [...cur, { name: file.name, document_type: docType, content_text: trimmed.slice(0, 100_000) }]);
+      setIntakeStatus('');
+      setBrainSaved(false);
+    } catch (err) {
+      setIntakeStatus(`Could not read ${file.name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const removeIntakeFile = (idx: number) => {
+    setIntakeFiles((cur) => cur.filter((_, i) => i !== idx));
+    setBrainSaved(false);
+  };
+
+  const saveClientBrain = async () => {
+    if (!clientId) {
+      setIntakeStatus('Pick a client first.');
+      return;
+    }
+    if (intakeFiles.length === 0 && !brainDump.trim()) {
+      setIntakeStatus('Add at least one document or note before saving.');
+      return;
+    }
+    setIngesting(true);
+    setIntakeStatus('Distributing intake into the client brain…');
+    const { data, error } = await supabase.functions.invoke('ingest-client-intake', {
+      body: {
+        client_id: clientId,
+        files: intakeFiles,
+        notes_text: brainDump,
+      },
+    });
+    setIngesting(false);
+    if (error || (data as { error?: string })?.error) {
+      setIntakeStatus((data as { error?: string })?.error ?? error?.message ?? 'Ingest failed.');
+      return;
+    }
+    const result = data as { distributed_into?: string[]; documents_stored?: number };
+    setBrainSaved(true);
+    setIntakeStatus(`Brain updated. ${result.documents_stored ?? 0} source(s) stored, distributed into ${result.distributed_into?.length ?? 4} docs. Embedding in the background.`);
   };
 
   const startDictation = () => {
@@ -480,6 +543,42 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
             </div>
           )}
 
+          {selectedClient && (
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Upload intake documents (up to 3, text/markdown only for now)</p>
+              <div className="space-y-2 max-w-2xl">
+                {intakeFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between border border-black/10 px-3 py-2 text-xs">
+                    <span className="truncate">
+                      <span className="text-black/70">{f.name}</span>
+                      <span className="ml-2 text-black/40">{f.document_type} | {f.content_text.length.toLocaleString()} chars</span>
+                    </span>
+                    <button type="button" onClick={() => removeIntakeFile(i)} className="text-black/40 hover:text-black ml-3">Remove</button>
+                  </div>
+                ))}
+                {intakeFiles.length < 3 && (
+                  <div className="flex flex-wrap gap-2">
+                    {(['intake', 'movement_assessment', 'profile', 'other'] as const).map((dt) => (
+                      <label key={dt} className="cursor-pointer border border-black/15 px-3 py-2 text-xs hover:border-black/30 transition-colors">
+                        + {dt.replace('_', ' ')}
+                        <input
+                          type="file"
+                          accept=".txt,.md,.text,text/plain,text/markdown"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) void addIntakeFile(file, dt);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div>
             <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">
               {selectedClient?.document_url ? 'Or brain dump manually' : 'Brain dump'}
@@ -520,6 +619,27 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
             </div>
             {genStatus && <p className="mt-2 text-xs text-black/40">{genStatus}</p>}
           </div>
+
+          {selectedClient && (
+            <div className="border-t border-black/10 pt-5">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Distribute intake into the client brain</p>
+              <p className="text-xs text-black/40 mb-3 max-w-2xl">
+                Saves all uploaded docs + notes + voice into the four brain docs (master, nutrition, exercise, lifestyle) and embeds them for RAG. Run this before Generate so the orchestrator sees the freshest context.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void saveClientBrain()}
+                  disabled={ingesting || (intakeFiles.length === 0 && !brainDump.trim())}
+                  className="border border-black px-4 py-2 text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-30"
+                >
+                  {ingesting ? 'Saving…' : brainSaved ? 'Re-save client brain' : 'Save to client brain'}
+                </button>
+                {brainSaved && <span className="text-xs text-emerald-700">✓ brain updated</span>}
+              </div>
+              {intakeStatus && <p className="mt-2 text-xs text-black/50">{intakeStatus}</p>}
+            </div>
+          )}
         </div>
       )}
 

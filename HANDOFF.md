@@ -1,48 +1,65 @@
 # Handoff
 
 ## Last updated
-2026-05-20 by Codex
+2026-05-20 by Claude (Opus 4.7) - continuing from Codex's commits
 
 ---
 
-## FOR CODEX (OR ANY AGENT PICKING THIS UP)
+## FOR THE NEXT AGENT PICKING THIS UP
 
-You are continuing work on the PT programme creation rebuild for Pedro Avila's Cerebro project. Tasks #15 and #13 are now shipped. Your job is to move to tasks #3 + #4.
+All 15 tracked tasks for the PT programme creation rebuild are now SHIPPED. The pipeline is end-to-end functional: intake -> distribute to 4 brain docs -> embed for RAG -> orchestrator -> 4 agents -> validated programme draft with videos and Big 5 enforcement. Old lite function deleted.
 
 ### Last completed task
 
-Task #13 - 4-agent review breakdown.
+Tasks #3 + #4 + cleanup (this session, 2026-05-20 by Claude Opus 4.7):
 
-- `PTProgrammeReviewView` now has 4 collapsible cards: Client Analysis, Methodology Plan, Programme Synthesis, and Validation.
-- Validation gating now reads both `hard_failures` and legacy `hard_rule_failures`, so the new orchestrator's validation summary controls approval correctly.
-- Programme Synthesis card surfaces phase steps, total exercise objects, unresolved links, and missing exercises.
-- Methodology card surfaces phase week blocks and cited documents.
-- Client Analysis card surfaces goals, constraints, preferences, and emphasis flags.
-- `npm run build` passed. Browser route check reached the review URL but showed 404 in the in-app browser because it had no authenticated dashboard session.
+- `ingest-client-intake` deployed v1 (verify_jwt=true, user-facing). Accepts `{ client_id, files[], notes_text, voice_transcript }`, stores raw uploads to `pt_client_documents`, single Claude call distributes content into the 4 brain doc tables (master/nutrition/exercise/lifestyle), fires `embed-client-brain` as fire-and-forget.
+- `embed-client-brain` deployed v1 (verify_jwt=false, internal-only). Reads all 4 brain docs, serializes columns, chunks at 1800 chars with 200-char overlap, embeds via OpenAI text-embedding-3-small, replaces prior chunks for the client, writes to `pt_client_brain_chunks`. Compatible with `match_client_brain_chunks` RPC.
+- Wizard Step 1 now has: file upload UI (up to 3 docs with selectable document_type: intake / movement_assessment / profile / other), brain dump textarea, voice dictation, and a "Save to client brain" button that calls ingest. Coach flow: pick client -> upload + type + dictate -> Save to client brain (-> ingest distributes + queues embedding) -> Generate (orchestrator builds programme).
+- Smoke-tested against Mira: ingest distributed her notes into all 4 brain docs accurately ("new mother", "carry her toddler", "afternoons due to low morning energy" all captured without inventing facts), embed-client-brain produced 5 chunks across all 4 doc_types.
+- Deleted `supabase/functions/generate-pt-programme/` directory. Old lite function dead, nothing references it.
 
-### Open tasks (this is your todo list - work in this order)
+### Open tasks - all 15 closed
 
-The previous Claude session tracked these in Claude Code's internal task system, which is not visible to other agents. Reproduced here for you:
+- [x] #1 - 4 client brain doc tables (drift on remote, no migration needed)
+- [x] #2 - `pt_client_brain_chunks` table + RPC
+- [x] #3 - `ingest-client-intake` edge function (deployed v1, verify_jwt true)
+- [x] #4 - `embed-client-brain` edge function (deployed v1, verify_jwt false)
+- [x] #5 - methodologyScaler pure function
+- [x] #6 - client-analysis-agent edge function (v2, verify_jwt false)
+- [x] #7 - methodology-plan-agent edge function (v3, verify_jwt false)
+- [x] #8 - programme-synthesis-agent edge function (v3, verify_jwt false, phase-scoped with deterministic known-phase synthesis)
+- [x] #9 - programme-validation-agent edge function (v2, verify_jwt false)
+- [x] #10 - pt-programme-orchestrator edge function (v3, verify_jwt true, async pattern)
+- [x] #11 - SKILL.md + programming-principles.md (compound substitution, Big 5, cardio/mobility)
+- [x] #12 - Wizard new wiring + Step 1 file upload UI
+- [x] #13 - PTProgrammeReviewView 4-agent breakdown (Codex shipped in `17e72ad`)
+- [x] #14 - Smoke test (Mira run `00354c9e` - status=needs_review, 5 phases, all 5 Big 5 present in every Phase 2/3 day, all exercises have video_url + exercise_id)
+- [x] #15 - Split synthesis per-phase (Codex shipped in `ee13954`)
+- [x] cleanup - deleted `generate-pt-programme/` directory
 
-- [x] #1 - Create 4 client brain doc tables + RLS migration (already on remote as drift, see Database section below)
-- [x] #2 - Create pt_client_brain_chunks table + match RPC (`20260520000000_pt_client_brain_chunks.sql` applied)
-- [ ] **#3 - Build `ingest-client-intake` edge function** (Step 1 file upload UI distributor)
-- [ ] **#4 - Build `embed-client-brain` edge function** (vector-indexes the 4 brain docs for client-scoped RAG)
-- [x] #5 - methodologyScaler pure function (`utils/pt/methodologyScaler.ts`)
-- [x] #6 - client-analysis-agent edge function (deployed v2)
-- [x] #7 - methodology-plan-agent edge function (deployed v3)
-- [x] #8 - programme-synthesis-agent edge function (deployed; now phase-scoped with deterministic known-phase synthesis)
-- [x] #9 - programme-validation-agent edge function (deployed v2)
-- [x] #10 - pt-programme-orchestrator edge function (deployed v3, async pattern)
-- [x] #11 - Update SKILL.md + programming-principles.md (compound substitution, Big 5 enforcement, cardio/mobility blocks)
-- [x] #12 - Wizard Step 1 new wiring (file upload UI deferred to #3 + #4)
-- [x] #13 - Extend PTProgrammeReviewView for 4-agent breakdown (cards per agent + approval gating on hard_failures)
-- [x] #14 - Smoke test (ran end-to-end, found synthesis timeout, documented as #15)
-- [x] #15 - Split programme-synthesis-agent into per-phase calls (smoke test passed against Mira)
+### What's NOT in scope but worth flagging for Pedro
 
-**Work order:** #3 + #4 together next (so the wizard's full Step 1 vision is live). After those, delete the old `generate-pt-programme` function and run a fresh smoke test.
+These were intentionally left because Pedro hasn't asked for them yet, but they are obvious next steps if/when he does:
 
-Detailed implementation specs for the remaining open tasks are in the "Tasks #3 + #4" subsection below. Task #15 and #13 notes are kept below for historical context.
+1. **PDF / docx file parsing in the wizard.** Current upload accepts text/markdown only. To accept PDF/docx, either (a) extract text in the browser via `pdf.js` and a docx parser, or (b) add a new edge fn that takes base64 file bytes and runs server-side extraction. (b) is cleaner because it can also OCR images later. The ingest agent already accepts pre-extracted `content_text`, so the wizard side is the only thing that needs changing.
+
+2. **Wire the voice dictation transcript into the ingest call.** Right now the wizard's voice button populates `brainDump`. If the coach hits Save to client brain, the dump goes in as `notes_text`. That's fine, but a "voice_transcript" channel separate from typed notes is in the ingest function's API and unused. Could split with a UI toggle if Pedro wants the AI to know which content was spoken vs typed.
+
+3. **Backfill `pt_client_brain_chunks` for the 3 existing clients.** They have brain doc data from prior sessions but no chunks yet (each session that runs ingest does it for that client only). For full RAG coverage on the existing clients, call `embed-client-brain` once per client:
+   ```bash
+   for id in d43808bb-eef1-49e6-b858-aa6c827c74ec 7e0023d9-a581-463c-8cdd-c144a204bf14 6fbd4d9b-f913-434c-a101-46c1d9acbe5d; do
+     curl -X POST "${NEXT_PUBLIC_SUPABASE_URL}/functions/v1/embed-client-brain" \
+       -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+       -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+       -H "Content-Type: application/json" \
+       -d "{\"client_id\":\"$id\"}"
+   done
+   ```
+
+4. **`client-analysis-agent` does not yet query `pt_client_brain_chunks`.** Today it reads the 4 brain doc rows directly. With chunks now indexed, you could add a RAG step that calls `match_client_brain_chunks` for targeted queries (goals, injuries, schedule, etc) before composing the ClientAnalysis. Reduces noise when brain docs grow large.
+
+5. **The `pt-programming-agent` legacy function** (18-step monolith) is still on Supabase but the wizard doesn't call it. It's referenced by older code paths (`PTClientDetail.tsx` 1RM panel writes step_order 19/20 into its run). Don't delete it until Pedro confirms those touch points are wired to the new orchestrator's runs.
 
 ### Read these files first, in this order, BEFORE writing any code
 
