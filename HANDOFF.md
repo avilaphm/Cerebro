@@ -3,6 +3,16 @@
 ## Last updated
 2026-05-21 by Claude (Opus 4.7)
 
+## YOU ARE HERE (read this first, 30 seconds)
+
+The PT programme creation pipeline is **fully working end-to-end**. All 16 original tasks shipped. The wizard takes coach input, distributes it into 4 RAG-indexed brain docs, runs a 4-agent orchestrator, and produces a validated programme with Helms-style mesocycle progression, exercise videos attached, and a 3/4/5 days-per-week split selector. Smoke tests against Mira pass with 0 hard failures on 3-day, 4-day, and 5-day runs.
+
+**Your next chapter is refinement and UX, not new architecture.** Scroll to "Next on the list: refine and improve" (about halfway down this file) for the 16 prioritised tasks grouped by Rules / UX / Improvements. Pick by impact, not by order - they are independent.
+
+If you are an AI agent (Codex, Claude, or otherwise) picking this up cold, read the FOR THE NEXT AGENT section directly below this. It tells you what files to read first, what gotchas to avoid, and what the test clients are.
+
+If you have access to `~/.claude/projects/.../memory/` (Claude only), the memory entry `project_pt_programming_overhaul_vision.md` mirrors the load-bearing facts here. The plan file `~/.claude/plans/we-need-to-run-drifting-waffle.md` has the architecture diagrams + Session 1/2/3 progress narratives. Codex cannot see those; everything you need is in this file and the git repo.
+
 ---
 
 ## FOR THE NEXT AGENT PICKING THIS UP
