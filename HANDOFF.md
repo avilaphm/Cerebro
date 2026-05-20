@@ -1,68 +1,237 @@
 # Handoff
 
 ## Last updated
-2026-05-20 by Claude
+2026-05-20 by Claude (Opus 4.7)
 
-## Last completed task
-PT Programme Creation - 3-AI orchestrator deployed, async pattern, edge-to-edge auth fixed. NOT YET PRODUCTION-READY: synthesis step times out on the 505-exercise library + 16K-token output (exceeds Supabase edge function execution limit of ~400s).
+---
 
-**SMOKE-TEST RESULT (run 67ec6eb5):**
-- Orchestrator kicks off in 4s and returns run_id (async pattern works).
-- Step 1 (client-analysis-agent) succeeds in ~19s.
-- Step 2 (methodology-plan-agent + 5 RAG calls) succeeds in ~42s.
-- Step 3 (programme-synthesis-agent) HANGS - waitUntil() background task gets killed by the platform around 400s with no completion. The Claude call with 505-exercise library context + max_tokens=16000 is too heavy.
+## The Goal (Pedro's vision, approved 2026-05-20)
 
-**FIXES SHIPPED THIS SESSION:**
-- Auth: edge-to-edge fetches need both `Authorization` and `apikey` headers. Plus the 4 internal agents are now `verify_jwt: false` so service-role-key requests pass through. Pattern matches existing `retrieve-knowledge-context`. Only the orchestrator stays verify_jwt: true (user-facing).
-- Async: orchestrator wraps the pipeline in `EdgeRuntime.waitUntil()` and returns `{ run_id, status: 'running' }` immediately. Wizard polls `pt_program_generation_runs` every 3s for status changes. No more 150s timeout on the kickoff.
-- Schema mismatch: `pt_clients.goals` (not `.goal`), `pt_clients.name` (not first/last_name). Fixed in client-analysis-agent + orchestrator.
-- Prompt syntax bug in synthesis (nested backticks in template literal). Fixed.
+Rebuild the PT programme creation flow inside `/dashboard/pt/programmes/new` so that a single coach action produces a fully-populated, validated, knowledge-grounded training programme. The system has three big steps:
 
-**FOLLOW-UP NEEDED (synthesis timeout):**
-1. Pre-filter `pt_exercises` library before passing to AI - drop exercises that don't match ClientAnalysis constraints (e.g. drop overhead press if shoulder injury). Aim for ~150 exercises max in context.
-2. OR split synthesis into per-phase calls - one Claude call per phase (Foundation, 1RM Test, Hypertrophy, Strength, Retest). Each call is small and fits comfortably in execution time. Orchestrator already has per-step pattern.
-3. OR use Anthropic streaming API for the synthesis call - longer wall-clock allowed.
-4. Drop the `"video_url": null` and `"cues": []` placeholders from the synthesis output schema; server attaches these from library, no need for AI to emit them.
+**Step 1 - Coach inputs everything we know about a client.** Coach picks a client, uploads up to 3 documents (intake forms, assessment notes, anything), types or voice-dictates their own observations. The AI distributes that content into the four client "brain" docs on Supabase:
+- `pt_client_brain` (master profile, who they are, goals)
+- `pt_client_nutrition_doc` (current eating, preferences, restrictions)
+- `pt_client_exercise_doc` (current training, movement assessment, injuries)
+- `pt_client_lifestyle_doc` (sleep, stress, schedule, hobbies)
 
-**SMOKE TEST CHECKLIST (after synthesis is fixed):**
-1. Pick one of the 3 existing clients on /dashboard/pt/programmes/new. Their brain docs already have data.
-2. Type some intake notes ("client wants fat loss, has lower back stiffness, 3x/week schedule").
-3. Click Generate. Wizard polls run status, shows per-agent progress.
-4. Within ~3 min: Step 2 loads with the generated programme. Inspect:
-   - Phase 1 has 3 workout days, week_blocks with sets
-   - Phase 2 & 3 every day has Big 5 + accessories
-   - Every exercise has a video_url
-   - 1RM Test/Retest have Big 5 only, 5 sets each
-5. Check Supabase: `select * from pt_program_generation_runs order by created_at desc limit 1;`
+All four are then RAG-indexed so any future AI can retrieve relevant client context.
 
-Previous completed task (within this same session):
-PT Programme Creation - v1 of the new 3-AI orchestrator deployed end-to-end:
+**Step 2 - Coach chooses how many weeks each phase will last.** Fixed arc: Phase 1 Foundation, 1RM Test, Phase 2 Hypertrophy, Phase 3 Strength, 1RM Retest. Defaults: 7/1/12/10/1 weeks. Coach edits any of these, clicks Generate.
 
-**Migration applied:**
-- `20260520000000_pt_client_brain_chunks.sql` - new `pt_client_brain_chunks` table (id, client_id, doc_type, chunk_index, chunk_text, embedding vector(1536), source_columns) + `match_client_brain_chunks` RPC, scoped by client_id. ivfflat index, RLS for Pedro/admins. The 4 brain doc tables (pt_client_brain, pt_client_nutrition_doc, pt_client_exercise_doc, pt_client_lifestyle_doc) ALREADY exist on remote with 3 rows each - not in local migrations (drift). Did not recreate.
+**Step 3 - Three AIs work in sequence to build the programme.**
+1. **Client Analysis AI** reads all four brain docs via RAG, outputs structured ClientAnalysis JSON: goals, constraints, preferences, emphasis flags (`needs_cardio_block` for fat-loss clients, `needs_mobility_block` for mobility-focused clients, `compound_readiness` low/medium/high).
+2. **Methodology Plan AI** reads the 19-document knowledge base via RAG (Helms training/nutrition pyramids, ACSM physiology, Precision Nutrition, Pedro's coaching philosophy, etc), scales canonical week_blocks to the coach's chosen weeks, outputs MethodologyPlan JSON.
+3. **Programme Synthesis AI** combines client analysis + methodology plan + filtered exercise library, populates every phase/day/exercise with an `exercise_id` linked to `pt_exercises` so videos and cues auto-attach. Enforces non-negotiable rules.
 
-**Edge functions deployed (all v1, verify_jwt=true):**
-- `client-analysis-agent` - reads 4 brain docs + pt_client_documents, single Claude (sonnet-4-6) call, returns ClientAnalysis JSON with goals/constraints/preferences/emphasis (needs_cardio_block, needs_mobility_block, compound_readiness) and cited_sources.
-- `methodology-plan-agent` - scales canonical week_blocks to chosen phase weeks (pure function inline), calls `retrieve-knowledge-context` 5x for phase-specific rules, single Claude call, returns MethodologyPlan JSON.
-- `programme-synthesis-agent` - loads full `pt_exercises` library (505 rows), single Claude call (max_tokens=16000), enforces exercise_id linking + Big 5 + compound substitution + warm-up count + cardio/mobility blocks. Server post-process attaches video_url + cues from library; unresolved exercises returned in missing_exercises[].
-- `programme-validation-agent` - pure-code validation: ≥5 phases, Foundations=3 days, Hypertrophy/Strength have weight_pct+sets in every block, Big 5 present in every workout day, 1RM Test/Retest=Big 5 only 5 sets, exercise_id non-null, cardio/mobility blocks when emphasis-flagged.
-- `pt-programme-orchestrator` - creates pt_program_generation_runs row, chains 4 agents sequentially, logs one pt_program_generation_steps row per agent, writes pt_program_review_outputs on failures, returns full bundle.
+**Non-negotiable rules:**
+- **Phase 1 Foundation**: exactly 3 full-body days. Weeks 1-2 = 2 sets. Weeks 3-5 = 3 sets. **Last 2 weeks: compound substitution** (goblet squat -> BB Squat, KB/DB deadlift -> BB Deadlift, DB bench -> BB Bench Press, lat pull-down -> Pull-up, DB shoulder press -> BB Shoulder Press).
+- **Phase 2 (Hypertrophy) + Phase 3 (Strength)**: every workout day MUST include all 5 Big 5 lifts at the top with `weight_pct` from `week_blocks`. Accessories sprinkled after. Percentages scale algorithmically when phase weeks change.
+- **1RM Test / Retest**: Big 5 only, 5 sets each.
+- **Every workout day**: 4 warm-up exercises + 6 main exercises in 3 supersets.
+- **Conditional blocks**: cardio block (15-20 min steady) if `needs_cardio_block`; mobility block (10-15 min flexibility) if `needs_mobility_block`.
+- **Every exercise must carry `exercise_id`** from `pt_exercises` library so `video_url` and `cues` join back automatically.
+- **% to kg auto-resolves** when the coach enters Big 5 1RMs (`recalculate-percentage-loads` edge fn already does this).
 
-**Wizard rewired:**
-- `PTProgrammeWizard.tsx`: `generateFromDump` now calls `pt-programme-orchestrator` instead of `generate-pt-programme`. Requires clientId. Infers phase_weeks from template (default 7/12/10). Status timer cycles progress chips per agent. Sets run_id + validation_summary on draft for review page.
-- New helper: `inferPhaseWeeks()` in same file.
-- New util: `utils/pt/methodologyScaler.ts` (canonical block tables + scaler + Big 5 names + substitution rule).
+Approved follow-up: `/Users/pedroavila/.claude/plans/we-need-to-run-drifting-waffle.md` has the full rebuild plan. `~/.claude/projects/.../memory/project_pt_programming_overhaul_vision.md` has the vision in long-term memory.
 
-**Skill updates:**
-- `skills/pt-programming-workflow/SKILL.md`: added Phase 1 compound substitution rule (last 2 weeks: goblet squat → BB Squat, KB/DB deadlift → BB Deadlift, DB bench → BB Bench Press, lat pull-down → Pull-up, DB shoulder press → BB Shoulder Press). Added Big 5 in Phase 2/3 enforcement section. Added conditional cardio/mobility block rules. Updated validation list to match new agent.
-- Memory: `project_pt_programming_overhaul_vision.md` saved (full target architecture, Pedro approved 2026-05-20).
-- Plan file: `~/.claude/plans/we-need-to-run-drifting-waffle.md` (rebuild plan, approved).
+---
 
-**NOT done yet (follow-up):**
-- Step 1 file upload UI (3 docs + voice combined with text) - wizard currently uses brain dump textarea only. Tracked as task #3 + #4: `ingest-client-intake` + `embed-client-brain` edge functions.
-- Review UI 4-agent breakdown cards (task #13) - current PTProgrammeReviewView still shows old shape.
-- Smoke test full flow against a real client (task #14).
-- Delete old `generate-pt-programme` function (do after smoke test passes).
+## Why Pedro asked for this
+
+The old wizard called a lite edge function (`generate-pt-programme`) that:
+- Had no RAG (knowledge base ignored).
+- Had no link back to the exercise library, so generated exercise objects had no `video_url` and no `cues`. Videos didn't render on cards.
+- Had a minimal system prompt with none of the Big 5 / week_blocks / compound substitution rules.
+- Didn't read the client's existing brain docs.
+
+The symptoms Pedro reported:
+1. Programmes didn't create 3 workouts for Phase 1, 2, 3.
+2. Exercises weren't pulled from `pt_exercises`.
+3. Exercise videos missing on workout cards (despite every library row having a YouTube `video_url`).
+4. Sets on Phase 1 blank.
+5. Reps and percentages missing on Phase 2 and 3.
+6. The programme didn't reflect the unique findings from movement assessment + client notes pasted into Step 1.
+7. Knowledge docs never cited.
+
+Root cause: the wizard hit the lite function, not the heavier `pt-programming-agent` orchestrator. The orchestrator existed but the wizard wasn't pointed at it. Even the heavier orchestrator was one Claude call dressed up as 18 commands - not the true multi-agent flow Pedro wanted.
+
+---
+
+## What this session shipped (commit chain: 578f54d -> 19e956c)
+
+### Database
+
+**`20260520000000_pt_client_brain_chunks.sql`** applied to remote.
+- New table `pt_client_brain_chunks` (id, client_id, doc_type, chunk_index, chunk_text, embedding vector(1536), source_columns) for future client-scoped RAG.
+- New RPC `match_client_brain_chunks(query_embedding, target_client_id, match_count, match_threshold)`.
+- pgvector ivfflat index, RLS for Pedro/admins.
+
+Important drift note: the 4 brain doc tables (`pt_client_brain`, `pt_client_nutrition_doc`, `pt_client_exercise_doc`, `pt_client_lifestyle_doc`) **already exist on the remote DB** (each has 3 rows matching 3 clients). They were created directly on remote without a local migration file. Did not recreate.
+
+### Edge functions (5 new, all deployed to project otcnrkfvgyvwolironoz)
+
+| Function | Version | verify_jwt | Purpose |
+|---|---|---|---|
+| `client-analysis-agent` | v2 | false | Reads 4 brain docs + intake text. Single Claude (sonnet-4-6) call. Returns ClientAnalysis JSON. |
+| `methodology-plan-agent` | v3 | false | Calls `retrieve-knowledge-context` 5x for phase rules. Scales week_blocks via pure function. Single Claude call. Returns MethodologyPlan JSON. |
+| `programme-synthesis-agent` | v3 | false | Loads filtered `pt_exercises`. Single Claude call (max_tokens 10000) generates entire PTProgramme. Server post-process attaches `video_url`+`cues` from library. |
+| `programme-validation-agent` | v2 | false | Pure-code hard rules: >=5 phases, Foundations=3 days, week_blocks complete, Big 5 in Phase 2/3, 1RM=Big 5x5, exercise_id non-null. |
+| `pt-programme-orchestrator` | v3 | true | User-facing. Creates `pt_program_generation_runs` row. Wraps the 4-agent chain in `EdgeRuntime.waitUntil()` and returns `{ run_id, status: 'running' }` immediately. Pipeline runs in background. |
+
+### Wizard
+
+`app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`:
+- `generateFromDump` now calls `pt-programme-orchestrator` instead of the old lite function.
+- Requires clientId (the new flow needs the client brain).
+- Infers `phase_weeks` from the phase template via new helper `inferPhaseWeeks()`.
+- Polls `pt_program_generation_runs` every 3 seconds and surfaces per-agent progress chips ("Analysing client...", "Planning methodology...", "Synthesising programme...", "Validating...").
+- On terminal state, hydrates the wizard from `programme_draft` + `validation_summary` (name, goal, hard_failures, findings, missing_exercises).
+
+### Utilities
+
+`utils/pt/methodologyScaler.ts` (new): canonical week_blocks for Foundation/Hypertrophy/Strength, `scaleWeekBlocks(kind, targetWeeks)` pure function, Big 5 names, foundation substitution rule. Inlined into the methodology-plan-agent and available for future scaling work.
+
+### Skill / knowledge updates
+
+`/skills/pt-programming-workflow/SKILL.md` extended with:
+- Phase 1 compound substitution rule (with the exact swap list).
+- Big 5 enforcement section for Phase 2/3.
+- Conditional cardio/mobility block rules.
+- 1RM Test/Retest spec.
+- Updated validation list matching the new agent.
+
+### Memory + plan files
+
+- `~/.claude/plans/we-need-to-run-drifting-waffle.md` - the approved rebuild plan with target architecture, gap map, implementation steps, verification checklist.
+- `~/.claude/projects/.../memory/project_pt_programming_overhaul_vision.md` - long-term memory entry capturing the full vision so future sessions inherit context without re-discovering it.
+- `MEMORY.md` index updated to point at the new memory file.
+
+---
+
+## Mistakes during the session and what fixed them
+
+These are the four real walls we hit, in order. Each one taught something I want future-me (or future-Claude) to know before they hit it.
+
+### 1. Schema drift on pt_clients
+Wrote agent SQL using `pt_clients.first_name` / `.goal`. The actual columns are `name` / `goals`. Direct curl returned 404 from the agent's "Client not found" check. **Fix:** SQL `information_schema.columns` lookup before writing any agent that touches `pt_clients`. **Lesson:** never assume a schema - this DB has organic drift from being modified outside the local migrations.
+
+### 2. Edge-to-edge auth: 401 from internal agents
+First version of the orchestrator did `fetch(.../client-analysis-agent, { headers: { Authorization: 'Bearer <service_role>' } })`. Returned 401 every time. The platform's JWT verifier rejected service-role tokens originating from another edge function, even though direct curl with the same key worked. **Fix (two parts):**
+- Add `apikey: <service_role>` header alongside `Authorization`. Matches the pattern in the existing `pt-programming-agent -> retrieve-knowledge-context` call chain.
+- Deploy internal agents with `verify_jwt: false`. Only the user-facing orchestrator stays `verify_jwt: true`. This matches `retrieve-knowledge-context`, which is also verify_jwt false and does its own auth check inside the function body.
+
+**Lesson:** Supabase has a contract for service-role calls between edge functions that isn't well-documented. Look at how existing internal-only functions are deployed before deploying new ones.
+
+### 3. Synchronous edge function = 150s wall (and then 400s wall)
+First orchestrator iteration ran all 4 agents sequentially inside a single HTTP request. The wizard waited on the response. Supabase killed the request at 150s with HTTP 546 "WORKER_RESOURCE_LIMIT". **Fix:** wrap the pipeline in `EdgeRuntime.waitUntil(runPipeline(...))` and return `{ run_id, status: 'running' }` immediately. Wizard polls `pt_program_generation_runs` for status.
+
+This bought us a longer execution budget for the background work (around 400s based on testing) but it wasn't infinite.
+
+### 4. Synthesis Claude call is too slow for one mega-prompt (UNRESOLVED)
+Even with the async pattern + the exercise library pre-filtered down to ~150 entries + `max_tokens` dropped to 10000, the synthesis Claude call generating an entire 5-phase programme JSON still exceeds the background execution budget. The function hangs on the Claude SDK call for 300+ seconds and gets killed by the platform without writing a result.
+
+Why this is fundamental: each exercise object in the output is ~80-120 tokens (id, name, sets, reps, rest, notes, section_start, superset_id, etc). A 5-phase programme with ~3 days per training phase + Big 5 + accessories + warm-ups = roughly 200 exercise objects = ~20K output tokens. Sonnet generates ~50-100 tok/s, so the output alone needs 200-400s. That overlaps with the platform timeout.
+
+**Fix queued as task #15:** split synthesis into per-phase Claude calls. Orchestrator loops `foundation -> 1rm_test -> hypertrophy -> strength -> 1rm_retest`, calls the synthesis agent once per phase with just that phase's methodology + a small filtered library. Each call generates ~2-3K tokens of output (one phase), completes in 30-60s, fits comfortably. Plus: per-phase progress reporting in the wizard for free.
+
+**Lesson:** large structured generation jobs that bump against edge function execution caps need to be chunked, not optimised. Don't try to fit a 200-object JSON into one Claude response.
+
+---
+
+## Current state of the pipeline (what works, what doesn't)
+
+| Step | Status | Time | Notes |
+|---|---|---|---|
+| Orchestrator kickoff | WORKING | ~2-4s | Returns run_id, kicks off background pipeline. |
+| Step 1: Client Analysis | WORKING | ~20s | Reads 4 brain docs + intake text, returns ClientAnalysis JSON. |
+| Step 2: Methodology Plan | WORKING | ~40s | 5 RAG calls + 1 Claude call. Returns MethodologyPlan JSON. |
+| Step 3: Programme Synthesis | BROKEN | >400s | Hits edge function execution budget. Pipeline hangs at PROGRAMME_SYNTHESIS step indefinitely. Needs per-phase split (task #15). |
+| Step 4: Validation | NOT REACHED | - | Code is correct, just never gets a programme to validate yet. |
+| Wizard polling | WORKING | ~3s tick | Surfaces per-agent progress correctly. |
+| Coach review page | UNCHANGED | - | Still shows old shape, doesn't yet render 4-agent breakdown (task #13). |
+
+---
+
+## Next steps and why (priority order)
+
+### Step 1: Split synthesis into per-phase calls (task #15) - PRIORITY 1
+**Why:** unblocks the entire pipeline. Without this, no smoke test can complete and the new orchestrator can't be used in production. Everything else depends on synthesis returning a programme JSON.
+
+**How:**
+- Orchestrator loops the 5 phases. For each phase, call `programme-synthesis-agent` with `{ phase: methodology_plan.phases[i], client_analysis, library_subset }`.
+- Synthesis system prompt narrows: generate one phase JSON, not the whole programme.
+- Orchestrator stitches the 5 phase results into `programme.phases[]` and writes the full draft to `pt_program_generation_runs.programme_draft`.
+- Each phase call max_tokens ~3000, generates in 30-60s. Total: 150-300s sequential, fits in budget.
+- Per-phase progress fields in the wizard: "Synthesising Foundation (1/5)... Hypertrophy (2/5)..."
+
+### Step 2: Build Step 1 upload UI + `ingest-client-intake` + `embed-client-brain` (tasks #3 and #4) - PRIORITY 2
+**Why:** today the wizard only takes a text brain-dump in Step 1. Pedro's vision is 3 file uploads + text + voice, with the AI distributing content into the 4 brain doc tables. Without this, generating a programme for a brand-new client requires manually populating their brain docs first.
+
+**How:**
+- New edge fn `ingest-client-intake`: accepts files + text + voice transcript, extracts text from each, single Claude call distributes into `{ master, nutrition, exercise, lifestyle }` JSON, upserts to the 4 brain doc tables.
+- New edge fn `embed-client-brain`: chunks all 4 docs for a client, embeds via OpenAI `text-embedding-3-small`, writes to `pt_client_brain_chunks`.
+- Wizard Step 1: 3 file inputs (PDF/docx/txt), keep text + voice. "Generate" button calls `ingest-client-intake`, transitions to Step 2.
+
+### Step 3: Coach review UI 4-agent breakdown (task #13) - PRIORITY 3
+**Why:** the orchestrator stores rich audit (client_analysis JSON, methodology_plan JSON, validation hard_failures/findings, missing_exercises). The current `PTProgrammeReviewView` doesn't surface any of it. Pedro needs visibility into what each AI decided.
+
+**How:**
+- 4 collapsible cards in `PTProgrammeReviewView`: Client Analysis (with cited brain excerpts), Methodology Plan (with cited knowledge docs), Programme Synthesis (with missing-exercise warnings), Validation (hard_failures + findings list).
+- "Approve & Save" gated on zero hard_failures.
+- "Re-run agent X" button per card so Pedro can retry one step without regenerating from scratch.
+
+### Step 4: Delete the old lite function and verify production - PRIORITY 4
+**Why:** keeps the codebase clean. The wizard no longer calls `generate-pt-programme`, so it's dead code. Removing it forces the new path to be the only path.
+
+**How:** wait until full smoke test passes end-to-end. Then `rm -rf supabase/functions/generate-pt-programme/`, redeploy, run smoke test once more.
+
+---
+
+## Smoke test checklist (after task #15 lands)
+
+1. Open `/dashboard/pt/programmes/new` as Pedro.
+2. Pick one of the 3 existing clients (Mira / Thaisa / John). Their brain docs already have data.
+3. Type intake notes describing the client's goals/constraints.
+4. Click Generate.
+5. Wizard shows progress chips: Analysing -> Planning methodology -> Synthesising phase 1/5 -> ... -> Validating. Total ~3-4 minutes.
+6. Step 2 loads the generated programme. Verify:
+   - Phase 1 has exactly 3 workout days, week_blocks with sets, compound substitution in last 2 weeks.
+   - Phase 2 and Phase 3 every workout day contains all 5 Big 5 lifts with `weight_pct` from week_blocks.
+   - Every exercise card shows a YouTube video.
+   - 1RM Test and Retest contain Big 5 only with sets="5".
+   - Cardio/mobility blocks appear if client analysis flagged them.
+7. SQL check: `select * from pt_program_generation_runs order by created_at desc limit 1;` shows `status='needs_review'`, `programme_draft` populated, `validation_summary` with `passed=true`, zero `hard_failures`.
+8. SQL check: `select * from pt_program_generation_steps where run_id = '...' order by step_order;` shows 4+ step rows, all `status='succeeded'`.
+9. Approve in coach review UI, save assignment.
+10. Enter Big 5 1RMs on client detail page, click Recalculate loads, confirm kg appears under each Big 5 across Phase 2 and 3.
+
+---
+
+## Files changed this session
+
+```
+NEW
+  cerebro-site/supabase/migrations/20260520000000_pt_client_brain_chunks.sql
+  cerebro-site/supabase/functions/client-analysis-agent/index.ts
+  cerebro-site/supabase/functions/methodology-plan-agent/index.ts
+  cerebro-site/supabase/functions/programme-synthesis-agent/index.ts
+  cerebro-site/supabase/functions/programme-validation-agent/index.ts
+  cerebro-site/supabase/functions/pt-programme-orchestrator/index.ts
+  cerebro-site/utils/pt/methodologyScaler.ts
+
+MODIFIED
+  cerebro-site/app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx
+  cerebro-site/HANDOFF.md (this file)
+  skills/pt-programming-workflow/SKILL.md
+  ~/.claude/projects/.../memory/MEMORY.md
+  ~/.claude/projects/.../memory/project_pt_programming_overhaul_vision.md (new)
+  ~/.claude/plans/we-need-to-run-drifting-waffle.md
+```
+
+Two commits on main: `578f54d` (initial 3-AI rebuild) and `19e956c` (auth+async+filter fixes).
+
+---
 
 **MANUAL SMOKE TEST CHECKLIST:**
 1. Pick one of the 3 existing clients on /dashboard/pt/programmes/new. Their brain docs already have data - the client-analysis-agent will read them.
