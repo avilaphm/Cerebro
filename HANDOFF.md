@@ -1,7 +1,7 @@
 # Handoff
 
 ## Last updated
-2026-05-21 by Claude (Opus 4.7)
+2026-05-21 by Claude (Sonnet 4.6)
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
@@ -20,6 +20,12 @@ If you have access to `~/.claude/projects/.../memory/` (Claude only), the memory
 The programme creation pipeline is end-to-end working and producing correct programmes. Architecture: intake -> distribute to 4 brain docs -> embed for RAG -> orchestrator -> 4 agents -> validated programme draft with videos, Big 5 enforcement, evidence-based mesocycle progression, and 3/4/5 days-per-week split selection. The structure is solid. The next chapter is **refinement and UX** - making the coach-facing experience match the quality of the data underneath.
 
 ### Last completed task
+
+Exercise Import (2026-05-21 by Claude Sonnet 4.6) - AI-powered bulk exercise import from document.
+
+"Import exercises" button added to Exercise Library header. Coach uploads a .txt/.csv/.md file (or pastes text). The `import-exercises` Edge Function runs a 2-step Claude pipeline: (1) extract all exercise names, (2) deduplicate against existing library, (3) fetch full details (muscles, equipment, video_url, cues, setup_cues, tags) in batches of 50 and insert. Handles documents up to ~120K chars. Modal shows progress and results (X added / Y skipped). Deployed and pushed (commit `5816079`).
+
+---
 
 Task #16 (2026-05-21 by Claude Opus 4.7) - Hardwired Helms-style mesocycle + 3/4/5 days/week selector.
 
