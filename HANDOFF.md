@@ -5,6 +5,271 @@
 
 ---
 
+## FOR CODEX (OR ANY AGENT PICKING THIS UP)
+
+You are continuing work on the PT programme creation rebuild for Pedro Avila's Cerebro project. The previous Claude session got 80% of the way there but hit a wall on the synthesis step. Your job is to ship task #15 (split synthesis per-phase), then move to tasks #13 and #3+#4.
+
+### Read these files first, in this order, BEFORE writing any code
+
+1. **This file (`cerebro-site/HANDOFF.md`)** - everything below this section. It tells you the goal, why Pedro asked, what shipped, what walls were hit, what's left.
+2. **`../session-logs/learning-log.md` Entry 026** - the five mistakes the previous session made, with prevention tactics for each. Do not repeat them.
+3. **`../session-logs/rules-distilled.md`** - distilled lessons from prior sessions on this project.
+4. **`../CLAUDE.md`** - project-wide rules (skill chain, session protocol, programme rules).
+5. **`./CLAUDE.md`** and **`./AGENTS.md`** - Next.js + cerebro-site specific conventions.
+6. **`../skills/pt-programming-workflow/SKILL.md`** - every PT programme rule that the AI must enforce.
+7. **`~/.claude/plans/we-need-to-run-drifting-waffle.md`** - the approved rebuild plan with target architecture diagrams. Session 1 Progress at the bottom mirrors this file.
+8. **`../Cerebro Knowledge/CEREBRO CLIENT ANALYSIS & PROGRAM GENERATION SYSTEM.md`** - Pedro's coaching framework.
+
+If `~/.claude/projects/.../memory/project_pt_programming_overhaul_vision.md` is accessible to you, also read it - it has the auth pattern and implementation status condensed.
+
+### Environment you're working in
+
+- Repo root: `/Users/pedroavila/Library/CloudStorage/GoogleDrive-avila.phm@gmail.com/My Drive/WORK/Claude/Cerebro Directory Claude Code/`
+- Site root: `cerebro-site/` (this is where most work happens)
+- Skills + knowledge are one level up: `../skills/` and `../Cerebro Knowledge/`
+- Plans: `~/.claude/plans/`
+- Supabase project id: `otcnrkfvgyvwolironoz` (region ap-northeast-1)
+- Anthropic SDK pinned at `npm:@anthropic-ai/sdk@0.65.0` in edge functions
+- Supabase client pinned at `npm:@supabase/supabase-js@2` in edge functions
+- Model used in agents: `claude-sonnet-4-6`
+- `.env.local` has `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, etc. Source it for curl tests.
+
+### Hard rules Pedro cares about (do not violate)
+
+1. **Always commit and push after every change.** No exceptions. Pedro's memory says push to GitHub is part of every code change, no need to ask.
+2. **No em dashes (-) or en dashes (-) in any `.md` file.** A pre-commit hook in the cerebro-site repo will reject the commit. Use a hyphen `-`. After editing any `.md`, run: `python3 -c "c=open('FILE.md').read(); open('FILE.md','w').write(c.replace('-','-').replace('-','-'))"`.
+3. **Update `HANDOFF.md` and the task list before stopping a session.** Update `current state` so the next agent knows where to pick up.
+4. **`git add -A` not glob patterns.** Next.js dynamic routes have `[id]` brackets that zsh interprets as globs. Documented in learning-log entry 020.
+5. **No comments unless the WHY is non-obvious.** TypeScript strict mode, no `any`.
+6. **Pedro picks the architecture.** When you face a fork, ask before guessing. He explicitly chose "3 separate Claude calls" and "brand-new orchestrator from scratch" - honour those choices even when shortcuts are tempting.
+
+### Pre-flight checks (before you start coding)
+
+```bash
+# 1. Confirm you're on the latest commit
+cd "/Users/pedroavila/Library/CloudStorage/GoogleDrive-avila.phm@gmail.com/My Drive/WORK/Claude/Cerebro Directory Claude Code/cerebro-site"
+git log --oneline -5
+# Latest should be 9b1cea8 "Rewrite HANDOFF.md with full session-1 narrative"
+
+# 2. Confirm the 5 new edge functions are deployed
+# Use supabase MCP or CLI to list them. Should see:
+#   client-analysis-agent v2 (verify_jwt: false)
+#   methodology-plan-agent v3 (verify_jwt: false)
+#   programme-synthesis-agent v3 (verify_jwt: false)
+#   programme-validation-agent v2 (verify_jwt: false)
+#   pt-programme-orchestrator v3 (verify_jwt: true)
+
+# 3. Confirm the migration applied
+# Via SQL: select * from pt_client_brain_chunks limit 1; -- should not error
+# Via SQL: select proname from pg_proc where proname='match_client_brain_chunks'; -- should return 1 row
+
+# 4. Confirm pipeline state with no in-flight runs
+# select status, current_command, count(*) from pt_program_generation_runs group by 1,2 order by 1;
+# Anything in status='running' that's older than 10 minutes is dead - mark it failed before testing.
+```
+
+### Task #15: Split programme-synthesis-agent into per-phase calls (DO THIS FIRST)
+
+**Why first:** This is the only thing blocking the smoke test. Until synthesis returns a programme JSON, nothing downstream can be tested. Until smoke test passes, you can't delete the old `generate-pt-programme` function or build the review UI cards confidently.
+
+**Architecture:**
+- Today: orchestrator -> synthesis (one call, ~20K output tokens, ~400s, TIMES OUT).
+- Target: orchestrator -> synthesis x5 (one call per phase, ~2-3K output tokens each, ~30-60s each, fits in budget).
+
+**Exact change plan:**
+
+**A. Modify `programme-synthesis-agent/index.ts`** to accept a single-phase request:
+```ts
+const body = await req.json() as {
+  client_analysis: Record<string, unknown>;
+  methodology_plan_phase: Record<string, unknown>; // ONE phase from methodology_plan.phases
+  phase_index: number;                              // 0..4
+  programme_name?: string;                          // optional, only on first call
+  programme_goal?: string;                          // optional, only on first call
+};
+```
+
+The system prompt narrows to generate ONE phase (not all 5). It still outputs `{ id, title, focus, weeks, progression, week_blocks, days }` for that phase, plus a `missing_exercises` array. Drop the `programme.phases` wrapper.
+
+Return shape:
+```ts
+{
+  ok: true,
+  phase: { id, title, focus, weeks, progression, week_blocks, days },
+  missing_exercises: string[],
+  name?: string,   // returned only when phase_index === 0
+  goal?: string,   // returned only when phase_index === 0
+}
+```
+
+Server post-process (`enrichProgramme`) becomes `enrichPhase` - same logic, just runs on one phase's days/exercises.
+
+**B. Modify `pt-programme-orchestrator/index.ts`** STEP 3 to loop:
+```ts
+// STEP 3: Programme Synthesis (per-phase loop)
+const phases: Record<string, unknown>[] = [];
+let programmeName = '';
+let programmeGoal = '';
+const allMissing: string[] = [];
+
+const methodologyPhases = (methodologyPlan.phases ?? []) as Array<Record<string, unknown>>;
+
+for (let i = 0; i < methodologyPhases.length; i++) {
+  const phaseType = methodologyPhases[i].type as string;
+  await admin.from('pt_program_generation_runs')
+    .update({ current_command: `PROGRAMME_SYNTHESIS_${phaseType.toUpperCase()}` })
+    .eq('id', runId);
+
+  const phaseRes = await callAgent('programme-synthesis-agent', {
+    client_analysis: clientAnalysis,
+    methodology_plan_phase: methodologyPhases[i],
+    phase_index: i,
+  });
+  await recordStep(3 + i * 0.1, `PROGRAMME_SYNTHESIS_${phaseType.toUpperCase()}`,
+    { phase_index: i }, phaseRes.output,
+    phaseRes.ok ? 'succeeded' : 'failed', phaseRes.error);
+  if (!phaseRes.ok) { await fail(`Synthesis ${phaseType} failed: ${phaseRes.error}`); return; }
+
+  phases.push(phaseRes.output.phase as Record<string, unknown>);
+  if (i === 0) {
+    programmeName = (phaseRes.output.name as string) ?? '';
+    programmeGoal = (phaseRes.output.goal as string) ?? '';
+  }
+  allMissing.push(...((phaseRes.output.missing_exercises as string[]) ?? []));
+}
+
+const programme = { phases };
+const missingExercises = Array.from(new Set(allMissing));
+```
+
+Then step 4 (validation) runs unchanged on the stitched `programme`.
+
+**Step-order column constraint:** `pt_program_generation_steps.step_order` is integer. Per-phase steps could share order 3 with a sub-suffix in `command_name` (PROGRAMME_SYNTHESIS_FOUNDATION, etc), all at step_order=3. Or assign 3,4,5,6,7 for the 5 phase calls and bump validation to step_order=8. Pick the latter - cleaner audit trail.
+
+**C. Wizard polling** in `PTProgrammeWizard.tsx`:
+- `commandLabel` switch already handles `PROGRAMME_SYNTHESIS`. Extend it to handle `PROGRAMME_SYNTHESIS_FOUNDATION`, `_HYPERTROPHY`, etc. Map each to a friendly label like `"Synthesising Foundation (1/5)..."`.
+
+**D. Deploy + smoke test:**
+```bash
+# Use the supabase MCP deploy_edge_function tool. Internal agents stay verify_jwt: false.
+# Orchestrator stays verify_jwt: true.
+
+# Smoke test against Mira (client_id d43808bb-eef1-49e6-b858-aa6c827c74ec):
+cd cerebro-site && set -a && source .env.local && set +a
+curl -s -X POST "${NEXT_PUBLIC_SUPABASE_URL}/functions/v1/pt-programme-orchestrator" \
+  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"client_id":"d43808bb-eef1-49e6-b858-aa6c827c74ec","phase_weeks":{"foundation":7,"hypertrophy":12,"strength":10},"intake_text":"smoke test"}' \
+  -w "\nHTTP %{http_code} in %{time_total}s\n"
+
+# Should return { ok: true, run_id: '...', status: 'running' } in 2-4s.
+
+# Then poll:
+RUN_ID=<from response>
+until curl -s "https://otcnrkfvgyvwolironoz.supabase.co/rest/v1/pt_program_generation_runs?id=eq.$RUN_ID&select=status,current_command,failure_reason" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+  | grep -qE '"status":"(needs_review|failed)"'; do sleep 10; done
+
+# Inspect the result via SQL:
+# select status, current_command, failure_reason, jsonb_array_length(programme_draft->'phases') as phase_count
+# from pt_program_generation_runs where id = '...';
+```
+
+Total expected time end-to-end: ~3-5 minutes (20s analysis + 40s methodology + 5x30-60s synthesis + 1s validation).
+
+**Success criteria for task #15:**
+- Smoke test completes with `status='needs_review'`.
+- `programme_draft.phases` has 5 entries.
+- Foundation phase has exactly 3 workout days, week_blocks with sets.
+- Hypertrophy + Strength phases include all Big 5 in every workout day with `weight_pct`.
+- 1RM Test + Retest contain only the Big 5, sets="5".
+- Every exercise object has non-null `exercise_id` AND `video_url`.
+- `pt_program_generation_steps` has 1+1+5+1 = 8 rows (analysis, methodology, 5 synthesis, validation), all `status='succeeded'`.
+
+### Task #13 (after #15 lands): Coach review UI 4-agent breakdown
+
+File: `app/dashboard/pt/programmes/review/[id]/PTProgrammeReviewView.tsx`
+
+The orchestrator stores rich data on `pt_program_generation_runs`:
+- `coaching_reasoning.client_analysis` - full ClientAnalysis JSON
+- `coaching_reasoning.methodology_plan` - full MethodologyPlan JSON
+- `validation_summary.hard_failures` - array of strings
+- `validation_summary.findings` - array of strings
+- `validation_summary.missing_exercises` - array of strings
+
+Goal: 4 collapsible cards in the review page.
+- **Client Analysis card:** goals, constraints, preferences, emphasis, cited_sources excerpts.
+- **Methodology Plan card:** per-phase week_blocks, cardio/mobility flags, cited_documents.
+- **Programme Synthesis card:** missing_exercises warnings (if any), unresolved exercise count.
+- **Validation card:** hard_failures list (red), findings list (yellow), green checkmark if both empty.
+
+"Approve & Save" button only enabled when `hard_failures.length === 0`. Per-card "Re-run agent X" button stubs - can be wired later.
+
+Reuse existing button/card components from the review page. Don't restyle.
+
+### Tasks #3 + #4 (after #13): Step 1 multi-file upload + brain distributor
+
+**Goal of these:** today the wizard only takes one text brain dump. Pedro's vision is 3 file uploads + text + voice, with AI distributing content into 4 brain doc tables.
+
+**New edge fn `ingest-client-intake`:**
+- Input: `{ client_id, files: [{name, content_base64, mime_type}], notes_text, voice_transcript }`.
+- For each file: extract text. PDF -> use `npm:pdf-parse`, docx -> `npm:mammoth`, txt -> read directly. Skip OCR for v1 (no image support).
+- Single Claude call: distribute all text into `{ master, nutrition, exercise, lifestyle }` JSON.
+- Upsert each section to the 4 brain doc tables. Use the columns described in `client-analysis-agent` SELECTs.
+- Fire `embed-client-brain` as fire-and-forget at the end.
+
+**New edge fn `embed-client-brain`:**
+- Input: `{ client_id }`.
+- Read all 4 brain docs for the client.
+- Chunk each (~500 tokens with 100-token overlap).
+- Embed via OpenAI `text-embedding-3-small` (matches existing `pt_knowledge_chunks` dimension).
+- Delete prior chunks for the client first, then insert fresh.
+- Write to `pt_client_brain_chunks(client_id, doc_type, chunk_index, chunk_text, embedding, source_columns)`.
+
+Both new fns deploy with `verify_jwt: false` (internal-only).
+
+**Wizard Step 1 update** (`PTProgrammeWizard.tsx`):
+- Add 3 file inputs (PDF/docx/txt, max 10MB each).
+- Keep existing brain-dump textarea + voice button.
+- "Continue to Step 2" button replaces the current Generate button. Calls `ingest-client-intake` with `{ client_id, files, notes_text, voice_transcript }`. Transitions to Step 2 on success.
+- Step 2's existing "Generate programme" button stays the entry point for the orchestrator.
+
+### Gotchas the previous session learned the hard way
+
+1. **Schema drift.** `pt_clients.name` not `first_name`, `pt_clients.goals` not `goal`. Query `information_schema.columns` for ANY table before writing SQL.
+2. **Edge-to-edge auth.** Internal edge functions must deploy with `verify_jwt: false`. Inter-edge `fetch` must send BOTH `Authorization: Bearer <service_role>` AND `apikey: <service_role>` headers. The platform rejects service-role tokens at the JWT verifier when called from another edge function.
+3. **Sync requests die at 150s.** Any orchestration with multiple Claude calls must use `EdgeRuntime.waitUntil(...)` and return immediately with a `run_id`. Wizard polls the run row.
+4. **Background tasks die at ~400s.** Even waitUntil has a ceiling. Don't try to do everything in one background task - chunk by natural boundary.
+5. **Nested backticks in template literals are a silent bug.** Run `npx tsc --noEmit` after EVERY edit to a TS file with backtick-delimited strings.
+6. **The 4 client brain doc tables exist on remote but not in local migrations.** Don't try to create them. The migration trigger that auto-inserts brain docs on `pt_clients` INSERT already works (3 existing clients have 3 rows each in each of the 4 tables).
+7. **MCP deploy_edge_function takes content as a JSON-encoded `files` array.** Easy to break with backticks/newlines. Use `python3 -c "import json; print(json.dumps([{'name':'index.ts','content':open(...).read()}]))"` to safely encode, then paste the output into the deploy call.
+8. **Status updates via REST need BOTH headers.** Tested working: `curl ... -H "apikey: $KEY" -H "Authorization: Bearer $KEY"`. The first time I tried with only apikey, it returned `[]` silently.
+
+### Test clients available (have brain doc data already)
+
+| Name | client_id | Status |
+|---|---|---|
+| Mira Juka | d43808bb-eef1-49e6-b858-aa6c827c74ec | active, has movement assessment notes |
+| Thaisa | 7e0023d9-a581-463c-8cdd-c144a204bf14 | active |
+| John Wick | 6fbd4d9b-f913-434c-a101-46c1d9acbe5d | active |
+
+Use Mira for the first smoke test - her brain has the richest data (right shoulder instability + lower back concerns documented).
+
+### What good looks like at end of your session
+
+When you stop, the following should be true:
+- Task #15 closed, smoke test passes end-to-end against Mira.
+- `pt_program_generation_runs` for Mira shows `status='needs_review'`, 5 phases in `programme_draft`, validation `passed=true`.
+- A new commit on `main` describing the per-phase synthesis split. Pushed to GitHub.
+- `HANDOFF.md` updated: "Last updated" date, "Last completed task" describing what you did, next steps trimmed (tasks #13, #3, #4 remain).
+- A new entry in `../session-logs/learning-log.md` covering anything surprising you encountered.
+- If you completed task #13 too: review UI cards visible, "Approve & Save" gating works.
+
+If you get stuck in the same way I did, escalate to Pedro before sinking another hour. The pattern I missed for too long was that the synthesis Claude call was fundamentally too big for one shot - I tried two fixes (slim library, drop max_tokens) before accepting the architectural change was needed.
+
+---
+
 ## The Goal (Pedro's vision, approved 2026-05-20)
 
 Rebuild the PT programme creation flow inside `/dashboard/pt/programmes/new` so that a single coach action produces a fully-populated, validated, knowledge-grounded training programme. The system has three big steps:
