@@ -188,12 +188,19 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         case 'CLIENT_ANALYSIS': return 'Analysing client…';
         case 'METHODOLOGY_PLAN': return 'Planning methodology (knowledge base RAG)…';
         case 'PROGRAMME_SYNTHESIS': return 'Synthesising programme (exercise library)…';
+        case 'PROGRAMME_SYNTHESIS_FOUNDATION': return 'Synthesising Foundation (1/5)…';
+        case 'PROGRAMME_SYNTHESIS_1RM_TEST': return 'Synthesising 1RM Test (2/5)…';
+        case 'PROGRAMME_SYNTHESIS_HYPERTROPHY': return 'Synthesising Hypertrophy (3/5)…';
+        case 'PROGRAMME_SYNTHESIS_STRENGTH': return 'Synthesising Strength (4/5)…';
+        case 'PROGRAMME_SYNTHESIS_1RM_RETEST': return 'Synthesising 1RM Retest (5/5)…';
         case 'VALIDATION': return 'Validating…';
-        default: return 'Working…';
+        default:
+          if (cmd?.startsWith('PROGRAMME_SYNTHESIS_')) return 'Synthesising phase…';
+          return 'Working…';
       }
     };
 
-    const pollDeadline = Date.now() + 4 * 60_000;
+    const pollDeadline = Date.now() + 7 * 60_000;
     while (Date.now() < pollDeadline) {
       await new Promise((r) => setTimeout(r, 3000));
       const { data: row } = await supabase
@@ -236,7 +243,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         return;
       }
     }
-    setGenStatus('Pipeline still running after 4 minutes — open the review page to check progress.');
+    setGenStatus('Pipeline still running after 7 minutes — open the review page to check progress.');
     setGenerating(false);
   };
 

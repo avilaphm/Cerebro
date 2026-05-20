@@ -36,41 +36,31 @@ You receive:
   (2) A MethodologyPlan JSON — the phase structures, week_blocks (already scaled to chosen weeks), substitution rules, Big 5 requirements, cardio/mobility flags.
   (3) The Cerebro EXERCISE LIBRARY — every exercise has an id, name, video_url, cues, muscles, equipment.
 
-Your job: produce a fully-populated PTProgramme JSON with every phase, every day, every exercise.
+Your job: produce ONE fully-populated programme phase with every day and exercise for the provided methodology phase.
 
 OUTPUT FORMAT — valid JSON only, matching this exact shape:
 {
-  "name": string,                                  // programme name, short
-  "goal": string,                                  // 1-sentence client goal
-  "programme": {
-    "phases": [
+  "name": string,                                  // only when phase_index is 0, programme name, short
+  "goal": string,                                  // only when phase_index is 0, 1-sentence client goal
+  "phase": {
+    "id": string,                                  // generate unique slug for this phase
+    "title": string,                               // e.g. "Phase 1 - Foundation"
+    "focus": string,                               // 1-line focus statement
+    "weeks": string,                               // total weeks, as string
+    "progression": string,                         // 1-2 sentences about how it progresses
+    "week_blocks": [{ "weeks": number, "sets": string, "weight_pct"?: string }],
+    "days": [
       {
-        "id": string,                              // generate unique slug per phase
-        "title": string,                           // e.g. "Phase 1 - Foundation"
-        "focus": string,                           // 1-line focus statement
-        "weeks": string,                           // total weeks, as string
-        "progression": string,                     // 1-2 sentences about how it progresses
-        "week_blocks": [{ "weeks": number, "sets": string, "weight_pct"?: string }],
-        "days": [
+        "id": string,                              // unique slug per day
+        "title": string,                           // e.g. "Day 1 - Full Body A"
+        "focus": string,
+        "exercises": [
           {
-            "id": string,                          // unique slug per day
-            "title": string,                       // e.g. "Day 1 - Full Body A"
-            "focus": string,
-            "exercises": [
-              {
-                "id": string,                      // unique slug per exercise instance
-                "exercise_id": string,             // MUST be a real id from the EXERCISE LIBRARY
-                "name": string,                    // exact name from the library
-                "sets": string,                    // sets for this exercise (typically matches week_blocks[0].sets)
-                "reps": string,                    // rep range e.g. "8-12" or "10-12"
-                "rest": string,                    // e.g. "60 sec" or "2 min"
-                "notes": string,                   // 1 short tempo/intent cue
-                "section_start": "Warm Up" | "Workout" | "MetCon" | "Stretches" | null,
-                "superset_id": string | null,      // group exercises that pair
-                "video_url": null,                 // leave null — server attaches from library
-                "cues": []                          // leave empty array — server attaches from library
-              }
-            ]
+            "exercise_id": string,                 // MUST be a real id from the EXERCISE LIBRARY
+            "sets": string,                        // sets for this exercise (typically matches week_blocks[0].sets)
+            "reps": string,                        // rep range e.g. "8-12" or "10-12"
+            "section_start": "Warm Up" | "Workout" | "MetCon" | "Stretches" | null,
+            "superset_id": string | null           // group exercises that pair
           }
         ]
       }
@@ -105,12 +95,9 @@ HARD RULES (violating any = failure):
    Use superset_id to pair exercises (e.g. "ss-1" for exercises 1 and 2, "ss-2" for 3 and 4, "ss-3" for 5 and 6).
    For Hypertrophy/Strength phases, the Big 5 occupy slots; other exercises are accessory.
 
-6. CARDIO BLOCK: if MethodologyPlan phase.cardio_block_minutes is not null, add a single cardio exercise at end
-   (section_start "MetCon") with sets="1", reps="<minutes> min steady" (substitute the actual number),
-   exercise_id from library (bike, rower, treadmill, etc.).
+6. CARDIO BLOCK: do not output cardio exercises. The server appends them when MethodologyPlan phase.cardio_block_minutes is set.
 
-7. MOBILITY BLOCK: if MethodologyPlan phase.mobility_block_minutes is not null, add 2-3 mobility/stretching
-   exercises at end (section_start "Stretches"), 1 set each, 30-60 sec hold.
+7. MOBILITY BLOCK: do not output mobility/stretching exercises. The server appends them when MethodologyPlan phase.mobility_block_minutes is set.
 
 8. 1RM TEST / RETEST: ONE workout day containing only the 5 Big 5, sets="5" each, reps="1", rest="3-5 min".
    Phase weeks = 1. No warm-up section needed inside the exercises array (the 1RM warm-up ramp is on the client side).
@@ -118,17 +105,26 @@ HARD RULES (violating any = failure):
 9. EXERCISE SELECTION must honor ClientAnalysis.constraints (avoid contraindicated exercises) and
    ClientAnalysis.preferences (favor likes, avoid dislikes when possible).
 
-10. id fields: use kebab-case slugs unique within their parent (e.g. "phase-foundation", "day-1", "ex-bb-squat-1").`;
+10. id fields: use kebab-case slugs unique within their parent (e.g. "phase-foundation", "day-1", "ex-bb-squat-1").
+
+11. Keep output compact: focus/progression are one sentence each, no extra fields.
+
+12. Do not include exercise name, video_url, cues, exercise instance id, rest, or notes. The server attaches those.
+
+13. Return minified JSON only. Do not wrap it in markdown fences.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     const body = await req.json() as {
       client_analysis: Record<string, unknown>;
-      methodology_plan: Record<string, unknown>;
+      methodology_plan_phase: Record<string, unknown>;
+      phase_index: number;
+      programme_name?: string;
+      programme_goal?: string;
     };
-    if (!body.client_analysis || !body.methodology_plan) {
-      return json({ error: 'client_analysis and methodology_plan required' }, 400);
+    if (!body.client_analysis || !body.methodology_plan_phase || typeof body.phase_index !== 'number') {
+      return json({ error: 'client_analysis, methodology_plan_phase, and phase_index required' }, 400);
     }
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -149,17 +145,23 @@ Deno.serve(async (req) => {
       equipment: e.equipment,
     }));
 
+    const deterministic = buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis);
+    if (deterministic) return json({ ok: true, ...deterministic });
+
     const userMessage = [
       `CLIENT ANALYSIS:\n${JSON.stringify(body.client_analysis, null, 2)}`,
-      `METHODOLOGY PLAN:\n${JSON.stringify(body.methodology_plan, null, 2)}`,
+      `PHASE INDEX:\n${body.phase_index}`,
+      `METHODOLOGY PLAN PHASE:\n${JSON.stringify(body.methodology_plan_phase, null, 2)}`,
+      `OPTIONAL PROGRAMME NAME:\n${body.programme_name ?? ''}`,
+      `OPTIONAL PROGRAMME GOAL:\n${body.programme_goal ?? ''}`,
       `EXERCISE LIBRARY (${compactLibrary.length} exercises):\n${JSON.stringify(compactLibrary)}`,
-      'Output the full PTProgramme JSON now. JSON only — no prose.',
+      'Output this single compact phase JSON now. Minified JSON only, no prose, no markdown fence.',
     ].join('\n\n---\n\n');
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 10000,
+      max_tokens: 4500,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     });
@@ -168,7 +170,7 @@ Deno.serve(async (req) => {
     const parsed = parseJson(text);
     if (!parsed) return json({ error: 'Programme synthesis did not return valid JSON', raw: text }, 502);
 
-    const enriched = enrichProgramme(parsed, library);
+    const enriched = enrichPhase(parsed, library, body.methodology_plan_phase);
 
     return json({ ok: true, ...enriched });
   } catch (error) {
@@ -177,41 +179,42 @@ Deno.serve(async (req) => {
   }
 });
 
-function enrichProgramme(parsed: Record<string, unknown>, library: ExerciseRow[]): Record<string, unknown> {
+function enrichPhase(parsed: Record<string, unknown>, library: ExerciseRow[], methodologyPhase: Record<string, unknown>): Record<string, unknown> {
   const byId = new Map<string, ExerciseRow>(library.map((e) => [e.id, e]));
   const byNameNorm = new Map<string, ExerciseRow>(library.map((e) => [e.name.toLowerCase().trim(), e]));
 
-  const programme = parsed.programme as { phases?: Array<Record<string, unknown>> } | undefined;
-  const phases = programme?.phases ?? [];
+  const phase = (parsed.phase ?? {}) as Record<string, unknown>;
   const unresolved: Array<{ phase: string; day: string; name: string }> = [];
 
-  for (const phase of phases) {
-    const days = (phase.days as Array<Record<string, unknown>>) ?? [];
-    for (const day of days) {
-      const exercises = (day.exercises as Array<Record<string, unknown>>) ?? [];
-      for (const ex of exercises) {
-        let row: ExerciseRow | undefined;
-        const exerciseId = ex.exercise_id as string | undefined;
-        const name = (ex.name as string | undefined)?.trim() ?? '';
-        if (exerciseId && byId.has(exerciseId)) {
-          row = byId.get(exerciseId);
-        } else if (name) {
-          row = byNameNorm.get(name.toLowerCase());
-        }
-        if (row) {
-          ex.exercise_id = row.id;
-          ex.name = row.name;
-          ex.video_url = row.video_url;
-          ex.cues = row.cues ?? [];
-        } else {
-          unresolved.push({
-            phase: String(phase.title ?? ''),
-            day: String(day.title ?? ''),
-            name: name || '(unnamed)',
-          });
-        }
+  const days = (phase.days as Array<Record<string, unknown>>) ?? [];
+  for (const day of days) {
+    const exercises = (day.exercises as Array<Record<string, unknown>>) ?? [];
+    for (const ex of exercises) {
+      let row: ExerciseRow | undefined;
+      const exerciseId = ex.exercise_id as string | undefined;
+      const name = (ex.name as string | undefined)?.trim() ?? '';
+      if (exerciseId && byId.has(exerciseId)) {
+        row = byId.get(exerciseId);
+      } else if (name) {
+        row = byNameNorm.get(name.toLowerCase());
+      }
+      if (row) {
+        ex.id = typeof ex.id === 'string' && ex.id ? ex.id : slugExerciseId(row.name, exercises.indexOf(ex) + 1);
+        ex.exercise_id = row.id;
+        ex.name = row.name;
+        ex.rest = typeof ex.rest === 'string' ? ex.rest : defaultRest(String(ex.section_start ?? ''));
+        ex.notes = typeof ex.notes === 'string' ? ex.notes : '';
+        ex.video_url = row.video_url;
+        ex.cues = row.cues ?? [];
+      } else {
+        unresolved.push({
+          phase: String(phase.title ?? ''),
+          day: String(day.title ?? ''),
+          name: name || '(unnamed)',
+        });
       }
     }
+    appendConditionalBlocks(day, library, methodologyPhase);
   }
 
   const missing = (parsed.missing_exercises as string[] | undefined) ?? [];
@@ -220,10 +223,261 @@ function enrichProgramme(parsed: Record<string, unknown>, library: ExerciseRow[]
   return {
     name: parsed.name ?? '',
     goal: parsed.goal ?? '',
-    programme: parsed.programme ?? { phases: [] },
+    phase,
     missing_exercises: allMissing,
     unresolved_count: unresolved.length,
   };
+}
+
+function buildDeterministicPhase(
+  methodologyPhase: Record<string, unknown>,
+  library: ExerciseRow[],
+  filteredLibrary: ExerciseRow[],
+  phaseIndex: number,
+  analysis: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const type = String(methodologyPhase.type ?? '').toLowerCase();
+  const weekBlocks = (methodologyPhase.week_blocks as Array<Record<string, unknown>> | undefined) ?? [];
+  const weeks = String(methodologyPhase.weeks ?? (type.includes('1rm') ? 1 : weekBlocks.reduce((sum, b) => sum + Number(b.weeks ?? 0), 0) || ''));
+  const warmups = pickWarmups(filteredLibrary);
+  const big5 = pickBig5(library);
+  if (big5.length < 5) return null;
+
+  if (type === '1rm_test' || type === '1rm_retest') {
+    const phase = {
+      id: type === '1rm_retest' ? 'phase-1rm-retest' : 'phase-1rm-test',
+      title: type === '1rm_retest' ? '1RM Retest' : '1RM Test',
+      focus: 'Measure baseline strength across the Big 5 lifts.',
+      weeks,
+      progression: 'One testing week establishes percentage-based loading for the next phase.',
+      week_blocks: [],
+      days: [{
+        id: 'day-1',
+        title: type === '1rm_retest' ? 'Day 1 - 1RM Retest' : 'Day 1 - 1RM Test',
+        focus: 'Big 5 strength testing',
+        exercises: big5.map((row, index) => buildExercise(row, index + 1, '5', '1', '3-5 min', '% of 1RM test', index === 0 ? 'Workout' : null, null, BIG_5_LABELS[index])),
+      }],
+    };
+    return { name: phaseIndex === 0 ? programmeNameFromAnalysis(analysis) : '', goal: phaseIndex === 0 ? goalFromAnalysis(analysis) : '', phase, missing_exercises: [], unresolved_count: 0 };
+  }
+
+  if (type === 'hypertrophy' || type === 'strength') {
+    const sets = String((weekBlocks[0]?.sets as string | undefined) ?? (type === 'hypertrophy' ? '3' : '4'));
+    const reps = type === 'hypertrophy' ? '8-12' : '3-6';
+    const rest = type === 'hypertrophy' ? '60 sec' : '2-3 min';
+    const accessoryPool = pickAccessories(filteredLibrary, big5);
+    const days = [0, 1, 2].map((dayIndex) => {
+      const exercises = [
+        ...warmups.map((row, index) => buildExercise(row, index + 1, '1', '10-12', '30 sec', '', index === 0 ? 'Warm Up' : null, null)),
+        ...big5.map((row, index) => buildExercise(row, index + 5, sets, reps, rest, '% of 1RM as per week block', index === 0 ? 'Workout' : null, `ss-${Math.floor(index / 2) + 1}`, BIG_5_LABELS[index])),
+      ];
+      const accessory = accessoryPool[dayIndex % accessoryPool.length];
+      if (accessory) exercises.push(buildExercise(accessory, exercises.length + 1, sets, reps, rest, '', null, 'ss-3'));
+      const day = {
+        id: `day-${dayIndex + 1}`,
+        title: `Day ${dayIndex + 1} - ${type === 'hypertrophy' ? 'Hypertrophy' : 'Strength'} ${String.fromCharCode(65 + dayIndex)}`,
+        focus: type === 'hypertrophy' ? 'Big 5 volume with accessory support.' : 'Big 5 strength practice with controlled accessories.',
+        exercises,
+      };
+      appendConditionalBlocks(day, filteredLibrary, methodologyPhase);
+      return day;
+    });
+
+    const phase = {
+      id: type === 'hypertrophy' ? 'phase-hypertrophy' : 'phase-strength',
+      title: type === 'hypertrophy' ? 'Phase 2 - Hypertrophy' : 'Phase 3 - Strength',
+      focus: type === 'hypertrophy' ? 'Build muscle and work capacity through Big 5 volume.' : 'Build force production through heavier Big 5 practice.',
+      weeks,
+      progression: 'Progression follows the scaled week blocks from the methodology plan.',
+      week_blocks: weekBlocks,
+      days,
+    };
+    return { name: phaseIndex === 0 ? programmeNameFromAnalysis(analysis) : '', goal: phaseIndex === 0 ? goalFromAnalysis(analysis) : '', phase, missing_exercises: [], unresolved_count: 0 };
+  }
+
+  if (type === 'foundation') {
+    const sets = String((weekBlocks[0]?.sets as string | undefined) ?? '2');
+    const mainPool = pickFoundationMain(filteredLibrary, big5);
+    const days = [0, 1, 2].map((dayIndex) => {
+      const main = rotate(mainPool, dayIndex).slice(0, 6);
+      const exercises = [
+        ...warmups.map((row, index) => buildExercise(row, index + 1, '1', '10-12', '30 sec', '', index === 0 ? 'Warm Up' : null, null)),
+        ...main.map((row, index) => buildExercise(row, index + 5, sets, '10-12', '60 sec', '', index === 0 ? 'Workout' : null, `ss-${Math.floor(index / 2) + 1}`)),
+      ];
+      const day = {
+        id: `day-${dayIndex + 1}`,
+        title: `Day ${dayIndex + 1} - Full Body ${String.fromCharCode(65 + dayIndex)}`,
+        focus: 'Movement quality, glute strength, core control, and confidence.',
+        exercises,
+      };
+      appendConditionalBlocks(day, filteredLibrary, methodologyPhase);
+      return day;
+    });
+
+    const phase = {
+      id: 'phase-foundation',
+      title: 'Phase 1 - Foundation',
+      focus: 'Build movement quality and tissue tolerance before heavy loading.',
+      weeks,
+      progression: 'Sets progress through the scaled week blocks, with compound readiness built in the final block.',
+      week_blocks: weekBlocks,
+      days,
+    };
+    return { name: phaseIndex === 0 ? programmeNameFromAnalysis(analysis) : '', goal: phaseIndex === 0 ? goalFromAnalysis(analysis) : '', phase, missing_exercises: [], unresolved_count: 0 };
+  }
+
+  return null;
+}
+
+function buildExercise(
+  row: ExerciseRow,
+  index: number,
+  sets: string,
+  reps: string,
+  rest: string,
+  notes: string,
+  sectionStart: string | null,
+  supersetId: string | null,
+  displayName?: string,
+): Record<string, unknown> {
+  return {
+    id: slugExerciseId(displayName ?? row.name, index),
+    exercise_id: row.id,
+    name: displayName ?? row.name,
+    sets,
+    reps,
+    rest,
+    notes,
+    section_start: sectionStart,
+    superset_id: supersetId,
+    video_url: row.video_url,
+    cues: row.cues ?? [],
+  };
+}
+
+const BIG_5_LABELS = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'];
+
+function pickBig5(library: ExerciseRow[]): ExerciseRow[] {
+  return [
+    findExercise(library, /^BB Squat$/i) ?? findExercise(library, /bb squat|barbell squat|back squat|front squat/i),
+    findExercise(library, /^BB Deadlift$/i) ?? findExercise(library, /bb deadlift|barbell deadlift|conventional deadlift|trap bar deadlift/i),
+    findExercise(library, /^BB Bench Press$/i) ?? findExercise(library, /bb bench press|barbell bench|bench press/i),
+    findExercise(library, /^BB Shoulder Press$/i) ?? findExercise(library, /bb shoulder press|barbell shoulder press|shoulder press|overhead press/i),
+    findExercise(library, /^Pull-up$/i) ?? findExercise(library, /pull[- ]?up/i),
+  ].filter((row): row is ExerciseRow => Boolean(row));
+}
+
+function pickWarmups(library: ExerciseRow[]): ExerciseRow[] {
+  const patterns = [/glute bridge/i, /dead bug/i, /clamshell/i, /cat[- ]?cow|thoracic/i, /hip/i, /band/i];
+  return pickByPatterns(library, patterns, 4);
+}
+
+function pickAccessories(library: ExerciseRow[], exclude: ExerciseRow[]): ExerciseRow[] {
+  const excluded = new Set(exclude.map((e) => e.id));
+  return library.filter((e) => !excluded.has(e.id) && /(row|split squat|lunge|curl|tricep|raise|pallof|plank|carry|bridge)/i.test(e.name)).slice(0, 9);
+}
+
+function pickFoundationMain(library: ExerciseRow[], big5: ExerciseRow[]): ExerciseRow[] {
+  const patterns = [/goblet squat/i, /deadlift/i, /bench press/i, /lat pull/i, /row/i, /split squat|lunge/i, /pallof|dead bug|plank/i, /glute/i];
+  const picked = pickByPatterns(library, patterns, 8);
+  return picked.length >= 6 ? picked : [...picked, ...big5].slice(0, 6);
+}
+
+function pickByPatterns(library: ExerciseRow[], patterns: RegExp[], count: number): ExerciseRow[] {
+  const picked: ExerciseRow[] = [];
+  const seen = new Set<string>();
+  for (const pattern of patterns) {
+    const row = findExercise(library, pattern);
+    if (row && !seen.has(row.id)) {
+      picked.push(row);
+      seen.add(row.id);
+    }
+    if (picked.length >= count) return picked;
+  }
+  for (const row of library) {
+    if (!seen.has(row.id)) {
+      picked.push(row);
+      seen.add(row.id);
+    }
+    if (picked.length >= count) return picked;
+  }
+  return picked;
+}
+
+function rotate<T>(items: T[], offset: number): T[] {
+  if (items.length === 0) return items;
+  const shift = offset % items.length;
+  return [...items.slice(shift), ...items.slice(0, shift)];
+}
+
+function programmeNameFromAnalysis(analysis: Record<string, unknown>): string {
+  const goals = (analysis.goals ?? {}) as Record<string, unknown>;
+  const primary = typeof goals.primary === 'string' ? goals.primary : 'Strength and Movement Quality';
+  return `${primary} Programme`;
+}
+
+function goalFromAnalysis(analysis: Record<string, unknown>): string {
+  const goals = (analysis.goals ?? {}) as Record<string, unknown>;
+  return typeof goals.primary === 'string' ? goals.primary : 'Build strength, movement quality, and confidence.';
+}
+
+function appendConditionalBlocks(day: Record<string, unknown>, library: ExerciseRow[], methodologyPhase: Record<string, unknown>) {
+  const exercises = (day.exercises as Array<Record<string, unknown>>) ?? [];
+  const hasMetcon = exercises.some((e) => e.section_start === 'MetCon');
+  const hasStretches = exercises.some((e) => e.section_start === 'Stretches');
+  const cardioMinutes = typeof methodologyPhase.cardio_block_minutes === 'number' ? methodologyPhase.cardio_block_minutes : null;
+  const mobilityMinutes = typeof methodologyPhase.mobility_block_minutes === 'number' ? methodologyPhase.mobility_block_minutes : null;
+
+  if (cardioMinutes && !hasMetcon) {
+    const cardio = findExercise(library, /(bike|row|tread|elliptical|sled|carry)/i);
+    if (cardio) exercises.push(buildAppendedExercise(cardio, exercises.length + 1, '1', `${cardioMinutes} min steady`, 'MetCon'));
+  }
+
+  if (mobilityMinutes && !hasStretches) {
+    const mobility = library
+      .filter((e) => /(stretch|mobility|hip|thoracic|hamstring|flexor|opener)/i.test(`${e.name} ${(e.tags ?? []).join(' ')}`))
+      .slice(0, 2);
+    mobility.forEach((exercise) => {
+      exercises.push(buildAppendedExercise(exercise, exercises.length + 1, '1', '30-60 sec', exercises.some((e) => e.section_start === 'Stretches') ? null : 'Stretches'));
+    });
+  }
+
+  day.exercises = exercises;
+}
+
+function buildAppendedExercise(row: ExerciseRow, index: number, sets: string, reps: string, sectionStart: string | null): Record<string, unknown> {
+  return {
+    id: slugExerciseId(row.name, index),
+    exercise_id: row.id,
+    name: row.name,
+    sets,
+    reps,
+    rest: '30 sec',
+    notes: '',
+    section_start: sectionStart,
+    superset_id: null,
+    video_url: row.video_url,
+    cues: row.cues ?? [],
+  };
+}
+
+function findExercise(library: ExerciseRow[], pattern: RegExp): ExerciseRow | undefined {
+  return library.find((e) => pattern.test(`${e.name} ${(e.tags ?? []).join(' ')}`));
+}
+
+function defaultRest(sectionStart: string): string {
+  if (sectionStart === 'Warm Up') return '30 sec';
+  if (sectionStart === 'MetCon' || sectionStart === 'Stretches') return '30 sec';
+  return '60 sec';
+}
+
+function slugExerciseId(name: string, index: number): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return `ex-${slug || 'exercise'}-${index}`;
 }
 
 function filterLibraryForClient(library: ExerciseRow[], analysis: Record<string, unknown>): ExerciseRow[] {
@@ -242,7 +496,7 @@ function filterLibraryForClient(library: ExerciseRow[], analysis: Record<string,
     return false;
   };
 
-  const big5 = library.filter((e) => big5Names.some((n) => e.name.toLowerCase().includes(n)) && !isContraindicated(e));
+  const big5 = library.filter((e) => big5Names.some((n) => e.name.toLowerCase().includes(n)));
   const cardio = library.filter((e) => /(bike|row|tread|jog|run|skip|elliptical|sled|carry|prowler)/i.test(e.name) && !isContraindicated(e)).slice(0, 6);
   const warmup = library.filter((e) => /(band|mobility|stretch|activation|opener|cat[- ]?cow|world|hip|shoulder dislocate|scap)/i.test((e.tags ?? []).join(' ') + ' ' + e.name) && !isContraindicated(e)).slice(0, 25);
   const others = library

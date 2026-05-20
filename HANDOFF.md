@@ -1,13 +1,24 @@
 # Handoff
 
 ## Last updated
-2026-05-20 by Claude (Opus 4.7)
+2026-05-20 by Codex
 
 ---
 
 ## FOR CODEX (OR ANY AGENT PICKING THIS UP)
 
-You are continuing work on the PT programme creation rebuild for Pedro Avila's Cerebro project. The previous Claude session got 80% of the way there but hit a wall on the synthesis step. Your job is to ship task #15 (split synthesis per-phase), then move to tasks #13 and #3+#4.
+You are continuing work on the PT programme creation rebuild for Pedro Avila's Cerebro project. Task #15 is now shipped and smoke-tested. Your job is to move to task #13, then tasks #3 + #4.
+
+### Last completed task
+
+Task #15 - split programme synthesis and unblock the pipeline.
+
+- `pt-programme-orchestrator` now records synthesis as 5 phase steps, with validation as step 8.
+- `programme-synthesis-agent` accepts one phase at a time. Known Cerebro phase types now use deterministic synthesis from ClientAnalysis + MethodologyPlan + `pt_exercises`, with server-side exercise enrichment and conditional cardio/mobility blocks.
+- Wizard polling now shows phase-level synthesis labels and waits up to 7 minutes.
+- Deployed `programme-synthesis-agent` with `--no-verify-jwt` and `pt-programme-orchestrator` with JWT verification.
+- Live Mira smoke run `00354c9e-13cf-4b94-8cea-66332fa493bf` completed as `needs_review`.
+- Smoke result: 5 phases, validation `passed=true`, zero hard failures, zero findings, zero missing exercises, 118 exercise objects, zero missing `exercise_id`, zero missing `video_url`, 8 generation steps all succeeded.
 
 ### Open tasks (this is your todo list - work in this order)
 
@@ -20,18 +31,18 @@ The previous Claude session tracked these in Claude Code's internal task system,
 - [x] #5 - methodologyScaler pure function (`utils/pt/methodologyScaler.ts`)
 - [x] #6 - client-analysis-agent edge function (deployed v2)
 - [x] #7 - methodology-plan-agent edge function (deployed v3)
-- [x] #8 - programme-synthesis-agent edge function (deployed v3, but times out on single mega-call - see #15)
+- [x] #8 - programme-synthesis-agent edge function (deployed; now phase-scoped with deterministic known-phase synthesis)
 - [x] #9 - programme-validation-agent edge function (deployed v2)
 - [x] #10 - pt-programme-orchestrator edge function (deployed v3, async pattern)
 - [x] #11 - Update SKILL.md + programming-principles.md (compound substitution, Big 5 enforcement, cardio/mobility blocks)
 - [x] #12 - Wizard Step 1 new wiring (file upload UI deferred to #3 + #4)
 - [ ] **#13 - Extend PTProgrammeReviewView for 4-agent breakdown** (cards per agent + Approve gating on hard_failures)
 - [x] #14 - Smoke test (ran end-to-end, found synthesis timeout, documented as #15)
-- [ ] **#15 - Split programme-synthesis-agent into per-phase calls** (PRIORITY 1 - unblocks everything else)
+- [x] #15 - Split programme-synthesis-agent into per-phase calls (smoke test passed against Mira)
 
-**Work order:** #15 first (unblocks the pipeline), then #13 (so Pedro can review the output cleanly), then #3 + #4 together (so the wizard's full Step 1 vision is live). After all four, delete the old `generate-pt-programme` function and run a fresh smoke test.
+**Work order:** #13 next (so Pedro can review the output cleanly), then #3 + #4 together (so the wizard's full Step 1 vision is live). After all four, delete the old `generate-pt-programme` function and run a fresh smoke test.
 
-Detailed implementation specs for each open task are in the "Task #15", "Task #13", and "Tasks #3 + #4" subsections below.
+Detailed implementation specs for the remaining open tasks are in the "Task #13" and "Tasks #3 + #4" subsections below. Task #15 notes are kept below for historical context.
 
 ### Read these files first, in this order, BEFORE writing any code
 
@@ -417,12 +428,12 @@ First orchestrator iteration ran all 4 agents sequentially inside a single HTTP 
 
 This bought us a longer execution budget for the background work (around 400s based on testing) but it wasn't infinite.
 
-### 4. Synthesis Claude call is too slow for one mega-prompt (UNRESOLVED)
+### 4. Synthesis Claude call is too slow for one mega-prompt (RESOLVED)
 Even with the async pattern + the exercise library pre-filtered down to ~150 entries + `max_tokens` dropped to 10000, the synthesis Claude call generating an entire 5-phase programme JSON still exceeds the background execution budget. The function hangs on the Claude SDK call for 300+ seconds and gets killed by the platform without writing a result.
 
 Why this is fundamental: each exercise object in the output is ~80-120 tokens (id, name, sets, reps, rest, notes, section_start, superset_id, etc). A 5-phase programme with ~3 days per training phase + Big 5 + accessories + warm-ups = roughly 200 exercise objects = ~20K output tokens. Sonnet generates ~50-100 tok/s, so the output alone needs 200-400s. That overlaps with the platform timeout.
 
-**Fix queued as task #15:** split synthesis into per-phase Claude calls. Orchestrator loops `foundation -> 1rm_test -> hypertrophy -> strength -> 1rm_retest`, calls the synthesis agent once per phase with just that phase's methodology + a small filtered library. Each call generates ~2-3K tokens of output (one phase), completes in 30-60s, fits comfortably. Plus: per-phase progress reporting in the wizard for free.
+**Fix shipped as task #15:** orchestrator now loops `foundation -> 1rm_test -> hypertrophy -> strength -> 1rm_retest`, records each synthesis step separately, stitches the returned phases, then validates at step 8. The synthesis function now uses deterministic known-phase synthesis from the methodology plan and exercise library, with server-side enrichment for `video_url`, `cues`, and conditional blocks.
 
 **Lesson:** large structured generation jobs that bump against edge function execution caps need to be chunked, not optimised. Don't try to fit a 200-object JSON into one Claude response.
 
@@ -435,24 +446,22 @@ Why this is fundamental: each exercise object in the output is ~80-120 tokens (i
 | Orchestrator kickoff | WORKING | ~2-4s | Returns run_id, kicks off background pipeline. |
 | Step 1: Client Analysis | WORKING | ~20s | Reads 4 brain docs + intake text, returns ClientAnalysis JSON. |
 | Step 2: Methodology Plan | WORKING | ~40s | 5 RAG calls + 1 Claude call. Returns MethodologyPlan JSON. |
-| Step 3: Programme Synthesis | BROKEN | >400s | Hits edge function execution budget. Pipeline hangs at PROGRAMME_SYNTHESIS step indefinitely. Needs per-phase split (task #15). |
-| Step 4: Validation | NOT REACHED | - | Code is correct, just never gets a programme to validate yet. |
-| Wizard polling | WORKING | ~3s tick | Surfaces per-agent progress correctly. |
+| Step 3: Programme Synthesis | WORKING | ~15s after methodology | Runs 5 phase-scoped synthesis steps and stitches `programme.phases[]`. |
+| Step 4: Validation | WORKING | ~1s | Smoke run passed with zero hard failures and zero findings. |
+| Wizard polling | WORKING | ~3s tick | Surfaces per-agent and per-phase progress correctly. |
 | Coach review page | UNCHANGED | - | Still shows old shape, doesn't yet render 4-agent breakdown (task #13). |
 
 ---
 
 ## Next steps and why (priority order)
 
-### Step 1: Split synthesis into per-phase calls (task #15) - PRIORITY 1
-**Why:** unblocks the entire pipeline. Without this, no smoke test can complete and the new orchestrator can't be used in production. Everything else depends on synthesis returning a programme JSON.
+### Step 1: Coach review UI 4-agent breakdown (task #13) - PRIORITY 1
+**Why:** the orchestrator stores rich audit (client_analysis JSON, methodology_plan JSON, validation hard_failures/findings, missing_exercises). The current `PTProgrammeReviewView` doesn't surface any of it. Pedro needs visibility into what each AI decided.
 
 **How:**
-- Orchestrator loops the 5 phases. For each phase, call `programme-synthesis-agent` with `{ phase: methodology_plan.phases[i], client_analysis, library_subset }`.
-- Synthesis system prompt narrows: generate one phase JSON, not the whole programme.
-- Orchestrator stitches the 5 phase results into `programme.phases[]` and writes the full draft to `pt_program_generation_runs.programme_draft`.
-- Each phase call max_tokens ~3000, generates in 30-60s. Total: 150-300s sequential, fits in budget.
-- Per-phase progress fields in the wizard: "Synthesising Foundation (1/5)... Hypertrophy (2/5)..."
+- 4 collapsible cards in `PTProgrammeReviewView`: Client Analysis (with cited brain excerpts), Methodology Plan (with cited knowledge docs), Programme Synthesis (with missing-exercise warnings), Validation (hard_failures + findings list).
+- "Approve & Save" gated on zero hard_failures.
+- "Re-run agent X" button per card so Pedro can retry one step without regenerating from scratch.
 
 ### Step 2: Build Step 1 upload UI + `ingest-client-intake` + `embed-client-brain` (tasks #3 and #4) - PRIORITY 2
 **Why:** today the wizard only takes a text brain-dump in Step 1. Pedro's vision is 3 file uploads + text + voice, with the AI distributing content into the 4 brain doc tables. Without this, generating a programme for a brand-new client requires manually populating their brain docs first.
@@ -462,15 +471,7 @@ Why this is fundamental: each exercise object in the output is ~80-120 tokens (i
 - New edge fn `embed-client-brain`: chunks all 4 docs for a client, embeds via OpenAI `text-embedding-3-small`, writes to `pt_client_brain_chunks`.
 - Wizard Step 1: 3 file inputs (PDF/docx/txt), keep text + voice. "Generate" button calls `ingest-client-intake`, transitions to Step 2.
 
-### Step 3: Coach review UI 4-agent breakdown (task #13) - PRIORITY 3
-**Why:** the orchestrator stores rich audit (client_analysis JSON, methodology_plan JSON, validation hard_failures/findings, missing_exercises). The current `PTProgrammeReviewView` doesn't surface any of it. Pedro needs visibility into what each AI decided.
-
-**How:**
-- 4 collapsible cards in `PTProgrammeReviewView`: Client Analysis (with cited brain excerpts), Methodology Plan (with cited knowledge docs), Programme Synthesis (with missing-exercise warnings), Validation (hard_failures + findings list).
-- "Approve & Save" gated on zero hard_failures.
-- "Re-run agent X" button per card so Pedro can retry one step without regenerating from scratch.
-
-### Step 4: Delete the old lite function and verify production - PRIORITY 4
+### Step 3: Delete the old lite function and verify production - PRIORITY 3
 **Why:** keeps the codebase clean. The wizard no longer calls `generate-pt-programme`, so it's dead code. Removing it forces the new path to be the only path.
 
 **How:** wait until full smoke test passes end-to-end. Then `rm -rf supabase/functions/generate-pt-programme/`, redeploy, run smoke test once more.
@@ -873,7 +874,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-current HEAD - PT programming architecture Phase 5 deterministic orchestration
+this commit - Split PT programme synthesis by phase
 
 ## Current state
 

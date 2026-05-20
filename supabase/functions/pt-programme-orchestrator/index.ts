@@ -13,7 +13,7 @@ function json(data: unknown, status = 200) {
   });
 }
 
-const STEP_NAMES = ['CLIENT_ANALYSIS', 'METHODOLOGY_PLAN', 'PROGRAMME_SYNTHESIS', 'VALIDATION'] as const;
+const STEP_NAMES = ['CLIENT_ANALYSIS', 'METHODOLOGY_PLAN', 'VALIDATION'] as const;
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -126,24 +126,60 @@ async function runPipeline(ctx: {
     if (!step2.ok) { await fail(`Methodology planning failed: ${step2.error}`); return; }
     const methodologyPlan = step2.output.methodology_plan as Record<string, unknown>;
 
-    // STEP 3: Programme Synthesis
-    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[2] }).eq('id', runId);
-    const step3 = await callAgent('programme-synthesis-agent', {
-      client_analysis: clientAnalysis,
-      methodology_plan: methodologyPlan,
-    });
-    await recordStep(3, STEP_NAMES[2], {}, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
-    if (!step3.ok) { await fail(`Programme synthesis failed: ${step3.error}`); return; }
-    const programmeName = step3.output.name as string;
-    const programmeGoal = step3.output.goal as string;
-    const programme = step3.output.programme as Record<string, unknown>;
-    const missingExercises = (step3.output.missing_exercises as string[]) ?? [];
+    // STEP 3: Programme Synthesis, one phase at a time to stay under edge runtime limits.
+    const methodologyPhases = (methodologyPlan.phases ?? []) as Array<Record<string, unknown>>;
+    if (methodologyPhases.length === 0) {
+      await fail('Methodology plan returned no phases.');
+      return;
+    }
+
+    const phases: Record<string, unknown>[] = [];
+    let programmeName = '';
+    let programmeGoal = '';
+    const allMissing: string[] = [];
+
+    for (let i = 0; i < methodologyPhases.length; i++) {
+      const commandName = synthesisCommandName(methodologyPhases[i], i);
+      await admin.from('pt_program_generation_runs').update({ current_command: commandName }).eq('id', runId);
+
+      const step = await callAgent('programme-synthesis-agent', {
+        client_analysis: clientAnalysis,
+        methodology_plan_phase: methodologyPhases[i],
+        phase_index: i,
+        programme_name: programmeName,
+        programme_goal: programmeGoal,
+      });
+
+      const stepOrder = 3 + i;
+      await recordStep(
+        stepOrder,
+        commandName,
+        { phase_index: i, methodology_plan_phase: methodologyPhases[i] },
+        step.output,
+        step.ok ? 'succeeded' : 'failed',
+        step.error,
+      );
+      if (!step.ok) {
+        await fail(`Programme synthesis failed at phase ${i + 1}: ${step.error}`);
+        return;
+      }
+
+      phases.push(step.output.phase as Record<string, unknown>);
+      if (i === 0) {
+        programmeName = (step.output.name as string | undefined) ?? '';
+        programmeGoal = (step.output.goal as string | undefined) ?? '';
+      }
+      allMissing.push(...((step.output.missing_exercises as string[] | undefined) ?? []));
+    }
+
+    const programme = { phases };
+    const missingExercises = Array.from(new Set(allMissing));
 
     // STEP 4: Validation
-    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[3] }).eq('id', runId);
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[2] }).eq('id', runId);
     const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
     const step4 = await callAgent('programme-validation-agent', { programme, emphasis });
-    await recordStep(4, STEP_NAMES[3], {}, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
+    await recordStep(3 + methodologyPhases.length, STEP_NAMES[2], {}, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
     if (!step4.ok) { await fail(`Validation failed: ${step4.error}`); return; }
     const validation = step4.output as { passed: boolean; hard_failures: string[]; findings: string[] };
 
@@ -185,4 +221,14 @@ async function runPipeline(ctx: {
       completed_at: new Date().toISOString(),
     }).eq('id', runId);
   }
+}
+
+function synthesisCommandName(phase: Record<string, unknown>, index: number): string {
+  const raw = String(phase.type ?? phase.title ?? `phase_${index + 1}`);
+  const slug = raw
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `PROGRAMME_SYNTHESIS_${slug || `PHASE_${index + 1}`}`;
 }
