@@ -2822,7 +2822,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             onClick={closeModal}
           >
             <div
-              className="w-full max-w-sm overflow-hidden bg-white shadow-2xl"
+              className="no-glass w-full max-w-sm overflow-hidden bg-white shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Available slot: step 1 */}
@@ -3298,7 +3298,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         >
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           <div
-            className="relative z-10 flex w-full max-w-lg flex-col rounded-t-[2rem] bg-white shadow-[0_-24px_60px_rgba(0,0,0,0.18)]"
+            className="no-glass relative z-10 flex w-full max-w-lg flex-col rounded-t-[2rem] bg-white shadow-[0_-24px_60px_rgba(0,0,0,0.18)]"
             style={{ maxHeight: '85dvh' }}
             onClick={(e) => e.stopPropagation()}
           >

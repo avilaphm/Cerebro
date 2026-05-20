@@ -386,7 +386,7 @@ body::before {
   border-color: rgba(0, 0, 0, 0.08) !important;
 }
 
-/* Opt-out of glass treatment for elements that need a solid background (e.g. dropdowns).
+/* Opt-out of glass treatment for elements that need a solid background (e.g. dropdowns, modals).
    Scoped under liquid-dashboard/client-liquid to beat the bg-white glass override. */
 .liquid-dashboard .no-glass,
 .client-liquid .no-glass,
@@ -394,6 +394,27 @@ body::before {
   background: white !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  border-radius: 12px !important;
-  box-shadow: 0 8px 28px -6px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Also protect bg-white descendants and form elements inside a no-glass container */
+.liquid-dashboard .no-glass [class*="bg-white"],
+.client-liquid .no-glass [class*="bg-white"],
+.no-glass [class*="bg-white"] {
+  background: white !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.liquid-dashboard .no-glass input,
+.liquid-dashboard .no-glass textarea,
+.liquid-dashboard .no-glass select,
+.client-liquid .no-glass input,
+.client-liquid .no-glass textarea,
+.client-liquid .no-glass select,
+.no-glass input,
+.no-glass textarea,
+.no-glass select {
+  background: white !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }

@@ -701,8 +701,8 @@ export default function PTExercisesView({ initialExercises }: Props) {
         )}
       </div>
       {showImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="flex w-full max-w-xl flex-col rounded-2xl bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4">
+          <div className="no-glass flex w-full max-w-xl flex-col rounded-2xl bg-white shadow-2xl">
             {/* Modal header */}
             <div className="flex items-center justify-between border-b border-black/8 px-6 py-4">
               <div>
@@ -894,7 +894,7 @@ function ProgressionEditor({
           className="w-full rounded-lg border border-black/12 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-black/30"
         />
         {matches.length > 0 && (
-          <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-black/10 bg-white shadow-lg">
+          <div className="no-glass absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-black/10 bg-white shadow-lg">
             {matches.map((ex) => (
               <button
                 key={ex.id}

@@ -212,7 +212,7 @@ export default function PTMessagesView({ clients, unreadByClient, initialClientI
             </button>
 
             {dropdownOpen && (
-              <div className="no-glass absolute top-full left-0 mt-1.5 w-56 z-50 py-1 overflow-hidden">
+              <div className="no-glass absolute top-full left-0 mt-1.5 w-56 z-50 rounded-xl py-1 overflow-hidden shadow-[0_8px_28px_-6px_rgba(0,0,0,0.14),0_0_0_1px_rgba(0,0,0,0.08)]">
                 {clients.length === 0 ? (
                   <p className="px-4 py-3 text-xs text-black/30">No clients yet.</p>
                 ) : (

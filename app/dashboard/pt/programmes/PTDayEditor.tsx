@@ -287,7 +287,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                   className="w-full border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 bg-white"
                 />
                 {autocompleteMatches.length > 0 && (
-                  <div className="absolute left-0 top-full z-30 bg-white border border-black/15 shadow-md w-full max-h-44 overflow-y-auto">
+                  <div className="no-glass absolute left-0 top-full z-30 bg-white border border-black/15 shadow-md w-full max-h-44 overflow-y-auto">
                     {autocompleteMatches.map((libEx) => (
                       <button key={libEx.id} type="button" onMouseDown={() => selectFromLibrary(idx, libEx)}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 flex items-baseline gap-2">
@@ -460,7 +460,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                   + Section
                 </button>
                 {showSectionPicker && (
-                  <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-black/20 shadow-sm min-w-[140px]">
+                  <div className="no-glass absolute right-0 top-full mt-1 z-20 bg-white border border-black/20 shadow-sm min-w-[140px]">
                     {SECTION_NAMES.map((name) => (
                       <button key={name} type="button" onClick={() => sectionSelected(name)}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 transition-colors">{name}</button>
