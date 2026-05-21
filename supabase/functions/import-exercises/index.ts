@@ -1,5 +1,4 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import Anthropic from 'npm:@anthropic-ai/sdk@0.65.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +31,55 @@ function parseJsonArray(text: string): unknown[] | null {
     }
   }
   return null;
+}
+
+type OpenAIResponse = {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{ text?: string }>;
+  }>;
+  error?: { message?: string };
+};
+
+async function generateTextWithOpenAI(params: {
+  apiKey: string;
+  model: string;
+  instructions: string;
+  input: string;
+  maxOutputTokens: number;
+}) {
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: params.model,
+      instructions: params.instructions,
+      input: params.input,
+      max_output_tokens: params.maxOutputTokens,
+    }),
+  });
+
+  const text = await res.text();
+  let payload: OpenAIResponse;
+  try {
+    payload = JSON.parse(text) as OpenAIResponse;
+  } catch {
+    throw new Error(`OpenAI returned non-JSON response: ${text.slice(0, 300)}`);
+  }
+
+  if (!res.ok || payload.error) {
+    throw new Error(payload.error?.message ?? `OpenAI request failed with ${res.status}`);
+  }
+
+  const outputText = payload.output_text
+    ?? payload.output?.flatMap((item) => item.content?.map((content) => content.text ?? '') ?? []).join('\n')
+    ?? '';
+
+  if (!outputText.trim()) throw new Error('OpenAI returned an empty response');
+  return outputText;
 }
 
 const DETAIL_SYSTEM = `You are a fitness exercise data extractor. Given a document and a list of exercise names, extract full structured data for ONLY the listed exercises.
@@ -74,24 +122,21 @@ Deno.serve(async (req) => {
     const { data: existing } = await admin.from('pt_exercises').select('name');
     const existingSet = new Set((existing ?? []).map((e: { name: string }) => e.name.toLowerCase().trim()));
 
-    const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
+    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    if (!openaiKey) return json({ error: 'OPENAI_API_KEY is not configured' }, 500);
+    const openaiModel = Deno.env.get('OPENAI_EXERCISE_IMPORT_MODEL') ?? 'gpt-4.1';
 
     // Step 1: extract all exercise names from the document
-    const namesMsg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: 'Extract all exercise names from the document. Return ONLY a JSON array of strings. No markdown. No explanation.',
-      messages: [{
-        role: 'user',
-        content: `Document:\n${docText.slice(0, 120000)}`,
-      }],
+    const namesText = await generateTextWithOpenAI({
+      apiKey: openaiKey,
+      model: openaiModel,
+      maxOutputTokens: 4096,
+      instructions: 'Extract all exercise names from the document. Return ONLY a JSON array of strings. No markdown. No explanation.',
+      input: `Document:\n${docText.slice(0, 120000)}`,
     });
 
-    const namesContent = namesMsg.content[0];
-    if (namesContent.type !== 'text') return json({ error: 'Unexpected AI response' }, 500);
-
-    const allNames = parseJsonArray(namesContent.text) as string[] | null;
-    if (!allNames) return json({ error: 'Could not parse exercise names from document', partial: namesContent.text.slice(0, 400) }, 500);
+    const allNames = parseJsonArray(namesText) as string[] | null;
+    if (!allNames) return json({ error: 'Could not parse exercise names from document', partial: namesText.slice(0, 400) }, 500);
 
     const newNames = allNames.filter((n) => typeof n === 'string' && n.trim().length > 0 && !existingSet.has(n.toLowerCase().trim()));
     const skipped = allNames.length - newNames.length;
@@ -107,20 +152,15 @@ Deno.serve(async (req) => {
 
     for (let i = 0; i < newNames.length; i += BATCH) {
       const batch = newNames.slice(i, i + BATCH);
-      const detailMsg = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 16000,
-        system: DETAIL_SYSTEM,
-        messages: [{
-          role: 'user',
-          content: `Exercise names to extract:\n${batch.join('\n')}\n\nDocument:\n${docText.slice(0, 120000)}`,
-        }],
+      const detailText = await generateTextWithOpenAI({
+        apiKey: openaiKey,
+        model: openaiModel,
+        maxOutputTokens: 16000,
+        instructions: DETAIL_SYSTEM,
+        input: `Exercise names to extract:\n${batch.join('\n')}\n\nDocument:\n${docText.slice(0, 120000)}`,
       });
 
-      const detailContent = detailMsg.content[0];
-      if (detailContent.type !== 'text') continue;
-
-      const exercises = parseJsonArray(detailContent.text) as Record<string, unknown>[] | null;
+      const exercises = parseJsonArray(detailText) as Record<string, unknown>[] | null;
       if (!exercises) continue;
 
       const toInsert = exercises
@@ -139,7 +179,7 @@ Deno.serve(async (req) => {
           progression_ids: [] as string[],
           regression_ids: [] as string[],
           purpose: null,
-          source: 'ai',
+          source: 'openai-import',
         }));
 
       if (toInsert.length === 0) continue;

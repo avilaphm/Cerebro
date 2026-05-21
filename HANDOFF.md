@@ -1,12 +1,32 @@
 # Handoff
 
 ## Last updated
-2026-05-22 morning by Codex - exercise document import now accepts PDFs and routes them through the existing parser
+2026-05-22 morning by Codex - exercise import Edge Function switched from Claude to OpenAI
 
 ## Last code fix commit
-Current commit - Parse PDFs before exercise import
+Current commit - Import exercises with OpenAI Responses API
 
 ## What just happened (read first)
+
+Pedro asked whether the exercise document importer can use the OpenAI / ChatGPT API instead of Claude. The answer is yes, and the function has been changed.
+
+Change in `supabase/functions/import-exercises/index.ts`:
+- Removed Anthropic SDK usage from `import-exercises`.
+- Added a small `generateTextWithOpenAI()` helper that calls `https://api.openai.com/v1/responses`.
+- Uses `OPENAI_API_KEY`.
+- Uses `OPENAI_EXERCISE_IMPORT_MODEL` if configured, otherwise defaults to `gpt-4.1` to match the current project’s existing OpenAI model usage.
+- Keeps the same importer contract: the UI still sends `document_text`, the function extracts names, dedupes against `pt_exercises`, enriches details in batches of 50, inserts normal exercise cards, and returns `{ added, skipped, exercises }`.
+- Inserted rows now use `source: 'openai-import'` so OpenAI-imported cards can be identified later.
+
+Deploy:
+- `supabase functions deploy import-exercises` completed successfully on project `otcnrkfvgyvwolironoz`.
+- Supabase function list confirms `import-exercises` is ACTIVE, version 2, `verify_jwt: true`.
+
+Verification notes:
+- Deployment succeeded.
+- I did not run a full production import from chat because this function requires a real authenticated user JWT, not just the service role key. Test through the dashboard upload modal while logged in.
+
+## Previous PDF import fix
 
 Pedro tried importing `/Users/pedroavila/Downloads/The TRUE Ultimate Master Exercise Directory (Unabridged).pdf` from `/dashboard/pt/exercises`. The modal displayed the PDF as loaded, then `import-exercises` failed. Root cause: the Exercise Library import modal only supported `.txt/.csv/.md/.tsv` and read files with `FileReader.readAsText`; when a PDF got through, it sent PDF binary-ish text to the `import-exercises` Edge Function instead of extracted exercise content. The file itself is not too large: local pdf.js extraction returned 21 pages and 21,751 characters.
 
