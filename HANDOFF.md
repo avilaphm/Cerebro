@@ -4,7 +4,7 @@
 2026-05-21 by Codex - programme PDF upload Vercel fix + error display fix
 
 ## Last commit
-`bbf1b7f` - Update HANDOFF for PDF upload fix
+`eb68d8e` - Fix production PDF text extraction
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
