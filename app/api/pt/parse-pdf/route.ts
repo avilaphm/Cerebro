@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
 
+type PdfTextItem = { str?: string };
+
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData();
@@ -10,12 +12,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
     }
     const buffer = await file.arrayBuffer();
-    const { PDFParse } = await import('pdf-parse');
-    const parser = new PDFParse({ data: buffer });
-    const result = await parser.getText().finally(async () => {
-      if (typeof parser.destroy === 'function') await parser.destroy();
-    });
-    const text = result.text.trim();
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const document = await pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+    }).promise;
+
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item) => ('str' in item ? (item as PdfTextItem).str ?? '' : ''))
+        .join(' ')
+        .trim();
+      if (pageText) pages.push(pageText);
+    }
+
+    await document.destroy();
+    const text = pages.join('\n\n').trim();
     if (!text) {
       return NextResponse.json({ error: 'PDF appears to have no readable text (scanned image?).' }, { status: 422 });
     }
