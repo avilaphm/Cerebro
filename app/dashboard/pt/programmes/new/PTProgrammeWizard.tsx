@@ -56,6 +56,21 @@ function getSR() {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+const PIPELINE_STEPS = [
+  'Saving intake to client brain…',
+  'Starting pipeline…',
+  'Analysing client…',
+  'Analysing movement assessment…',
+  'Building exercise intelligence…',
+  'Planning methodology (knowledge base RAG)…',
+  'Synthesising Foundation (1/5)…',
+  'Synthesising 1RM Test (2/5)…',
+  'Synthesising Hypertrophy (3/5)…',
+  'Synthesising Strength (4/5)…',
+  'Synthesising 1RM Retest (5/5)…',
+  'Validating…',
+];
+
 function inferPhaseWeeks(phases: PTProgrammePhase[]): { foundation: number; hypertrophy: number; strength: number } {
   const pick = (matcher: (title: string) => boolean, fallback: number): number => {
     const ph = phases.find((p) => matcher(p.title.toLowerCase()));
@@ -251,6 +266,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       return;
     }
     setGenerating(true);
+    setStep(2);
 
     if (intakeFiles.length > 0 || brainDump.trim()) {
       setGenStatus('Saving intake to client brain…');
@@ -529,16 +545,10 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
           </div>
         ))}
         <span className="ml-3 text-xs text-black/40">
-          {step === 1 ? 'Generate' : step === 2 ? 'Edit phases' : step === 3 ? 'Build workouts' : 'Save template'}
+          {step === 1 ? 'Generate' : step === 2 ? 'Review' : step === 3 ? 'Edit' : 'Create'}
         </span>
       </div>
 
-      {agentDraftSummary && (
-        <div className="mb-6 border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-sm font-medium text-amber-800">Programming agent draft</p>
-          <p className="mt-1 text-xs leading-relaxed text-black/55">{agentDraftSummary}</p>
-        </div>
-      )}
 
       {step === 1 && (
         <div className="space-y-6">
@@ -692,165 +702,141 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         </div>
       )}
 
-      {step === 2 && (
-        <div className="space-y-4">
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Training phases</p>
+      {step === 2 && (() => {
+        const activeStepIdx = PIPELINE_STEPS.indexOf(genStatus as typeof PIPELINE_STEPS[number]);
+        const pct = generating
+          ? activeStepIdx >= 0
+            ? Math.round((activeStepIdx + 1) / PIPELINE_STEPS.length * 100)
+            : 5
+          : 100;
 
-          {programme.phases.length === 0 && (
-            <p className="text-sm text-black/40">No phases yet. Add one below.</p>
-          )}
+        if (generating) {
+          return (
+            <div className="space-y-6 max-w-lg">
+              <div>
+                <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">
+                  Generating programme{selectedClient ? ` for ${selectedClient.name}` : ''}
+                </p>
+                <div className="mt-4 mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-black/50 truncate pr-4">{genStatus || 'Starting…'}</span>
+                    <span className="text-xs font-medium text-black shrink-0">{pct}%</span>
+                  </div>
+                  <div className="h-px bg-black/8 w-full">
+                    <div
+                      className="h-px bg-black transition-all duration-700"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {PIPELINE_STEPS.map((label, idx) => {
+                    const done = idx < activeStepIdx;
+                    const active = idx === activeStepIdx;
+                    return (
+                      <div key={idx} className="flex items-center gap-3">
+                        <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-colors duration-300 ${
+                          done ? 'bg-black' : active ? 'bg-black/12' : 'bg-black/5'
+                        }`}>
+                          {done && <span className="text-white text-[0.5rem] leading-none">✓</span>}
+                          {active && <span className="block w-1.5 h-1.5 rounded-full bg-black animate-pulse" />}
+                        </div>
+                        <span className={`text-xs transition-colors duration-300 ${
+                          done ? 'text-black/30' : active ? 'text-black font-medium' : 'text-black/20'
+                        }`}>
+                          {label.replace('…', '')}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-black/25 mt-8">Takes 3–7 minutes. Keep this tab open.</p>
+              </div>
+            </div>
+          );
+        }
 
-          <div className="space-y-3">
-            {programme.phases.map((ph, i) => {
-              const startWeek = getPhaseStartWeeks(programme.phases)[i] ?? 1;
-              return (
-              <div key={ph.id}>
-                {editingPhase === i ? (
-                  <div className="border border-black/20 p-5 space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Phase name</label>
-                        <input value={ph.title} onChange={(e) => patchPhase(i, { title: e.target.value })}
-                          className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                      </div>
-                      <div>
-                        <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Duration (weeks)</label>
-                        <input value={ph.weeks} onChange={(e) => patchPhase(i, { weeks: e.target.value })}
-                          className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Focus</label>
-                      <input value={ph.focus} onChange={(e) => patchPhase(i, { focus: e.target.value })}
-                        className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                    </div>
-                    <div>
-                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Progression notes</label>
-                      <input value={ph.progression} onChange={(e) => patchPhase(i, { progression: e.target.value })}
-                        className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                    </div>
-                    <div>
-                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">
-                        Progressive overload — sets or % per block
-                      </label>
-                      <p className="text-[0.6rem] text-black/30 mb-2">
-                        e.g. "2 sets for 2 weeks..." or "75% for 1 week, 85% for 3 weeks"
-                      </p>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          value={weekBlocksInput[i] ?? formatWeekBlocks(ph.week_blocks)}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setWeekBlocksInput((cur) => ({ ...cur, [i]: val }));
-                            const parsed = parseWeekBlocks(val);
-                            if (parsed.length > 0) {
-                              const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
-                              patchPhase(i, { week_blocks: parsed, weeks: String(totalWeeks) });
-                            } else if (val === '') {
-                              patchPhase(i, { week_blocks: undefined });
-                            }
-                          }}
-                          placeholder="2 sets for 2 weeks... or 75% for 1 week..."
-                          className="flex-1 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40"
-                        />
-                        {listeningForPhase === i ? (
-                          <div className="flex gap-1">
-                            <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">● Recording</span>
-                            <button type="button" onClick={stopPhraseDictation}
-                              className="border border-black bg-black text-white px-3 py-2 text-xs hover:bg-white hover:text-black transition-colors">
-                              Done
-                            </button>
-                          </div>
-                        ) : (
-                          <button type="button" onClick={() => startDictationForPhase(i)}
-                            className="border border-black/15 px-3 py-2 text-xs hover:border-black/30 transition-colors">
-                            Voice
-                          </button>
-                        )}
-                      </div>
-                      {ph.week_blocks && ph.week_blocks.length > 0 && (
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          {ph.week_blocks.map((block, bi) => (
-                            <span key={bi} className="flex items-center gap-1">
-                              <span className="border border-black/15 bg-black/3 px-2.5 py-1 text-[0.6rem] uppercase tracking-[0.1em]">
-                                {block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w
-                              </span>
-                              {bi < (ph.week_blocks?.length ?? 0) - 1 && (
-                                <span className="text-black/25 text-xs">→</span>
-                              )}
-                            </span>
-                          ))}
-                          <span className="text-[0.6rem] text-black/30 ml-1">= {ph.weeks}w total</span>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => {
-                        applyWeekBlocksInput(i);
-                        setEditingPhase(null);
-                      }}
-                      className="text-xs border border-black/15 px-4 py-1.5 hover:bg-black/5"
-                    >
-                      Done
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3 border border-black/10 px-4 py-4 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                    <button type="button" className="flex-1 text-left" onClick={() => setEditingPhase(i)}>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[0.55rem] text-black/30">☰</span>
-                        <p className="font-medium text-sm">{ph.title || `Phase ${i + 1}`}</p>
-                        <span className="text-[0.55rem] text-black/25 ml-auto">starts week {startWeek}</span>
-                      </div>
-                      <p className="text-xs text-black/40 mt-0.5">
-                        {ph.weeks ? `${ph.weeks} weeks` : 'Duration not set'}{ph.focus ? ` · ${ph.focus}` : ''}
-                      </p>
-                      {ph.week_blocks && ph.week_blocks.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                          {ph.week_blocks.map((block, bi) => (
-                            <span key={bi} className="flex items-center gap-1">
-                              <span className="text-[0.55rem] text-black/40 border border-black/10 px-1.5 py-0.5">
-                                {block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w
-                              </span>
-                              {bi < (ph.week_blocks?.length ?? 0) - 1 && (
-                                <span className="text-black/20 text-[0.6rem]">→</span>
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </button>
-                    <div className="flex flex-wrap items-center gap-3 sm:ml-4">
-                      <button type="button" onClick={() => setEditingPhase(i)}
-                        className="text-xs text-black/40 hover:text-black border border-black/15 px-3 py-1 hover:bg-black/5 transition-colors">Edit</button>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); removePhase(i); }}
-                        className="text-xs text-red-400 hover:text-red-600">Remove</button>
-                    </div>
-                  </div>
+        if (genStatus && programme.phases.length === 0) {
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-red-600">{genStatus}</p>
+              <button onClick={() => { setGenerating(false); setGenStatus(''); setStep(1); }}
+                className="border border-black/15 px-5 py-2.5 text-sm hover:bg-black/5 transition-colors">
+                ← Back
+              </button>
+            </div>
+          );
+        }
+
+        const hardFailures = Array.isArray(validationSummary?.hard_rule_failures) ? validationSummary.hard_rule_failures as string[] : [];
+        const findings = Array.isArray(validationSummary?.findings) ? validationSummary.findings as string[] : [];
+
+        return (
+          <div className="space-y-5">
+            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">
+              {programme.phases.length} phase{programme.phases.length !== 1 ? 's' : ''} generated
+            </p>
+
+            {(agentDraftSummary || hardFailures.length > 0) && (
+              <div className={`border px-4 py-3 ${hardFailures.length > 0 ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                {hardFailures.length > 0 && (
+                  <p className="text-xs font-medium text-red-700 mb-1">{hardFailures.length} validation issue{hardFailures.length !== 1 ? 's' : ''} — review before editing</p>
+                )}
+                {findings.length > 0 && (
+                  <p className="text-xs text-amber-700">{findings.length} review note{findings.length !== 1 ? 's' : ''}</p>
+                )}
+                {agentDraftSummary && !hardFailures.length && (
+                  <p className="text-xs text-amber-800 leading-relaxed">{agentDraftSummary}</p>
                 )}
               </div>
-              );
-            })}
-          </div>
+            )}
 
-          <button onClick={addPhase} className="border border-black/15 border-dashed px-5 py-3 text-sm text-black/40 hover:border-black/30 hover:text-black transition-colors w-full text-center">
-            + Add phase
-          </button>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {programme.phases.map((ph, i) => (
+                <div key={ph.id} className="border border-black/10 p-4">
+                  <p className="text-[0.55rem] uppercase tracking-[0.12em] text-black/25 mb-1">Phase {i + 1}</p>
+                  <p className="font-medium text-sm leading-snug mb-2">{ph.title || `Phase ${i + 1}`}</p>
+                  <p className="text-xs text-black/40">
+                    {ph.weeks ? `${ph.weeks}w` : '—'}
+                    {ph.days.length > 0 && ` · ${ph.days.length} day${ph.days.length !== 1 ? 's' : ''}`}
+                  </p>
+                  {ph.focus && (
+                    <p className="text-xs text-black/30 mt-1.5 truncate">{ph.focus}</p>
+                  )}
+                  {ph.week_blocks && ph.week_blocks.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {ph.week_blocks.slice(0, 4).map((block, bi) => (
+                        <span key={bi} className="text-[0.5rem] text-black/35 border border-black/8 px-1.5 py-0.5">
+                          {block.sets ? `${block.sets}s` : block.weight_pct} · {block.weeks}w
+                        </span>
+                      ))}
+                      {ph.week_blocks.length > 4 && (
+                        <span className="text-[0.5rem] text-black/25 border border-black/8 px-1.5 py-0.5">
+                          +{ph.week_blocks.length - 4}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
-          <div className="flex justify-between pt-4">
-            <button onClick={() => setStep(1)} className="border border-black/15 px-5 py-2.5 text-sm hover:bg-black/5 transition-colors">
-              ← Back
-            </button>
-            <button
-              onClick={() => { setActivePhaseTab(0); setActiveDay(null); setStep(3); }}
-              disabled={programme.phases.length === 0}
-              className="border border-black bg-black text-white px-5 py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
-            >
-              Build workouts →
-            </button>
+            <div className="flex justify-between pt-2">
+              <button onClick={() => setStep(1)}
+                className="border border-black/15 px-5 py-2.5 text-sm hover:bg-black/5 transition-colors">
+                ← Back
+              </button>
+              <button
+                onClick={() => { setActivePhaseTab(0); setActiveDay(null); setStep(3); }}
+                disabled={programme.phases.length === 0}
+                className="border border-black bg-black text-white px-5 py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
+              >
+                Edit exercises →
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {step === 3 && (
         <div>
@@ -954,7 +940,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
       {step === 4 && (
         <div className="max-w-lg space-y-5">
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Save as global template{clientId && selectedClient ? ` · also assign to ${selectedClient.name}` : ''}</p>
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Review & create</p>
 
           <div>
             <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Programme name</label>
@@ -999,7 +985,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               disabled={saving || !progName.trim()}
               className="flex-1 border border-black bg-black text-white py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
             >
-              {saving ? 'Saving…' : clientId && selectedClient ? `Save & assign to ${selectedClient.name}` : 'Save template'}
+              {saving ? 'Creating…' : `Create programme${selectedClient ? ` for ${selectedClient.name}` : ''}`}
             </button>
           </div>
         </div>
