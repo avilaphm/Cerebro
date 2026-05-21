@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFParse } from 'pdf-parse';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,8 +10,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
     }
     const buffer = await file.arrayBuffer();
+    const { PDFParse } = await import('pdf-parse');
     const parser = new PDFParse({ data: buffer });
-    const result = await parser.getText();
+    const result = await parser.getText().finally(async () => {
+      if (typeof parser.destroy === 'function') await parser.destroy();
+    });
     const text = result.text.trim();
     if (!text) {
       return NextResponse.json({ error: 'PDF appears to have no readable text (scanned image?).' }, { status: 422 });

@@ -69,6 +69,40 @@ function inferPhaseWeeks(phases: PTProgrammePhase[]): { foundation: number; hype
   };
 }
 
+interface FunctionErrorWithContext {
+  message?: string;
+  context?: {
+    clone?: () => Response;
+    json?: () => Promise<unknown>;
+    text?: () => Promise<string>;
+  };
+}
+
+async function readJsonResponse<T extends { error?: string }>(res: Response, fallback: string): Promise<T> {
+  const contentType = res.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return await res.json() as T;
+  }
+  const text = await res.text();
+  return { error: `${fallback}: ${text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)}` } as T;
+}
+
+async function functionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  const fnError = error as FunctionErrorWithContext;
+  const context = fnError.context;
+  try {
+    const json = await (context?.clone?.() ?? context)?.json?.();
+    if (typeof json === 'object' && json !== null && 'error' in json && typeof json.error === 'string') {
+      return json.error;
+    }
+  } catch { /* noop */ }
+  try {
+    const text = await (context?.clone?.() ?? context)?.text?.();
+    if (text?.trim()) return text.trim().slice(0, 300);
+  } catch { /* noop */ }
+  return fnError.message ?? fallback;
+}
+
 export default function PTProgrammeWizard({ clients, exercises }: { clients: PTClient[]; exercises: PTExercise[] }) {
   const supabase = createClient();
   const router = useRouter();
@@ -156,7 +190,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         const form = new FormData();
         form.append('file', file);
         const res = await fetch('/api/pt/parse-pdf', { method: 'POST', body: form });
-        const json = await res.json() as { text?: string; error?: string };
+        const json = await readJsonResponse<{ text?: string; error?: string }>(res, 'PDF parse failed');
         if (!res.ok || json.error) {
           setIntakeStatus(json.error ?? 'PDF parse failed.');
           return;
@@ -203,7 +237,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     });
     setIngesting(false);
     if (error || (data as { error?: string })?.error) {
-      setIntakeStatus((data as { error?: string })?.error ?? error?.message ?? 'Ingest failed.');
+      setIntakeStatus((data as { error?: string })?.error ?? await functionErrorMessage(error, 'Ingest failed.'));
       return;
     }
     const result = data as { distributed_into?: string[]; documents_stored?: number };
@@ -224,7 +258,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         body: { client_id: clientId, files: intakeFiles, notes_text: brainDump },
       });
       if (ingestError || (ingestData as { error?: string })?.error) {
-        setGenStatus((ingestData as { error?: string })?.error ?? ingestError?.message ?? 'Brain save failed.');
+        setGenStatus((ingestData as { error?: string })?.error ?? await functionErrorMessage(ingestError, 'Brain save failed.'));
         setGenerating(false);
         return;
       }
@@ -238,7 +272,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     });
 
     if (error || (data as { error?: string })?.error) {
-      setGenStatus((data as { error?: string })?.error ?? error?.message ?? 'Generation failed.');
+      setGenStatus((data as { error?: string })?.error ?? await functionErrorMessage(error, 'Generation failed.'));
       setGenerating(false);
       return;
     }
