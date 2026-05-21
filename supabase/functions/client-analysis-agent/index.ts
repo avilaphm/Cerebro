@@ -91,14 +91,29 @@ Deno.serve(async (req) => {
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     });
 
     const text = (msg.content[0] as { text: string }).text;
-    const analysis = parseJson(text);
-    if (!analysis) return json({ error: 'Analysis did not return valid JSON', raw: text }, 502);
+    let analysis = parseJson(text);
+
+    if (!analysis) {
+      const retry = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        messages: [
+          { role: 'user', content: userMessage },
+          { role: 'assistant', content: text },
+          { role: 'user', content: 'Your response was not valid JSON. Output ONLY the JSON object — start with { and end with }. No prose, no code fences.' },
+        ],
+      });
+      analysis = parseJson((retry.content[0] as { text: string }).text);
+    }
+
+    if (!analysis) return json({ error: 'Analysis did not return valid JSON' }, 502);
 
     return json({ ok: true, analysis });
   } catch (error) {
