@@ -1,12 +1,27 @@
 # Handoff
 
 ## Last updated
-2026-05-22 morning by Codex - exercise library card selection UX polish
+2026-05-22 morning by Codex - exercise library missing-video filter
 
 ## Last code fix commit
-Current commit - Exercise library selection UX polish
+Current commit - Exercise library missing-video filter
 
 ## What just happened (read first)
+
+Pedro asked for a filter next to "All categories" to show exercises without a video URL linked to the exercise card.
+
+Fix in `app/dashboard/pt/exercises/PTExercisesView.tsx`:
+- Added `videoFilter` state.
+- Added a new select beside category filter:
+  - `All video statuses`
+  - `Missing video URL`
+- Filtering now excludes exercises with a non-empty `video_url` when `Missing video URL` is selected.
+
+Verification:
+- `npm run build` passes.
+- `npx eslint app/dashboard/pt/exercises/PTExercisesView.tsx` has 0 errors and one pre-existing `<img>` warning.
+
+## Previous: Exercise Library card selection UX polish
 
 Pedro confirmed the exercise PDF import is now working, then asked for three UX fixes on `/dashboard/pt/exercises`:
 - Import button text was black on a black button unless hovered.

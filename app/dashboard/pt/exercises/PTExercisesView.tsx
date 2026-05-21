@@ -82,6 +82,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
   const [muscleFilter, setMuscleFilter] = useState('');
   const [equipFilter, setEquipFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  const [videoFilter, setVideoFilter] = useState('');
   const [selected, setSelected] = useState<PTExercise | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Partial<PTExercise>>({});
@@ -216,6 +217,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
         !ex.secondary_muscles.some((m) => m.toLowerCase().includes(muscleFilter.toLowerCase()))) return false;
     if (equipFilter && (ex.equipment ?? '').toLowerCase() !== equipFilter.toLowerCase()) return false;
     if (tagFilter && !ex.tags.some((t) => t.toLowerCase().includes(tagFilter.toLowerCase()))) return false;
+    if (videoFilter === 'missing' && ex.video_url?.trim()) return false;
     return true;
   });
 
@@ -343,6 +345,14 @@ export default function PTExercisesView({ initialExercises }: Props) {
           >
             <option value="">All categories</option>
             {CATEGORY_TAGS.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select
+            value={videoFilter}
+            onChange={(e) => setVideoFilter(e.target.value)}
+            className="h-8 rounded-lg border border-black/12 bg-white px-2 text-xs outline-none focus:border-black/30"
+          >
+            <option value="">All video statuses</option>
+            <option value="missing">Missing video URL</option>
           </select>
         </div>
       </div>
