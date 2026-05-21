@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-05-21 by Claude (Sonnet 4.6) - programming wizard UX overhaul
+2026-05-21 by Claude (Sonnet 4.6) - movement-analysis-agent + exercise-intelligence-agent wired into pipeline
 
 ## Last commit
-`552d8ce` - PT programming wizard overhaul: PDF support, unified Generate, week/set rules, drag fix
+TBD - pending commit for this session
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
@@ -26,11 +26,48 @@ The programme creation pipeline is end-to-end working and producing correct prog
 
 ### Last completed task
 
-Programming wizard UX overhaul (2026-05-21 by Claude Sonnet 4.6). Commit `552d8ce`.
-- Step 1: PDF upload support via `/api/pt/parse-pdf` (pdf-parse library). One upload button + document type selector instead of 4 separate buttons. Three scattered buttons (generate from profile, save brain, generate from dump) consolidated into one Generate button that auto-saves brain first then runs the orchestrator.
-- Step 2: Foundation set to 7 weeks, Hypertrophy to 12 weeks, Strength to 12 weeks in DEFAULT_PROGRAMME_PHASES and the programming agent DEFAULT_PRINCIPLES. Foundation week_blocks now [{weeks:2,sets:"2"},{weeks:5,sets:"3"}]. Strength week_blocks now 4x3-week blocks at 77/80/85/88%.
-- Step 3: All inputs in the exercise card (name, sets, reps, weight%, rest, notes, URL) now have draggable=false + onMouseDown stopPropagation so text is selectable without triggering drag.
-- Client portal: "coming soon" message updated to "Your programme will be ready soon. Come back later."
+Movement analysis + exercise intelligence pipeline integration (2026-05-21 by Claude Sonnet 4.6).
+
+Two new Edge Functions deployed and wired into the orchestrator pipeline as Steps 2 and 3:
+
+**`movement-analysis-agent` (v1, verify_jwt: false):**
+- Reads pt_client_exercise_doc (injury_history, limitations, movement_assessment_summary), pt_client_brain, pt_clients, pt_client_documents in parallel
+- Single Claude sonnet-4-6 call with JSON retry, physiotherapy-grade muscle mind map output
+- Classifies each affected muscle as WEAK or TIGHT with root cause analysis
+- Persists muscle_mind_map to pt_client_exercise_doc.movement_assessment_summary for future sessions
+- Non-fatal: if it fails, orchestrator continues with empty mind map
+
+**`exercise-intelligence-agent` (v1, verify_jwt: false):**
+- Loads compact exercise library from pt_exercises (id, name, muscles, equipment)
+- For each primary issue muscle: generates 10 exercises that address the specific problem
+- Difficulty scale 1-5 enforced: difficulty 4-5 blocked from Foundation weeks 1-4
+- Tags double-duty exercises (work multiple target muscles), builds staples document per phase
+- Fuzzy-matches exercises to library exercise_ids
+- Non-fatal: if it fails, orchestrator continues with empty exercise_master_list
+
+**`pt-programme-orchestrator` updated to v6:**
+- STEP_NAMES now: CLIENT_ANALYSIS, MOVEMENT_ANALYSIS, EXERCISE_INTELLIGENCE, METHODOLOGY_PLAN, VALIDATION
+- Steps 2 and 3 are non-fatal (pipeline continues on failure with empty fallbacks)
+- Passes exercise_master_list to every programme-synthesis-agent call
+- coaching_reasoning now includes: muscle_mind_map, exercise_master_list, staples_by_phase
+
+**`programme-synthesis-agent` updated to v11:**
+- Accepts exercise_master_list parameter
+- Builds priority set of exercise_ids from the master list (difficulty 2-4 only)
+- pickAccessories() and pickFoundationMain() prefer priority exercises over generic regex picks
+
+**Skill chain also created in `~/.claude/skills/`:**
+- `pt-movement-analysis`, `pt-exercise-intelligence`, `pt-programme-builder`, `pt-programme-validator`
+- Each ends with "immediately invoke: [next skill]" - the chain self-advances
+- These are for local Claude Code use, separate from the live Edge Function pipeline
+
+**Previous session:** Bug fix - wizard stuck on Step 1 due to client-analysis-agent max_tokens: 2000. Bumped to 4096 + JSON retry. Commit 8dea13f.
+
+**Previous session task:** Programming wizard UX overhaul (2026-05-21 by Claude Sonnet 4.6). Commit `552d8ce`.
+- Step 1: PDF upload support via `/api/pt/parse-pdf`. One upload button + type selector replacing 4 separate buttons. Three scattered Generate buttons consolidated into one.
+- Step 2: Foundation 7 weeks, Hypertrophy 12 weeks, Strength 12 weeks in DEFAULT_PROGRAMME_PHASES.
+- Step 3: All inputs in exercise cards now have draggable=false + onMouseDown stopPropagation.
+- Client portal: "coming soon" holding message added.
 - Time machine tag: `programming-wizard-pre-refactor`
 
 Nutrition UX overhaul (2026-05-21 by Claude Sonnet 4.6): drag-and-drop meal slots, macro edit sheet, weight display, accuracy prompt fix. Commit `114252b`.

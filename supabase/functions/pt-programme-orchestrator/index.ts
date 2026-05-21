@@ -13,7 +13,13 @@ function json(data: unknown, status = 200) {
   });
 }
 
-const STEP_NAMES = ['CLIENT_ANALYSIS', 'METHODOLOGY_PLAN', 'VALIDATION'] as const;
+const STEP_NAMES = [
+  'CLIENT_ANALYSIS',
+  'MOVEMENT_ANALYSIS',
+  'EXERCISE_INTELLIGENCE',
+  'METHODOLOGY_PLAN',
+  'VALIDATION',
+] as const;
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -48,7 +54,6 @@ Deno.serve(async (req) => {
     if (runError || !runRow) return json({ error: `Failed to create run: ${runError?.message}` }, 500);
     const runId = runRow.id;
 
-    // Run the 4-agent pipeline in the background; respond immediately so the wizard can poll.
     EdgeRuntime.waitUntil(runPipeline({ runId, body, admin, supabaseUrl, serviceKey }));
 
     return json({ ok: true, run_id: runId, status: 'running' });
@@ -116,19 +121,41 @@ async function runPipeline(ctx: {
     if (!step1.ok) { await fail(`Client analysis failed: ${step1.error}`); return; }
     const clientAnalysis = step1.output.analysis as Record<string, unknown>;
 
-    // STEP 2: Methodology Plan
+    // STEP 2: Movement Analysis (physiotherapy-grade muscle mind map)
     await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[1] }).eq('id', runId);
-    const step2 = await callAgent('methodology-plan-agent', {
+    const step2 = await callAgent('movement-analysis-agent', {
+      client_id: body.client_id,
+      client_analysis: clientAnalysis,
+      intake_text: body.intake_text,
+    });
+    await recordStep(2, STEP_NAMES[1], { client_id: body.client_id }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);
+    // Movement analysis failure is non-fatal: we fall back to empty mind map so the pipeline continues.
+    const muscleMindMap = step2.ok ? (step2.output.muscle_mind_map as Record<string, unknown>) : {};
+
+    // STEP 3: Exercise Intelligence (10 exercises per muscle, difficulty scoring, staples)
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[2] }).eq('id', runId);
+    const step3 = await callAgent('exercise-intelligence-agent', {
+      client_id: body.client_id,
+      muscle_mind_map: muscleMindMap,
+    });
+    await recordStep(3, STEP_NAMES[2], { client_id: body.client_id }, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
+    // Exercise intelligence failure is also non-fatal: synthesis falls back to full library.
+    const exerciseMasterList = step3.ok ? ((step3.output.exercise_master_list ?? []) as Array<Record<string, unknown>>) : [];
+    const staplesByPhase = step3.ok ? (step3.output.staples_by_phase as Record<string, unknown> | undefined) : undefined;
+
+    // STEP 4: Methodology Plan
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[3] }).eq('id', runId);
+    const step4 = await callAgent('methodology-plan-agent', {
       client_analysis: clientAnalysis,
       phase_weeks: body.phase_weeks,
       days_per_week: body.days_per_week ?? 3,
       run_id: runId,
     });
-    await recordStep(2, STEP_NAMES[1], { phase_weeks: body.phase_weeks }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);
-    if (!step2.ok) { await fail(`Methodology planning failed: ${step2.error}`); return; }
-    const methodologyPlan = step2.output.methodology_plan as Record<string, unknown>;
+    await recordStep(4, STEP_NAMES[3], { phase_weeks: body.phase_weeks }, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
+    if (!step4.ok) { await fail(`Methodology planning failed: ${step4.error}`); return; }
+    const methodologyPlan = step4.output.methodology_plan as Record<string, unknown>;
 
-    // STEP 3: Programme Synthesis, one phase at a time to stay under edge runtime limits.
+    // STEP 5+: Programme Synthesis, one phase at a time to stay under edge runtime limits.
     const methodologyPhases = (methodologyPlan.phases ?? []) as Array<Record<string, unknown>>;
     if (methodologyPhases.length === 0) {
       await fail('Methodology plan returned no phases.');
@@ -150,9 +177,10 @@ async function runPipeline(ctx: {
         phase_index: i,
         programme_name: programmeName,
         programme_goal: programmeGoal,
+        exercise_master_list: exerciseMasterList,
       });
 
-      const stepOrder = 3 + i;
+      const stepOrder = 5 + i;
       await recordStep(
         stepOrder,
         commandName,
@@ -177,22 +205,25 @@ async function runPipeline(ctx: {
     const programme = { phases };
     const missingExercises = Array.from(new Set(allMissing));
 
-    // STEP 4: Validation
-    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[2] }).eq('id', runId);
+    // Final validation step
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[4] }).eq('id', runId);
     const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
-    const step4 = await callAgent('programme-validation-agent', { programme, emphasis });
-    await recordStep(3 + methodologyPhases.length, STEP_NAMES[2], {}, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
-    if (!step4.ok) { await fail(`Validation failed: ${step4.error}`); return; }
-    const validation = step4.output as { passed: boolean; hard_failures: string[]; findings: string[] };
-
-    // Final state
-    const finalStatus = validation.passed ? 'needs_review' : 'needs_review';
+    const validationStep = await callAgent('programme-validation-agent', { programme, emphasis });
+    await recordStep(5 + methodologyPhases.length, STEP_NAMES[4], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
+    if (!validationStep.ok) { await fail(`Validation failed: ${validationStep.error}`); return; }
+    const validation = validationStep.output as { passed: boolean; hard_failures: string[]; findings: string[] };
 
     await admin.from('pt_program_generation_runs').update({
-      status: finalStatus,
+      status: 'needs_review',
       current_command: null,
       programme_draft: programme,
-      coaching_reasoning: { client_analysis: clientAnalysis, methodology_plan: methodologyPlan },
+      coaching_reasoning: {
+        client_analysis: clientAnalysis,
+        methodology_plan: methodologyPlan,
+        muscle_mind_map: muscleMindMap,
+        exercise_master_list: exerciseMasterList,
+        staples_by_phase: staplesByPhase ?? null,
+      },
       validation_summary: {
         name: programmeName,
         goal: programmeGoal,

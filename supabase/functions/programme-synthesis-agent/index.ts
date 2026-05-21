@@ -122,6 +122,7 @@ Deno.serve(async (req) => {
       phase_index: number;
       programme_name?: string;
       programme_goal?: string;
+      exercise_master_list?: Array<{ exercise_id: string | null; name: string; difficulty: number }>;
     };
     if (!body.client_analysis || !body.methodology_plan_phase || typeof body.phase_index !== 'number') {
       return json({ error: 'client_analysis, methodology_plan_phase, and phase_index required' }, 400);
@@ -145,7 +146,14 @@ Deno.serve(async (req) => {
       equipment: e.equipment,
     }));
 
-    const deterministic = buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis);
+    // Build a set of exercise IDs from the exercise master list (if provided) to prefer client-specific exercises.
+    const priorityIds = new Set<string>(
+      (body.exercise_master_list ?? [])
+        .filter((e) => e.exercise_id !== null && e.difficulty >= 2 && e.difficulty <= 4)
+        .map((e) => e.exercise_id as string),
+    );
+
+    const deterministic = buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis, priorityIds);
     if (deterministic) return json({ ok: true, ...deterministic });
 
     const userMessage = [
@@ -235,6 +243,7 @@ function buildDeterministicPhase(
   filteredLibrary: ExerciseRow[],
   phaseIndex: number,
   analysis: Record<string, unknown>,
+  priorityIds: Set<string> = new Set(),
 ): Record<string, unknown> | null {
   const type = String(methodologyPhase.type ?? '').toLowerCase();
   const weekBlocks = (methodologyPhase.week_blocks as Array<Record<string, unknown>> | undefined) ?? [];
@@ -270,7 +279,7 @@ function buildDeterministicPhase(
     const big5Schedule = scheduleBig5(daysPerWeek, big5);
     const dayTitles = dayTitlesFor(type, daysPerWeek);
     const dayFocuses = dayFocusesFor(type, daysPerWeek);
-    const accessoryPool = pickAccessories(filteredLibrary, big5);
+    const accessoryPool = pickAccessories(filteredLibrary, big5, priorityIds);
 
     const days = big5Schedule.map((dayBig5, dayIndex) => {
       const big5Count = dayBig5.length;
@@ -316,7 +325,7 @@ function buildDeterministicPhase(
 
   if (type === 'foundation') {
     const sets = String((weekBlocks[0]?.sets as string | undefined) ?? '2');
-    const mainPool = pickFoundationMain(filteredLibrary, big5);
+    const mainPool = pickFoundationMain(filteredLibrary, big5, priorityIds);
     const days = [0, 1, 2].map((dayIndex) => {
       const main = rotate(mainPool, dayIndex).slice(0, 6);
       const exercises = [
@@ -445,13 +454,27 @@ function pickWarmups(library: ExerciseRow[]): ExerciseRow[] {
   return pickByPatterns(library, patterns, 4);
 }
 
-function pickAccessories(library: ExerciseRow[], exclude: ExerciseRow[]): ExerciseRow[] {
+function pickAccessories(library: ExerciseRow[], exclude: ExerciseRow[], priorityIds: Set<string> = new Set()): ExerciseRow[] {
   const excluded = new Set(exclude.map((e) => e.id));
-  return library.filter((e) => !excluded.has(e.id) && /(row|split squat|lunge|curl|tricep|raise|pallof|plank|carry|bridge)/i.test(e.name)).slice(0, 9);
+  const candidates = library.filter((e) => !excluded.has(e.id) && /(row|split squat|lunge|curl|tricep|raise|pallof|plank|carry|bridge)/i.test(e.name));
+  if (priorityIds.size === 0) return candidates.slice(0, 9);
+  // Prefer exercises from the exercise intelligence master list first (client-specific picks).
+  const priority = candidates.filter((e) => priorityIds.has(e.id));
+  const rest = candidates.filter((e) => !priorityIds.has(e.id));
+  return [...priority, ...rest].slice(0, 9);
 }
 
-function pickFoundationMain(library: ExerciseRow[], big5: ExerciseRow[]): ExerciseRow[] {
+function pickFoundationMain(library: ExerciseRow[], big5: ExerciseRow[], priorityIds: Set<string> = new Set()): ExerciseRow[] {
   const patterns = [/goblet squat/i, /deadlift/i, /bench press/i, /lat pull/i, /row/i, /split squat|lunge/i, /pallof|dead bug|plank/i, /glute/i];
+  const big5Ids = new Set(big5.map((e) => e.id));
+  if (priorityIds.size > 0) {
+    // Prefer client-specific exercises (from exercise intelligence) that are appropriate for Foundation (not Big 5).
+    const priorityFoundation = library.filter((e) => priorityIds.has(e.id) && !big5Ids.has(e.id));
+    const patternPicks = pickByPatterns(library, patterns, 8);
+    const combined = [...priorityFoundation, ...patternPicks.filter((e) => !priorityIds.has(e.id))];
+    const deduped = Array.from(new Map(combined.map((e) => [e.id, e])).values());
+    return deduped.slice(0, 8);
+  }
   const picked = pickByPatterns(library, patterns, 8);
   return picked.length >= 6 ? picked : [...picked, ...big5].slice(0, 6);
 }
