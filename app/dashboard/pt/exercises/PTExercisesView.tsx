@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronUp, Pencil, Search, Upload, Video, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTExercise } from '@/utils/pt/types';
@@ -102,6 +102,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
   const [importError, setImportError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const detailPanelRef = useRef<HTMLDivElement>(null);
 
   function flash(msg: string) {
     setFlashMsg(msg);
@@ -226,6 +227,10 @@ export default function PTExercisesView({ initialExercises }: Props) {
     setShowCues(false);
   }
 
+  useEffect(() => {
+    detailPanelRef.current?.scrollTo({ top: 0 });
+  }, [selected?.id]);
+
   function startEdit() {
     if (!selected) return;
     setDraft({ ...selected });
@@ -301,7 +306,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
           <button
             type="button"
             onClick={() => { setShowImport(true); resetImport(); }}
-            className="flex items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 py-1.5 text-xs font-medium hover:bg-black/5"
+            className="exercise-import-button no-glass flex items-center gap-1.5 rounded-lg border border-black bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-black hover:text-white"
           >
             <Upload className="h-3.5 w-3.5" />
             Import exercises
@@ -357,9 +362,9 @@ export default function PTExercisesView({ initialExercises }: Props) {
                     key={ex.id}
                     type="button"
                     onClick={() => openExercise(ex)}
-                    className={`group flex flex-col overflow-hidden rounded-xl border text-left transition-all ${
+                    className={`exercise-library-tile group flex flex-col overflow-hidden rounded-xl border text-left transition-all duration-200 ${
                       isActive
-                        ? 'border-black shadow-md'
+                        ? 'exercise-library-tile-active border-emerald-300 bg-white shadow-[0_18px_34px_-20px_rgba(16,185,129,0.8),0_0_32px_rgba(16,185,129,0.22)] -translate-y-0.5'
                         : 'border-black/10 bg-white hover:border-black/25 hover:shadow-sm'
                     }`}
                   >
@@ -404,7 +409,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
 
         {/* Detail / Edit Panel */}
         {selected && (
-          <div className="flex w-full flex-col overflow-y-auto border-l border-black/8 bg-white md:w-96 lg:w-[28rem]">
+          <div ref={detailPanelRef} className="sticky top-0 flex h-full max-h-full w-full flex-col overflow-y-auto border-l border-black/8 bg-white md:w-96 lg:w-[28rem]">
             {/* Panel header */}
             <div className="flex items-center justify-between border-b border-black/8 px-5 py-4">
               <div className="flex items-center gap-2">

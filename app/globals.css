@@ -406,6 +406,41 @@ body::before {
   background: #f7f4ef !important;
 }
 
+.liquid-dashboard main .exercise-import-button.no-glass,
+.client-liquid .exercise-import-button.no-glass,
+.exercise-import-button.no-glass {
+  background: #050505 !important;
+  color: #ffffff !important;
+  border-color: #050505 !important;
+}
+
+.liquid-dashboard main .exercise-import-button.no-glass:hover,
+.client-liquid .exercise-import-button.no-glass:hover,
+.exercise-import-button.no-glass:hover {
+  background: #050505 !important;
+  color: #ffffff !important;
+}
+
+.liquid-dashboard main .exercise-import-button.no-glass *,
+.client-liquid .exercise-import-button.no-glass *,
+.exercise-import-button.no-glass * {
+  color: #ffffff !important;
+}
+
+.liquid-dashboard main .exercise-library-tile,
+.client-liquid .exercise-library-tile,
+.exercise-library-tile {
+  border-radius: 0.75rem !important;
+}
+
+.liquid-dashboard main .exercise-library-tile-active,
+.client-liquid .exercise-library-tile-active,
+.exercise-library-tile-active {
+  background: #ffffff !important;
+  border-color: rgba(16, 185, 129, 0.55) !important;
+  border-radius: 0.75rem !important;
+}
+
 /* Also protect bg-white descendants and form elements inside a no-glass container */
 .liquid-dashboard .no-glass [class*="bg-white"],
 .client-liquid .no-glass [class*="bg-white"],

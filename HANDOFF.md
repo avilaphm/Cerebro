@@ -1,12 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude Sonnet 4.6 - wizard UX overhaul (step 2 loading animation + phase overview)
+2026-05-22 morning by Codex - exercise library card selection UX polish
 
 ## Last code fix commit
-680aa48 - Wizard UX overhaul: step 2 loading animation, phase overview, step 4 labels
+Current commit - Exercise library selection UX polish
 
 ## What just happened (read first)
+
+Pedro confirmed the exercise PDF import is now working, then asked for three UX fixes on `/dashboard/pt/exercises`:
+- Import button text was black on a black button unless hovered.
+- Selected exercise card became an oval/pill shape.
+- Exercise detail panel on the right was not staying in the current viewport when selecting cards lower down the list.
+
+Fix in `app/dashboard/pt/exercises/PTExercisesView.tsx` and `app/globals.css`:
+- Added `exercise-import-button` override so the import button stays black with white text and white icon in normal and hover states.
+- Added `exercise-library-tile` / `exercise-library-tile-active` classes to protect cards from broad dashboard glass button rounding.
+- Active card now stays card-shaped, lifts slightly, gets an emerald border, and shows a subtle green glow.
+- Detail panel now has a ref and resets its own scroll when a new exercise is selected.
+- Detail panel is sticky within the Exercise Library viewport.
+
+Verification:
+- `npm run build` passes.
+- `npx eslint app/dashboard/pt/exercises/PTExercisesView.tsx` has 0 errors and one pre-existing `<img>` warning.
+- Browser screenshot verification was not possible because the Playwright transport was closed in this session.
+
+## Previous: Wizard UX overhaul (Claude Sonnet 4.6, 2026-05-22)
 
 Pedro wanted the programme wizard UX to match his coaching workflow exactly:
 
