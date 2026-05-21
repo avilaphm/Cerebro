@@ -29,7 +29,7 @@ interface RequestBody {
 interface MealResult {
   meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   meal_description: string;
-  food_items: Array<{ name: string; quantity: string; unit: string }>;
+  food_items: Array<{ name: string; quantity: string; unit: string; weight_g?: number }>;
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
@@ -94,22 +94,47 @@ function buildPrompt(
   if (photoCount > 0) parts.push(`\nFood photos attached: ${photoCount}`);
 
   parts.push(`
-Analyze ALL food mentioned and/or visible in photos.
+
+ESTIMATION METHOD — for every food item, follow this order:
+1. Identify the food
+2. Estimate its weight in grams using these Australian/standard reference sizes:
+   Meat & protein:
+   - Steak/meat slice thin (home): 120-150g | thick (restaurant): 200-280g
+   - Chicken breast avg: 150-180g | thigh (boneless): 120-150g
+   - Fish fillet avg: 120-180g | salmon portion: 150-200g
+   - Eggs: 1 egg = 55g | 2 eggs = 110g
+   - Canned tuna (95g tin drained): ~70g protein content
+   Carbs & grains:
+   - Cooked rice (cup): 185g | small restaurant serve: 150g | large: 220g
+   - Cooked pasta (cup): 160g
+   - Bread slice: 35-40g | sandwich = 2 slices
+   - Wrap/tortilla: 45-60g
+   Dairy:
+   - Greek yoghurt (small tub): 170g | large: 250g
+   - Milk (glass 250ml): 258g
+   - Cheese slice: 20-25g | block chunk: 30-40g
+   Fats:
+   - Tablespoon oil/butter: 14g | teaspoon: 5g
+   - Avocado half: 70g | whole: 150g
+   Vegetables:
+   - Side salad: 80-120g | large salad: 200-300g
+   - Cooked broccoli/veggies (side): 80-120g
+   Photos: use the standard dinner plate diameter (26cm) and any visible utensils as scale references. Estimate what percentage of the plate each food occupies.
+3. Derive protein/carbs/fat from that weight using standard macro density per 100g. Be conservative — if uncertain, err on the lower estimate.
+4. Include weight_g in each food_item object
 
 Rules:
-1. Create a SEPARATE entry for each distinct meal (breakfast, lunch, dinner, snack)
-2. Infer meal type from what they said. If not specified, use time: morning→breakfast, midday→lunch, afternoon→snack, evening/night→dinner
-3. Use the client profile above to improve portion estimates — if they regularly eat certain foods, use those typical serving sizes
-4. If foods_to_avoid are present in an image, flag them gently in meal_description but still log what is visible
-5. Be conservative — don't inflate calories
-6. When photos are provided: identify food visible, estimate portions accounting for the plate/bowl size as reference
+- Create a SEPARATE entry for each distinct meal (breakfast, lunch, dinner, snack)
+- Infer meal type from what they said; if not specified: morning→breakfast, midday→lunch, afternoon→snack, evening/night→dinner
+- If foods_to_avoid appear in a photo, flag gently in meal_description but still log what is visible
+- confidence is "high" when specific weights/amounts are stated, "medium" for standard portions, "low" for vague descriptions
 
 Return ONLY a valid JSON array (no other text):
 [
   {
     "meal_type": "breakfast" | "lunch" | "dinner" | "snack",
     "meal_description": "brief description of this meal",
-    "food_items": [{"name": "food", "quantity": "100", "unit": "g"}],
+    "food_items": [{"name": "food name", "quantity": "180", "unit": "g", "weight_g": 180}],
     "protein_g": number or null,
     "carbs_g": number or null,
     "fat_g": number or null,

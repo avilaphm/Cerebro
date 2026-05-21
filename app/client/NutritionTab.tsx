@@ -1,15 +1,35 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, GripVertical, X } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { createClient } from '@/utils/supabase/client';
 import NutritionChatModal from './NutritionChatModal';
+
+interface FoodItem {
+  name: string;
+  quantity: string;
+  unit: string;
+  weight_g?: number;
+}
 
 interface NutritionLog {
   id: string;
   meal_type: string | null;
   meal_description: string;
-  food_items: Array<{ name: string; quantity: string; unit: string }>;
+  food_items: FoodItem[];
   protein_g: number | null;
   carbs_g: number | null;
   fat_g: number | null;
@@ -83,6 +103,10 @@ function formatDayNum(date: Date): string {
   return date.getDate().toString();
 }
 
+function getTotalWeight(items: FoodItem[]): number {
+  return items.reduce((s, item) => s + (item.weight_g ?? 0), 0);
+}
+
 interface MacroBarProps {
   label: string;
   current: number;
@@ -110,6 +134,320 @@ function MacroBar({ label, current, target, unit, color }: MacroBarProps) {
   );
 }
 
+// --- Draggable food card ---
+
+interface FoodCardProps {
+  log: NutritionLog;
+  isDragging?: boolean;
+  onEdit: (log: NutritionLog) => void;
+  onDelete: (log: NutritionLog) => void;
+  deletingId: string | null;
+}
+
+function FoodCardInner({ log, isDragging, onEdit, onDelete, deletingId }: FoodCardProps) {
+  const totalWeight = getTotalWeight(log.food_items);
+
+  return (
+    <div
+      className={`px-4 py-3 transition-opacity ${isDragging ? 'opacity-40' : ''}`}
+    >
+      <div className="flex items-start gap-2">
+        {/* Drag handle */}
+        <div className="mt-0.5 cursor-grab active:cursor-grabbing text-black/20 hover:text-black/40 transition-colors shrink-0">
+          <GripVertical className="h-4 w-4" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={() => onEdit(log)}
+            className="w-full text-left"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm leading-snug">{log.meal_description}</p>
+                {log.food_items && log.food_items.length > 0 && (
+                  <p className="mt-0.5 text-[0.65rem] text-black/35 truncate">
+                    {log.food_items.map((f) => `${f.name}${f.quantity ? ` ${f.quantity}${f.unit}` : ''}`).join(', ')}
+                  </p>
+                )}
+                {totalWeight > 0 && (
+                  <p className="mt-0.5 text-[0.6rem] text-black/25">~{totalWeight}g estimated</p>
+                )}
+              </div>
+              <div className="shrink-0 text-right">
+                {log.calories != null && (
+                  <p className="text-xs font-medium tabular-nums">{log.calories} kcal</p>
+                )}
+                <p className="text-[0.6rem] text-black/35 tabular-nums">
+                  {[
+                    log.protein_g != null ? `${log.protein_g}g P` : null,
+                    log.carbs_g != null ? `${log.carbs_g}g C` : null,
+                    log.fat_g != null ? `${log.fat_g}g F` : null,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+                {log.fibre_g != null && (
+                  <p className="text-[0.6rem] text-black/30 tabular-nums">{log.fibre_g}g fibre</p>
+                )}
+              </div>
+            </div>
+          </button>
+
+          <div className="mt-1.5 flex items-center justify-between">
+            <p className="text-[0.55rem] text-black/20">
+              {new Date(log.logged_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
+              {log.input_type === 'photo' ? ' · photo' : log.input_type === 'voice' ? ' · voice' : ''}
+            </p>
+            <button
+              type="button"
+              onClick={() => onDelete(log)}
+              disabled={deletingId === log.id}
+              className="text-[0.6rem] font-medium uppercase tracking-[0.1em] text-black/30 transition-colors hover:text-red-400 disabled:opacity-30"
+            >
+              {deletingId === log.id ? '…' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DraggableFoodCard({
+  log,
+  onEdit,
+  onDelete,
+  deletingId,
+}: Omit<FoodCardProps, 'isDragging'>) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: log.id,
+    data: { log },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{ touchAction: 'none' }}
+    >
+      <FoodCardInner
+        log={log}
+        isDragging={isDragging}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        deletingId={deletingId}
+      />
+    </div>
+  );
+}
+
+// --- Droppable meal section ---
+
+interface MealSectionProps {
+  slot: MealSlot;
+  items: NutritionLog[];
+  isOver: boolean;
+  onEdit: (log: NutritionLog) => void;
+  onDelete: (log: NutritionLog) => void;
+  deletingId: string | null;
+}
+
+function MealSection({ slot, items, isOver, onEdit, onDelete, deletingId }: MealSectionProps) {
+  const { setNodeRef } = useDroppable({ id: slot });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border transition-colors ${
+        isOver ? 'border-black/40 bg-black/3' : 'border-black/10 bg-white'
+      }`}
+    >
+      <div className="flex items-center justify-between px-4 py-3 border-b border-black/6">
+        <p className="text-[0.65rem] uppercase tracking-[0.14em] text-black/50 font-medium">
+          {MEAL_LABELS[slot]}
+        </p>
+        {items.length > 0 && (
+          <p className="text-[0.6rem] text-black/30 tabular-nums">
+            {Math.round(items.reduce((s, l) => s + (l.calories ?? 0), 0))} kcal
+          </p>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <p className={`px-4 py-3 text-xs transition-colors ${isOver ? 'text-black/40' : 'text-black/25'}`}>
+          {isOver ? 'Drop here' : 'Nothing logged yet'}
+        </p>
+      ) : (
+        <div className="divide-y divide-black/5">
+          {items.map((log) => (
+            <DraggableFoodCard
+              key={log.id}
+              log={log}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              deletingId={deletingId}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Edit macro sheet ---
+
+interface EditSheetProps {
+  log: NutritionLog;
+  onSave: (updated: Partial<NutritionLog> & { id: string }) => Promise<void>;
+  onClose: () => void;
+}
+
+function EditSheet({ log, onSave, onClose }: EditSheetProps) {
+  const origWeight = getTotalWeight(log.food_items);
+
+  const [protein, setProtein] = useState(String(log.protein_g ?? ''));
+  const [carbs, setCarbs] = useState(String(log.carbs_g ?? ''));
+  const [fat, setFat] = useState(String(log.fat_g ?? ''));
+  const [fibre, setFibre] = useState(String(log.fibre_g ?? ''));
+  const [calories, setCalories] = useState(String(log.calories ?? ''));
+  const [weight, setWeight] = useState(origWeight > 0 ? String(origWeight) : '');
+  const [meal, setMeal] = useState<MealSlot>((log.meal_type as MealSlot) ?? 'dinner');
+  const [saving, setSaving] = useState(false);
+  const prevWeightRef = useRef(origWeight);
+
+  const handleWeightChange = (val: string) => {
+    setWeight(val);
+    const newW = parseFloat(val);
+    const prevW = prevWeightRef.current;
+    if (!isNaN(newW) && newW > 0 && prevW > 0) {
+      const scale = newW / prevW;
+      if (log.protein_g != null) setProtein(String(Math.round(log.protein_g * scale)));
+      if (log.carbs_g != null) setCarbs(String(Math.round(log.carbs_g * scale)));
+      if (log.fat_g != null) setFat(String(Math.round(log.fat_g * scale)));
+      if (log.fibre_g != null) setFibre(String(Math.round(log.fibre_g * scale)));
+      if (log.calories != null) setCalories(String(Math.round(log.calories * scale)));
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const newW = parseFloat(weight);
+    const updatedFoodItems = origWeight > 0 && !isNaN(newW) && newW > 0 && newW !== origWeight
+      ? log.food_items.map((item) => ({
+          ...item,
+          weight_g: item.weight_g != null
+            ? Math.round(item.weight_g * (newW / origWeight))
+            : item.weight_g,
+        }))
+      : log.food_items;
+
+    await onSave({
+      id: log.id,
+      meal_type: meal,
+      protein_g: protein !== '' ? parseFloat(protein) : null,
+      carbs_g: carbs !== '' ? parseFloat(carbs) : null,
+      fat_g: fat !== '' ? parseFloat(fat) : null,
+      fibre_g: fibre !== '' ? parseFloat(fibre) : null,
+      calories: calories !== '' ? parseFloat(calories) : null,
+      food_items: updatedFoodItems,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col justify-end">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white rounded-t-3xl px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5 max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm font-medium">Edit entry</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 text-black/40 hover:text-black transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <p className="text-[0.65rem] text-black/40 mb-3 truncate">{log.meal_description}</p>
+
+        {/* Move to meal */}
+        <div className="mb-5">
+          <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35 mb-2">Move to meal</p>
+          <div className="grid grid-cols-4 gap-2">
+            {MEAL_ORDER.map((slot) => (
+              <button
+                key={slot}
+                type="button"
+                onClick={() => setMeal(slot)}
+                className={`py-2 text-[0.65rem] font-medium uppercase tracking-[0.1em] border transition-colors ${
+                  meal === slot
+                    ? 'border-black bg-black text-white'
+                    : 'border-black/10 text-black/50 hover:border-black/30'
+                }`}
+              >
+                {MEAL_LABELS[slot]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Weight (if available) */}
+        {origWeight > 0 && (
+          <div className="mb-4">
+            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35 mb-2">
+              Estimated weight (g) — adjusts macros proportionally
+            </p>
+            <input
+              type="number"
+              value={weight}
+              onChange={(e) => handleWeightChange(e.target.value)}
+              placeholder="0"
+              className="w-full border border-black/15 px-3 py-2.5 text-sm outline-none focus:border-black/40 transition-colors"
+            />
+          </div>
+        )}
+
+        {/* Macros */}
+        <div className="mb-5">
+          <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35 mb-2">Macros</p>
+          <div className="space-y-2.5">
+            {[
+              { label: 'Protein (g)', value: protein, set: setProtein },
+              { label: 'Carbs (g)', value: carbs, set: setCarbs },
+              { label: 'Fat (g)', value: fat, set: setFat },
+              { label: 'Fibre (g)', value: fibre, set: setFibre },
+              { label: 'Calories (kcal)', value: calories, set: setCalories },
+            ].map(({ label, value, set }) => (
+              <div key={label} className="flex items-center gap-3">
+                <span className="w-28 text-[0.65rem] text-black/45 shrink-0">{label}</span>
+                <input
+                  type="number"
+                  value={value}
+                  onChange={(e) => set(e.target.value)}
+                  placeholder="—"
+                  className="flex-1 border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40 transition-colors text-right tabular-nums"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving}
+          className="w-full bg-black text-white py-3.5 text-sm font-medium transition-opacity disabled:opacity-40"
+        >
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Deleted entry ---
+
 interface DeletedEntry {
   log: NutritionLog;
   undoExpiresAt: number;
@@ -130,13 +468,21 @@ export default function NutritionTab({ clientId }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletedEntries, setDeletedEntries] = useState<DeletedEntry[]>([]);
   const [undoingId, setUndoingId] = useState<string | null>(null);
+  const [editingLog, setEditingLog] = useState<NutritionLog | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<MealSlot | null>(null);
 
   const weekDays = useMemo(() => {
     const base = addDays(new Date(), weekOffset * 7);
     return getWeekDays(base);
   }, [weekOffset]);
 
-  // Load targets once
+  // DnD sensors: hold 200ms on touch to distinguish from scroll
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+  );
+
   useEffect(() => {
     void (async () => {
       const { data } = await supabase
@@ -185,6 +531,11 @@ export default function NutritionTab({ clientId }: Props) {
     return map;
   }, [logs]);
 
+  const activeLog = useMemo(
+    () => (activeId ? logs.find((l) => l.id === activeId) ?? null : null),
+    [activeId, logs],
+  );
+
   const softDelete = async (log: NutritionLog) => {
     setDeletingId(log.id);
     await supabase.from('pt_nutrition_logs').delete().eq('id', log.id);
@@ -226,7 +577,47 @@ export default function NutritionTab({ clientId }: Props) {
     setUndoingId(null);
   };
 
-  // Expire undo entries after 10 minutes
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    setActiveId(String(active.id));
+  };
+
+  const handleDragOver = ({ over }: { over: DragEndEvent['over'] }) => {
+    setOverId(over ? (String(over.id) as MealSlot) : null);
+  };
+
+  const handleDragEnd = async ({ active, over }: DragEndEvent) => {
+    setActiveId(null);
+    setOverId(null);
+    if (!over) return;
+
+    const logId = String(active.id);
+    const newMeal = String(over.id) as MealSlot;
+    const log = logs.find((l) => l.id === logId);
+    if (!log || log.meal_type === newMeal) return;
+
+    // Optimistic update
+    setLogs((prev) =>
+      prev.map((l) => (l.id === logId ? { ...l, meal_type: newMeal } : l)),
+    );
+
+    await supabase
+      .from('pt_nutrition_logs')
+      .update({ meal_type: newMeal })
+      .eq('id', logId);
+  };
+
+  const handleSaveEdit = async (updated: Partial<NutritionLog> & { id: string }) => {
+    const { id, ...fields } = updated;
+    // Optimistic update
+    setLogs((prev) => prev.map((l) => (l.id === id ? { ...l, ...fields } : l)));
+    setEditingLog(null);
+
+    await supabase
+      .from('pt_nutrition_logs')
+      .update(fields)
+      .eq('id', id);
+  };
+
   useEffect(() => {
     if (deletedEntries.length === 0) return;
     const nearest = Math.min(...deletedEntries.map((e) => e.undoExpiresAt));
@@ -355,76 +746,52 @@ export default function NutritionTab({ clientId }: Props) {
         </div>
       </div>
 
-      {/* Meals */}
+      {/* Drag hint */}
+      {logs.length > 0 && (
+        <div className="mx-auto max-w-5xl">
+          <p className="text-[0.6rem] text-black/25 text-center">
+            Hold and drag any entry to move it to a different meal
+          </p>
+        </div>
+      )}
+
+      {/* Meals with DnD */}
       <div className="mx-auto max-w-5xl space-y-3">
         {loading ? (
           <p className="text-center text-sm text-black/30 py-8">Loading...</p>
         ) : (
-          MEAL_ORDER.map((slot) => {
-            const items = logsByMeal[slot];
-            return (
-              <div key={slot} className="border border-black/10 bg-white">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-black/6">
-                  <p className="text-[0.65rem] uppercase tracking-[0.14em] text-black/50 font-medium">{MEAL_LABELS[slot]}</p>
-                  {items.length > 0 && (
-                    <p className="text-[0.6rem] text-black/30 tabular-nums">
-                      {Math.round(items.reduce((s, l) => s + (l.calories ?? 0), 0))} kcal
-                    </p>
-                  )}
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={(e) => void handleDragEnd(e)}
+          >
+            {MEAL_ORDER.map((slot) => (
+              <MealSection
+                key={slot}
+                slot={slot}
+                items={logsByMeal[slot]}
+                isOver={overId === slot}
+                onEdit={setEditingLog}
+                onDelete={(log) => void softDelete(log)}
+                deletingId={deletingId}
+              />
+            ))}
+
+            <DragOverlay dropAnimation={null}>
+              {activeLog ? (
+                <div className="border border-black/20 bg-white shadow-lg opacity-95">
+                  <FoodCardInner
+                    log={activeLog}
+                    isDragging={false}
+                    onEdit={() => undefined}
+                    onDelete={() => undefined}
+                    deletingId={null}
+                  />
                 </div>
-                {items.length === 0 ? (
-                  <p className="px-4 py-3 text-xs text-black/25">Nothing logged yet</p>
-                ) : (
-                  <div className="divide-y divide-black/5">
-                    {items.map((log) => (
-                      <div key={log.id} className="px-4 py-3">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm leading-snug">{log.meal_description}</p>
-                            {log.food_items && log.food_items.length > 0 && (
-                              <p className="mt-0.5 text-[0.65rem] text-black/35 truncate">
-                                {log.food_items.map((f) => `${f.name}${f.quantity ? ` ${f.quantity}${f.unit}` : ''}`).join(', ')}
-                              </p>
-                            )}
-                          </div>
-                          <div className="shrink-0 text-right">
-                            {log.calories != null && (
-                              <p className="text-xs font-medium tabular-nums">{log.calories} kcal</p>
-                            )}
-                            <p className="text-[0.6rem] text-black/35 tabular-nums">
-                              {[
-                                log.protein_g != null ? `${log.protein_g}g P` : null,
-                                log.carbs_g != null ? `${log.carbs_g}g C` : null,
-                                log.fat_g != null ? `${log.fat_g}g F` : null,
-                              ].filter(Boolean).join(' · ')}
-                            </p>
-                            {log.fibre_g != null && (
-                              <p className="text-[0.6rem] text-black/30 tabular-nums">{log.fibre_g}g fibre</p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="mt-1.5 flex items-center justify-between">
-                          <p className="text-[0.55rem] text-black/20">
-                            {new Date(log.logged_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
-                            {log.input_type === 'photo' ? ' · photo' : log.input_type === 'voice' ? ' · voice' : ''}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => void softDelete(log)}
-                            disabled={deletingId === log.id}
-                            className="text-[0.6rem] font-medium uppercase tracking-[0.1em] text-black/30 transition-colors hover:text-red-400 disabled:opacity-30"
-                            aria-label="Delete entry"
-                          >
-                            {deletingId === log.id ? '…' : 'Delete'}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
 
         {/* Recently deleted — undo within 10 min */}
@@ -457,6 +824,14 @@ export default function NutritionTab({ clientId }: Props) {
           </div>
         )}
       </div>
+
+      {editingLog && (
+        <EditSheet
+          log={editingLog}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingLog(null)}
+        />
+      )}
 
       {showLogModal && (
         <NutritionChatModal
