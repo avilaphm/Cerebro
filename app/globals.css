@@ -288,10 +288,15 @@ body::before {
   border-color: var(--liquid-fg-1) !important;
 }
 
-/* Exercise section in the active workout view — strip glass treatment.
-   .client-liquid section fires backdrop-filter:blur on the section ancestor,
-   which creates a GPU compositing layer; iOS only paints its children on touch
-   interaction, making text invisible until scrolled over. */
+/* Workout exercise sections: strip ALL glass treatment and fix text colour.
+   Root cause: .client-liquid section gets backdrop-filter:blur, and
+   .client-liquid .bg-black * forces color:inherit (=white) onto every
+   descendant. On iOS Safari the compositing layer de-syncs during scroll,
+   making text invisible until touch triggers a repaint.
+   Fix 1: remove backdrop-filter from the section and every descendant.
+   Fix 2: override the white colour cascade with a higher-specificity rule
+           (.client-liquid .bg-black .workout-logging-sheet = 0,3,0 beats
+            .client-liquid .bg-black * = 0,2,1). */
 .client-liquid [data-workout-exercise-id] {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -299,21 +304,20 @@ body::before {
   border-radius: 0 !important;
   box-shadow: none !important;
 }
-
-/* Workout logging sheet sits over a black video container — keep it opaque white.
-   Nuclear backdrop-filter removal: iOS Safari composites blur into a separate GPU
-   layer; during scroll the text layer de-syncs and goes invisible. */
+.client-liquid [data-workout-exercise-id] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
 .client-liquid .workout-logging-sheet,
 .client-liquid .workout-logging-sheet [class*="bg-white"],
 .client-liquid .workout-logging-sheet [class*="bg-[#fbfbf8]"] {
-  background: #ffffff !important;
+  background: #fbfbf8 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
 }
-.client-liquid .workout-logging-sheet * {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+.client-liquid .bg-black .workout-logging-sheet {
+  color: rgba(0, 0, 0, 0.9) !important;
 }
 .client-liquid .workout-logging-sheet input,
 .client-liquid .workout-logging-sheet textarea {
@@ -322,7 +326,7 @@ body::before {
 }
 .client-liquid .workout-logging-sheet button[class*="bg-white"],
 .client-liquid .workout-logging-sheet button[class*="bg-[#fbfbf8]"] {
-  background: rgba(0, 0, 0, 0.04) !important;
+  background: rgba(0, 0, 0, 0.05) !important;
 }
 
 .dashboard-glass-sidebar {
