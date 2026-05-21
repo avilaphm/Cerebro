@@ -4,11 +4,11 @@
 2026-05-21 by Codex - programme PDF upload Vercel fix + error display fix
 
 ## Last commit
-`1f3de86` - Disable PDF worker in parser route
+`dd1da25` - Preload PDF worker for server parsing
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
-The PT programme creation pipeline is structurally wired end-to-end, but live AI generation is blocked when Anthropic credits are exhausted. On 2026-05-21 Codex fixed the wizard getting stuck on Step 1 "Working..." by adding UI labels for the new movement/exercise intelligence steps, shrinking the exercise-intelligence prompt, restoring `exercise-intelligence-agent` to `verify_jwt: false`, and adding hard Promise.race timeouts around nested Edge Function calls in `pt-programme-orchestrator`. A follow-up fix made `/api/pt/parse-pdf` Node-only, switched production PDF extraction from `pdf-parse` to `pdfjs-dist/legacy/build/pdf.mjs` because Vercel's Node runtime lacks `DOMMatrix`, disabled the pdf.js worker path for Vercel, and made Step 1 display real PDF / Edge Function errors instead of `Unexpected token '<'` or generic non-2xx messages.
+The PT programme creation pipeline is structurally wired end-to-end, but live AI generation is blocked when Anthropic credits are exhausted. On 2026-05-21 Codex fixed the wizard getting stuck on Step 1 "Working..." by adding UI labels for the new movement/exercise intelligence steps, shrinking the exercise-intelligence prompt, restoring `exercise-intelligence-agent` to `verify_jwt: false`, and adding hard Promise.race timeouts around nested Edge Function calls in `pt-programme-orchestrator`. A follow-up fix made `/api/pt/parse-pdf` Node-only, switched production PDF extraction from `pdf-parse` to `pdfjs-dist/legacy/build/pdf.mjs` because Vercel's Node runtime lacks `DOMMatrix`, preloads `pdf.worker.mjs` so Vercel does not try to import an unbundled worker chunk, and made Step 1 display real PDF / Edge Function errors instead of `Unexpected token '<'` or generic non-2xx messages.
 
 Live verification notes:
 - Pre-fix runs were stuck at `EXERCISE_INTELLIGENCE` because nested function calls could hang without recording a step row.
