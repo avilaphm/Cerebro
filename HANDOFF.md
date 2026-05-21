@@ -1,14 +1,14 @@
 # Handoff
 
 ## Last updated
-2026-05-21 by Codex - programme wizard stuck-on-working fix
+2026-05-21 by Codex - programme PDF upload + error display fix
 
 ## Last commit
-`84a0a72` - Fix PT programme generation stuck state
+`8769832` - Fix programme PDF upload errors
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
-The PT programme creation pipeline is structurally wired end-to-end, but the latest live smoke test is blocked by Anthropic credits. On 2026-05-21 Codex fixed the wizard getting stuck on Step 1 "Working..." by adding UI labels for the new movement/exercise intelligence steps, shrinking the exercise-intelligence prompt, restoring `exercise-intelligence-agent` to `verify_jwt: false`, and adding hard Promise.race timeouts around nested Edge Function calls in `pt-programme-orchestrator`.
+The PT programme creation pipeline is structurally wired end-to-end, but live AI generation is blocked when Anthropic credits are exhausted. On 2026-05-21 Codex fixed the wizard getting stuck on Step 1 "Working..." by adding UI labels for the new movement/exercise intelligence steps, shrinking the exercise-intelligence prompt, restoring `exercise-intelligence-agent` to `verify_jwt: false`, and adding hard Promise.race timeouts around nested Edge Function calls in `pt-programme-orchestrator`. A follow-up fix made `/api/pt/parse-pdf` Node-only with dynamic `pdf-parse` import and made Step 1 display real PDF / Edge Function errors instead of `Unexpected token '<'` or generic non-2xx messages.
 
 Live verification notes:
 - Pre-fix runs were stuck at `EXERCISE_INTELLIGENCE` because nested function calls could hang without recording a step row.
@@ -16,6 +16,7 @@ Live verification notes:
 - `pt-programme-orchestrator` is deployed as version 8 with the hard timeout patch.
 - Old stale `running` rows were marked `failed` with the reason "Stale pre-fix run marked failed after orchestrator timeout/auth fix. Start a new generation."
 - Final smoke run `65b094a7-5212-4150-81f8-9d665fd5a2dd` failed cleanly at `CLIENT_ANALYSIS` because Anthropic returned: "Your credit balance is too low to access the Anthropic API." Once credits are topped up, rerun generation from `/dashboard/pt/programmes/new`.
+- Production `/api/pt/parse-pdf` was returning an HTML 500 page before commit `8769832`; the route now avoids top-level `pdf-parse` import and the client handles non-JSON responses safely.
 
 The intended coach journey remains client-first: create/select the client, upload intake and movement assessment documents, add coach brain dump/voice notes, save to the client brain, then generate the programme from the combined client brain plus knowledge base.
 
