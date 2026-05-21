@@ -4,7 +4,7 @@
 2026-05-21 by Codex - programme wizard stuck-on-working fix
 
 ## Last commit
-`4e43c65` - Fix PT programme generation stuck state
+`84a0a72` - Fix PT programme generation stuck state
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
