@@ -3,8 +3,8 @@
 ## Last updated
 2026-05-21 by Codex - programme PDF upload Vercel fix + error display fix
 
-## Last commit
-`06852ba` - Update handoff for PDF worker preload
+## Last code fix commit
+`dd1da25` - Preload PDF worker for server parsing
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
