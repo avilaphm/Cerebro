@@ -701,20 +701,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   useEffect(() => {
     if (!client) return;
-    type JStep = { type: 'phase' | 'test'; label: string; phaseIndex: number | null; milestone?: 'initial' | 'retest' };
+    type JStep = { type: 'phase' | 'test'; label: string; phaseIndex: number | null };
     const steps: JStep[] = assignment && assignment.programme.phases.length > 0
-      ? assignment.programme.phases.flatMap((phase, pi) => {
-          const s: JStep[] = [{ type: 'phase', label: phase.title, phaseIndex: pi }];
-          if (pi === 0) s.push({ type: 'test', label: '1RM Test', phaseIndex: null, milestone: 'initial' });
-          if (pi === assignment.programme.phases.length - 1) s.push({ type: 'test', label: '1RM Re-test', phaseIndex: null, milestone: 'retest' });
-          return s;
-        })
+      ? assignment.programme.phases.map((phase, pi) => ({
+          type: /1\s*rm|test/i.test(phase.title) ? 'test' as const : 'phase' as const,
+          label: phase.title,
+          phaseIndex: pi,
+        }))
       : [
           { type: 'phase', label: 'Phase 1 - Foundation', phaseIndex: null },
-          { type: 'test', label: 'Testing 1 RM', phaseIndex: null, milestone: 'initial' as const },
+          { type: 'test', label: 'Testing 1 RM', phaseIndex: null },
           { type: 'phase', label: 'Phase 2 - Hypertrophy', phaseIndex: null },
           { type: 'phase', label: 'Phase 3 - Strength', phaseIndex: null },
-          { type: 'test', label: 'Re-testing 1 RM', phaseIndex: null, milestone: 'retest' as const },
+          { type: 'test', label: 'Re-testing 1 RM', phaseIndex: null },
         ];
     void Promise.all(
       steps.map((step, index) => {
@@ -724,7 +723,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             client_id: client.id,
             step_label: step.label,
             step_type: step.type,
-            milestone: step.milestone,
+            milestone: undefined,
             phase_index: step.phaseIndex,
             total_steps: steps.length,
             programme_phases: steps.map((s) => s.label),
@@ -1536,21 +1535,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const renderJourneyTimeline = () => {
     const hasProgramme = !!assignment && assignment.programme.phases.length > 0;
-    type JourneyStep = { type: 'phase' | 'test'; label: string; phaseIndex: number | null; milestone?: 'initial' | 'retest' };
+    type JourneyStep = { type: 'phase' | 'test'; label: string; phaseIndex: number | null };
     const journeySteps: JourneyStep[] = hasProgramme
-      ? assignment.programme.phases.flatMap((phase, phaseIndex) => {
-        const steps: JourneyStep[] = [
-          { type: 'phase', label: phase.title, phaseIndex },
-        ];
-        if (phaseIndex === 0) {
-          steps.push({ type: 'test', label: '1RM Test', phaseIndex: null, milestone: 'initial' });
-        }
-        if (phaseIndex === assignment.programme.phases.length - 1) {
-          steps.push({ type: 'test', label: '1RM Re-test', phaseIndex: null, milestone: 'retest' });
-        }
-        return steps;
-      })
-      : DEFAULT_PROGRAMME_PHASES.map((label): JourneyStep => ({ type: label.toLowerCase().includes('1 rm') ? 'test' : 'phase', label, phaseIndex: null }));
+      ? assignment.programme.phases.map((phase, phaseIndex) => ({
+          type: /1\s*rm|test/i.test(phase.title) ? 'test' as const : 'phase' as const,
+          label: phase.title,
+          phaseIndex,
+        }))
+      : DEFAULT_PROGRAMME_PHASES.map((p): JourneyStep => ({
+          type: /1\s*rm|test/i.test(p) ? 'test' : 'phase',
+          label: p,
+          phaseIndex: null,
+        }));
     const phaseCount = journeySteps.length;
     const activePi = hasProgramme ? activePhaseIndex : -1;
     const activeStepIndex = hasProgramme
@@ -1564,17 +1560,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
     const stepState = (step: (typeof journeySteps)[number]) => {
       if (!hasProgramme) return { isDone: false, isActive: false };
-      if (step.type === 'phase') {
-        const pp = step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
-        return { isDone: pp?.allBlocksDone ?? false, isActive: step.phaseIndex === activePi };
-      }
-      if (step.milestone === 'initial') {
-        const firstDone = phaseProgress[0]?.allBlocksDone ?? false;
-        const nextStarted = activePi > 0;
-        return { isDone: nextStarted, isActive: firstDone && !nextStarted };
-      }
-      const allDone = phaseProgress.every((progress) => progress?.allBlocksDone);
-      return { isDone: allDone, isActive: false };
+      const pp = step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
+      return { isDone: pp?.allBlocksDone ?? false, isActive: step.phaseIndex === activePi };
     };
 
     return (
@@ -1704,7 +1691,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         <button
                           type="button"
                           onClick={() => void explainJourneyStep(
-                            stepKey, step.label, step.type, step.milestone,
+                            stepKey, step.label, step.type, undefined,
                             step.phaseIndex, journeySteps, isActivePhase, isDone,
                           )}
                           disabled={isLoadingThis}
@@ -1717,9 +1704,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
                       {isTest && (
                         <p className="mt-1.5 text-[0.65rem] leading-relaxed text-black/22">
-                          {step.milestone === 'initial'
-                            ? 'Strength benchmark before the next training phase.'
-                            : 'Retest strength after the full training block.'}
+                          {/re-?test/i.test(step.label)
+                            ? 'Retest strength after the full training block.'
+                            : 'Strength benchmark before the next training phase.'}
                         </p>
                       )}
 
@@ -1732,7 +1719,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                           {blocks.map((block, bi) => {
                             const blockDone = isDonePhase || (pp !== null && pp.blockIndex > bi);
                             const isActiveBlock = isActivePhase && pp !== null && pp.blockIndex === bi;
-                            const blockLabel = block.sets
+                            const blockTopLabel = block.sets
                               ? `${block.sets} sets`
                               : block.weight_pct
                                 ? block.weight_pct
@@ -1749,7 +1736,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                                   }`}
                                 />
                                 <span className="max-w-[3rem] text-center text-[0.44rem] uppercase leading-tight tracking-wide text-black/28">
-                                  {blockLabel}
+                                  <span className="block">{blockTopLabel}</span>
+                                  {block.weeks > 0 && (
+                                    <span className="block text-black/20">{block.weeks}wk</span>
+                                  )}
                                 </span>
                               </div>
                             );
