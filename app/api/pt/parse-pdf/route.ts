@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const document = await pdfjs.getDocument({
       data: new Uint8Array(buffer),
-    }).promise;
+      disableWorker: true,
+    } as unknown as Parameters<typeof pdfjs.getDocument>[0]).promise;
 
     const pages: string[] = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
