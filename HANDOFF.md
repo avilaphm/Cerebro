@@ -1,12 +1,25 @@
 # Handoff
 
 ## Last updated
-2026-05-22 morning by Codex - exercise library missing-video filter
+2026-05-22 morning by Codex - populated missing exercise videos
 
 ## Last code fix commit
 Current commit - Exercise library missing-video filter
 
 ## What just happened (read first)
+
+Pedro asked to use the previous YouTube-search path to populate all exercise cards without videos.
+
+Operational data update:
+- Used existing deployed Supabase function `search-exercise-videos`.
+- Pre-check: `pt_exercises` had 39 missing `video_url` values out of 656 exercises.
+- Invoked the function in batch mode with the service-role token.
+- Function result: `{ "populated": 39, "missing": [] }`.
+- Post-check: `pt_exercises` now has 0 missing `video_url` values out of 656 exercises.
+
+No app code changed for this task.
+
+## Previous: Exercise library missing-video filter
 
 Pedro asked for a filter next to "All categories" to show exercises without a video URL linked to the exercise card.
 
