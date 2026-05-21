@@ -13,6 +13,9 @@ export async function POST(req: NextRequest) {
     }
     const buffer = await file.arrayBuffer();
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    // Preload the worker module so pdf.js can run in Vercel's serverless runtime
+    // without trying to import an unbundled pdf.worker.mjs file at request time.
+    await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
     const document = await pdfjs.getDocument({
       data: new Uint8Array(buffer),
       disableWorker: true,
