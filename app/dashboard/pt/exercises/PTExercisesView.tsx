@@ -721,14 +721,14 @@ export default function PTExercisesView({ initialExercises }: Props) {
       </div>
       {showImport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4">
-          <div className="no-glass flex w-full max-w-xl flex-col rounded-2xl bg-white shadow-2xl">
+          <div className="exercise-import-modal no-glass flex w-full max-w-xl flex-col rounded-2xl border border-black/10 bg-[#f7f4ef] shadow-2xl">
             {/* Modal header */}
             <div className="flex items-center justify-between border-b border-black/8 px-6 py-4">
               <div>
-                <h2 className="text-sm font-semibold">Import exercises from document</h2>
-                <p className="text-xs text-black/40">Upload a .pdf, .txt, .csv, or .md file — or paste content directly</p>
+                <h2 className="text-sm font-semibold text-black">Import exercises from document</h2>
+                <p className="text-xs text-black/60">Upload a .pdf, .txt, .csv, or .md file — or paste content directly</p>
               </div>
-              <button type="button" onClick={() => setShowImport(false)} className="text-black/30 hover:text-black">
+              <button type="button" onClick={() => setShowImport(false)} className="text-black/45 hover:text-black">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -743,16 +743,16 @@ export default function PTExercisesView({ initialExercises }: Props) {
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
                     className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 cursor-pointer transition-colors ${
-                      dragOver ? 'border-black/40 bg-black/5' : 'border-black/15 hover:border-black/30 hover:bg-black/2'
+                      dragOver ? 'border-black/45 bg-white' : 'border-black/18 bg-[#fbfaf7] hover:border-black/35 hover:bg-white'
                     }`}
                   >
-                    <Upload className="h-6 w-6 text-black/25" />
+                    <Upload className="h-6 w-6 text-black/45" />
                     {importFileName ? (
                       <p className="text-sm font-medium text-black">{importFileName}</p>
                     ) : (
-                      <p className="text-sm text-black/50">Drop your file here or <span className="font-medium text-black">click to browse</span></p>
+                      <p className="text-sm text-black/65">Drop your file here or <span className="font-medium text-black">click to browse</span></p>
                     )}
-                    <p className="text-xs text-black/30">.pdf · .txt · .csv · .md — max 20 MB</p>
+                    <p className="text-xs text-black/45">.pdf · .txt · .csv · .md — max 20 MB</p>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -765,34 +765,34 @@ export default function PTExercisesView({ initialExercises }: Props) {
                   {/* Paste fallback */}
                   {!importFileName && (
                     <div>
-                      <p className="mb-1.5 text-xs font-medium text-black/50">Or paste document text</p>
+                      <p className="mb-1.5 text-xs font-medium text-black/60">Or paste document text</p>
                       <textarea
                         value={importText}
                         onChange={(e) => { setImportText(e.target.value); setImportFileName(''); }}
                         placeholder="Paste your exercise list here…"
                         rows={6}
-                        className="w-full resize-none rounded-xl border border-black/12 bg-white px-3 py-2.5 text-xs outline-none focus:border-black/30"
+                        className="w-full resize-none rounded-xl border border-black/15 bg-white px-3 py-2.5 text-xs text-black outline-none placeholder:text-black/35 focus:border-black/40"
                       />
                     </div>
                   )}
 
                   {importFileName && importText && (
-                    <p className="text-xs text-black/40">
+                    <p className="text-xs text-black/60">
                       {(importText.length / 1000).toFixed(0)} KB loaded · ready to import
                     </p>
                   )}
 
                   {importError && (
-                    <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{importError}</p>
+                    <p className="rounded-lg border border-red-200 bg-[#fff1f1] px-3 py-2 text-xs font-medium text-red-800">{importError}</p>
                   )}
 
                   {importStage && (
-                    <div className="flex items-center gap-2 rounded-lg bg-black/4 px-3 py-2.5">
-                      <svg className="h-3.5 w-3.5 animate-spin text-black/40" viewBox="0 0 24 24" fill="none">
+                    <div className="flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-2.5">
+                      <svg className="h-3.5 w-3.5 animate-spin text-black/55" viewBox="0 0 24 24" fill="none">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                       </svg>
-                      <p className="text-xs text-black/60">{importStage}</p>
+                      <p className="text-xs text-black/70">{importStage}</p>
                     </div>
                   )}
                 </>

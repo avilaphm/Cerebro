@@ -1,12 +1,27 @@
 # Handoff
 
 ## Last updated
-2026-05-22 morning by Codex - exercise import Edge Function switched from Claude to OpenAI
+2026-05-22 morning by Codex - fixed OpenAI import insert constraint and import modal contrast
 
 ## Last code fix commit
-Current commit - Import exercises with OpenAI Responses API
+Current commit - Fix exercise import source and modal contrast
 
 ## What just happened (read first)
+
+Pedro retried the PDF import and hit an error in the import modal. Supabase Edge Function logs showed `import-exercises` version 2 returned HTTP 500 after ~48 seconds. Diagnosis: `pt_exercises` has a `pt_exercises_source_check` constraint allowing only `manual`, `spreadsheet`, or `ai`; the OpenAI migration inserted rows with `source: 'openai-import'`, so the database rejected the batch.
+
+Fix:
+- `supabase/functions/import-exercises/index.ts` now inserts `source: 'ai'`, which satisfies the existing DB constraint.
+- Redeployed `import-exercises`; Supabase now reports it ACTIVE as version 3 with `verify_jwt: true`.
+- Import modal changed from glass/white-translucent styling to a solid off-white popup (`#f7f4ef`) with stronger text contrast, stronger dropzone contrast, and higher-contrast error/status messages.
+
+Verification:
+- `npm run build` passes.
+- `npx eslint app/dashboard/pt/exercises/PTExercisesView.tsx` has 0 errors and one pre-existing `<img>` warning.
+- Supabase schema check confirmed source constraint: `manual`, `spreadsheet`, `ai`.
+- Supabase function list confirmed `import-exercises` version 3 ACTIVE.
+
+## Previous OpenAI switch
 
 Pedro asked whether the exercise document importer can use the OpenAI / ChatGPT API instead of Claude. The answer is yes, and the function has been changed.
 

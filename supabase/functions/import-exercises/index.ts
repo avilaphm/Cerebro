@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
           progression_ids: [] as string[],
           regression_ids: [] as string[],
           purpose: null,
-          source: 'openai-import',
+          source: 'ai',
         }));
 
       if (toInsert.length === 0) continue;
