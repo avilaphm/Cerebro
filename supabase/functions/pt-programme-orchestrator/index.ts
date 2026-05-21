@@ -73,22 +73,37 @@ async function runPipeline(ctx: {
   const { runId, body, admin, supabaseUrl, serviceKey } = ctx;
   try {
 
-    const callAgent = async (path: string, input: Record<string, unknown>): Promise<{ ok: boolean; output: Record<string, unknown>; error?: string }> => {
+    const callAgent = async (path: string, input: Record<string, unknown>, timeoutMs = 115_000): Promise<{ ok: boolean; output: Record<string, unknown>; error?: string }> => {
+      const controller = new AbortController();
+      let timeoutId: number | undefined;
       try {
-        const res = await fetch(`${supabaseUrl}/functions/v1/${path}`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${serviceKey}`,
-            apikey: serviceKey,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(input),
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            controller.abort();
+            reject(new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`));
+          }, timeoutMs);
         });
+        const request = fetch(`${supabaseUrl}/functions/v1/${path}`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${serviceKey}`,
+              apikey: serviceKey,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(input),
+            signal: controller.signal,
+          });
+        const res = await Promise.race([request, timeout]);
         const data = await res.json();
         if (!res.ok || data.error) return { ok: false, output: data, error: data.error ?? `HTTP ${res.status}` };
         return { ok: true, output: data };
       } catch (e) {
-        return { ok: false, output: {}, error: e instanceof Error ? e.message : String(e) };
+        const errorMessage = e instanceof DOMException && e.name === 'AbortError'
+          ? `${path} timed out after ${Math.round(timeoutMs / 1000)}s`
+          : e instanceof Error ? e.message : String(e);
+        return { ok: false, output: {}, error: errorMessage };
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
       }
     };
 
@@ -127,7 +142,7 @@ async function runPipeline(ctx: {
       client_id: body.client_id,
       client_analysis: clientAnalysis,
       intake_text: body.intake_text,
-    });
+    }, 95_000);
     await recordStep(2, STEP_NAMES[1], { client_id: body.client_id }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);
     // Movement analysis failure is non-fatal: we fall back to empty mind map so the pipeline continues.
     const muscleMindMap = step2.ok ? (step2.output.muscle_mind_map as Record<string, unknown>) : {};
@@ -137,7 +152,7 @@ async function runPipeline(ctx: {
     const step3 = await callAgent('exercise-intelligence-agent', {
       client_id: body.client_id,
       muscle_mind_map: muscleMindMap,
-    });
+    }, 95_000);
     await recordStep(3, STEP_NAMES[2], { client_id: body.client_id }, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
     // Exercise intelligence failure is also non-fatal: synthesis falls back to full library.
     const exerciseMasterList = step3.ok ? ((step3.output.exercise_master_list ?? []) as Array<Record<string, unknown>>) : [];

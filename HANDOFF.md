@@ -1,14 +1,23 @@
 # Handoff
 
 ## Last updated
-2026-05-21 by Claude (Sonnet 4.6) - movement-analysis-agent + exercise-intelligence-agent wired into pipeline
+2026-05-21 by Codex - programme wizard stuck-on-working fix
 
 ## Last commit
-`b474d76` - Add movement-analysis + exercise-intelligence agents to pipeline
+`4e43c65` - Fix PT programme generation stuck state
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
-The PT programme creation pipeline is **fully working end-to-end**. All 16 original tasks shipped. The wizard takes coach input, distributes it into 4 RAG-indexed brain docs, runs a 4-agent orchestrator, and produces a validated programme with Helms-style mesocycle progression, exercise videos attached, and a 3/4/5 days-per-week split selector. Smoke tests against Mira pass with 0 hard failures on 3-day, 4-day, and 5-day runs.
+The PT programme creation pipeline is structurally wired end-to-end, but the latest live smoke test is blocked by Anthropic credits. On 2026-05-21 Codex fixed the wizard getting stuck on Step 1 "Working..." by adding UI labels for the new movement/exercise intelligence steps, shrinking the exercise-intelligence prompt, restoring `exercise-intelligence-agent` to `verify_jwt: false`, and adding hard Promise.race timeouts around nested Edge Function calls in `pt-programme-orchestrator`.
+
+Live verification notes:
+- Pre-fix runs were stuck at `EXERCISE_INTELLIGENCE` because nested function calls could hang without recording a step row.
+- `exercise-intelligence-agent` briefly redeployed with `verify_jwt: true`; it was redeployed with `--no-verify-jwt`.
+- `pt-programme-orchestrator` is deployed as version 8 with the hard timeout patch.
+- Old stale `running` rows were marked `failed` with the reason "Stale pre-fix run marked failed after orchestrator timeout/auth fix. Start a new generation."
+- Final smoke run `65b094a7-5212-4150-81f8-9d665fd5a2dd` failed cleanly at `CLIENT_ANALYSIS` because Anthropic returned: "Your credit balance is too low to access the Anthropic API." Once credits are topped up, rerun generation from `/dashboard/pt/programmes/new`.
+
+The intended coach journey remains client-first: create/select the client, upload intake and movement assessment documents, add coach brain dump/voice notes, save to the client brain, then generate the programme from the combined client brain plus knowledge base.
 
 **Nutrition UX overhaul shipped (commit `114252b`).** `NutritionTab.tsx` now has full drag-and-drop between meal sections (@dnd-kit, 200ms touch hold), a tap-to-edit sheet for macros + weight (weight change scales all macros proportionally), and estimated weight display per food card. `log-nutrition-batch` uses weight-first estimation and has a serving-size calibration guide baked in. This fixes the "60g protein for one steak slice" class of errors.
 

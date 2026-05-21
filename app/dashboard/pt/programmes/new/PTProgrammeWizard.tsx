@@ -254,6 +254,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     const commandLabel = (cmd: string | null | undefined) => {
       switch (cmd) {
         case 'CLIENT_ANALYSIS': return 'Analysing client…';
+        case 'MOVEMENT_ANALYSIS': return 'Analysing movement assessment…';
+        case 'EXERCISE_INTELLIGENCE': return 'Building exercise intelligence…';
         case 'METHODOLOGY_PLAN': return 'Planning methodology (knowledge base RAG)…';
         case 'PROGRAMME_SYNTHESIS_FOUNDATION': return 'Synthesising Foundation (1/5)…';
         case 'PROGRAMME_SYNTHESIS_1RM_TEST': return 'Synthesising 1RM Test (2/5)…';

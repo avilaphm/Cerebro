@@ -110,17 +110,18 @@ Deno.serve(async (req) => {
       muscles: [...(e.primary_muscles ?? []), ...(e.secondary_muscles ?? [])].slice(0, 3),
       equipment: e.equipment,
     }));
+    const focusedLibrary = focusExerciseLibrary(compactLibrary, body.muscle_mind_map);
 
     const userMessage = [
       `MUSCLE MIND MAP:\n${JSON.stringify(body.muscle_mind_map, null, 2)}`,
-      `EXERCISE LIBRARY (${compactLibrary.length} exercises -- use these ids for exercise_id matching):\n${JSON.stringify(compactLibrary)}`,
+      `FOCUSED EXERCISE LIBRARY (${focusedLibrary.length} of ${compactLibrary.length} exercises -- use these ids for exercise_id matching):\n${JSON.stringify(focusedLibrary)}`,
       'Output the exercise intelligence JSON now. JSON only, no prose, no code fences.',
     ].join('\n\n---\n\n');
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
+      max_tokens: 4500,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     });
@@ -131,7 +132,7 @@ Deno.serve(async (req) => {
     if (!parsed) {
       const retry = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
-        max_tokens: 6000,
+        max_tokens: 4500,
         system: SYSTEM_PROMPT,
         messages: [
           { role: 'user', content: userMessage },
@@ -150,6 +151,71 @@ Deno.serve(async (req) => {
     return json({ error: error instanceof Error ? error.message : 'Exercise intelligence failed' }, 500);
   }
 });
+
+type CompactExercise = {
+  id: string;
+  name: string;
+  muscles: string[];
+  equipment: string | null;
+};
+
+function focusExerciseLibrary(library: CompactExercise[], mindMap: Record<string, unknown>): CompactExercise[] {
+  const terms = new Set<string>([
+    'squat', 'deadlift', 'bench', 'press', 'pull-up', 'pulldown',
+    'lunge', 'split squat', 'rdl', 'hip thrust', 'bridge', 'row',
+    'pallof', 'plank', 'clamshell', 'adductor', 'cossack', 'step up',
+    'mobility', 'stretch', 'hip', 'thoracic',
+  ]);
+
+  const primaryIssues = Array.isArray(mindMap.primary_issues) ? mindMap.primary_issues : [];
+  for (const issue of primaryIssues) {
+    if (!isRecord(issue)) continue;
+    const muscles = Array.isArray(issue.muscles) ? issue.muscles : [];
+    for (const muscle of muscles) {
+      if (!isRecord(muscle)) continue;
+      addWords(terms, muscle.name);
+      const specific = Array.isArray(muscle.specific_muscles) ? muscle.specific_muscles : [];
+      specific.forEach((item) => addWords(terms, item));
+    }
+  }
+
+  const scored = library.map((exercise, index) => {
+    const haystack = `${exercise.name} ${exercise.muscles.join(' ')} ${exercise.equipment ?? ''}`.toLowerCase();
+    let score = 0;
+    for (const term of terms) {
+      if (term.length >= 3 && haystack.includes(term.toLowerCase())) score += term.length > 5 ? 2 : 1;
+    }
+    return { exercise, index, score };
+  });
+
+  const selected = scored
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, 180)
+    .map((item) => item.exercise);
+
+  if (selected.length >= 80) return selected;
+  const seen = new Set(selected.map((exercise) => exercise.id));
+  for (const exercise of library) {
+    if (seen.has(exercise.id)) continue;
+    selected.push(exercise);
+    seen.add(exercise.id);
+    if (selected.length >= 120) break;
+  }
+  return selected;
+}
+
+function addWords(target: Set<string>, value: unknown) {
+  if (typeof value !== 'string') return;
+  const cleaned = value.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
+  if (!cleaned) return;
+  target.add(cleaned);
+  cleaned.split(/\s+/).filter((word) => word.length >= 4).forEach((word) => target.add(word));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function parseJson(text: string): Record<string, unknown> | null {
   try { return JSON.parse(text); } catch { /* noop */ }
