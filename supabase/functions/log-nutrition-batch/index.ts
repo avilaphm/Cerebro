@@ -65,7 +65,7 @@ function buildClientContextBlock(ctx: ClientContext): string {
   if (ctx.recurring_gaps?.length) lines.push(`Known recurring nutrition gaps: ${ctx.recurring_gaps.join(', ')}`);
 
   if (lines.length === 0) return '';
-  return `\nClient profile (use to improve accuracy — adjust estimates to match their typical portions and habits):\n${lines.map((l) => `- ${l}`).join('\n')}`;
+  return `\nClient profile (use to improve accuracy - adjust estimates to match their typical portions and habits):\n${lines.map((l) => `- ${l}`).join('\n')}`;
 }
 
 function buildPrompt(
@@ -95,46 +95,71 @@ function buildPrompt(
 
   parts.push(`
 
-ESTIMATION METHOD — for every food item, follow this order:
+SINGLE-SERVING DEFAULT (apply this first, before estimating):
+Assume every meal logged is one portion for one person eating alone. Unless an explicit amount is stated, default to these single-serving weights:
+- Any protein source (steak, chicken, fish, pork, mince, lamb, etc.): 100g
+- Cooked rice: 150g (one standard cup)
+- Cooked pasta or noodles: 150g
+- Salad or leafy greens: 100g
+- Cooked vegetables as a side: 120g
+- Bread: 38g per slice (sandwich = 2 slices = 76g)
+- Wrap or tortilla: 50g
+- Egg: 55g each
+- Greek yoghurt: 170g (standard small tub)
+- Milk: 250ml
+
+MACRO DENSITY TABLE (protein / fat / carbs / calories per 100g - use these exact values):
+Protein sources:
+- Rump steak, beef steak: 21g P / 7g F / 0g C / 148 kcal
+- Chicken breast (cooked): 27g P / 4g F / 0g C / 148 kcal
+- Chicken thigh (cooked, boneless): 24g P / 8g F / 0g C / 170 kcal
+- Fish, white (barramundi, snapper, cod, flathead): 22g P / 3g F / 0g C / 116 kcal
+- Salmon: 22g P / 13g F / 0g C / 208 kcal
+- Tuna canned, drained: 26g P / 2g F / 0g C / 120 kcal
+- Pork, lean cut: 27g P / 8g F / 0g C / 175 kcal
+- Beef mince, lean: 27g P / 10g F / 0g C / 195 kcal
+- Lamb: 25g P / 10g F / 0g C / 195 kcal
+- Egg (whole): 13g P / 10g F / 0g C / 143 kcal
+Carbs:
+- Cooked white rice: 3g P / 1g F / 28g C / 130 kcal
+- Cooked brown rice: 3g P / 1g F / 23g C / 112 kcal
+- Cooked pasta: 4g P / 1g F / 24g C / 131 kcal
+- Bread, white or wholemeal: 8g P / 2g F / 44g C / 230 kcal
+- Wrap or tortilla: 8g P / 5g F / 48g C / 280 kcal
+- Oats, cooked: 3g P / 2g F / 12g C / 71 kcal
+Dairy:
+- Greek yoghurt, full fat: 9g P / 5g F / 4g C / 97 kcal
+- Greek yoghurt, low fat: 10g P / 0g F / 4g C / 59 kcal
+- Milk, full cream: 3g P / 4g F / 5g C / 67 kcal
+- Cheese: 25g P / 33g F / 0g C / 400 kcal
+Vegetables:
+- Leafy salad, mixed greens: 2g P / 0g F / 3g C / 20 kcal
+- Broccoli, cooked: 3g P / 0g F / 5g C / 35 kcal
+- Mixed cooked vegetables: 3g P / 0g F / 7g C / 40 kcal
+- Sweet potato, cooked: 2g P / 0g F / 20g C / 90 kcal
+Fats:
+- Olive oil or cooking oil: 0g P / 100g F / 0g C / 884 kcal (14g = 1 tablespoon)
+- Butter: 1g P / 81g F / 0g C / 717 kcal (14g = 1 tablespoon)
+- Avocado: 2g P / 15g F / 9g C / 160 kcal
+
+ESTIMATION STEPS for each food item:
 1. Identify the food
-2. Estimate its weight in grams using these Australian/standard reference sizes:
-   Meat & protein:
-   - Steak/meat slice thin (home): 120-150g | thick (restaurant): 200-280g
-   - Chicken breast avg: 150-180g | thigh (boneless): 120-150g
-   - Fish fillet avg: 120-180g | salmon portion: 150-200g
-   - Eggs: 1 egg = 55g | 2 eggs = 110g
-   - Canned tuna (95g tin drained): ~70g protein content
-   Carbs & grains:
-   - Cooked rice (cup): 185g | small restaurant serve: 150g | large: 220g
-   - Cooked pasta (cup): 160g
-   - Bread slice: 35-40g | sandwich = 2 slices
-   - Wrap/tortilla: 45-60g
-   Dairy:
-   - Greek yoghurt (small tub): 170g | large: 250g
-   - Milk (glass 250ml): 258g
-   - Cheese slice: 20-25g | block chunk: 30-40g
-   Fats:
-   - Tablespoon oil/butter: 14g | teaspoon: 5g
-   - Avocado half: 70g | whole: 150g
-   Vegetables:
-   - Side salad: 80-120g | large salad: 200-300g
-   - Cooked broccoli/veggies (side): 80-120g
-   Photos: use the standard dinner plate diameter (26cm) and any visible utensils as scale references. Estimate what percentage of the plate each food occupies.
-3. Derive protein/carbs/fat from that weight using standard macro density per 100g. Be conservative — if uncertain, err on the lower estimate.
-4. Include weight_g in each food_item object
+2. Determine weight: use the stated amount if given. If not given, apply the single-serving default above. For photos, also use the standard dinner plate (26cm diameter) and visible utensils as scale anchors - estimate what share of the plate each food covers.
+3. Calculate macros: multiply weight by the macro density table above (divide by 100). Round to nearest whole number.
+4. Set weight_g in the food_item to the weight you used.
 
 Rules:
 - Create a SEPARATE entry for each distinct meal (breakfast, lunch, dinner, snack)
-- Infer meal type from what they said; if not specified: morning→breakfast, midday→lunch, afternoon→snack, evening/night→dinner
+- Infer meal type from context; if not specified: morning -> breakfast, midday -> lunch, afternoon -> snack, evening or night -> dinner
 - If foods_to_avoid appear in a photo, flag gently in meal_description but still log what is visible
-- confidence is "high" when specific weights/amounts are stated, "medium" for standard portions, "low" for vague descriptions
+- confidence is "high" when specific weights or amounts are stated, "medium" when using single-serving defaults, "low" for vague multi-item dumps with no portion info
 
 Return ONLY a valid JSON array (no other text):
 [
   {
     "meal_type": "breakfast" | "lunch" | "dinner" | "snack",
     "meal_description": "brief description of this meal",
-    "food_items": [{"name": "food name", "quantity": "180", "unit": "g", "weight_g": 180}],
+    "food_items": [{"name": "food name", "quantity": "100", "unit": "g", "weight_g": 100}],
     "protein_g": number or null,
     "carbs_g": number or null,
     "fat_g": number or null,
@@ -176,7 +201,6 @@ Deno.serve(async (req: Request) => {
     if (!client_id) return json({ error: 'Missing client_id.' }, 400);
     if (!text?.trim() && photos.length === 0) return json({ error: 'No food data provided.' }, 400);
 
-    // Verify ownership + fetch client context in parallel
     const [clientRow, nutritionDoc] = await Promise.all([
       adminClient
         .from('pt_clients')
@@ -273,7 +297,6 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'Failed to save nutrition logs.' }, 500);
     }
 
-    // Rolling 28-day purge
     const purgeDate = new Date();
     purgeDate.setDate(purgeDate.getDate() - 28);
     void adminClient
@@ -282,7 +305,6 @@ Deno.serve(async (req: Request) => {
       .eq('client_id', client_id)
       .lt('logged_at', purgeDate.toISOString());
 
-    // Update weekly averages on nutrition doc
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const { data: recentLogs } = await adminClient
