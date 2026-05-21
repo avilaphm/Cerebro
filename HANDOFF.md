@@ -4,7 +4,7 @@
 2026-05-21 by Claude (Sonnet 4.6) - movement-analysis-agent + exercise-intelligence-agent wired into pipeline
 
 ## Last commit
-TBD - pending commit for this session
+`b474d76` - Add movement-analysis + exercise-intelligence agents to pipeline
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
