@@ -7,6 +7,8 @@
 
 The PT programme creation pipeline is **fully working end-to-end**. All 16 original tasks shipped. The wizard takes coach input, distributes it into 4 RAG-indexed brain docs, runs a 4-agent orchestrator, and produces a validated programme with Helms-style mesocycle progression, exercise videos attached, and a 3/4/5 days-per-week split selector. Smoke tests against Mira pass with 0 hard failures on 3-day, 4-day, and 5-day runs.
 
+**Nutrition UX overhaul shipped (commit `114252b`).** `NutritionTab.tsx` now has full drag-and-drop between meal sections (@dnd-kit, 200ms touch hold), a tap-to-edit sheet for macros + weight (weight change scales all macros proportionally), and estimated weight display per food card. `log-nutrition-batch` uses weight-first estimation and has a serving-size calibration guide baked in. This fixes the "60g protein for one steak slice" class of errors.
+
 **Your next chapter is refinement and UX, not new architecture.** Scroll to "Next on the list: refine and improve" (about halfway down this file) for the 16 prioritised tasks grouped by Rules / UX / Improvements. Pick by impact, not by order - they are independent.
 
 If you are an AI agent (Codex, Claude, or otherwise) picking this up cold, read the FOR THE NEXT AGENT section directly below this. It tells you what files to read first, what gotchas to avoid, and what the test clients are.
@@ -21,7 +23,7 @@ The programme creation pipeline is end-to-end working and producing correct prog
 
 ### Last completed task
 
-Exercise Import (2026-05-21 by Claude Sonnet 4.6) - AI-powered bulk exercise import from document.
+Nutrition UX overhaul (2026-05-21 by Claude Sonnet 4.6): drag-and-drop meal slots, macro edit sheet, weight display, accuracy prompt fix. Commit `114252b`.
 
 "Import exercises" button added to Exercise Library header. Coach uploads a .txt/.csv/.md file (or pastes text). The `import-exercises` Edge Function runs a 2-step Claude pipeline: (1) extract all exercise names, (2) deduplicate against existing library, (3) fetch full details (muscles, equipment, video_url, cues, setup_cues, tags) in batches of 50 and insert. Handles documents up to ~120K chars. Modal shows progress and results (X added / Y skipped). Deployed and pushed (commit `5816079`).
 
