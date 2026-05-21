@@ -315,6 +315,13 @@ function EditSheet({ log, onSave, onClose }: EditSheetProps) {
   const [saving, setSaving] = useState(false);
   const prevWeightRef = useRef(origWeight);
 
+  // Lock background scroll while sheet is open
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const handleWeightChange = (val: string) => {
     setWeight(val);
     const newW = parseFloat(val);
@@ -357,15 +364,18 @@ function EditSheet({ log, onSave, onClose }: EditSheetProps) {
   return (
     <div className="fixed inset-0 z-[70] flex flex-col justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-t-3xl px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5 max-h-[85vh] overflow-y-auto">
+      <div
+        className="relative bg-white rounded-t-3xl px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5 max-h-[85vh] overflow-y-auto overscroll-contain"
+        onTouchMove={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm font-medium">Edit entry</p>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 text-black/40 hover:text-black transition-colors"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-black/10 text-black/40 hover:text-black transition-colors"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
@@ -374,13 +384,13 @@ function EditSheet({ log, onSave, onClose }: EditSheetProps) {
         {/* Move to meal */}
         <div className="mb-5">
           <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35 mb-2">Move to meal</p>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {MEAL_ORDER.map((slot) => (
               <button
                 key={slot}
                 type="button"
                 onClick={() => setMeal(slot)}
-                className={`py-2 text-[0.65rem] font-medium uppercase tracking-[0.1em] border transition-colors ${
+                className={`py-2.5 text-[0.65rem] font-medium uppercase tracking-[0.08em] border transition-colors ${
                   meal === slot
                     ? 'border-black bg-black text-white'
                     : 'border-black/10 text-black/50 hover:border-black/30'
@@ -396,7 +406,7 @@ function EditSheet({ log, onSave, onClose }: EditSheetProps) {
         {origWeight > 0 && (
           <div className="mb-4">
             <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35 mb-2">
-              Estimated weight (g) — adjusts macros proportionally
+              Estimated weight (g) - adjusts macros proportionally
             </p>
             <input
               type="number"
