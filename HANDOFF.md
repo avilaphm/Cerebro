@@ -1,7 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-05-21 by Claude (Sonnet 4.6)
+2026-05-21 by Claude (Sonnet 4.6) - programming wizard UX overhaul
+
+## Last commit
+`552d8ce` - PT programming wizard overhaul: PDF support, unified Generate, week/set rules, drag fix
 
 ## YOU ARE HERE (read this first, 30 seconds)
 
@@ -22,6 +25,13 @@ If you have access to `~/.claude/projects/.../memory/` (Claude only), the memory
 The programme creation pipeline is end-to-end working and producing correct programmes. Architecture: intake -> distribute to 4 brain docs -> embed for RAG -> orchestrator -> 4 agents -> validated programme draft with videos, Big 5 enforcement, evidence-based mesocycle progression, and 3/4/5 days-per-week split selection. The structure is solid. The next chapter is **refinement and UX** - making the coach-facing experience match the quality of the data underneath.
 
 ### Last completed task
+
+Programming wizard UX overhaul (2026-05-21 by Claude Sonnet 4.6). Commit `552d8ce`.
+- Step 1: PDF upload support via `/api/pt/parse-pdf` (pdf-parse library). One upload button + document type selector instead of 4 separate buttons. Three scattered buttons (generate from profile, save brain, generate from dump) consolidated into one Generate button that auto-saves brain first then runs the orchestrator.
+- Step 2: Foundation set to 7 weeks, Hypertrophy to 12 weeks, Strength to 12 weeks in DEFAULT_PROGRAMME_PHASES and the programming agent DEFAULT_PRINCIPLES. Foundation week_blocks now [{weeks:2,sets:"2"},{weeks:5,sets:"3"}]. Strength week_blocks now 4x3-week blocks at 77/80/85/88%.
+- Step 3: All inputs in the exercise card (name, sets, reps, weight%, rest, notes, URL) now have draggable=false + onMouseDown stopPropagation so text is selectable without triggering drag.
+- Client portal: "coming soon" message updated to "Your programme will be ready soon. Come back later."
+- Time machine tag: `programming-wizard-pre-refactor`
 
 Nutrition UX overhaul (2026-05-21 by Claude Sonnet 4.6): drag-and-drop meal slots, macro edit sheet, weight display, accuracy prompt fix. Commit `114252b`.
 
