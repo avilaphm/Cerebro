@@ -5,10 +5,10 @@ export const emptyProgramme: PTProgramme = { phases: [] };
 export const CANONICAL_SECTION_ORDER = ['Warm Up', 'Workout', 'MetCon', 'Stretches'] as const;
 
 export const DEFAULT_PROGRAMME_PHASES: Omit<PTProgrammePhase, 'id'>[] = [
-  { title: 'Phase 1 - Foundation', focus: 'Movement quality & base conditioning', weeks: '4', progression: '', days: [] },
+  { title: 'Phase 1 - Foundation', focus: 'Movement quality & base conditioning', weeks: '7', progression: '', days: [] },
   { title: 'Testing 1 RM', focus: 'Baseline strength assessment', weeks: '1', progression: '', days: [] },
-  { title: 'Phase 2 - Hypertrophy', focus: 'Muscle building & volume', weeks: '4', progression: '', days: [] },
-  { title: 'Phase 3 - Strength', focus: 'Maximal strength development', weeks: '4', progression: '', days: [] },
+  { title: 'Phase 2 - Hypertrophy', focus: 'Muscle building & volume', weeks: '12', progression: '', days: [] },
+  { title: 'Phase 3 - Strength', focus: 'Maximal strength development', weeks: '12', progression: '', days: [] },
   { title: 'Re-testing 1 RM', focus: 'Strength reassessment', weeks: '1', progression: '', days: [] },
 ];
 

@@ -11,12 +11,12 @@ const MAX_DOCUMENT_CHARS = 45000;
 const DEFAULT_PRINCIPLES = `# Cerebro PT Programming Rules
 
 ## Programme Arc (New Clients)
-Every new programme MUST use this exact phase order: Foundations (6-7w), 1RM Testing (1w), Hypertrophy (10-12w), Strength (10-12w), Retesting (1w), Taper.
+Every new programme MUST use this exact phase order: Foundations (7w), 1RM Testing (1w), Hypertrophy (12w), Strength (12w), Retesting (1w), Taper.
 
 ## Phase 1 Foundations
 ALWAYS exactly 3 workout days. Full body every session.
-week_blocks MANDATORY: [{"weeks":2,"sets":"2"},{"weeks":2,"sets":"3"},{"weeks":2,"sets":"3"}]
-Weeks 1-2: 2 sets. Slow tempo. Movement quality. Weeks 3-4: 3 sets. Controlled tempo. Weeks 5-7: Introduce Big 5 compounds (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up).
+week_blocks MANDATORY: [{"weeks":2,"sets":"2"},{"weeks":5,"sets":"3"}]
+Weeks 1-2: 2 sets. Slow tempo. Movement quality. Weeks 3-7: 3 sets. Weeks 3-4: Controlled tempo. Weeks 5-7: Introduce Big 5 compounds (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up) so client is familiar before 1RM testing.
 
 ## Warm-Up (every day)
 Exactly 4 warm-up exercises. 1 set each. 10-12 reps. Use section_start "Warm Up" on first warm-up only.
@@ -34,7 +34,7 @@ Include supersets, progression, nutrition sync (higher carbs, protein support).
 
 ## Strength Phase (MANDATORY week_blocks - both sets AND weight_pct required in every block)
 75-90% 1RM. 3-8 reps. 4-6 sets.
-week_blocks MANDATORY: [{"weeks":2,"sets":"4","weight_pct":"77%"},{"weeks":3,"sets":"4","weight_pct":"80%"},{"weeks":3,"sets":"5","weight_pct":"85%"},{"weeks":2,"sets":"6","weight_pct":"88%"}]
+week_blocks MANDATORY: [{"weeks":3,"sets":"4","weight_pct":"77%"},{"weeks":3,"sets":"4","weight_pct":"80%"},{"weeks":3,"sets":"5","weight_pct":"85%"},{"weeks":3,"sets":"6","weight_pct":"88%"}]
 Include heavier loading progression, nutrition sync (nervous system, sleep, hydration).
 
 ## Nutrition Sync

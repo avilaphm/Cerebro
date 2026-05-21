@@ -279,10 +279,12 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
               {/* Name + autocomplete */}
               <div className="relative">
                 <input
+                  draggable={false}
                   value={ex.name}
                   onChange={(e) => handleNameChange(idx, e.target.value)}
                   onFocus={() => { const m = getLibraryMatches(ex.name); if (m.length > 0) setAutocompleteFor(ex.id); }}
                   onBlur={() => setTimeout(() => setAutocompleteFor(null), 150)}
+                  onMouseDown={(e) => e.stopPropagation()}
                   placeholder="Exercise name"
                   className="w-full border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 bg-white"
                 />
@@ -302,11 +304,13 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
               {/* Sets — shows block default when block selected */}
               <input value={displaySets}
                 onChange={(e) => { if (activeBlock >= 0) patchOverride(idx, activeBlock, { sets: e.target.value }); else patch(idx, { sets: e.target.value }); }}
+                onMouseDown={(e) => e.stopPropagation()}
                 placeholder="Sets"
                 className={`border px-2 py-1.5 text-sm outline-none text-center bg-white ${activeBlock >= 0 ? 'border-amber-300 bg-amber-50' : 'border-black/10 focus:border-black/30'}`} />
 
               <input value={displayReps}
                 onChange={(e) => { if (activeBlock >= 0) patchOverride(idx, activeBlock, { reps: e.target.value }); else patch(idx, { reps: e.target.value }); }}
+                onMouseDown={(e) => e.stopPropagation()}
                 placeholder="Reps"
                 className={`border px-2 py-1.5 text-sm outline-none text-center bg-white ${activeBlock >= 0 ? 'border-amber-300 bg-amber-50' : 'border-black/10 focus:border-black/30'}`} />
 
@@ -314,6 +318,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                 <div className="flex flex-col gap-0.5">
                   <input value={displayWeightPct}
                     onChange={(e) => patchOverride(idx, activeBlock, { weight_pct: e.target.value })}
+                    onMouseDown={(e) => e.stopPropagation()}
                     placeholder="% 1RM"
                     className="border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm outline-none text-center" />
                   {(() => {
@@ -330,11 +335,13 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
 
               <input value={ex.rest}
                 onChange={(e) => patch(idx, { rest: e.target.value })}
+                onMouseDown={(e) => e.stopPropagation()}
                 placeholder="Rest"
                 className="border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 text-center bg-white" />
 
               <input value={displayNotes}
                 onChange={(e) => { if (activeBlock >= 0) patchOverride(idx, activeBlock, { notes: e.target.value }); else patch(idx, { notes: e.target.value }); }}
+                onMouseDown={(e) => e.stopPropagation()}
                 placeholder="Notes"
                 className={`border px-2 py-1.5 text-sm outline-none bg-white ${activeBlock >= 0 ? 'border-amber-300 bg-amber-50' : 'border-black/10 focus:border-black/30'}`} />
 
@@ -364,6 +371,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                       void supabase.from('pt_exercises').update({ video_url: url }).eq('id', ex.exercise_id);
                     }
                   }}
+                  onMouseDown={(e) => e.stopPropagation()}
                   placeholder="https://youtube.com/watch?v=…"
                   className="w-full border border-black/10 px-2 py-1.5 text-xs outline-none focus:border-black/30 mt-2"
                 />

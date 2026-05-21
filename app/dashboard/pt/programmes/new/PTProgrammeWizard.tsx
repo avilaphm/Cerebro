@@ -65,7 +65,7 @@ function inferPhaseWeeks(phases: PTProgrammePhase[]): { foundation: number; hype
   return {
     foundation: pick((t) => t.includes('foundation') || t.includes('phase 1'), 7),
     hypertrophy: pick((t) => t.includes('hypertrophy') || t.includes('phase 2'), 12),
-    strength: pick((t) => t.includes('strength') || t.includes('phase 3'), 10),
+    strength: pick((t) => t.includes('strength') || t.includes('phase 3'), 12),
   };
 }
 
@@ -103,6 +103,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [ingesting, setIngesting] = useState(false);
   const [intakeStatus, setIntakeStatus] = useState('');
   const [brainSaved, setBrainSaved] = useState(false);
+  const [uploadDocType, setUploadDocType] = useState<IntakeFile['document_type']>('intake');
   const [daysPerWeek, setDaysPerWeek] = useState<3 | 4 | 5>(3);
 
   const srRef = useRef<SpeechRecognitionLike | null>(null);
@@ -139,135 +140,34 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     }
   }, []);
 
-  const generateFromDocument = async () => {
-    if (!clientId) return;
-    setGenerating(true);
-    setGenStatus('Reading client profile…');
-    const phaseTemplate = programme.phases.map(({ id, title, focus, weeks }) => ({ id, title, focus, weeks }));
-    const { data, error } = await supabase.functions.invoke('parse-client-document', {
-      body: { client_id: clientId, phase_template: phaseTemplate },
-    });
-    if (error || (data as { error?: string })?.error) {
-      setGenStatus((data as { error?: string })?.error ?? error?.message ?? 'Failed.');
-      setGenerating(false);
-      return;
-    }
-    const parsed = data as { name?: string; goal?: string; programme?: unknown };
-    setProgramme(safeProgramme(parsed.programme));
-    setProgName(parsed.name ?? '');
-    setProgGoal(parsed.goal ?? '');
-    setGenStatus('');
-    setGenerating(false);
-    setStep(2);
-  };
-
-  const generateFromDump = async () => {
-    if (!brainDump.trim()) return;
-    if (!clientId) {
-      setGenStatus('Pick a client first — the 3-AI orchestrator needs the client brain to generate.');
-      return;
-    }
-    setGenerating(true);
-    setGenStatus('Starting pipeline…');
-
-    const phaseWeeks = inferPhaseWeeks(programme.phases);
-
-    const { data, error } = await supabase.functions.invoke('pt-programme-orchestrator', {
-      body: { client_id: clientId, phase_weeks: phaseWeeks, days_per_week: daysPerWeek, intake_text: brainDump },
-    });
-
-    if (error || (data as { error?: string })?.error) {
-      setGenStatus((data as { error?: string })?.error ?? error?.message ?? 'Generation failed.');
-      setGenerating(false);
-      return;
-    }
-
-    const kickoff = data as { run_id?: string; status?: string };
-    if (!kickoff.run_id) {
-      setGenStatus('Pipeline did not return a run id.');
-      setGenerating(false);
-      return;
-    }
-    setGenerationRunId(kickoff.run_id);
-
-    const commandLabel = (cmd: string | null | undefined) => {
-      switch (cmd) {
-        case 'CLIENT_ANALYSIS': return 'Analysing client…';
-        case 'METHODOLOGY_PLAN': return 'Planning methodology (knowledge base RAG)…';
-        case 'PROGRAMME_SYNTHESIS': return 'Synthesising programme (exercise library)…';
-        case 'PROGRAMME_SYNTHESIS_FOUNDATION': return 'Synthesising Foundation (1/5)…';
-        case 'PROGRAMME_SYNTHESIS_1RM_TEST': return 'Synthesising 1RM Test (2/5)…';
-        case 'PROGRAMME_SYNTHESIS_HYPERTROPHY': return 'Synthesising Hypertrophy (3/5)…';
-        case 'PROGRAMME_SYNTHESIS_STRENGTH': return 'Synthesising Strength (4/5)…';
-        case 'PROGRAMME_SYNTHESIS_1RM_RETEST': return 'Synthesising 1RM Retest (5/5)…';
-        case 'VALIDATION': return 'Validating…';
-        default:
-          if (cmd?.startsWith('PROGRAMME_SYNTHESIS_')) return 'Synthesising phase…';
-          return 'Working…';
-      }
-    };
-
-    const pollDeadline = Date.now() + 7 * 60_000;
-    while (Date.now() < pollDeadline) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const { data: row } = await supabase
-        .from('pt_program_generation_runs')
-        .select('status, current_command, programme_draft, validation_summary, failure_reason')
-        .eq('id', kickoff.run_id)
-        .maybeSingle();
-      if (!row) continue;
-      setGenStatus(commandLabel(row.current_command));
-      if (row.status === 'failed') {
-        setGenStatus(row.failure_reason ?? 'Pipeline failed.');
-        setGenerating(false);
-        return;
-      }
-      if (row.status === 'needs_review' || row.status === 'approved' || row.status === 'saved') {
-        const draft = row.programme_draft as unknown;
-        const vs = (row.validation_summary ?? {}) as Record<string, unknown>;
-        setProgramme(safeProgramme(draft));
-        setProgName(typeof vs.name === 'string' ? vs.name : '');
-        setProgGoal(typeof vs.goal === 'string' ? vs.goal : '');
-        const hf = Array.isArray(vs.hard_failures) ? vs.hard_failures as string[] : [];
-        const fnd = Array.isArray(vs.findings) ? vs.findings as string[] : [];
-        const missing = Array.isArray(vs.missing_exercises) ? vs.missing_exercises as string[] : [];
-        setValidationSummary({
-          passed: vs.passed === true,
-          hard_rule_failures: hf,
-          findings: fnd,
-          missing_exercises: missing,
-        });
-        setAgentDraftSummary(
-          hf.length
-            ? `Generated with ${hf.length} hard rule failure${hf.length === 1 ? '' : 's'}. Review and adjust before saving.`
-            : fnd.length
-            ? `Generated. ${fnd.length} review note${fnd.length === 1 ? '' : 's'} to skim.`
-            : 'Generated cleanly. Review and save.',
-        );
-        setGenStatus('');
-        setGenerating(false);
-        setStep(2);
-        return;
-      }
-    }
-    setGenStatus('Pipeline still running after 7 minutes — open the review page to check progress.');
-    setGenerating(false);
-  };
-
   const addIntakeFile = async (file: File, docType: IntakeFile['document_type']) => {
     if (intakeFiles.length >= 3) {
       setIntakeStatus('Maximum 3 documents.');
       return;
     }
-    if (file.size > 5_000_000) {
-      setIntakeStatus(`${file.name} is over 5MB. Paste the contents into notes instead.`);
+    if (file.size > 20_000_000) {
+      setIntakeStatus(`${file.name} is over 20MB.`);
       return;
     }
     try {
-      const text = await file.text();
+      let text: string;
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        setIntakeStatus(`Reading ${file.name}…`);
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch('/api/pt/parse-pdf', { method: 'POST', body: form });
+        const json = await res.json() as { text?: string; error?: string };
+        if (!res.ok || json.error) {
+          setIntakeStatus(json.error ?? 'PDF parse failed.');
+          return;
+        }
+        text = json.text ?? '';
+      } else {
+        text = await file.text();
+      }
       const trimmed = text.trim();
       if (!trimmed) {
-        setIntakeStatus(`${file.name} appears empty. PDFs and images aren't parsed yet — copy text into notes.`);
+        setIntakeStatus(`${file.name} appears empty.`);
         return;
       }
       setIntakeFiles((cur) => [...cur, { name: file.name, document_type: docType, content_text: trimmed.slice(0, 100_000) }]);
@@ -309,6 +209,104 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     const result = data as { distributed_into?: string[]; documents_stored?: number };
     setBrainSaved(true);
     setIntakeStatus(`Brain updated. ${result.documents_stored ?? 0} source(s) stored, distributed into ${result.distributed_into?.length ?? 4} docs. Embedding in the background.`);
+  };
+
+  const handleGenerate = async () => {
+    if (!clientId) {
+      setGenStatus('Select a client first — the 3-AI pipeline needs the client brain to generate.');
+      return;
+    }
+    setGenerating(true);
+
+    if (intakeFiles.length > 0 || brainDump.trim()) {
+      setGenStatus('Saving intake to client brain…');
+      const { data: ingestData, error: ingestError } = await supabase.functions.invoke('ingest-client-intake', {
+        body: { client_id: clientId, files: intakeFiles, notes_text: brainDump },
+      });
+      if (ingestError || (ingestData as { error?: string })?.error) {
+        setGenStatus((ingestData as { error?: string })?.error ?? ingestError?.message ?? 'Brain save failed.');
+        setGenerating(false);
+        return;
+      }
+      setBrainSaved(true);
+    }
+
+    setGenStatus('Starting pipeline…');
+    const phaseWeeks = inferPhaseWeeks(programme.phases);
+    const { data, error } = await supabase.functions.invoke('pt-programme-orchestrator', {
+      body: { client_id: clientId, phase_weeks: phaseWeeks, days_per_week: daysPerWeek, intake_text: brainDump },
+    });
+
+    if (error || (data as { error?: string })?.error) {
+      setGenStatus((data as { error?: string })?.error ?? error?.message ?? 'Generation failed.');
+      setGenerating(false);
+      return;
+    }
+
+    const kickoff = data as { run_id?: string; status?: string };
+    if (!kickoff.run_id) {
+      setGenStatus('Pipeline did not return a run id.');
+      setGenerating(false);
+      return;
+    }
+    setGenerationRunId(kickoff.run_id);
+
+    const commandLabel = (cmd: string | null | undefined) => {
+      switch (cmd) {
+        case 'CLIENT_ANALYSIS': return 'Analysing client…';
+        case 'METHODOLOGY_PLAN': return 'Planning methodology (knowledge base RAG)…';
+        case 'PROGRAMME_SYNTHESIS_FOUNDATION': return 'Synthesising Foundation (1/5)…';
+        case 'PROGRAMME_SYNTHESIS_1RM_TEST': return 'Synthesising 1RM Test (2/5)…';
+        case 'PROGRAMME_SYNTHESIS_HYPERTROPHY': return 'Synthesising Hypertrophy (3/5)…';
+        case 'PROGRAMME_SYNTHESIS_STRENGTH': return 'Synthesising Strength (4/5)…';
+        case 'PROGRAMME_SYNTHESIS_1RM_RETEST': return 'Synthesising 1RM Retest (5/5)…';
+        case 'VALIDATION': return 'Validating…';
+        default:
+          if (cmd?.startsWith('PROGRAMME_SYNTHESIS_')) return 'Synthesising phase…';
+          return 'Working…';
+      }
+    };
+
+    const pollDeadline = Date.now() + 7 * 60_000;
+    while (Date.now() < pollDeadline) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const { data: row } = await supabase
+        .from('pt_program_generation_runs')
+        .select('status, current_command, programme_draft, validation_summary, failure_reason')
+        .eq('id', kickoff.run_id)
+        .maybeSingle();
+      if (!row) continue;
+      setGenStatus(commandLabel(row.current_command));
+      if (row.status === 'failed') {
+        setGenStatus(row.failure_reason ?? 'Pipeline failed.');
+        setGenerating(false);
+        return;
+      }
+      if (row.status === 'needs_review' || row.status === 'approved' || row.status === 'saved') {
+        const draft = row.programme_draft as unknown;
+        const vs = (row.validation_summary ?? {}) as Record<string, unknown>;
+        setProgramme(safeProgramme(draft));
+        setProgName(typeof vs.name === 'string' ? vs.name : '');
+        setProgGoal(typeof vs.goal === 'string' ? vs.goal : '');
+        const hf = Array.isArray(vs.hard_failures) ? vs.hard_failures as string[] : [];
+        const fnd = Array.isArray(vs.findings) ? vs.findings as string[] : [];
+        const missing = Array.isArray(vs.missing_exercises) ? vs.missing_exercises as string[] : [];
+        setValidationSummary({ passed: vs.passed === true, hard_rule_failures: hf, findings: fnd, missing_exercises: missing });
+        setAgentDraftSummary(
+          hf.length
+            ? `Generated with ${hf.length} hard rule failure${hf.length === 1 ? '' : 's'}. Review and adjust before saving.`
+            : fnd.length
+            ? `Generated. ${fnd.length} review note${fnd.length === 1 ? '' : 's'} to skim.`
+            : 'Generated cleanly. Review and save.',
+        );
+        setGenStatus('');
+        setGenerating(false);
+        setStep(2);
+        return;
+      }
+    }
+    setGenStatus('Pipeline still running after 7 minutes — open the review page to check progress.');
+    setGenerating(false);
   };
 
   const startDictation = () => {
@@ -508,14 +506,15 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
       {step === 1 && (
         <div className="space-y-6">
+          {/* Client selection */}
           <div>
-            <label className="block text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-2">Client (optional — for AI generation from profile)</label>
+            <label className="block text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-2">Client</label>
             <select
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               className="w-full max-w-sm border border-black/15 px-3 py-3 text-sm outline-none focus:border-black/40 sm:py-2.5"
             >
-              <option value="">— No client (save as global template) —</option>
+              <option value="">— Select a client —</option>
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
               ))}
@@ -525,61 +524,59 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
           {selectedClient && (
             <div className="border border-black/8 p-5 max-w-sm">
               <p className="text-xs text-black/40 mb-3">
-                {selectedClient.document_url ? '✓ Client profile document uploaded' : 'No document uploaded yet'}
+                {selectedClient.document_url ? '✓ Client profile document on file' : 'No profile document yet'}
               </p>
               {selectedClient.goals && <p className="text-sm text-black/60">{selectedClient.goals}</p>}
             </div>
           )}
 
-          {selectedClient?.document_url && (
-            <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Generate from profile</p>
-              <button
-                onClick={() => void generateFromDocument()}
-                disabled={generating}
-                className="border border-black bg-black text-white px-6 py-3 text-sm hover:bg-white hover:text-black transition-colors disabled:opacity-40"
-              >
-                {generating ? genStatus || 'Generating…' : 'Generate programme from client profile'}
-              </button>
-            </div>
-          )}
-
+          {/* Document upload */}
           {selectedClient && (
             <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Upload intake documents (up to 3, text/markdown only for now)</p>
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Upload intake documents (PDF, text or markdown — up to 3)</p>
               <div className="space-y-2 max-w-2xl">
                 {intakeFiles.map((f, i) => (
                   <div key={i} className="flex items-center justify-between border border-black/10 px-3 py-2 text-xs">
                     <span className="truncate">
                       <span className="text-black/70">{f.name}</span>
-                      <span className="ml-2 text-black/40">{f.document_type} | {f.content_text.length.toLocaleString()} chars</span>
+                      <span className="ml-2 text-black/40">{f.document_type.replace('_', ' ')} | {f.content_text.length.toLocaleString()} chars</span>
                     </span>
                     <button type="button" onClick={() => removeIntakeFile(i)} className="text-black/40 hover:text-black ml-3">Remove</button>
                   </div>
                 ))}
                 {intakeFiles.length < 3 && (
-                  <div className="flex flex-wrap gap-2">
-                    {(['intake', 'movement_assessment', 'profile', 'other'] as const).map((dt) => (
-                      <label key={dt} className="cursor-pointer border border-black/15 px-3 py-2 text-xs hover:border-black/30 transition-colors">
-                        + {dt.replace('_', ' ')}
-                        <input
-                          type="file"
-                          accept=".txt,.md,.text,text/plain,text/markdown"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) void addIntakeFile(file, dt);
-                            e.target.value = '';
-                          }}
-                        />
-                      </label>
-                    ))}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={uploadDocType}
+                      onChange={(e) => setUploadDocType(e.target.value as IntakeFile['document_type'])}
+                      className="border border-black/15 px-2 py-2 text-xs outline-none focus:border-black/40"
+                    >
+                      <option value="movement_assessment">Movement assessment</option>
+                      <option value="intake">Intake form</option>
+                      <option value="profile">Profile</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <label className="cursor-pointer border border-black/15 px-3 py-2 text-xs hover:border-black/30 transition-colors">
+                      + Upload document
+                      <input
+                        type="file"
+                        accept=".txt,.md,.text,.pdf,text/plain,text/markdown,application/pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) void addIntakeFile(file, uploadDocType);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
                   </div>
                 )}
+                {intakeStatus && <p className="mt-1 text-xs text-black/40">{intakeStatus}</p>}
               </div>
             </div>
           )}
 
+          {/* Training days */}
           {selectedClient && (
             <div>
               <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Training days per week (Phase 2 & 3)</p>
@@ -603,67 +600,59 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
             </div>
           )}
 
-          <div>
-            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">
-              {selectedClient?.document_url ? 'Or brain dump manually' : 'Brain dump'}
-            </p>
-            <div className="flex max-w-2xl flex-col gap-3 sm:flex-row">
-              <textarea
-                value={brainDump}
-                onChange={(e) => setBrainDump(e.target.value)}
-                placeholder="Describe the phases, goals, schedule, exercises, progressions, injuries, anything…"
-                rows={5}
-                className="flex-1 border border-black/15 px-4 py-3 text-sm outline-none focus:border-black/40 resize-none"
-              />
-              <div className="flex flex-col gap-2 sm:w-32">
-                {listening ? (
-                  <div className="flex flex-col gap-1">
-                    <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600 text-center">● Recording</span>
-                    <button type="button" onClick={stopDictation} className="border border-black bg-black text-white px-3 py-2 text-xs hover:bg-white hover:text-black transition-colors">
-                      Done
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={startDictation}
-                    className="border border-black/15 px-4 py-3 text-sm hover:border-black/30 transition-colors"
-                  >
-                    Voice
-                  </button>
-                )}
-                <button
-                  onClick={() => void generateFromDump()}
-                  disabled={generating || !brainDump.trim()}
-                  className="border border-black bg-black text-white px-4 py-3 text-sm disabled:opacity-30"
-                >
-                  {generating ? '…' : 'Generate'}
-                </button>
-              </div>
-            </div>
-            {genStatus && <p className="mt-2 text-xs text-black/40">{genStatus}</p>}
-          </div>
-
+          {/* Brain dump */}
           {selectedClient && (
-            <div className="border-t border-black/10 pt-5">
-              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Distribute intake into the client brain</p>
-              <p className="text-xs text-black/40 mb-3 max-w-2xl">
-                Saves all uploaded docs + notes + voice into the four brain docs (master, nutrition, exercise, lifestyle) and embeds them for RAG. Run this before Generate so the orchestrator sees the freshest context.
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void saveClientBrain()}
-                  disabled={ingesting || (intakeFiles.length === 0 && !brainDump.trim())}
-                  className="border border-black px-4 py-2 text-sm hover:bg-black hover:text-white transition-colors disabled:opacity-30"
-                >
-                  {ingesting ? 'Saving…' : brainSaved ? 'Re-save client brain' : 'Save to client brain'}
-                </button>
-                {brainSaved && <span className="text-xs text-emerald-700">✓ brain updated</span>}
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Brain dump</p>
+              <div className="flex max-w-2xl flex-col gap-3 sm:flex-row">
+                <textarea
+                  value={brainDump}
+                  onChange={(e) => setBrainDump(e.target.value)}
+                  placeholder="Describe the phases, goals, schedule, exercises, progressions, injuries, anything…"
+                  rows={5}
+                  className="flex-1 border border-black/15 px-4 py-3 text-sm outline-none focus:border-black/40 resize-none"
+                />
+                <div className="flex flex-col gap-2 sm:w-32">
+                  {listening ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600 text-center">● Recording</span>
+                      <button type="button" onClick={stopDictation} className="border border-black bg-black text-white px-3 py-2 text-xs hover:bg-white hover:text-black transition-colors">
+                        Done
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={startDictation}
+                      className="border border-black/15 px-4 py-3 text-sm hover:border-black/30 transition-colors"
+                    >
+                      Voice
+                    </button>
+                  )}
+                </div>
               </div>
-              {intakeStatus && <p className="mt-2 text-xs text-black/50">{intakeStatus}</p>}
             </div>
           )}
+
+          {/* Single Generate button */}
+          <div className="border-t border-black/10 pt-5">
+            {!clientId ? (
+              <p className="text-sm text-black/40">Select a client above to generate a programme.</p>
+            ) : (
+              <div className="space-y-3">
+                <button
+                  onClick={() => void handleGenerate()}
+                  disabled={generating}
+                  className="border border-black bg-black text-white px-8 py-3 text-sm hover:bg-white hover:text-black transition-colors disabled:opacity-40"
+                >
+                  {generating ? genStatus || 'Generating…' : 'Generate'}
+                </button>
+                {brainSaved && <p className="text-xs text-emerald-700">✓ Client brain updated</p>}
+                {genStatus && !generating && <p className="text-xs text-black/40">{genStatus}</p>}
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 

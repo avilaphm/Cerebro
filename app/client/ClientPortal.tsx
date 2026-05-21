@@ -2454,7 +2454,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               {client?.name ? `Hi ${client.name.split(' ')[0]}.` : 'Welcome.'}
             </p>
             <p className="mt-2 text-sm text-black/55">
-              Your programme is being created. It will appear here as soon as it is live.
+              Your programme will be ready soon. Come back later.
             </p>
           </div>
         </div>
