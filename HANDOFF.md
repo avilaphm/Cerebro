@@ -1,12 +1,35 @@
 # Handoff
 
 ## Last updated
-2026-05-22 morning by Codex - fixed OpenAI import insert constraint and import modal contrast
+2026-05-22 by Claude Sonnet 4.6 - wizard UX overhaul (step 2 loading animation + phase overview)
 
 ## Last code fix commit
-Current commit - Fix exercise import source and modal contrast
+680aa48 - Wizard UX overhaul: step 2 loading animation, phase overview, step 4 labels
 
 ## What just happened (read first)
+
+Pedro wanted the programme wizard UX to match his coaching workflow exactly:
+
+1. Step 1 - client select + doc upload + brain dump -> click Generate -> immediately go to Step 2
+2. Step 2 (loading) - live progress bar + pipeline step list (all 12 steps with checkmarks as they complete)
+3. Step 2 (done) - phase overview grid: 5 cards (Foundation, Testing 1RM, Hypertrophy, Strength, Retesting 1RM), each showing week count + day count + week_block pills
+4. Step 3 - click a phase -> workouts show up -> edit exercises per day -> click Next
+5. Step 4 ("Review & create") - review programme summary -> click "Create programme for [name]" -> programme assigned to client
+
+Changes shipped in `PTProgrammeWizard.tsx` (commit 680aa48):
+- Added `PIPELINE_STEPS` constant (12 strings matching `genStatus` values the poller emits)
+- `handleGenerate` calls `setStep(2)` immediately before async pipeline starts (navigation is instant)
+- Step 2 replaced with IIFE that renders: loading animation (when `generating`) -> error message (on failure with no phases) -> phase overview grid (when done)
+- Progress bar width driven by `PIPELINE_STEPS.indexOf(genStatus) / total` -> smooth 0-100% tracking
+- Step indicator labels: Generate -> Review -> Edit -> Create
+- Step 4 heading: "Review & create"
+- Step 4 button: "Creating..." / "Create programme for [name]"
+
+TypeScript compiles clean. Committed and pushed.
+
+The Playwright browser was locked during this session so browser testing is pending - the next session should open `/dashboard/pt/programmes/new`, verify the 5 flow steps above, and confirm the Create button writes to `pt_program_assignments` with status 'active' and navigates to the client page.
+
+## Previous: PDF import fix (Codex, 2026-05-22 morning)
 
 Pedro retried the PDF import and hit an error in the import modal. Supabase Edge Function logs showed `import-exercises` version 2 returned HTTP 500 after ~48 seconds. Diagnosis: `pt_exercises` has a `pt_exercises_source_check` constraint allowing only `manual`, `spreadsheet`, or `ai`; the OpenAI migration inserted rows with `source: 'openai-import'`, so the database rejected the batch.
 
