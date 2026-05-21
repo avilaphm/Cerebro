@@ -1,10 +1,58 @@
 # Handoff
 
 ## Last updated
-2026-05-21 by Codex - programme PDF upload Vercel fix + error display fix
+2026-05-22 morning by Codex - exercise document import now accepts PDFs and routes them through the existing parser
 
 ## Last code fix commit
-`dd1da25` - Preload PDF worker for server parsing
+Current commit - Parse PDFs before exercise import
+
+## What just happened (read first)
+
+Pedro tried importing `/Users/pedroavila/Downloads/The TRUE Ultimate Master Exercise Directory (Unabridged).pdf` from `/dashboard/pt/exercises`. The modal displayed the PDF as loaded, then `import-exercises` failed. Root cause: the Exercise Library import modal only supported `.txt/.csv/.md/.tsv` and read files with `FileReader.readAsText`; when a PDF got through, it sent PDF binary-ish text to the `import-exercises` Edge Function instead of extracted exercise content. The file itself is not too large: local pdf.js extraction returned 21 pages and 21,751 characters.
+
+Fix in `app/dashboard/pt/exercises/PTExercisesView.tsx`:
+- Import modal now accepts `.pdf` and max 20 MB.
+- PDF files are posted to the existing `/api/pt/parse-pdf` route before calling `import-exercises`.
+- Text files still use direct text extraction.
+- Modal copy now says `.pdf · .txt · .csv · .md`.
+- Moved `ArrayField` to module scope to satisfy the React Compiler lint rule in this touched file.
+
+Verification:
+- `npm run build` passes.
+- `npx eslint app/dashboard/pt/exercises/PTExercisesView.tsx` has 0 errors and one pre-existing `<img>` warning.
+- Full `npm run lint` still fails because the repo lint includes existing `.claude/worktrees` and unrelated legacy errors.
+- Direct local POST to `/api/pt/parse-pdf` with Pedro's PDF returned `200 OK` and clean exercise text.
+
+Skill workflow created in the parent project `skills/` directory and registered in parent `AGENTS.md`:
+- `pt-exercise-import-diagnose`
+- `pt-exercise-import-extract-text`
+- `pt-exercise-import-extract-names`
+- `pt-exercise-import-dedupe`
+- `pt-exercise-import-insert`
+
+Each skill has an explicit completion gate and invokes the next step only after its artifact exists. This is the canonical local workflow for diagnosing and safely importing exercise documents.
+
+## Previous major handoff
+
+Pedro hit Generate on the wizard. Run `148389c3-511a-4caa-8e68-d7152b4822bf` hung at EXERCISE_INTELLIGENCE forever. Direct test of `exercise-intelligence-agent` edge function: 130s timeout with no response on real input, 114s with a 502 "did not return valid JSON" on tiny input. Root cause: the Claude call asks for 140+ exercises in one JSON (7 primary_issues x ~2 muscles x 10 exercises), exceeds max_tokens 4500 mid-JSON, parse fails, retries also fail, total runtime exceeds 150s edge limit. The orchestrator's 95s AbortController timeout did not fire in the deployed background task - stuck run remained in `running` status forever; wizard surfaced "Pipeline still running" message.
+
+Decision: stop trying to fix the edge function. Decompose Step 2 into a 5-skill local Claude Code chain that Pedro runs from his terminal. Rationale: edge functions in this project have hit 150s/400s timeouts repeatedly (see learning-log). Local skills have no platform timeouts, each step is visible, and each step's output must complete before the next can run.
+
+Chain head changed: `pt-movement-analysis` -> `pt-exercise-per-muscle` (was `pt-exercise-intelligence`).
+
+New local sub-chain in `~/.claude/skills/`:
+- `pt-exercise-per-muscle` (Step 2a) - LLM, one muscle at a time, 10 exercises each
+- `pt-exercise-library-match` (Step 2b) - pure code, fuzzy match against pt_exercises
+- `pt-exercise-create-missing` (Step 2b.5) - auto-create pt_exercises rows for unmatched exercises with video_url null; Pedro adds YouTube links later. Guarantees no exercise in the chain has a null exercise_id - library never blocks programme quality.
+- `pt-exercise-double-duty` (Step 2c) - pure code, dedup + tag double-duty exercises
+- `pt-exercise-staples` (Step 2d) - small LLM call, standard + client-specific staples
+- `pt-exercise-finalize` (Step 2e) - pure code, assemble payload + persist to pt_client_exercise_doc
+
+Old monolithic `pt-exercise-intelligence` skill moved to `~/.claude/skill-archive/pt-exercise-intelligence-superseded-2026-05-21/`. Stuck run marked failed in DB. Edge function `exercise-intelligence-agent` still deployed but should not be called.
+
+Next time Pedro runs programme generation: invoke `pt-movement-analysis` in Claude Code (not the wizard). The chain self-advances through Steps 1 -> 2a -> 2b -> 2c -> 2d -> 2e -> 3 (`pt-programme-builder`) -> 4 (`pt-programme-validator`).
+
+Production wizard left as-is. Edge function path parked until/unless we want a self-serve coach UI.
 
 ## YOU ARE HERE (read this first, 30 seconds)
 

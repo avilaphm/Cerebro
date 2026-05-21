@@ -39,6 +39,42 @@ const CATEGORY_TAGS = [
   'cardio', 'golf', 'running', 'pilates',
 ];
 
+function ArrayField({
+  label, value, onChange,
+}: { label: string; value: string[]; onChange: (v: string[]) => void }) {
+  const [inputVal, setInputVal] = useState('');
+  return (
+    <div>
+      <p className="mb-1 text-xs font-medium text-black/50">{label}</p>
+      <div className="mb-2 flex flex-wrap gap-1">
+        {value.map((item, idx) => (
+          <span key={idx} className="flex items-center gap-1 rounded-full bg-black/8 px-2 py-0.5 text-xs">
+            {item}
+            <button type="button" onClick={() => onChange(value.filter((_, i) => i !== idx))} className="text-black/40 hover:text-black">
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-1">
+        <input
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && inputVal.trim()) {
+              e.preventDefault();
+              onChange([...value, inputVal.trim()]);
+              setInputVal('');
+            }
+          }}
+          placeholder="Type and press Enter"
+          className="flex-1 rounded-lg border border-black/12 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-black/30"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function PTExercisesView({ initialExercises }: Props) {
   const supabase = createClient();
   const [exercises, setExercises] = useState<PTExercise[]>(initialExercises);
@@ -73,33 +109,53 @@ export default function PTExercisesView({ initialExercises }: Props) {
     flashTimer.current = setTimeout(() => setFlashMsg(''), 4000);
   }
 
-  function readFile(file: File) {
-    if (file.size > 5 * 1024 * 1024) {
-      setImportError('File too large — maximum 5 MB');
+  async function readFile(file: File) {
+    if (file.size > 20 * 1024 * 1024) {
+      setImportError('File too large — maximum 20 MB');
       return;
     }
-    const allowed = ['text/plain', 'text/csv', 'text/markdown', 'application/csv', ''];
+    const allowed = ['application/pdf', 'text/plain', 'text/csv', 'text/markdown', 'application/csv', ''];
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    const allowedExts = ['txt', 'csv', 'md', 'tsv'];
+    const allowedExts = ['pdf', 'txt', 'csv', 'md', 'tsv'];
     if (!allowedExts.includes(ext) && !allowed.includes(file.type)) {
-      setImportError('Unsupported file type — use .txt, .csv, or .md');
+      setImportError('Unsupported file type — use .pdf, .txt, .csv, or .md');
       return;
     }
     setImportError('');
     setImportResult(null);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImportText(e.target?.result as string ?? '');
+    setImportStage('');
+    setImportFileName(file.name);
+    try {
+      if (file.type.includes('pdf') || ext === 'pdf') {
+        setImportStage('Extracting text from PDF...');
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch('/api/pt/parse-pdf', { method: 'POST', body: form });
+        const result = await res.json() as { text?: string; error?: string };
+        if (!res.ok || result.error) {
+          setImportText('');
+          setImportError(result.error ?? 'PDF parse failed');
+          return;
+        }
+        setImportText(result.text ?? '');
+        setImportStage('');
+        return;
+      }
+      setImportText(await file.text());
       setImportFileName(file.name);
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      setImportText('');
+      setImportError(`Could not read file: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setImportStage('');
+    }
   }
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) readFile(file);
+    if (file) void readFile(file);
   }, []);
 
   function resetImport() {
@@ -229,43 +285,6 @@ export default function PTExercisesView({ initialExercises }: Props) {
     } else {
       flash('No video found — try adding one manually');
     }
-  }
-
-  // Array field editor helper
-  function ArrayField({
-    label, value, onChange,
-  }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
-    const [inputVal, setInputVal] = useState('');
-    return (
-      <div>
-        <p className="mb-1 text-xs font-medium text-black/50">{label}</p>
-        <div className="mb-2 flex flex-wrap gap-1">
-          {value.map((item, idx) => (
-            <span key={idx} className="flex items-center gap-1 rounded-full bg-black/8 px-2 py-0.5 text-xs">
-              {item}
-              <button type="button" onClick={() => onChange(value.filter((_, i) => i !== idx))} className="text-black/40 hover:text-black">
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-1">
-          <input
-            value={inputVal}
-            onChange={(e) => setInputVal(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && inputVal.trim()) {
-                e.preventDefault();
-                onChange([...value, inputVal.trim()]);
-                setInputVal('');
-              }
-            }}
-            placeholder="Type and press Enter"
-            className="flex-1 rounded-lg border border-black/12 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-black/30"
-          />
-        </div>
-      </div>
-    );
   }
 
   const videoId = getYouTubeId(editing ? (draft.video_url ?? null) : selected?.video_url ?? null);
@@ -707,7 +726,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
             <div className="flex items-center justify-between border-b border-black/8 px-6 py-4">
               <div>
                 <h2 className="text-sm font-semibold">Import exercises from document</h2>
-                <p className="text-xs text-black/40">Upload a .txt, .csv, or .md file — or paste content directly</p>
+                <p className="text-xs text-black/40">Upload a .pdf, .txt, .csv, or .md file — or paste content directly</p>
               </div>
               <button type="button" onClick={() => setShowImport(false)} className="text-black/30 hover:text-black">
                 <X className="h-4 w-4" />
@@ -733,13 +752,13 @@ export default function PTExercisesView({ initialExercises }: Props) {
                     ) : (
                       <p className="text-sm text-black/50">Drop your file here or <span className="font-medium text-black">click to browse</span></p>
                     )}
-                    <p className="text-xs text-black/30">.txt · .csv · .md — max 5 MB</p>
+                    <p className="text-xs text-black/30">.pdf · .txt · .csv · .md — max 20 MB</p>
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".txt,.csv,.md,.tsv"
+                      accept=".pdf,.txt,.csv,.md,.tsv"
                       className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); }}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) void readFile(f); }}
                     />
                   </div>
 
