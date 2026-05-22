@@ -4,7 +4,7 @@
 2026-05-22 by Codex - Made programme day exercise feed internally scrollable so edit controls stay on screen. Earlier same day: multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
-00934e4 - Text-to-workout builder (multi-programme toggle commit follows)
+83a06e7 - Keep exercise editor controls visible
 
 ## What just happened (read first)
 
@@ -21,6 +21,20 @@ Change:
 Verification:
 - `npm run build` passes.
 - Browser verification was attempted against the existing dev server on `http://localhost:3001`, but Playwright dropped the page to `about:blank`, so the final check is build + code inspection. Pedro should visually confirm in his logged-in browser.
+
+Goals achieved:
+- Editing controls no longer scroll away with long exercise lists.
+- The fix is shared across programme edit, new programme wizard, and template edit because all use `PTDayEditor`.
+- No schema, Supabase, or Edge Function changes were needed.
+
+Items needing attention:
+- Visual click-through still needs Pedro's logged-in browser because Playwright dropped to `about:blank`.
+- If Pedro specifically wants a separate right-side detail card later, `PTDayEditor` would need a larger layout refactor from inline row editing to selected-row detail editing.
+
+Next steps:
+- Open a long workout day in `/dashboard/pt/programmes/[id]/edit`.
+- Confirm the week selector/action header stays visible while only the exercise feed scrolls.
+- If the fixed height feels too short or too tall on Pedro's laptop, tune `max-h-[calc(100dvh-15rem)]`.
 
 ### Multi-programme toggle on the client profile (2026-05-22, LATEST)
 
