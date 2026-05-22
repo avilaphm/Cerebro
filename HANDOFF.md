@@ -1,12 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Codex - Made programme day exercise feed internally scrollable so edit controls stay on screen. Earlier same day: multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
+2026-05-22 by Claude - Exercise Library: pinned the detail/edit panel (fixed, always in view) + much stronger selected-card state. Earlier same day (Codex): programme day exercise feed internally scrollable. Also: multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
-83a06e7 - Keep exercise editor controls visible
+0140503 - Update handoff for exercise editor scroll (exercise-library detail-panel commit follows)
 
 ## What just happened (read first)
+
+### Exercise Library: pinned detail panel + clearer selected card (2026-05-22, LATEST)
+
+Pedro's pain on /dashboard/pt/exercises: when hunting for exercises with no video he scrolls deep, clicks a card, but (a) the selected state was barely visible and (b) the detail/edit panel sat top-right so he had to scroll all the way up to use "Find video", then back down.
+
+Root cause of (b): the view is built as a fixed-height two-pane (grid scrolls internally, detail panel pinned beside it via `sticky top-0 h-full`), but the height chain is all `min-h-[calc(...)]` (dashboard/layout main, pt/layout, view root `h-full`) - no DEFINITE height - so `h-full` collapses, the inner `overflow-y-auto` never engages, the whole PAGE scrolls, the header scrolls away, and the sticky panel scrolls off with it.
+
+Fix in PTExercisesView.tsx (chose the low-risk path - did NOT re-architect the dashboard height chain):
+- Detail panel is now `position: fixed` (inset-x-3 top-3 bottom-3 on mobile; md:right-3 md:w-96 lg:w-[28rem]) with rounded corners + shadow, z-40. It pins to the viewport, so clicking any card - regardless of scroll - shows the edit/video panel immediately. Verified no ancestor sets transform/filter/will-change/contain in globals.css, so fixed pins to the viewport (not a containing block).
+- The grid pane gets right padding when a card is selected (md:pr-[26rem] lg:pr-[30rem]) so the rightmost cards are not hidden behind the fixed panel. On mobile the grid still hides when selected (panel is a full-width overlay).
+- Selected card state is now obvious: emerald-500 border + ring-2 ring-emerald-500 ring-offset-1 + bg-emerald-50 + shadow + scale-[0.97], an `active:scale-[0.96]` press feel on click, and an emerald check badge in the thumbnail corner.
+
+Verified: tsc clean, production build passes. In-browser confirmation (click a card deep in the list, panel appears pinned without scrolling) needs Pedro's session.
+
+NOTE: a cleaner long-term fix would be to give the Exercise Library view a definite height so its internal two-pane scroll works (header fixed, grid scrolls, panel static beside it). That needs the dashboard height chain (min-h -> h on the layout main + pt/layout) and was deferred to avoid affecting other dashboard pages. The fixed-panel approach solves Pedro's pain without that risk.
+
+### (Codex) Programme day exercise feed internally scrollable
 
 ### Programme day editor internal exercise-feed scroll (2026-05-22, LATEST)
 

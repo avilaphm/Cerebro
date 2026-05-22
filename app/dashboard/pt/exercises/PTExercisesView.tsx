@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Pencil, Search, Upload, Video, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronUp, Pencil, Search, Upload, Video, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTExercise } from '@/utils/pt/types';
 
@@ -359,7 +359,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Exercise Grid */}
-        <div className={`flex-1 overflow-y-auto p-4 ${selected ? 'hidden md:block' : ''}`}>
+        <div className={`flex-1 overflow-y-auto p-4 ${selected ? 'hidden md:block md:pr-[26rem] lg:pr-[30rem]' : ''}`}>
           {filtered.length === 0 ? (
             <div className="py-16 text-center text-sm text-black/40">No exercises match your filters</div>
           ) : (
@@ -372,12 +372,17 @@ export default function PTExercisesView({ initialExercises }: Props) {
                     key={ex.id}
                     type="button"
                     onClick={() => openExercise(ex)}
-                    className={`exercise-library-tile group flex flex-col overflow-hidden rounded-xl border text-left transition-all duration-200 ${
+                    className={`exercise-library-tile group relative flex flex-col overflow-hidden rounded-xl border text-left transition-all duration-150 active:scale-[0.96] ${
                       isActive
-                        ? 'exercise-library-tile-active border-emerald-300 bg-white shadow-[0_18px_34px_-20px_rgba(16,185,129,0.8),0_0_32px_rgba(16,185,129,0.22)] -translate-y-0.5'
+                        ? 'exercise-library-tile-active border-emerald-500 ring-2 ring-emerald-500 ring-offset-1 bg-emerald-50 shadow-[0_14px_34px_-12px_rgba(16,185,129,0.7)] scale-[0.97]'
                         : 'border-black/10 bg-white hover:border-black/25 hover:shadow-sm'
                     }`}
                   >
+                    {isActive && (
+                      <span className="absolute right-1.5 top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow">
+                        <Check className="h-3 w-3" strokeWidth={3} />
+                      </span>
+                    )}
                     {/* Thumbnail */}
                     <div className="relative aspect-video w-full bg-black/5">
                       {thumb ? (
@@ -419,7 +424,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
 
         {/* Detail / Edit Panel */}
         {selected && (
-          <div ref={detailPanelRef} className="sticky top-0 flex h-full max-h-full w-full flex-col overflow-y-auto border-l border-black/8 bg-white md:w-96 lg:w-[28rem]">
+          <div ref={detailPanelRef} className="fixed inset-x-3 top-3 bottom-3 z-40 flex w-auto flex-col overflow-y-auto rounded-xl border border-black/12 bg-white shadow-[0_24px_60px_-20px_rgba(0,0,0,0.45)] md:inset-x-auto md:right-3 md:w-96 lg:w-[28rem]">
             {/* Panel header */}
             <div className="flex items-center justify-between border-b border-black/8 px-5 py-4">
               <div className="flex items-center gap-2">
