@@ -1,25 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - fix programme generation stuck at EXERCISE_INTELLIGENCE
+2026-05-22 by Claude - remove exercise intelligence from pipeline + real-time step progress + pt-run-patcher skill
 
 ## Last code fix commit
-c37c124 - Fix programme generation stuck at EXERCISE_INTELLIGENCE
+90089c7 - fix: remove exercise intelligence from generation pipeline and add real-time step progress
 
 ## What just happened (read first)
 
-### Programme generation pipeline fix (2026-05-22)
+### Programme generation pipeline fix - Round 2 (2026-05-22)
 
-Root cause: `exercise-intelligence-agent` was making two sequential Claude API calls (up to ~180s total). The orchestrator's 95s AbortController wasn't reliably cancelling the hung fetch, so the pipeline got silently killed by the edge runtime with the DB run stuck at `status=running, current_command=EXERCISE_INTELLIGENCE` forever.
+Root cause (deeper): `Promise.race([request, timeout])` in the orchestrator only races HTTP response *headers* arrival. Once a 200 OK header is received, `res.json()` blocks indefinitely waiting for the full response body. The body-streaming is outside `Promise.race`, so the 40s (later 95s) timeout had no effect on it. The `exercise-intelligence-agent` could stream its JSON body for 60-120s with no way to cancel it from the orchestrator.
 
-Fixes shipped:
-- `exercise-intelligence-agent`: removed retry call, reduced max_tokens 4500→2500, added 60s AbortController on the Anthropic call itself so it terminates internally before the edge runtime can kill it.
-- `pt-programme-orchestrator`: reduced exercise intelligence timeout 95s→40s so the pipeline moves on quickly (exercise intelligence is non-fatal anyway).
-- `PTProgrammeWizard`: on pipeline failure or poll timeout, routes back to step 1 with a red error message instead of silently showing default phases with no days.
-- Cleared 3 stuck `running` runs in DB (IDs: f017c63e, 1cebf13e, 1ed35192).
-- Both edge functions redeployed (exercise-intelligence-agent v4, pt-programme-orchestrator v9).
+**Nuclear fix:** Completely removed the `EXERCISE_INTELLIGENCE` step from the orchestrator pipeline. The `programme-synthesis-agent` has a full `buildDeterministicPhase()` that generates complete workouts for all 5 phases without exercise intelligence. Non-fatal loss.
 
-Status: Pedro can now retry programme generation from the wizard.
+Fixes shipped (commit 90089c7):
+- `pt-programme-orchestrator` (v10): EXERCISE_INTELLIGENCE removed entirely. `exerciseMasterList = []`, `staplesByPhase = undefined`. Step numbering corrected. Comments explain the body-streaming root cause.
+- `PTProgrammeWizard`: polls `pt_program_generation_steps` in parallel to show completed steps with elapsed time in real-time. On failure or 7-min timeout → back to step 1 with error. EXERCISE_INTELLIGENCE removed from `commandLabel()` and `PIPELINE_STEPS`.
+- Created `~/.claude/skills/pt-run-patcher/SKILL.md`: skill to auto-detect and patch stuck runs (status=running, older than 10 min). Invoke proactively before retries.
+- Cleared all previously stuck `running` runs in DB.
+- Edge function `pt-programme-orchestrator` redeployed as v10.
+
+**Current pipeline (v10):** CLIENT_ANALYSIS → MOVEMENT_ANALYSIS → METHODOLOGY_PLAN → PROGRAMME_SYNTHESIS × 5 → VALIDATION
+
+Status: Generation should complete reliably. Pedro can retry.
 
 ## Previous: Programme editor week-scope UX fixes
 
