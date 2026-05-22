@@ -215,23 +215,27 @@ Deno.serve(async (req) => {
 
     const excerpts: RetrievalExcerpt[] = [];
     const referenced = new Set<string>();
-    for (const q of queries) {
-      try {
-        const res = await fetch(`${supabaseUrl}/functions/v1/retrieve-knowledge-context`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${serviceKey}`,
-            apikey: serviceKey,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ ...q, run_id: body.run_id ?? null }),
-        });
-        if (!res.ok) continue;
-        const data = await res.json() as RetrievalResult;
-        (data.relevant_excerpts ?? []).slice(0, 4).forEach((e) => excerpts.push(e));
-        (data.referenced_documents ?? []).forEach((d) => referenced.add(d.title));
-      } catch (e) {
-        console.warn('retrieve-knowledge-context call failed:', e);
+    // Run all RAG lookups in parallel with a per-call 15s timeout.
+    const ragResults = await Promise.allSettled(
+      queries.map(async (q) => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15_000);
+        try {
+          const res = await fetch(`${supabaseUrl}/functions/v1/retrieve-knowledge-context`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...q, run_id: body.run_id ?? null }),
+            signal: ctrl.signal,
+          });
+          if (!res.ok) return null;
+          return await res.json() as RetrievalResult;
+        } catch { return null; } finally { clearTimeout(timer); }
+      })
+    );
+    for (const r of ragResults) {
+      if (r.status === 'fulfilled' && r.value) {
+        (r.value.relevant_excerpts ?? []).slice(0, 4).forEach((e) => excerpts.push(e));
+        (r.value.referenced_documents ?? []).forEach((d) => referenced.add(d.title));
       }
     }
 
@@ -246,14 +250,16 @@ Deno.serve(async (req) => {
     ].join('\n\n---\n\n');
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
-    const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 3000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    const text = (msg.content[0] as { text: string }).text;
+    const claudeCtrl = new AbortController();
+    const claudeTimer = setTimeout(() => claudeCtrl.abort(), 60_000);
+    let text: string;
+    try {
+      const msg = await anthropic.messages.create(
+        { model: 'claude-sonnet-4-6', max_tokens: 3000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
+        { signal: claudeCtrl.signal },
+      );
+      text = (msg.content[0] as { text: string }).text;
+    } finally { clearTimeout(claudeTimer); }
     const plan = parseJson(text);
     if (!plan) return json({ error: 'Methodology plan did not return valid JSON', raw: text }, 502);
 
