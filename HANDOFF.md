@@ -1,12 +1,27 @@
 # Handoff
 
 ## Last updated
-2026-05-22 morning by Codex - programme editor week-scope UX fixes
+2026-05-22 by Claude - fix programme generation stuck at EXERCISE_INTELLIGENCE
 
 ## Last code fix commit
-Current commit - Programme editor week-scope UX fixes
+c37c124 - Fix programme generation stuck at EXERCISE_INTELLIGENCE
 
 ## What just happened (read first)
+
+### Programme generation pipeline fix (2026-05-22)
+
+Root cause: `exercise-intelligence-agent` was making two sequential Claude API calls (up to ~180s total). The orchestrator's 95s AbortController wasn't reliably cancelling the hung fetch, so the pipeline got silently killed by the edge runtime with the DB run stuck at `status=running, current_command=EXERCISE_INTELLIGENCE` forever.
+
+Fixes shipped:
+- `exercise-intelligence-agent`: removed retry call, reduced max_tokens 4500→2500, added 60s AbortController on the Anthropic call itself so it terminates internally before the edge runtime can kill it.
+- `pt-programme-orchestrator`: reduced exercise intelligence timeout 95s→40s so the pipeline moves on quickly (exercise intelligence is non-fatal anyway).
+- `PTProgrammeWizard`: on pipeline failure or poll timeout, routes back to step 1 with a red error message instead of silently showing default phases with no days.
+- Cleared 3 stuck `running` runs in DB (IDs: f017c63e, 1cebf13e, 1ed35192).
+- Both edge functions redeployed (exercise-intelligence-agent v4, pt-programme-orchestrator v9).
+
+Status: Pedro can now retry programme generation from the wizard.
+
+## Previous: Programme editor week-scope UX fixes
 
 Pedro asked for programming-side fixes in the programme wizard/editor:
 - When editing a day with multiple week groups, changing an exercise must be able to affect only one selected week group, e.g. `Week 3-7`, while keeping `Week 1-2` unchanged.
