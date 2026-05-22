@@ -1,12 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-05-22 morning by Codex - populated missing exercise videos
+2026-05-22 morning by Codex - programme editor week-scope UX fixes
 
 ## Last code fix commit
-Current commit - Exercise library missing-video filter
+Current commit - Programme editor week-scope UX fixes
 
 ## What just happened (read first)
+
+Pedro asked for programming-side fixes in the programme wizard/editor:
+- When editing a day with multiple week groups, changing an exercise must be able to affect only one selected week group, e.g. `Week 3-7`, while keeping `Week 1-2` unchanged.
+- After editing a workout day, there should be a clear `Save` button so Pedro can repeat the workflow day by day.
+- Exercise autocomplete dropdowns needed a solid off-white background for readability.
+
+Fixes shipped:
+- `PTDayEditor` week-block selector now explicitly says what the edit affects: `All weeks` or one week group.
+- Exercise swaps, typed exercise names, video URLs, cues, and notes now store into `week_overrides` when a week group is selected. `All weeks` still edits the base exercise.
+- Added `getExerciseForBlock()` in `utils/pt/programme.ts` and preserved block exercise fields through `safeProgramme()`.
+- Client portal and PT Sessions now resolve block-specific exercise overrides so the edited week group shows the correct exercise later.
+- Added a `Save` button to the day editor step. It advances to the next day when available, otherwise returns to the day list.
+- Autocomplete dropdowns now use `exercise-autocomplete no-glass` with a solid `#f7f4ef` background and black text.
+
+Verification:
+- `npm run build` passes.
+- Playwright browser verification was attempted but the browser transport was closed in this session. A dev server was already running on `http://localhost:3001`.
+
+## Previous: Exercise video backfill
 
 Pedro asked to use the previous YouTube-search path to populate all exercise cards without videos.
 

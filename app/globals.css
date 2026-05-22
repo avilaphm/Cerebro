@@ -406,6 +406,26 @@ body::before {
   background: #f7f4ef !important;
 }
 
+.liquid-dashboard .exercise-autocomplete.no-glass,
+.client-liquid .exercise-autocomplete.no-glass,
+.exercise-autocomplete.no-glass {
+  background: #f7f4ef !important;
+  color: #050505 !important;
+}
+
+.liquid-dashboard .exercise-autocomplete.no-glass button,
+.client-liquid .exercise-autocomplete.no-glass button,
+.exercise-autocomplete.no-glass button {
+  background: #f7f4ef !important;
+  color: #050505 !important;
+}
+
+.liquid-dashboard .exercise-autocomplete.no-glass button:hover,
+.client-liquid .exercise-autocomplete.no-glass button:hover,
+.exercise-autocomplete.no-glass button:hover {
+  background: #ffffff !important;
+}
+
 .liquid-dashboard main .exercise-import-button.no-glass,
 .client-liquid .exercise-import-button.no-glass,
 .exercise-import-button.no-glass {

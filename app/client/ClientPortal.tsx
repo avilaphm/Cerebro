@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Mic, MicOff, Minus, Play, Plus, Salad, Settings, Wrench } from 'lucide-react';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
-import { safeProgramme, getExerciseBlockValues, requiredWorkoutsForBlock, CANONICAL_SECTION_ORDER } from '@/utils/pt/programme';
+import { safeProgramme, getExerciseBlockValues, getExerciseForBlock, requiredWorkoutsForBlock, CANONICAL_SECTION_ORDER } from '@/utils/pt/programme';
 import { isPedroAdminEmail } from '@/utils/pt/access';
 import {
   ACTIVE_BOOKING_STATUSES,
@@ -397,9 +397,10 @@ function getWorkoutSections(
       });
     }
 
+    const blockExercise = getExerciseForBlock(exercise, blockIndex);
     sections[sections.length - 1].exercises.push({
-      exercise,
-      values: getExerciseBlockValues(exercise, phase.week_blocks, blockIndex),
+      exercise: blockExercise,
+      values: getExerciseBlockValues(blockExercise, phase.week_blocks, blockIndex),
     });
   });
 

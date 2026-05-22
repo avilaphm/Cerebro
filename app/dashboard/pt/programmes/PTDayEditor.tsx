@@ -186,12 +186,28 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     name.length >= 2 ? libraryExercises.filter((e) => e.name.toLowerCase().includes(name.toLowerCase())).slice(0, 6) : [];
 
   const handleNameChange = (idx: number, value: string) => {
-    patch(idx, { name: value });
+    if (activeBlock >= 0) {
+      patchOverride(idx, activeBlock, { exercise_id: null, name: value, video_url: null, cues: [] });
+    } else {
+      patch(idx, { name: value });
+    }
     const matches = getLibraryMatches(value);
     setAutocompleteFor(matches.length > 0 ? exercises[idx].id : null);
   };
 
   const selectFromLibrary = (idx: number, libEx: PTExercise) => {
+    if (activeBlock >= 0) {
+      patchOverride(idx, activeBlock, {
+        exercise_id: libEx.id,
+        name: libEx.name,
+        video_url: libEx.video_url,
+        cues: libEx.cues.slice(0, 4),
+        notes: libEx.purpose ?? exercises[idx].notes,
+      });
+      setAutocompleteFor(null);
+      return;
+    }
+
     const updated = [...exercises];
     updated[idx] = {
       ...updated[idx],
@@ -234,11 +250,14 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     const displayReps = overrideForBlock?.reps ?? ex.reps;
     const displayWeightPct = overrideForBlock?.weight_pct ?? blockDefaultWeightPct;
     const displayNotes = overrideForBlock?.notes ?? ex.notes;
+    const displayExerciseId = overrideForBlock?.exercise_id !== undefined ? overrideForBlock.exercise_id : ex.exercise_id;
+    const displayName = overrideForBlock?.name ?? ex.name;
+    const displayVideoUrl = overrideForBlock?.video_url !== undefined ? overrideForBlock.video_url : ex.video_url;
 
     const isExpanded = expanded.has(ex.id);
     const isSelected = selected.has(ex.id);
     const showVideo = showVideoFor.has(ex.id);
-    const autocompleteMatches = autocompleteFor === ex.id ? getLibraryMatches(ex.name) : [];
+    const autocompleteMatches = autocompleteFor === ex.id ? getLibraryMatches(displayName) : [];
 
     const gridCols = activeBlock >= 0
       ? 'grid-cols-[1.5rem_1fr_4rem_5rem_4rem_5rem_5rem_1.5rem_1.5rem_1.5rem]'
@@ -280,16 +299,16 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
               <div className="relative">
                 <input
                   draggable={false}
-                  value={ex.name}
+                  value={displayName}
                   onChange={(e) => handleNameChange(idx, e.target.value)}
-                  onFocus={() => { const m = getLibraryMatches(ex.name); if (m.length > 0) setAutocompleteFor(ex.id); }}
+                  onFocus={() => { const m = getLibraryMatches(displayName); if (m.length > 0) setAutocompleteFor(ex.id); }}
                   onBlur={() => setTimeout(() => setAutocompleteFor(null), 150)}
                   onMouseDown={(e) => e.stopPropagation()}
                   placeholder="Exercise name"
-                  className="w-full border border-black/10 px-2 py-1.5 text-sm outline-none focus:border-black/30 bg-white"
+                  className={`w-full border px-2 py-1.5 text-sm outline-none bg-white ${activeBlock >= 0 ? 'border-amber-300 bg-amber-50' : 'border-black/10 focus:border-black/30'}`}
                 />
                 {autocompleteMatches.length > 0 && (
-                  <div className="no-glass absolute left-0 top-full z-30 bg-white border border-black/15 shadow-md w-full max-h-44 overflow-y-auto">
+                  <div className="exercise-autocomplete no-glass absolute left-0 top-full z-30 border border-black/15 shadow-md w-full max-h-44 overflow-y-auto">
                     {autocompleteMatches.map((libEx) => (
                       <button key={libEx.id} type="button" onMouseDown={() => selectFromLibrary(idx, libEx)}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-black/5 flex items-baseline gap-2">
@@ -323,7 +342,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                     className="border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm outline-none text-center" />
                   {(() => {
                     if (!displayWeightPct || !oneRmMap) return null;
-                    const canonical = matchCanonical(ex.name);
+                    const canonical = matchCanonical(displayName);
                     const oneRm = canonical ? oneRmMap[canonical] : null;
                     if (!oneRm) return null;
                     const kg = resolveKgFromPct(displayWeightPct, oneRm);
@@ -347,7 +366,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
 
               {/* YouTube toggle */}
               <button type="button" onClick={() => toggleVideo(ex.id)} title="YouTube video"
-                className={`text-xs transition-colors ${showVideo || ex.video_url ? 'text-black/60' : 'text-black/20 hover:text-black/40'}`}>▶</button>
+                className={`text-xs transition-colors ${showVideo || displayVideoUrl ? 'text-black/60' : 'text-black/20 hover:text-black/40'}`}>▶</button>
 
               {/* Override toggle */}
               {weekBlocks && weekBlocks.length > 0 && (
@@ -360,15 +379,19 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
             </div>
 
             {/* YouTube URL */}
-            {(showVideo || ex.video_url) && (
+            {(showVideo || displayVideoUrl) && (
               <div className="px-2 pb-2 border-t border-black/8">
                 <input
-                  value={ex.video_url ?? ''}
+                  value={displayVideoUrl ?? ''}
                   onChange={(e) => {
                     const url = e.target.value || null;
-                    patch(idx, { video_url: url });
-                    if (ex.exercise_id) {
-                      void supabase.from('pt_exercises').update({ video_url: url }).eq('id', ex.exercise_id);
+                    if (activeBlock >= 0) {
+                      patchOverride(idx, activeBlock, { video_url: url });
+                    } else {
+                      patch(idx, { video_url: url });
+                    }
+                    if (displayExerciseId) {
+                      void supabase.from('pt_exercises').update({ video_url: url }).eq('id', displayExerciseId);
                     }
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
@@ -376,7 +399,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                   className="w-full border border-black/10 px-2 py-1.5 text-xs outline-none focus:border-black/30 mt-2"
                 />
                 <p className="text-[0.55rem] text-black/30 mt-0.5">
-                  {ex.exercise_id ? 'Saved to exercise library — updates all programmes' : 'YouTube link — visible to client'}
+                  {displayExerciseId ? 'Saved to exercise library — updates all programmes' : 'YouTube link — visible to client'}
                 </p>
               </div>
             )}
@@ -425,22 +448,25 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     <div>
       {/* Block selector */}
       {blocks.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          <button type="button" onClick={() => setActiveBlock(-1)}
-            className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === -1 ? 'bg-black text-white border-black' : 'border-black/15 hover:border-black/30'}`}>
-            All
-          </button>
-          {blocks.map((b) => (
-            <button key={b.blockIndex} type="button" onClick={() => setActiveBlock(b.blockIndex)}
-              className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === b.blockIndex ? 'bg-black text-white border-black' : 'border-black/15 hover:border-black/30'}`}>
-              {b.label}
+        <div className="mb-4 border border-black/10 bg-[#f7f4ef] p-3">
+          <p className="mb-2 text-[0.6rem] uppercase tracking-[0.16em] text-black/40">
+            Choose what this edit affects
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => setActiveBlock(-1)}
+              className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === -1 ? 'bg-black text-white border-black' : 'bg-white border-black/15 hover:border-black/30'}`}>
+              All weeks
             </button>
-          ))}
-          {activeBlock >= 0 && (
-            <span className="px-2 py-1.5 text-[0.6rem] text-black/40 uppercase tracking-[0.1em] self-center">
-              editing overrides for this block
-            </span>
-          )}
+            {blocks.map((b) => (
+              <button key={b.blockIndex} type="button" onClick={() => setActiveBlock(b.blockIndex)}
+                className={`px-3 py-1.5 text-xs border transition-colors ${activeBlock === b.blockIndex ? 'bg-black text-white border-black' : 'bg-white border-black/15 hover:border-black/30'}`}>
+                {b.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-black/45">
+            {activeBlock >= 0 ? 'Exercise swaps and set changes now apply only to the selected week group.' : 'Exercise swaps and set changes apply to every week group.'}
+          </p>
         </div>
       )}
 

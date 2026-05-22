@@ -40,6 +40,10 @@ export interface PTClient {
 
 export interface PTProgrammeExerciseBlockOverride {
   block_index: number;
+  exercise_id?: string | null;
+  name?: string;
+  video_url?: string | null;
+  cues?: string[];
   sets?: string;
   reps?: string;
   weight_pct?: string;

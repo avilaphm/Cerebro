@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
-import { getExerciseBlockValues, requiredWorkoutsForBlock, safeProgramme } from '@/utils/pt/programme';
+import { getExerciseBlockValues, getExerciseForBlock, requiredWorkoutsForBlock, safeProgramme } from '@/utils/pt/programme';
 import { formatBookingDate, formatBookingTime, type PTBookingAppointment } from '@/utils/pt/bookings';
 import type {
   PTClient,
@@ -94,9 +94,10 @@ function getWorkoutSections(day: PTProgrammeDay, phase: PTProgrammePhase, blockI
     if (index === 0 || exercise.section_start || sections.length === 0) {
       sections.push({ id: `${index}-${title || 'section'}`, title: title || 'Main work', exercises: [] });
     }
+    const blockExercise = getExerciseForBlock(exercise, blockIndex);
     sections[sections.length - 1].exercises.push({
-      exercise,
-      values: getExerciseBlockValues(exercise, phase.week_blocks, blockIndex),
+      exercise: blockExercise,
+      values: getExerciseBlockValues(blockExercise, phase.week_blocks, blockIndex),
     });
   });
   return sections;

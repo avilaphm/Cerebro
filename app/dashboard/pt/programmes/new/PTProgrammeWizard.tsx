@@ -518,6 +518,14 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
   const phase = programme.phases[activePhaseTab] ?? null;
   const currentDay = phase && activeDay !== null ? phase.days[activeDay] ?? null : null;
+  const saveCurrentDay = () => {
+    if (!phase || activeDay === null) return;
+    if (activeDay < phase.days.length - 1) {
+      setActiveDay(activeDay + 1);
+      return;
+    }
+    setActiveDay(null);
+  };
 
   return (
     <div className="max-w-4xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
@@ -917,6 +925,16 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                         weekBlocks={phase.week_blocks}
                         onChange={(updated) => patchDay(activePhaseTab, activeDay, { exercises: updated })}
                       />
+
+                      <div className="mt-6 flex justify-end border-t border-black/10 pt-4">
+                        <button
+                          type="button"
+                          onClick={saveCurrentDay}
+                          className="border border-black bg-black px-5 py-2.5 text-sm text-white transition-colors hover:bg-black hover:text-white"
+                        >
+                          Save
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

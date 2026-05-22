@@ -245,6 +245,19 @@ export function getExerciseBlockValues(
   };
 }
 
+export function getExerciseForBlock(exercise: PTProgrammeExercise, blockIndex: number): PTProgrammeExercise {
+  const override = exercise.week_overrides?.find((o) => o.block_index === blockIndex);
+  if (!override) return exercise;
+
+  return {
+    ...exercise,
+    exercise_id: override.exercise_id !== undefined ? override.exercise_id : exercise.exercise_id,
+    name: override.name ?? exercise.name,
+    video_url: override.video_url !== undefined ? override.video_url : exercise.video_url,
+    cues: override.cues ?? exercise.cues,
+  };
+}
+
 function safeBlockOverrides(value: unknown): PTProgrammeExerciseBlockOverride[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
   const overrides = value
@@ -254,6 +267,10 @@ function safeBlockOverrides(value: unknown): PTProgrammeExerciseBlockOverride[] 
       if (!Number.isFinite(block_index)) return null;
       return {
         block_index,
+        exercise_id: typeof item.exercise_id === 'string' ? item.exercise_id : item.exercise_id === null ? null : undefined,
+        name: typeof item.name === 'string' ? item.name : undefined,
+        video_url: typeof item.video_url === 'string' ? item.video_url : item.video_url === null ? null : undefined,
+        cues: Array.isArray(item.cues) ? item.cues.map((cue) => String(cue)).slice(0, 4) : undefined,
         sets: typeof item.sets === 'string' ? item.sets : undefined,
         reps: typeof item.reps === 'string' ? item.reps : undefined,
         weight_pct: typeof item.weight_pct === 'string' ? item.weight_pct : undefined,
