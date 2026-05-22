@@ -1,14 +1,33 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - Added programme draft autosave + 24h auto-delete (drafts no longer lost on navigation). Earlier same day: fixed "Analysis did not return valid JSON" + the synthesis hang (pipeline verified end-to-end on Mira).
+2026-05-22 by Claude - Added text-to-workout builder (separate mechanism, verified end-to-end) + drag-drop phase reordering. Earlier same day: draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
-7a49762 - Fix programme generation JSON truncation + synthesis hang (draft autosave commit follows)
+1034d91 - Drag-drop phase reordering (text-to-workout commit follows)
 
 ## What just happened (read first)
 
-### Programme drafts: autosave + 24h auto-delete (2026-05-22, LATEST)
+### Text-to-workout builder + drag-drop phase reordering (2026-05-22, LATEST)
+
+Two coach-flexibility features for the programme editor (/dashboard/pt/programmes/[id]/edit).
+
+**1. Drag-drop phase reordering (commit 1034d91).** Phases in the editor can be dragged by the handle to reorder (e.g. move a new phase above 1RM Test). Native HTML5 DnD (matches PTDayEditor; @dnd-kit/sortable is not installed). movePhase() in PTProgrammeEditView reorders programme.phases; "starts week X" labels recompute automatically from order via getPhaseStartWeeks.
+
+**2. Text-to-workout builder - a SEPARATE mechanism from the main 3-AI generation.** In the editor's Workouts section there is now a "+ Build from text" panel: Pedro pastes a workout/phase in his own words, and it is structured, library-linked, and added as a new phase he can drag into position. This is the flexibility lever he asked for - author programming by hand but still get real exercise_ids, videos, and canonical section order.
+
+How it works (edge function build-workout-from-text, verify_jwt true, deployed):
+- STEP 1 parse: Claude (sonnet-4-6, 4096 tok, 60s abort, repair-parse) turns the text into days -> sections (Warm Up/Workout/MetCon/Stretches) -> exercises (sets/reps/rest/superset/notes), names normalised, no ids yet.
+- STEP 2 match: loads pt_exercises, fuzzy-matches each name (normalise: lowercase, expand bb/db/kb/rdl/ohp, strip punctuation; exact then containment) -> exercise_id + video_url, flags misses.
+- STEP 3 research+create: ONE Claude batch call researches all missing exercises (muscles, equipment, cues, setup_cues, tags, conditions), inserts pt_exercises rows (source 'ai', video_url null for Pedro to backfill), gets ids.
+- STEP 4 assemble: orders each day by canonical section, sets section_start on first of each section, links exercise_id/video_url/cues, returns a PTProgrammePhase + created_exercises + matched/missing counts.
+The UI (PTProgrammeEditView buildFromText) appends the returned phase via makeId, switches to its tab, and reports what was matched/created. Pedro then drags it into position and Saves.
+
+Verified end-to-end: minted a session for pedro@cerebroai.au, sent a 5-section workout text; HTTP 200 in ~20s, 7 matched, 1 missing ("90/90 Hip Switch") researched + created with a real exercise_id and full card data (equipment, muscles, 6 cues, 6 setup cues, tags), video_url null. UI is wired + type-checks + production build passes, but the in-browser click-through needs Pedro's logged-in session.
+
+Skills (Pedro's workflow-architect breakdown, built in ~/.claude/skills/): pt-text-to-workout (chain head) -> pt-text-to-workout-parse -> pt-exercise-library-match (reused) -> pt-exercise-create-missing (reused; already researches+fills cards) -> pt-text-to-workout-assemble. These are the local Claude Code path mirroring the edge function (same pattern as the main pipeline having both a skill chain and edge functions).
+
+### Programme drafts: autosave + 24h auto-delete (2026-05-22)
 
 Pedro generated a programme, was editing on wizard step 3, navigated away without pressing Create on step 4, and lost his work. Built draft persistence so this cannot happen again. He chose (via prompt): autosave the generated programme AND his manual edits; hard-delete drafts after 24h.
 

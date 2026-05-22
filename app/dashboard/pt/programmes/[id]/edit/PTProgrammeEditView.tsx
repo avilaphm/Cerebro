@@ -114,6 +114,10 @@ export default function PTProgrammeEditView({
   const [editingPhase, setEditingPhase] = useState<number | null>(null);
   const [dragPhaseIdx, setDragPhaseIdx] = useState<number | null>(null);
   const [dragOverPhaseIdx, setDragOverPhaseIdx] = useState<number | null>(null);
+  const [buildText, setBuildText] = useState('');
+  const [buildOpen, setBuildOpen] = useState(false);
+  const [building, setBuilding] = useState(false);
+  const [buildStatus, setBuildStatus] = useState('');
   const highlightedPhase = Number.parseInt(highlight?.phase ?? '', 10);
   const highlightedDay = Number.parseInt(highlight?.day ?? '', 10);
   const [activePhaseTab, setActivePhaseTab] = useState(Number.isFinite(highlightedPhase) ? highlightedPhase : 0);
@@ -196,6 +200,36 @@ export default function PTProgrammeEditView({
       return p;
     });
     setEditingPhase((cur) => (cur === from ? to : cur));
+  };
+
+  // Build a phase from freeform text via the build-workout-from-text edge function.
+  // Runs separate from the main generation pipeline: it parses the text, pulls exercises
+  // from the library, researches + creates any missing exercise cards, then appends the
+  // assembled phase so it can be reordered and edited like any other.
+  const buildFromText = async () => {
+    if (buildText.trim().length < 10) { setBuildStatus('Add a workout description first.'); return; }
+    setBuilding(true);
+    setBuildStatus('Reading your text, matching the library, and researching any missing exercises...');
+    const { data, error } = await supabase.functions.invoke('build-workout-from-text', { body: { text: buildText } });
+    setBuilding(false);
+    const payload = data as { phase?: PTProgrammePhase; created_exercises?: { name: string }[]; matched_count?: number; missing_count?: number; error?: string } | null;
+    if (error || payload?.error || !payload?.phase) {
+      setBuildStatus(payload?.error ?? 'Could not build the workout from that text.');
+      return;
+    }
+    const newPhase = { ...payload.phase, id: makeId('phase') };
+    const newIdx = programme.phases.length;
+    update((p) => { p.phases.push(newPhase); return p; });
+    const created = payload.created_exercises?.length ?? 0;
+    setBuildText('');
+    setBuildOpen(false);
+    setActivePhaseTab(newIdx);
+    setActiveDay(null);
+    setBuildStatus(
+      `Added "${newPhase.title}" - ${payload.matched_count ?? 0} matched from library`
+      + (created > 0 ? `, ${created} new card${created === 1 ? '' : 's'} created (add videos later)` : '')
+      + '. Drag it into position and Save changes.',
+    );
   };
 
   const addDay = (phaseIdx: number) => update((p) => {
@@ -650,7 +684,47 @@ export default function PTProgrammeEditView({
 
       {/* Workouts section */}
       <div>
-        <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Workouts</p>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Workouts</p>
+          <button
+            type="button"
+            onClick={() => setBuildOpen((v) => !v)}
+            className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
+          >
+            {buildOpen ? 'Close' : '+ Build from text'}
+          </button>
+        </div>
+
+        {buildOpen && (
+          <div className="mb-6 border border-black/15 bg-black/[0.02] p-4">
+            <p className="text-sm font-medium">Build a phase from text</p>
+            <p className="mt-1 text-xs text-black/45">
+              Paste a workout or phase in your own words. The AI structures it, pulls exercises from your
+              library, and researches + creates a card for anything missing (you add the video later). It is
+              added as a new phase you can drag into position.
+            </p>
+            <textarea
+              value={buildText}
+              onChange={(e) => setBuildText(e.target.value)}
+              rows={7}
+              placeholder={'Day 1 - Lower Body.\nWarm up: glute bridge 2x12.\nWorkout: barbell back squat 4x6, RDL 3x8, bulgarian split squat 3x10.\nMetCon: 10 min EMOM kettlebell swings.\nStretches: couch stretch 2x30 sec.'}
+              className="mt-3 w-full resize-y border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void buildFromText()}
+                disabled={building || buildText.trim().length < 10}
+                className="border border-black bg-black px-4 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30"
+              >
+                {building ? 'Building...' : 'Generate workout'}
+              </button>
+              {buildStatus && <p className="text-xs text-black/50">{buildStatus}</p>}
+            </div>
+          </div>
+        )}
+        {!buildOpen && buildStatus && <p className="mb-4 text-xs text-black/50">{buildStatus}</p>}
+
         <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
           {programme.phases.map((ph, i) => (
             <button
