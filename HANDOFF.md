@@ -159,27 +159,64 @@ Next time Pedro runs programme generation: invoke `pt-movement-analysis` in Clau
 
 Production wizard left as-is. Edge function path parked until/unless we want a self-serve coach UI.
 
-## YOU ARE HERE (read this first, 30 seconds)
+## YOU ARE HERE - 2026-05-22 (read this first, 60 seconds)
 
-The PT programme creation pipeline is structurally wired end-to-end, but live AI generation is blocked when Anthropic credits are exhausted. On 2026-05-21 Codex fixed the wizard getting stuck on Step 1 "Working..." by adding UI labels for the new movement/exercise intelligence steps, shrinking the exercise-intelligence prompt, restoring `exercise-intelligence-agent` to `verify_jwt: false`, and adding hard Promise.race timeouts around nested Edge Function calls in `pt-programme-orchestrator`. A follow-up fix made `/api/pt/parse-pdf` Node-only, switched production PDF extraction from `pdf-parse` to `pdfjs-dist/legacy/build/pdf.mjs` because Vercel's Node runtime lacks `DOMMatrix`, preloads `pdf.worker.mjs` so Vercel does not try to import an unbundled worker chunk, and made Step 1 display real PDF / Edge Function errors instead of `Unexpected token '<'` or generic non-2xx messages.
+### Project goal
 
-Live verification notes:
-- Pre-fix runs were stuck at `EXERCISE_INTELLIGENCE` because nested function calls could hang without recording a step row.
-- `exercise-intelligence-agent` briefly redeployed with `verify_jwt: true`; it was redeployed with `--no-verify-jwt`.
-- `pt-programme-orchestrator` is deployed as version 8 with the hard timeout patch.
-- Old stale `running` rows were marked `failed` with the reason "Stale pre-fix run marked failed after orchestrator timeout/auth fix. Start a new generation."
-- Final smoke run `65b094a7-5212-4150-81f8-9d665fd5a2dd` failed cleanly at `CLIENT_ANALYSIS` because Anthropic returned: "Your credit balance is too low to access the Anthropic API." Once credits are topped up, rerun generation from `/dashboard/pt/programmes/new`.
-- Production `/api/pt/parse-pdf` was returning an HTML 500 page before commit `8769832`; a later patch replaced `pdf-parse` entirely after real PDF upload hit `DOMMatrix is not defined` on Vercel. The route now returns JSON errors and extracts text through `pdfjs-dist`.
+Cerebro is Pedro Avila's AI automation consultancy and PT coaching platform. The cerebro-site is a Next.js + Supabase app that includes a CRM-style leads dashboard, a PT client management system (programmes, nutrition, workouts, messaging), a landing page, a chatbot, and a pitch deck generator.
 
-The intended coach journey remains client-first: create/select the client, upload intake and movement assessment documents, add coach brain dump/voice notes, save to the client brain, then generate the programme from the combined client brain plus knowledge base.
+The current chapter: the PT programme creation wizard is structurally complete and producing correct programmes. The focus is now refinement, UX polish, and making the coach flow feel seamless end-to-end.
 
-**Nutrition UX overhaul shipped (commit `114252b`).** `NutritionTab.tsx` now has full drag-and-drop between meal sections (@dnd-kit, 200ms touch hold), a tap-to-edit sheet for macros + weight (weight change scales all macros proportionally), and estimated weight display per food card. `log-nutrition-batch` uses weight-first estimation and has a serving-size calibration guide baked in. This fixes the "60g protein for one steak slice" class of errors.
+### What was just shipped (commit 680aa48, 2026-05-22)
 
-**Your next chapter is refinement and UX, not new architecture.** Scroll to "Next on the list: refine and improve" (about halfway down this file) for the 16 prioritised tasks grouped by Rules / UX / Improvements. Pick by impact, not by order - they are independent.
+**Wizard UX overhaul.** Pedro's required 5-step flow is now wired in `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`:
 
-If you are an AI agent (Codex, Claude, or otherwise) picking this up cold, read the FOR THE NEXT AGENT section directly below this. It tells you what files to read first, what gotchas to avoid, and what the test clients are.
+1. **Step 1** - select client, upload docs (PDF/txt/md), add brain dump, click Generate -> immediately jumps to Step 2
+2. **Step 2 loading** - PIPELINE_STEPS constant (12 strings) drives a live progress bar + step list with checkmarks. Each `genStatus` string from the poller matches a PIPELINE_STEPS label exactly. Takes 3-7 min.
+3. **Step 2 done** - 5 phase cards (Foundation, Testing 1RM, Hypertrophy, Strength, Retesting 1RM) with week count, day count, week_block pills. Click "Edit exercises".
+4. **Step 3** - click phase tab, click day card, edit exercises. Click "Finish".
+5. **Step 4** - "Review & create" heading. Button reads "Create programme for [name]". Creates pt_program_templates + pt_program_assignments (status=active, coach_review_status=approved), fires pt_events (event_type=programme_assigned), navigates to client page.
 
-If you have access to `~/.claude/projects/.../memory/` (Claude only), the memory entry `project_pt_programming_overhaul_vision.md` mirrors the load-bearing facts here. The plan file `~/.claude/plans/we-need-to-run-drifting-waffle.md` has the architecture diagrams + Session 1/2/3 progress narratives. Codex cannot see those; everything you need is in this file and the git repo.
+TypeScript compiles clean. Production build passes. Committed and pushed (commit 680aa48, then b5f224f for HANDOFF).
+
+### What is pending - do this first in the next session
+
+**Browser test the wizard end-to-end.** In the 2026-05-22 session, browser tools were unavailable (Playwright MCP server was accidentally killed by pkill; Chrome extension not connected). Start a fresh Claude Code session to reconnect Playwright automatically.
+
+Test checklist:
+1. Open `/dashboard/pt/programmes/new`
+2. Pick John Wick (6fbd4d9b) - has the richest test data from the local programme generation session
+3. Click Generate (no files needed - brain already has data) -> confirm immediate Step 2 transition
+4. Watch the 12-step list animate; confirm progress bar tracks genStatus strings correctly
+5. After generation: 5 phase cards appear -> click "Edit exercises"
+6. Edit one exercise on one day -> click Finish
+7. Review & create screen shows "Create programme for John Wick" button
+8. Click Create -> confirm redirect to `/dashboard/pt/clients/6fbd4d9b...`
+9. SQL: `select status, coach_review_status, name from pt_program_assignments order by created_at desc limit 1;` - expect status=active, coach_review_status=approved
+
+### The pipeline
+
+The AI pipeline (pt-programme-orchestrator) runs async:
+- CLIENT_ANALYSIS -> MOVEMENT_ANALYSIS -> EXERCISE_INTELLIGENCE -> METHODOLOGY_PLAN -> PROGRAMME_SYNTHESIS_FOUNDATION -> PROGRAMME_SYNTHESIS_1RM_TEST -> PROGRAMME_SYNTHESIS_HYPERTROPHY -> PROGRAMME_SYNTHESIS_STRENGTH -> PROGRAMME_SYNTHESIS_1RM_RETEST -> VALIDATION
+- Polls pt_program_generation_runs.current_command every 3s
+- On completion: programme_draft + validation_summary written to the run row
+
+### Nutrition UX (shipped earlier, 2026-05-22)
+
+NutritionTab.tsx has drag-and-drop between meal sections, tap-to-edit macro sheet (weight change scales macros proportionally), and estimated weight per food card. log-nutrition-batch uses weight-first estimation.
+
+### Next refinement tasks
+
+Ordered by impact. These are independent - pick any.
+- **Browser test** (above) - blocks all other UX confidence
+- **Task #22** - Meso/deload labels in the editor: group week_blocks as "Meso 1 (weeks 1-4)" with Build/Peak/Deload sub-labels
+- **Task #24** - Per-exercise swap picker: library autocomplete drawer with video preview
+- **Task #17** - RPE targets per phase alongside %1RM
+- **Task #25** - Client-facing weekly view with resolved kg targets
+
+Full task list (#17-#32) is in the "Next on the list: refine and improve" section further down this file.
+
+If you have access to `~/.claude/projects/.../memory/` (Claude only), the memory entry `project_pt_programming_overhaul_vision.md` has the full architecture and implementation status. The plan file `~/.claude/plans/we-need-to-run-drifting-waffle.md` has Session 1/2/3 progress narratives. Codex cannot see those; everything you need is in this file and the git repo.
 
 ---
 
