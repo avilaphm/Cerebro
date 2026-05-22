@@ -167,14 +167,16 @@ Deno.serve(async (req) => {
     ].join('\n\n---\n\n');
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
-    const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4500,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    const text = (msg.content[0] as { text: string }).text;
+    const claudeCtrl = new AbortController();
+    const claudeTimer = setTimeout(() => claudeCtrl.abort(), 60_000);
+    let text: string;
+    try {
+      const msg = await anthropic.messages.create(
+        { model: 'claude-sonnet-4-6', max_tokens: 4500, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
+        { signal: claudeCtrl.signal },
+      );
+      text = (msg.content[0] as { text: string }).text;
+    } finally { clearTimeout(claudeTimer); }
     const parsed = parseJson(text);
     if (!parsed) return json({ error: 'Programme synthesis did not return valid JSON', raw: text }, 502);
 
@@ -439,14 +441,20 @@ function dayFocusesFor(type: 'hypertrophy' | 'strength', daysPerWeek: 3 | 4 | 5)
   ];
 }
 
+// Hardcoded IDs are stable DB records confirmed against the production exercise table.
+// Pattern matching is unreliable: "Archer Pull-Up" matches /pull[- ]?up/ before "Pull Up";
+// "DB Shoulder Press" matches /shoulder press/ before "Overhead Press".
+const BIG5_ORDERED_IDS = [
+  '3b551e61-9b4c-412d-82f5-a5a34c44c770', // Back Squat -> displayed as BB Squat
+  '743c5231-e1e4-4d45-aee6-b7d0d3c17723', // Conventional Deadlift -> BB Deadlift
+  '7baa12b2-9949-4e0c-8f72-1f7a801050fa', // Barbell Bench Press -> BB Bench Press
+  'a85f183d-2b6b-47a1-b5ff-5881bb15cb3f', // Overhead Press -> BB Shoulder Press
+  '4e4392c7-b6f0-4bd2-94fa-fae97e360e22', // Pull Up
+] as const;
+
 function pickBig5(library: ExerciseRow[]): ExerciseRow[] {
-  return [
-    findExercise(library, /^BB Squat$/i) ?? findExercise(library, /bb squat|barbell squat|back squat|front squat/i),
-    findExercise(library, /^BB Deadlift$/i) ?? findExercise(library, /bb deadlift|barbell deadlift|conventional deadlift|trap bar deadlift/i),
-    findExercise(library, /^BB Bench Press$/i) ?? findExercise(library, /bb bench press|barbell bench|bench press/i),
-    findExercise(library, /^BB Shoulder Press$/i) ?? findExercise(library, /bb shoulder press|barbell shoulder press|shoulder press|overhead press/i),
-    findExercise(library, /^Pull-up$/i) ?? findExercise(library, /pull[- ]?up/i),
-  ].filter((row): row is ExerciseRow => Boolean(row));
+  const byId = new Map(library.map((e) => [e.id, e]));
+  return BIG5_ORDERED_IDS.map((id) => byId.get(id)).filter((row): row is ExerciseRow => Boolean(row));
 }
 
 function pickWarmups(library: ExerciseRow[]): ExerciseRow[] {

@@ -171,6 +171,19 @@ async function runPipeline(ctx: {
       return;
     }
 
+    // 1RM test/retest phases are always identical (Big 5, 5x1). Build them inline so the
+    // synthesis agent spends zero tokens on them — use that budget for Foundation/Hypertrophy/Strength.
+    const BIG5_IDS = [
+      '3b551e61-9b4c-412d-82f5-a5a34c44c770', // Back Squat
+      '743c5231-e1e4-4d45-aee6-b7d0d3c17723', // Conventional Deadlift
+      '7baa12b2-9949-4e0c-8f72-1f7a801050fa', // Barbell Bench Press
+      'a85f183d-2b6b-47a1-b5ff-5881bb15cb3f', // Overhead Press
+      '4e4392c7-b6f0-4bd2-94fa-fae97e360e22', // Pull Up
+    ];
+    const BIG5_LABELS = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'];
+    const { data: big5Rows } = await admin.from('pt_exercises').select('id, video_url, cues').in('id', BIG5_IDS);
+    const big5Map = new Map((big5Rows ?? []).map((e: { id: string; video_url: string | null; cues: unknown }) => [e.id, e]));
+
     const phases: Record<string, unknown>[] = [];
     let programmeName = '';
     let programmeGoal = '';
@@ -179,6 +192,50 @@ async function runPipeline(ctx: {
     for (let i = 0; i < methodologyPhases.length; i++) {
       const commandName = synthesisCommandName(methodologyPhases[i], i);
       await admin.from('pt_program_generation_runs').update({ current_command: commandName }).eq('id', runId);
+
+      const phaseType = String(methodologyPhases[i].type ?? '').toLowerCase();
+      const is1rm = phaseType === '1rm_test' || phaseType === '1rm_retest' ||
+        (phaseType.includes('1rm') && (phaseType.includes('test') || phaseType.includes('retest')));
+
+      if (is1rm) {
+        const isRetest = phaseType.includes('retest');
+        const phaseId = isRetest ? 'phase-1rm-retest' : 'phase-1rm-test';
+        const phaseTitle = isRetest ? '1RM Retest' : '1RM Test';
+        const phase = {
+          id: phaseId,
+          title: phaseTitle,
+          focus: 'Measure baseline strength across the Big 5 lifts.',
+          weeks: String(methodologyPhases[i].weeks ?? '1'),
+          progression: 'One testing week. Load to a true 1RM on each lift.',
+          week_blocks: [],
+          days: [{
+            id: 'day-1',
+            title: `Day 1 - ${phaseTitle}`,
+            focus: 'Big 5 strength testing',
+            exercises: BIG5_IDS.map((id, idx) => ({
+              id: `ex-${BIG5_LABELS[idx].toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${idx + 1}`,
+              exercise_id: id,
+              name: BIG5_LABELS[idx],
+              sets: '5',
+              reps: '1',
+              rest: '3-5 min',
+              notes: 'Ramp up: empty bar, 50%, 65%, 75%, 85%, then 100% 1RM attempt.',
+              section_start: idx === 0 ? 'Workout' : null,
+              superset_id: null,
+              video_url: (big5Map.get(id) as { video_url?: string | null } | undefined)?.video_url ?? null,
+              cues: (big5Map.get(id) as { cues?: unknown } | undefined)?.cues ?? [],
+            })),
+          }],
+        };
+        const stepOrder = 4 + i;
+        await recordStep(stepOrder, commandName, { phase_index: i }, { ok: true, phase }, 'succeeded');
+        phases.push(phase);
+        if (i === 0) {
+          programmeName = phaseTitle;
+          programmeGoal = 'Establish 1RM baseline for percentage-based programming.';
+        }
+        continue;
+      }
 
       const step = await callAgent('programme-synthesis-agent', {
         client_analysis: clientAnalysis,
