@@ -189,6 +189,28 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     }
   }, []);
 
+  // Autosave edits back to the draft run so unsaved work survives navigating away.
+  // The draft lives in pt_program_generation_runs until step 4 Create turns it into an
+  // assignment; the 24h cleanup cron removes drafts that are never saved.
+  const lastAutosaveRef = useRef('');
+  const autosaveSnapshot = JSON.stringify({ programme, progName, progGoal });
+  useEffect(() => {
+    if (!generationRunId || generating || step < 2) return;
+    if (autosaveSnapshot === lastAutosaveRef.current) return;
+    const timer = setTimeout(() => {
+      lastAutosaveRef.current = autosaveSnapshot;
+      void supabase
+        .from('pt_program_generation_runs')
+        .update({
+          programme_draft: programme,
+          validation_summary: { ...validationSummary, name: progName, goal: progGoal },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', generationRunId);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [autosaveSnapshot, generationRunId, generating, step, programme, progName, progGoal, validationSummary, supabase]);
+
   const addIntakeFile = async (file: File, docType: IntakeFile['document_type']) => {
     if (intakeFiles.length >= 3) {
       setIntakeStatus('Maximum 3 documents.');

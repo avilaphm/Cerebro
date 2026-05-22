@@ -38,16 +38,21 @@ export default async function PTProgrammesPage() {
     pt_clients: (a.pt_clients as { name: string; email: string } | null) ?? null,
   }));
 
-  const reviewRuns = ((reviewRunsRes.data ?? []) as PTProgramGenerationRun[]).map((run) => ({
-    id: run.id,
-    status: run.status,
-    task_type: run.task_type,
-    current_command: run.current_command ?? null,
-    created_at: run.created_at,
-    validation_summary: (run.validation_summary as { hard_rule_failures?: unknown[]; findings?: unknown[] } | null) ?? null,
-    programme_draft: safeProgramme(run.programme_draft),
-    pt_clients: (run.pt_clients as { name: string; email: string; goals?: string | null } | null) ?? null,
-  }));
+  const reviewRuns = ((reviewRunsRes.data ?? []) as PTProgramGenerationRun[]).map((run) => {
+    const assignmentJoin = (run as unknown as { pt_program_assignments?: unknown }).pt_program_assignments;
+    const saved = Array.isArray(assignmentJoin) ? assignmentJoin.length > 0 : Boolean(assignmentJoin);
+    return {
+      id: run.id,
+      status: run.status,
+      task_type: run.task_type,
+      current_command: run.current_command ?? null,
+      created_at: run.created_at,
+      saved,
+      validation_summary: (run.validation_summary as { hard_rule_failures?: unknown[]; findings?: unknown[] } | null) ?? null,
+      programme_draft: safeProgramme(run.programme_draft),
+      pt_clients: (run.pt_clients as { name: string; email: string; goals?: string | null } | null) ?? null,
+    };
+  });
 
   return (
     <PTProgrammesView

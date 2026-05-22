@@ -1,14 +1,28 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - FIXED "Analysis did not return valid JSON" + the synthesis hang. Full pipeline now completes end-to-end for Mira (data-rich client). Verified run b5adc76a -> needs_review, validation passed, 127 exercises all with exercise_id + video_url.
+2026-05-22 by Claude - Added programme draft autosave + 24h auto-delete (drafts no longer lost on navigation). Earlier same day: fixed "Analysis did not return valid JSON" + the synthesis hang (pipeline verified end-to-end on Mira).
 
 ## Last code fix commit
-(this session) - Restore client-analysis token budget, harden all agent JSON parsing, guard orchestrator body-read, stop movement-analysis aborting
+7a49762 - Fix programme generation JSON truncation + synthesis hang (draft autosave commit follows)
 
 ## What just happened (read first)
 
-### Programme generation: the JSON-failure + synthesis-hang fix (2026-05-22, LATEST - VERIFIED WORKING)
+### Programme drafts: autosave + 24h auto-delete (2026-05-22, LATEST)
+
+Pedro generated a programme, was editing on wizard step 3, navigated away without pressing Create on step 4, and lost his work. Built draft persistence so this cannot happen again. He chose (via prompt): autosave the generated programme AND his manual edits; hard-delete drafts after 24h.
+
+What a "draft" is: a `pt_program_generation_runs` row that has a `programme_draft` but was never turned into an assignment (Create on step 4 is what inserts pt_program_templates + pt_program_assignments). These already surface in the Programmes page "Drafts & review queue" section and open via the review page's "Open draft in editor" button (loads the draft into the wizard via sessionStorage draftKey). So resume already existed - the gap was that edits were only written to the DB on Create.
+
+Changes:
+1. **Autosave (PTProgrammeWizard.tsx).** A debounced (1.2s) effect writes the current `programme` back to `pt_program_generation_runs.programme_draft` (and name/goal into `validation_summary.name`/`.goal`) whenever it changes after generation (generationRunId set, not generating, step >= 2). Watches the `programme` state so it captures every edit path. RLS already lets pedro@cerebroai.au UPDATE the run (review page updateRunStatus uses the same client-side update).
+2. **Resume keeps edited name/goal (PTProgrammeReviewView.tsx).** openDraft now prefers `run.validation_summary.name`/`.goal` over the assignment/client fallback.
+3. **Drafts UI (PTProgrammesView.tsx + page.tsx).** Section renamed "Drafts & review queue"; page query passes `saved` (whether an assignment references the run); unsaved resumable drafts get a "Draft" pill and an "expires in Xh" hint from created_at + 24h.
+4. **24h cleanup cron (migration 20260522165333_delete_stale_program_drafts.sql).** pg_cron job `delete-stale-program-drafts` runs hourly, calls `public.delete_stale_program_drafts()`, deleting runs older than 24h NOT referenced by any assignment or template. Child rows cascade; assignment/template back-links SET NULL, so no real programme is destroyed. Applied to remote AND mirrored as a repo migration. Job confirmed active.
+
+Verified: tsc clean, production build passes. Cron active; dry-run predicate shows nothing past TTL yet. Pedro's lost programme is recoverable - run eea683bb (Mira, created 2026-05-22 06:32 UTC, 5-phase draft intact) is safe until ~06:32 UTC 2026-05-23. Recover via Programmes -> Drafts & review queue -> Mira -> "Open draft in editor". NOTE: the live wizard click-through (generate -> edit -> leave -> reopen and see edits) needs Pedro's logged-in browser; the DB/cron/RLS layer is verified and the React autosave is wired + type-checks, but was not click-tested this session.
+
+### Programme generation: the JSON-failure + synthesis-hang fix (2026-05-22, VERIFIED WORKING)
 
 Pedro reported the wizard failing at Step 1 with "Client analysis failed: Analysis did not return valid JSON" (run c5fc11ab). Root-caused and fixed end-to-end. A full generation for Mira (client d43808bb, the failing data-rich client) now completes: run b5adc76a reached needs_review in ~120s, validation passed=true, 5 phases, 127 exercises every one with exercise_id + video_url.
 

@@ -187,13 +187,15 @@ export default function PTProgrammeReviewView({
   const openDraft = () => {
     const draftKey = `pt-programme-review:${run.id}:${Date.now()}`;
     const isRevision = Boolean(run.assignment_id);
+    const savedName = text(asRecord(run.validation_summary).name);
+    const savedGoal = text(asRecord(run.validation_summary).goal);
     sessionStorage.setItem(draftKey, JSON.stringify({
       mode: isRevision ? 'revise_programme' : 'new_programme',
       run_id: run.id,
       client_id: run.client_id,
       assignment_id: run.assignment_id,
-      name: assignment?.name ?? `${client?.name ?? 'Client'} Programme`,
-      goal: assignment?.goal ?? run.client_goal ?? client?.goals ?? '',
+      name: savedName || assignment?.name || `${client?.name ?? 'Client'} Programme`,
+      goal: savedGoal || assignment?.goal || run.client_goal || client?.goals || '',
       change_summary: failures.length > 0
         ? `Validation failed. Repair ${failures.length} hard issue${failures.length === 1 ? '' : 's'} before saving.`
         : 'AI draft ready for coach review.',

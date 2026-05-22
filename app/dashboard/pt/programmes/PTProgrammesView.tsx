@@ -30,9 +30,19 @@ interface ReviewRun {
   task_type: string;
   current_command: string | null;
   created_at: string;
+  saved: boolean;
   validation_summary: { hard_rule_failures?: unknown[]; findings?: unknown[] } | null;
   programme_draft: PTProgramme;
   pt_clients: { name: string; email: string; goals?: string | null } | null;
+}
+
+// Drafts auto-delete 24h after creation (delete_stale_program_drafts cron). Returns a
+// short "expires in Xh" / "expires soon" hint, or null once past the window.
+function draftExpiryLabel(createdAt: string): string | null {
+  const msLeft = new Date(createdAt).getTime() + 24 * 60 * 60 * 1000 - Date.now();
+  if (msLeft <= 0) return null;
+  const hoursLeft = Math.ceil(msLeft / (60 * 60 * 1000));
+  return hoursLeft <= 1 ? 'expires within the hour' : `expires in ${hoursLeft}h`;
 }
 
 type DeleteState = 'idle' | 'confirm' | 'deleting';
@@ -127,8 +137,8 @@ export default function PTProgrammesView({
         <section className="mb-10">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Coach review queue</h2>
-              <p className="mt-1 text-xs text-black/40">Generated drafts waiting for review, repair, or approval.</p>
+              <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Drafts &amp; review queue</h2>
+              <p className="mt-1 text-xs text-black/40">Generated programmes waiting to be reviewed and saved. Open one to keep editing. Unsaved drafts auto-delete after 24 hours.</p>
             </div>
           </div>
           <div className="divide-y divide-black/8 border-y border-black/10">
@@ -140,6 +150,8 @@ export default function PTProgrammesView({
               const findings = Array.isArray(run.validation_summary?.findings)
                 ? run.validation_summary.findings.length
                 : 0;
+              const isResumableDraft = !run.saved && (run.status === 'needs_review' || run.status === 'approved');
+              const expiry = isResumableDraft ? draftExpiryLabel(run.created_at) : null;
               return (
                 <Link
                   key={run.id}
@@ -149,6 +161,11 @@ export default function PTProgrammesView({
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{client?.name ?? 'Client programme'}</p>
+                      {isResumableDraft && (
+                        <span className="border border-black/15 bg-black/[0.04] px-2 py-0.5 text-[0.58rem] uppercase tracking-[0.12em] text-black/55">
+                          Draft
+                        </span>
+                      )}
                       <span className={`border px-2 py-0.5 text-[0.58rem] uppercase tracking-[0.12em] ${
                         run.status === 'failed'
                           ? 'border-red-200 bg-red-50 text-red-600'
@@ -161,6 +178,7 @@ export default function PTProgrammesView({
                     </div>
                     <p className="mt-1 text-xs text-black/40">
                       {run.task_type.replace('_', ' ')} · {run.current_command ?? 'Review'} · {new Date(run.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                      {expiry && <span className="text-black/30"> · {expiry}</span>}
                     </p>
                   </div>
                   <p className="text-xs text-black/40">
