@@ -61,7 +61,6 @@ const PIPELINE_STEPS = [
   'Starting pipeline…',
   'Analysing client…',
   'Analysing movement assessment…',
-  'Building exercise intelligence…',
   'Planning methodology (knowledge base RAG)…',
   'Synthesising Foundation (1/5)…',
   'Synthesising 1RM Test (2/5)…',
@@ -146,6 +145,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [generationRunId, setGenerationRunId] = useState<string | null>(null);
   const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>({});
   const [phaseNutritionDraft, setPhaseNutritionDraft] = useState<unknown[]>([]);
+  const [completedSteps, setCompletedSteps] = useState<Array<{ name: string; elapsed: number }>>([]);
 
   type IntakeFile = { name: string; document_type: 'intake' | 'movement_assessment' | 'profile' | 'other'; content_text: string };
   const [intakeFiles, setIntakeFiles] = useState<IntakeFile[]>([]);
@@ -305,7 +305,6 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       switch (cmd) {
         case 'CLIENT_ANALYSIS': return 'Analysing client…';
         case 'MOVEMENT_ANALYSIS': return 'Analysing movement assessment…';
-        case 'EXERCISE_INTELLIGENCE': return 'Building exercise intelligence…';
         case 'METHODOLOGY_PLAN': return 'Planning methodology (knowledge base RAG)…';
         case 'PROGRAMME_SYNTHESIS_FOUNDATION': return 'Synthesising Foundation (1/5)…';
         case 'PROGRAMME_SYNTHESIS_1RM_TEST': return 'Synthesising 1RM Test (2/5)…';
@@ -322,12 +321,28 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     const pollDeadline = Date.now() + 7 * 60_000;
     while (Date.now() < pollDeadline) {
       await new Promise((r) => setTimeout(r, 3000));
-      const { data: row } = await supabase
-        .from('pt_program_generation_runs')
-        .select('status, current_command, programme_draft, validation_summary, failure_reason')
-        .eq('id', kickoff.run_id)
-        .maybeSingle();
+      const [{ data: row }, { data: steps }] = await Promise.all([
+        supabase
+          .from('pt_program_generation_runs')
+          .select('status, current_command, programme_draft, validation_summary, failure_reason')
+          .eq('id', kickoff.run_id)
+          .maybeSingle(),
+        supabase
+          .from('pt_program_generation_steps')
+          .select('command_name, status, started_at, completed_at')
+          .eq('run_id', kickoff.run_id)
+          .eq('status', 'succeeded')
+          .order('step_order'),
+      ]);
       if (!row) continue;
+      if (steps && steps.length > 0) {
+        setCompletedSteps(steps.map((s) => ({
+          name: commandLabel(s.command_name),
+          elapsed: s.started_at && s.completed_at
+            ? Math.round((new Date(s.completed_at).getTime() - new Date(s.started_at).getTime()) / 1000)
+            : 0,
+        })));
+      }
       setGenStatus(commandLabel(row.current_command));
       if (row.status === 'failed') {
         setGenStatus(row.failure_reason ?? 'Pipeline failed.');
@@ -745,6 +760,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                   {PIPELINE_STEPS.map((label, idx) => {
                     const done = idx < activeStepIdx;
                     const active = idx === activeStepIdx;
+                    const completedStep = completedSteps.find((s) => s.name === label);
                     return (
                       <div key={idx} className="flex items-center gap-3">
                         <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 transition-colors duration-300 ${
@@ -757,6 +773,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                           done ? 'text-black/30' : active ? 'text-black font-medium' : 'text-black/20'
                         }`}>
                           {label.replace('…', '')}
+                          {completedStep && completedStep.elapsed > 0 && (
+                            <span className="ml-2 text-black/20">{completedStep.elapsed}s</span>
+                          )}
                         </span>
                       </div>
                     );

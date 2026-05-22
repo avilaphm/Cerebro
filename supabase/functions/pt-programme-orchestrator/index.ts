@@ -16,7 +16,6 @@ function json(data: unknown, status = 200) {
 const STEP_NAMES = [
   'CLIENT_ANALYSIS',
   'MOVEMENT_ANALYSIS',
-  'EXERCISE_INTELLIGENCE',
   'METHODOLOGY_PLAN',
   'VALIDATION',
 ] as const;
@@ -147,26 +146,21 @@ async function runPipeline(ctx: {
     // Movement analysis failure is non-fatal: we fall back to empty mind map so the pipeline continues.
     const muscleMindMap = step2.ok ? (step2.output.muscle_mind_map as Record<string, unknown>) : {};
 
-    // STEP 3: Exercise Intelligence (10 exercises per muscle, difficulty scoring, staples)
-    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[2] }).eq('id', runId);
-    const step3 = await callAgent('exercise-intelligence-agent', {
-      client_id: body.client_id,
-      muscle_mind_map: muscleMindMap,
-    }, 40_000);
-    await recordStep(3, STEP_NAMES[2], { client_id: body.client_id }, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
-    // Exercise intelligence failure is also non-fatal: synthesis falls back to full library.
-    const exerciseMasterList = step3.ok ? ((step3.output.exercise_master_list ?? []) as Array<Record<string, unknown>>) : [];
-    const staplesByPhase = step3.ok ? (step3.output.staples_by_phase as Record<string, unknown> | undefined) : undefined;
+    // Exercise intelligence removed from pipeline: the AbortController timeout cannot reliably
+    // cancel an outgoing edge-function fetch in Deno (Promise.race only races headers, not body).
+    // Synthesis falls back to its own deterministic exercise selection without it.
+    const exerciseMasterList: Array<Record<string, unknown>> = [];
+    const staplesByPhase: Record<string, unknown> | undefined = undefined;
 
-    // STEP 4: Methodology Plan
-    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[3] }).eq('id', runId);
+    // STEP 3: Methodology Plan
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[2] }).eq('id', runId);
     const step4 = await callAgent('methodology-plan-agent', {
       client_analysis: clientAnalysis,
       phase_weeks: body.phase_weeks,
       days_per_week: body.days_per_week ?? 3,
       run_id: runId,
     });
-    await recordStep(4, STEP_NAMES[3], { phase_weeks: body.phase_weeks }, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
+    await recordStep(3, STEP_NAMES[2], { phase_weeks: body.phase_weeks }, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
     if (!step4.ok) { await fail(`Methodology planning failed: ${step4.error}`); return; }
     const methodologyPlan = step4.output.methodology_plan as Record<string, unknown>;
 
@@ -195,7 +189,7 @@ async function runPipeline(ctx: {
         exercise_master_list: exerciseMasterList,
       });
 
-      const stepOrder = 5 + i;
+      const stepOrder = 4 + i;
       await recordStep(
         stepOrder,
         commandName,
@@ -221,10 +215,10 @@ async function runPipeline(ctx: {
     const missingExercises = Array.from(new Set(allMissing));
 
     // Final validation step
-    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[4] }).eq('id', runId);
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[3] }).eq('id', runId);
     const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
     const validationStep = await callAgent('programme-validation-agent', { programme, emphasis });
-    await recordStep(5 + methodologyPhases.length, STEP_NAMES[4], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
+    await recordStep(4 + methodologyPhases.length, STEP_NAMES[3], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
     if (!validationStep.ok) { await fail(`Validation failed: ${validationStep.error}`); return; }
     const validation = validationStep.output as { passed: boolean; hard_failures: string[]; findings: string[] };
 
