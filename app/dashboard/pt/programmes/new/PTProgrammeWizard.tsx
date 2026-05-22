@@ -332,6 +332,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       if (row.status === 'failed') {
         setGenStatus(row.failure_reason ?? 'Pipeline failed.');
         setGenerating(false);
+        setStep(1);
         return;
       }
       if (row.status === 'needs_review' || row.status === 'approved' || row.status === 'saved') {
@@ -357,8 +358,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         return;
       }
     }
-    setGenStatus('Pipeline still running after 7 minutes — open the review page to check progress.');
+    setGenStatus('Pipeline timed out. The server may still be running — try again in a few minutes, or refresh and restart.');
     setGenerating(false);
+    setStep(1);
   };
 
   const startDictation = () => {
@@ -702,7 +704,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                   {generating ? genStatus || 'Generating…' : 'Generate'}
                 </button>
                 {brainSaved && <p className="text-xs text-emerald-700">✓ Client brain updated</p>}
-                {genStatus && !generating && <p className="text-xs text-black/40">{genStatus}</p>}
+                {genStatus && !generating && (
+                  <p className={`text-xs ${genStatus.toLowerCase().includes('fail') || genStatus.toLowerCase().includes('timed out') || genStatus.toLowerCase().includes('error') ? 'text-red-600' : 'text-black/40'}`}>{genStatus}</p>
+                )}
               </div>
             )}
           </div>

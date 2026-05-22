@@ -152,7 +152,7 @@ async function runPipeline(ctx: {
     const step3 = await callAgent('exercise-intelligence-agent', {
       client_id: body.client_id,
       muscle_mind_map: muscleMindMap,
-    }, 95_000);
+    }, 40_000);
     await recordStep(3, STEP_NAMES[2], { client_id: body.client_id }, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
     // Exercise intelligence failure is also non-fatal: synthesis falls back to full library.
     const exerciseMasterList = step3.ok ? ((step3.output.exercise_master_list ?? []) as Array<Record<string, unknown>>) : [];

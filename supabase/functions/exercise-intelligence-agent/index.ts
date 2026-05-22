@@ -119,30 +119,28 @@ Deno.serve(async (req) => {
     ].join('\n\n---\n\n');
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
-    const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4500,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-    });
 
-    const text = (msg.content[0] as { text: string }).text;
-    let parsed = parseJson(text);
-
-    if (!parsed) {
-      const retry = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4500,
-        system: SYSTEM_PROMPT,
-        messages: [
-          { role: 'user', content: userMessage },
-          { role: 'assistant', content: text },
-          { role: 'user', content: 'Your response was not valid JSON. Output ONLY the JSON object -- start with { and end with }. No prose, no code fences.' },
-        ],
-      });
-      parsed = parseJson((retry.content[0] as { text: string }).text);
+    // Race the Claude call against a 60s internal timeout so we never hang the orchestrator.
+    const CLAUDE_TIMEOUT_MS = 60_000;
+    const abortCtrl = new AbortController();
+    const claudeTimeout = setTimeout(() => abortCtrl.abort(), CLAUDE_TIMEOUT_MS);
+    let text: string;
+    try {
+      const msg = await anthropic.messages.create(
+        {
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2500,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userMessage }],
+        },
+        { signal: abortCtrl.signal },
+      );
+      text = (msg.content[0] as { text: string }).text;
+    } finally {
+      clearTimeout(claudeTimeout);
     }
 
+    const parsed = parseJson(text);
     if (!parsed) return json({ error: 'Exercise intelligence did not return valid JSON' }, 502);
 
     return json({ ok: true, ...parsed });
