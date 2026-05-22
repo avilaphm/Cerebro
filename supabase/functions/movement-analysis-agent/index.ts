@@ -101,11 +101,11 @@ Deno.serve(async (req) => {
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     const userMessage = parts.join('\n\n---\n\n');
     const claudeCtrl = new AbortController();
-    const claudeTimer = setTimeout(() => claudeCtrl.abort(), 60_000);
+    const claudeTimer = setTimeout(() => claudeCtrl.abort(), 85_000);
     let text: string;
     try {
       const msg = await anthropic.messages.create(
-        { model: 'claude-sonnet-4-6', max_tokens: 2500, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
+        { model: 'claude-sonnet-4-6', max_tokens: 3000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
         { signal: claudeCtrl.signal },
       );
       text = (msg.content[0] as { text: string }).text;
@@ -127,11 +127,47 @@ Deno.serve(async (req) => {
   }
 });
 
+function tryParse(s: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null;
+  } catch { return null; }
+}
+
+// Closes a JSON object cut off mid-stream (model hit max_tokens). Tracks string/escape
+// state and the open-bracket stack, trims any dangling fragment, appends missing closers.
+function closeTruncatedJson(s: string): string {
+  let inStr = false, esc = false;
+  const stack: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+  let out = s;
+  if (inStr) out += '"';
+  out = out.replace(/\s+$/, '').replace(/,\s*$/, '');
+  out = out.replace(/,?\s*"[^"]*"\s*:\s*$/, '').replace(/,\s*$/, '');
+  for (let i = stack.length - 1; i >= 0; i--) out += stack[i];
+  return out;
+}
+
 function parseJson(text: string): Record<string, unknown> | null {
-  try { return JSON.parse(text); } catch { /* noop */ }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (fenced) { try { return JSON.parse(fenced[1]); } catch { /* noop */ } }
-  const a = text.indexOf('{'), b = text.lastIndexOf('}');
-  if (a !== -1 && b > a) { try { return JSON.parse(text.slice(a, b + 1)); } catch { /* noop */ } }
+  const t = text.trim();
+  let v = tryParse(t);
+  if (v) return v;
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenced) { v = tryParse(fenced[1].trim()); if (v) return v; }
+  const a = t.indexOf('{');
+  const b = t.lastIndexOf('}');
+  if (a !== -1 && b > a) { v = tryParse(t.slice(a, b + 1)); if (v) return v; }
+  if (a !== -1) { v = tryParse(closeTruncatedJson(t.slice(a))); if (v) return v; }
   return null;
 }

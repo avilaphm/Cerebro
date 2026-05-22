@@ -56,7 +56,9 @@ RULES:
 - needs_mobility_block = true if the client has reported mobility restrictions, stiffness, desk-bound lifestyle, recent injury recovery, or asked for flexibility work.
 - compound_readiness = 'low' if injuries or movement quality concerns dominate; 'high' if client has clean prior lifting experience; 'medium' otherwise.
 - key_findings: 3-6 short sentences that the synthesis AI MUST honor (e.g., "Right shoulder instability — avoid overhead pressing in first 4 weeks").
-- cited_sources: quote actual phrases from the source docs, do not invent.`;
+- cited_sources: quote actual phrases from the source docs, do not invent. Keep each excerpt under 15 words and include at most 5 sources.
+
+KEEP THE OUTPUT COMPACT. Every string field should be a short phrase, not a paragraph. Arrays hold at most 6 items. Do not pretty-print with deep nesting. The entire JSON must be complete and self-closing — never stop mid-object.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -94,7 +96,7 @@ Deno.serve(async (req) => {
     let text: string;
     try {
       const msg = await anthropic.messages.create(
-        { model: 'claude-sonnet-4-6', max_tokens: 2000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
+        { model: 'claude-sonnet-4-6', max_tokens: 4096, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
         { signal: claudeCtrl.signal },
       );
       text = (msg.content[0] as { text: string }).text;
@@ -135,19 +137,48 @@ function buildUserMessage(ctx: {
   return parts.join('\n\n---\n\n');
 }
 
-function parseJson(text: string): Record<string, unknown> | null {
+function tryParse(s: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(text);
-  } catch {
-    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (fenced) {
-      try { return JSON.parse(fenced[1]); } catch { /* noop */ }
+    const v = JSON.parse(s);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null;
+  } catch { return null; }
+}
+
+// Closes a JSON object that was cut off mid-stream (e.g. the model hit max_tokens).
+// Walks the string tracking string/escape state and the open-bracket stack, then
+// trims any dangling fragment and appends the missing closers so JSON.parse can succeed.
+function closeTruncatedJson(s: string): string {
+  let inStr = false, esc = false;
+  const stack: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
     }
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      try { return JSON.parse(text.slice(firstBrace, lastBrace + 1)); } catch { /* noop */ }
-    }
-    return null;
+    if (ch === '"') inStr = true;
+    else if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') stack.pop();
   }
+  let out = s;
+  if (inStr) out += '"';
+  out = out.replace(/\s+$/, '').replace(/,\s*$/, '');
+  out = out.replace(/,?\s*"[^"]*"\s*:\s*$/, '').replace(/,\s*$/, '');
+  for (let i = stack.length - 1; i >= 0; i--) out += stack[i];
+  return out;
+}
+
+function parseJson(text: string): Record<string, unknown> | null {
+  const t = text.trim();
+  let v = tryParse(t);
+  if (v) return v;
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenced) { v = tryParse(fenced[1].trim()); if (v) return v; }
+  const a = t.indexOf('{');
+  const b = t.lastIndexOf('}');
+  if (a !== -1 && b > a) { v = tryParse(t.slice(a, b + 1)); if (v) return v; }
+  if (a !== -1) { v = tryParse(closeTruncatedJson(t.slice(a))); if (v) return v; }
+  return null;
 }

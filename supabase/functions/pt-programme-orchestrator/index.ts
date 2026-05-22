@@ -82,7 +82,12 @@ async function runPipeline(ctx: {
             reject(new Error(`${path} timed out after ${Math.round(timeoutMs / 1000)}s`));
           }, timeoutMs);
         });
-        const request = fetch(`${supabaseUrl}/functions/v1/${path}`, {
+        // Read the full response (headers AND body) inside the race. The previous version
+        // raced only fetch() (header arrival); `await res.json()` ran outside the race, so a
+        // stalled body stream hung the orchestrator forever and the run zombied in 'running'.
+        // Reading the body inside the raced task means the timeout always wins after timeoutMs.
+        const requestWithBody = (async (): Promise<{ ok: boolean; output: Record<string, unknown>; error?: string }> => {
+          const res = await fetch(`${supabaseUrl}/functions/v1/${path}`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${serviceKey}`,
@@ -92,10 +97,14 @@ async function runPipeline(ctx: {
             body: JSON.stringify(input),
             signal: controller.signal,
           });
-        const res = await Promise.race([request, timeout]);
-        const data = await res.json();
-        if (!res.ok || data.error) return { ok: false, output: data, error: data.error ?? `HTTP ${res.status}` };
-        return { ok: true, output: data };
+          const raw = await res.text();
+          let data: Record<string, unknown>;
+          try { data = raw ? JSON.parse(raw) as Record<string, unknown> : {}; }
+          catch { return { ok: false, output: {}, error: `${path} returned non-JSON (HTTP ${res.status}): ${raw.slice(0, 200)}` }; }
+          if (!res.ok || data.error) return { ok: false, output: data, error: (data.error as string) ?? `HTTP ${res.status}` };
+          return { ok: true, output: data };
+        })();
+        return await Promise.race([requestWithBody, timeout]);
       } catch (e) {
         const errorMessage = e instanceof DOMException && e.name === 'AbortError'
           ? `${path} timed out after ${Math.round(timeoutMs / 1000)}s`

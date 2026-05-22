@@ -1,12 +1,34 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - pipeline stuck debugging rounds 2+3; 1RM phases now inline; pickBig5 hardcoded IDs; synthesis 60s timeout added
+2026-05-22 by Claude - FIXED "Analysis did not return valid JSON" + the synthesis hang. Full pipeline now completes end-to-end for Mira (data-rich client). Verified run b5adc76a -> needs_review, validation passed, 127 exercises all with exercise_id + video_url.
 
 ## Last code fix commit
-fbf458f - Build 1RM phases inline in orchestrator; fix pickBig5 to use hardcoded IDs
+(this session) - Restore client-analysis token budget, harden all agent JSON parsing, guard orchestrator body-read, stop movement-analysis aborting
 
 ## What just happened (read first)
+
+### Programme generation: the JSON-failure + synthesis-hang fix (2026-05-22, LATEST - VERIFIED WORKING)
+
+Pedro reported the wizard failing at Step 1 with "Client analysis failed: Analysis did not return valid JSON" (run c5fc11ab). Root-caused and fixed end-to-end. A full generation for Mira (client d43808bb, the failing data-rich client) now completes: run b5adc76a reached needs_review in ~120s, validation passed=true, 5 phases, 127 exercises every one with exercise_id + video_url.
+
+THREE bugs, all fixed:
+
+1. **CLIENT_ANALYSIS returned invalid JSON (the reported failure).** Commit 94353b8 (the earlier "add 60s timeout" session) had reverted client-analysis-agent from max_tokens 4096 -> 2000 AND removed the JSON parse retry, to cut timeout exposure. For a data-rich client like Mira the analysis JSON exceeds 2000 tokens, truncates mid-object, parse returns null -> 502. Fix: max_tokens back to 4096, system prompt now demands COMPACT output (short excerpts, <=6 array items, complete self-closing JSON), and parseJson is now repair-capable (closeTruncatedJson walks string/bracket state and closes a truncated object so a near-miss still parses). Same robust parser dropped into movement-analysis-agent and methodology-plan-agent (they had the same fragile parser + shrunk token budgets: 2500 and 3000).
+
+2. **Orchestrator hung forever at PROGRAMME_SYNTHESIS_HYPERTROPHY (zombie run in 'running').** This is the long-standing "Promise.race only races headers" bug finally fixed properly. In callAgent, `const data = await res.json()` ran OUTSIDE the timeout race, so a stalled body-stream hung the orchestrator with no timeout, the EdgeRuntime background task got killed mid-run, and the run stayed 'running' forever. Fix: the fetch AND the body read (res.text() + JSON.parse) now run inside a single async task that is raced against the timeout, so callAgent ALWAYS returns within timeoutMs. Worst case is a clean timeout failure, never a hang. The synthesis agent itself was never the problem - called directly it returns the hypertrophy phase in 1.6s.
+
+3. **MOVEMENT_ANALYSIS aborted at 60s (regression I introduced, then fixed).** Bumping movement to 4096 tokens pushed its Claude call past the 60s internal abort -> "Request was aborted" -> wasted ~60s of pipeline wall-clock and likely corrupted the keep-alive connection that the next (hypertrophy) call reused. Fix: movement tokens set to 3000 and internal Claude abort raised to 85s (under the orchestrator's 95s budget for that step). Movement now succeeds (~60s) and the mind map is produced.
+
+Deployed versions: client-analysis-agent v5, movement-analysis-agent (CLI redeploy), methodology-plan-agent (CLI redeploy), pt-programme-orchestrator (CLI redeploy). All verify_jwt false (unchanged).
+
+Why this is durable for "every client every time": every agent that calls Claude now (a) has a token budget large enough for its schema, (b) keeps output compact, (c) recovers truncated JSON instead of 502-ing, and (d) is wrapped by an orchestrator that can never hang on a body read. The synthesis steps for known Cerebro phases (Foundation/Hypertrophy/Strength) are fully deterministic - no Claude call - so they cannot truncate or hang.
+
+IMPORTANT for whoever picks this up: the WEBSITE pipeline = these Supabase edge functions, NOT the ~/.claude/skills/pt-* skill chain. The skills are the local Claude Code path Pedro can run from the terminal; they do not run when generating from the dashboard. Fixes for the dashboard belong in the edge functions and must be redeployed.
+
+Cleared stuck/failed test runs: c5fc11ab (the original report), b8af67ba (debugging run, hung at hypertrophy before the orchestrator fix).
+
+### EARLIER THIS DAY (superseded by the above)
 
 ### Programme generation pipeline - 3 rounds of stuck debugging (2026-05-22 afternoon, LATEST)
 
