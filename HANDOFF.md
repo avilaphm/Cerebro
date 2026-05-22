@@ -1,12 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - Added text-to-workout builder (separate mechanism, verified end-to-end) + drag-drop phase reordering. Earlier same day: draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
+2026-05-22 by Claude - Added multi-programme toggle on the client profile (one active at a time). Earlier same day: text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
-1034d91 - Drag-drop phase reordering (text-to-workout commit follows)
+00934e4 - Text-to-workout builder (multi-programme toggle commit follows)
 
 ## What just happened (read first)
+
+### Multi-programme toggle on the client profile (2026-05-22, LATEST)
+
+Pedro wanted: a client (e.g. Thaisa, 7e0023d9) can have multiple programmes assigned, shown stacked on their profile, each with an animated on/off switch on the right. Only ONE is active at a time (the one the client sees); toggling one on switches the others off; toggling the active one off leaves none active.
+
+Data model: `pt_program_assignments.status` is plain `text`. Active = status `'active'`; the client portal (ClientPortal.tsx) loads assignments with `.eq('status','active')` and uses `assignments[0]`. So "one active" = exactly one row at `'active'`; everything else is `'paused'`.
+
+Changes in `PTClientDetail.tsx` (the only file touched):
+- Added `assignmentList` local state seeded from the `assignments` prop, re-synced via `useEffect` on prop change (so optimistic toggles animate instantly and a router.refresh() re-syncs truth). `activeAssignment` now derives from `assignmentList`.
+- `setActiveProgramme(id)`: optimistic update, then DB writes. Turning one ON: set all other assignments for the client to `'paused'`, set the target `'active'`. Turning the active one OFF: set just it to `'paused'`. Then router.refresh(); on error, re-sync from props.
+- Programme section heading is now "Programmes"; renders every assignment stacked with name, phases/weeks, an Active/Off pill, an Edit link, and an animated pill toggle (h-6 w-11, knob translate-x with 300ms transition, green when active). When there are zero assignments, the original "assign from template" empty state is kept; when there are assignments, a collapsed `<details>` lets Pedro assign another from a template.
+
+Note: existing data can have multiple `'active'` rows (Thaisa has 2 - both created via flows that insert `'active'` without pausing others). The toggle resolves this the first time Pedro uses it (activating one pauses the rest). The wizard/template-assign create paths were NOT changed to auto-pause others - the toggle is the authoritative control. If you want the invariant enforced at creation too, pause other client assignments in PTProgrammeWizard.save() and assignProgramme().
+
+Verified: tsc clean, production build passes. The toggle's DB writes use the browser client under the same RLS the page already uses for assignments. In-browser click-through (animate + persist + client portal reflects the switch) needs Pedro's logged-in session.
+
+### Text-to-workout builder + drag-drop phase reordering (2026-05-22)
 
 ### Text-to-workout builder + drag-drop phase reordering (2026-05-22, LATEST)
 

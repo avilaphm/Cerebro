@@ -377,6 +377,9 @@ export default function PTClientDetail({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [assignmentList, setAssignmentList] = useState(assignments);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  useEffect(() => { setAssignmentList(assignments); }, [assignments]);
   const [inviting, setInviting] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [passwordPanelOpen, setPasswordPanelOpen] = useState(false);
@@ -665,7 +668,34 @@ export default function PTClientDetail({
     }
   };
 
-  const activeAssignment = assignments.find((a) => a.status === 'active');
+  const activeAssignment = assignmentList.find((a) => a.status === 'active');
+
+  // One programme is active per client. Toggling one on activates it and pauses the rest;
+  // toggling the active one off leaves the client with no active programme.
+  const setActiveProgramme = async (assignmentId: string) => {
+    if (togglingId) return;
+    const target = assignmentList.find((a) => a.id === assignmentId);
+    if (!target) return;
+    const turningOff = target.status === 'active';
+    setTogglingId(assignmentId);
+    setAssignmentList((cur) => cur.map((a) => (
+      turningOff
+        ? (a.id === assignmentId ? { ...a, status: 'paused' } : a)
+        : { ...a, status: a.id === assignmentId ? 'active' : 'paused' }
+    )));
+    let failed = false;
+    if (turningOff) {
+      const { error } = await supabase.from('pt_program_assignments').update({ status: 'paused' }).eq('id', assignmentId);
+      failed = Boolean(error);
+    } else {
+      await supabase.from('pt_program_assignments').update({ status: 'paused' }).eq('client_id', client.id).neq('id', assignmentId);
+      const { error } = await supabase.from('pt_program_assignments').update({ status: 'active' }).eq('id', assignmentId);
+      failed = Boolean(error);
+    }
+    setTogglingId(null);
+    router.refresh();
+    if (failed) setAssignmentList(assignments);
+  };
   const lastLogin = events.find((e) => e.event_type === 'client_login');
   const workoutActivity = events.find((e) => e.event_type === 'workout_logged');
   const accountIsLive = client.status === 'active' || Boolean(client.password_created_at || lastLogin || workoutActivity);
@@ -1930,30 +1960,72 @@ export default function PTClientDetail({
       </div>
 
       <div className="border-t border-black/8 pt-6 mb-8">
-        <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programme</h2>
-        {activeAssignment ? (
-          <div className="border border-black/10 px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium">{activeAssignment.name}</p>
-                <p className="text-xs text-black/40 mt-0.5">
-                  {activeAssignment.phase_count} phase{activeAssignment.phase_count !== 1 ? 's' : ''} · {activeAssignment.duration_weeks} weeks
-                </p>
-                <span className="inline-block mt-2 text-xs border border-green-300 bg-green-50 text-green-700 px-2 py-0.5 rounded-full">
-                  Active
-                </span>
-              </div>
-              <Link
-                href={`/dashboard/pt/programmes/${activeAssignment.id}/edit`}
-                className="shrink-0 text-xs border border-black/20 px-3 py-1.5 hover:bg-black hover:text-white transition-colors"
-              >
-                Edit programme
-              </Link>
-            </div>
+        <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programmes</h2>
+        {assignmentList.length > 0 ? (
+          <div className="space-y-3">
+            <p className="text-xs text-black/40">
+              The client only ever sees one programme. Toggle the one to show - turning a programme on switches the others off.
+            </p>
+            {assignmentList.map((a) => {
+              const isActive = a.status === 'active';
+              return (
+                <div
+                  key={a.id}
+                  className={`flex items-center justify-between gap-4 border px-5 py-4 transition-colors ${isActive ? 'border-green-300 bg-green-50/40' : 'border-black/10'}`}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{a.name}</p>
+                    <p className="text-xs text-black/40 mt-0.5">
+                      {a.phase_count} phase{a.phase_count !== 1 ? 's' : ''} · {a.duration_weeks} weeks
+                    </p>
+                    <span className={`inline-block mt-2 text-xs border px-2 py-0.5 rounded-full transition-colors ${isActive ? 'border-green-300 bg-green-50 text-green-700' : 'border-black/15 text-black/40'}`}>
+                      {isActive ? 'Active - client sees this' : 'Off'}
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <Link
+                      href={`/dashboard/pt/programmes/${a.id}/edit`}
+                      className="text-xs border border-black/20 px-3 py-1.5 hover:bg-black hover:text-white transition-colors"
+                    >
+                      Edit
+                    </Link>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isActive}
+                      aria-label={`${isActive ? 'Switch off' : 'Switch on'} ${a.name}`}
+                      disabled={togglingId !== null}
+                      onClick={() => void setActiveProgramme(a.id)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-300 disabled:opacity-50 ${isActive ? 'bg-green-500' : 'bg-black/20'}`}
+                    >
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-300 ${isActive ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {templates.length > 0 && (
+              <details className="border border-black/8 px-4 py-3">
+                <summary className="cursor-pointer text-xs text-black/45 hover:text-black">+ Assign another programme from a template</summary>
+                <div className="mt-3 space-y-2">
+                  {templates.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => assignProgramme(t.id)}
+                      disabled={assigningId === t.id}
+                      className="w-full text-left border border-black/10 px-4 py-3 hover:border-black/30 transition-colors disabled:opacity-40"
+                    >
+                      <p className="text-sm font-medium">{t.name}</p>
+                      <p className="text-xs text-black/40">{t.phase_count} phases · {t.duration_weeks} weeks</p>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
         ) : (
           <div className="border border-black/8 px-6 py-5">
-            <p className="text-sm text-black/40 mb-3">No active programme.</p>
+            <p className="text-sm text-black/40 mb-3">No programmes yet.</p>
             {templates.length > 0 ? (
               <div className="space-y-2">
                 {templates.map((t) => (
