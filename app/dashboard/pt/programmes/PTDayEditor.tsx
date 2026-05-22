@@ -445,7 +445,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
   };
 
   return (
-    <div>
+    <div className="flex max-h-[calc(100dvh-15rem)] min-h-[28rem] flex-col overflow-hidden">
       {/* Block selector */}
       {blocks.length > 0 && (
         <div className="mb-4 border border-black/10 bg-[#f7f4ef] p-3">
@@ -520,42 +520,44 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
       </div>
 
       {/* Exercise list — grouped by sections */}
-      {exercises.length === 0 ? (
-        <p className="text-xs text-black/30 py-4 text-center border border-black/8 border-dashed">
-          No exercises yet. Click "+ Add exercise" to start.
-        </p>
-      ) : (
-        <div className="space-y-4">
-          {groups.map((group, gi) => (
-            <div key={gi}>
-              {group.name ? (
-                <>
-                  {/* Section label row — above the card, not inside it */}
-                  <div className="flex items-center justify-between mb-1.5 px-1">
-                    <span className={`text-[0.6rem] uppercase tracking-[0.2em] font-semibold ${SECTION_LABEL[group.name] ?? DEFAULT_LABEL}`}>
-                      {group.name}
-                    </span>
-                    <button type="button" onClick={() => removeSection(group.firstIdx)}
-                      title="Remove section (keeps exercises)"
-                      className="text-[0.6rem] text-black/25 hover:text-red-400 transition-colors px-1">
-                      Remove section
-                    </button>
-                  </div>
-                  {/* Section card */}
-                  <div className={`p-3 space-y-1 ${SECTION_CARD[group.name] ?? DEFAULT_CARD}`}>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
+        {exercises.length === 0 ? (
+          <p className="text-xs text-black/30 py-4 text-center border border-black/8 border-dashed">
+            No exercises yet. Click "+ Add exercise" to start.
+          </p>
+        ) : (
+          <div className="space-y-4 pb-2">
+            {groups.map((group, gi) => (
+              <div key={gi}>
+                {group.name ? (
+                  <>
+                    {/* Section label row — above the card, not inside it */}
+                    <div className="flex items-center justify-between mb-1.5 px-1">
+                      <span className={`text-[0.6rem] uppercase tracking-[0.2em] font-semibold ${SECTION_LABEL[group.name] ?? DEFAULT_LABEL}`}>
+                        {group.name}
+                      </span>
+                      <button type="button" onClick={() => removeSection(group.firstIdx)}
+                        title="Remove section (keeps exercises)"
+                        className="text-[0.6rem] text-black/25 hover:text-red-400 transition-colors px-1">
+                        Remove section
+                      </button>
+                    </div>
+                    {/* Section card */}
+                    <div className={`p-3 space-y-1 ${SECTION_CARD[group.name] ?? DEFAULT_CARD}`}>
+                      {group.items.map(({ ex, idx }) => renderExercise(ex, idx))}
+                    </div>
+                  </>
+                ) : (
+                  /* Unsectioned exercises — plain list */
+                  <div className="space-y-1">
                     {group.items.map(({ ex, idx }) => renderExercise(ex, idx))}
                   </div>
-                </>
-              ) : (
-                /* Unsectioned exercises — plain list */
-                <div className="space-y-1">
-                  {group.items.map(({ ex, idx }) => renderExercise(ex, idx))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

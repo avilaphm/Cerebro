@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - Added multi-programme toggle on the client profile (one active at a time). Earlier same day: text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
+2026-05-22 by Codex - Made programme day exercise feed internally scrollable so edit controls stay on screen. Earlier same day: multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
 00934e4 - Text-to-workout builder (multi-programme toggle commit follows)
 
 ## What just happened (read first)
+
+### Programme day editor internal exercise-feed scroll (2026-05-22, LATEST)
+
+Pedro asked for the exercise edit card/controls to stay visible while scrolling exercises, or alternatively to keep the screen static and only scroll the exercise feed.
+
+Change:
+- `PTDayEditor.tsx` now wraps the editor in a fixed-height flex column (`max-h-[calc(100dvh-15rem)]`, `min-h-[28rem]`, `overflow-hidden`).
+- The week-block selector and exercise action header remain outside the scroll region.
+- Only the grouped exercise list scrolls (`min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2`).
+- Because `PTDayEditor` is shared, this applies to `/dashboard/pt/programmes/[id]/edit`, the programme wizard, and template editor.
+
+Verification:
+- `npm run build` passes.
+- Browser verification was attempted against the existing dev server on `http://localhost:3001`, but Playwright dropped the page to `about:blank`, so the final check is build + code inspection. Pedro should visually confirm in his logged-in browser.
 
 ### Multi-programme toggle on the client profile (2026-05-22, LATEST)
 
