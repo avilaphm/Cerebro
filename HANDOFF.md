@@ -4,7 +4,7 @@
 2026-05-22 by Codex - Nutrition onboarding + Helms Nutrition Pyramid finalizer + weekly client brain report bot. Earlier same day: Trello-style board view; Exercise Library pinned detail panel; multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
-31772f6 - Exercise Library pin detail panel (board-view commit follows)
+bf6c4ab - Add nutrition onboarding workflow
 
 ## What just happened (read first)
 
