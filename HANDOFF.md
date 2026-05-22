@@ -1,14 +1,55 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - remove exercise intelligence from pipeline + real-time step progress + pt-run-patcher skill
+2026-05-22 by Claude - pipeline stuck debugging rounds 2+3; 1RM phases now inline; pickBig5 hardcoded IDs; synthesis 60s timeout added
 
 ## Last code fix commit
-90089c7 - fix: remove exercise intelligence from generation pipeline and add real-time step progress
+fbf458f - Build 1RM phases inline in orchestrator; fix pickBig5 to use hardcoded IDs
 
 ## What just happened (read first)
 
-### Programme generation pipeline fix - Round 2 (2026-05-22)
+### Programme generation pipeline - 3 rounds of stuck debugging (2026-05-22 afternoon, LATEST)
+
+**THE CORE BUG (all 3 rounds share this root cause):**
+`Promise.race([fetch, timeout])` in the orchestrator ONLY races HTTP response headers. Once a 200 OK header arrives from an agent, `res.json()` blocks indefinitely on body streaming. The orchestrator-level timeout never fires. Fix: every agent must internally abort its Claude SDK call with AbortController so it returns a complete HTTP response in bounded time.
+
+**Round 1 (previous session, commit 90089c7):**
+Stuck at: EXERCISE_INTELLIGENCE.
+Fix: removed step entirely. `buildDeterministicPhase()` handles all phases without AI.
+
+**Round 2 (this session, commit 94353b8):**
+Stuck at: METHODOLOGY_PLAN.
+Root cause: 5 sequential RAG calls + no Claude timeout in methodology-plan-agent.
+Fix: RAG parallelised (Promise.allSettled + 15s each); 60s AbortController on Claude in methodology-plan-agent, client-analysis-agent, movement-analysis-agent.
+
+**Round 3 (this session, commit fbf458f - LATEST):**
+Stuck at: PROGRAMME_SYNTHESIS_1RM_TEST.
+Root cause 1: synthesis agent had NO AbortController on Claude fallback. Zero timeout.
+Root cause 2: pickBig5() used regex name matching. DB names are "Back Squat", "Pull Up" not "BB Squat" etc. "/pull[- ]?up/i" matched "Archer Pull-Up" first (alphabetically). "/shoulder press/i" could match "DB Shoulder Press" before "Overhead Press". Wrong exercises = fallthrough to Claude unnecessarily.
+Pedro's direction: "1RM phases are always the same - Big 5, 5x1. Don't spend tokens on them."
+
+Fixes deployed:
+- `pt-programme-orchestrator` (v11): detects 1rm_test/1rm_retest inline, builds Big 5 workout from hardcoded IDs, records step succeeded, skips synthesis agent for both 1RM phases entirely.
+- `programme-synthesis-agent` (v12): 60s AbortController on Claude fallback; pickBig5() now uses hardcoded DB IDs.
+
+Big 5 IDs (stable, hardcoded in both files):
+- Back Squat: 3b551e61-9b4c-412d-82f5-a5a34c44c770
+- Conventional Deadlift: 743c5231-e1e4-4d45-aee6-b7d0d3c17723
+- Barbell Bench Press: 7baa12b2-9949-4e0c-8f72-1f7a801050fa
+- Overhead Press: a85f183d-2b6b-47a1-b5ff-5881bb15cb3f
+- Pull Up: 4e4392c7-b6f0-4bd2-94fa-fae97e360e22
+
+Stuck run cleared: e655e39a for Mira Juka - was stuck at PROGRAMME_SYNTHESIS_1RM_TEST, patched to failed.
+
+**Current pipeline (v11 orchestrator, all synthesis deterministic - no Claude calls in synthesis):**
+CLIENT_ANALYSIS (60s max) -> MOVEMENT_ANALYSIS (95s max, non-fatal) -> METHODOLOGY_PLAN (75s max) -> FOUNDATION (instant) -> 1RM TEST (instant, inline) -> HYPERTROPHY (instant) -> STRENGTH (instant) -> 1RM RETEST (instant, inline) -> VALIDATION (instant)
+Expected: 3-4 min total.
+
+Next step: Pedro retries generation. If stuck again, run /pt-run-patcher then check pt_program_generation_steps to see which agent step hung.
+
+---
+
+### Programme generation pipeline fix - Round 1 (2026-05-22, previous session)
 
 Root cause (deeper): `Promise.race([request, timeout])` in the orchestrator only races HTTP response *headers* arrival. Once a 200 OK header is received, `res.json()` blocks indefinitely waiting for the full response body. The body-streaming is outside `Promise.race`, so the 40s (later 95s) timeout had no effect on it. The `exercise-intelligence-agent` could stream its JSON body for 60-120s with no way to cancel it from the orchestrator.
 
