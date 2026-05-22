@@ -4,13 +4,18 @@
 2026-05-22 by Codex - Nutrition onboarding + Helms Nutrition Pyramid finalizer + weekly client brain report bot. Earlier same day: Trello-style board view; Exercise Library pinned detail panel; multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
-bf6c4ab - Add nutrition onboarding workflow
+b376719 - Update nutrition workflow handoff
 
 ## What just happened (read first)
 
 ### Nutrition onboarding + Pyramid finalizer (2026-05-22, LATEST)
 
 Pedro wanted the nutrition side to start when the client first logs in because client weight/height/activity were missing from uploaded docs. Built the first-login nutrition onboarding gate and the finalization workflow around `Cerebro Knowledge/The Muscle and Strength Pyramid - Nutrition v2.0 .pdf.pdf`.
+
+Why this was done:
+- Uploaded assessments/documents often include goals, injuries, training context, and habits, but not reliable bodyweight/height/activity. Nutrition targets cannot be responsibly calculated without those inputs.
+- Pedro chose auto-publish for nutrition, so the system needed a stronger evidence gate: first deterministic draft, then Helms Nutrition Pyramid finalizer, then publish.
+- Nutrition decisions must become part of the client brain, not a separate one-off widget state. The client card, nutrition dashboard, phase nutrition, and weekly reports now all point back to the same stored profile and targets.
 
 Changes shipped:
 - Added local skills and AGENTS chain: `pt-nutrition-onboarding`, `pt-nutrition-orchestrator`, `pt-nutrition-target-calculator`, `pt-nutrition-pyramid-finalizer`, `pt-nutrition-phase-builder`, and `pt-weekly-client-brain-review`.
@@ -31,6 +36,45 @@ Verification:
 
 Advisor notes:
 - Supabase security/performance advisors still show existing project warnings (pg_net in public, old SECURITY DEFINER grants, old unindexed FKs/duplicate indexes). No new nutrition-table-specific advisor issue was identified in the output.
+
+How it runs now:
+- Client opens `/client`.
+- `ClientPortal.tsx` loads their `pt_clients` row.
+- If height/current weight/activity/onboarding timestamp are missing, the normal app is replaced with the nutrition welcome screen.
+- Client enters height, weight, activity level 1-5, then clicks "Create my nutrition programme".
+- Browser invokes `generate-nutrition-programme`.
+- Function stores profile data, inserts a `pt_client_metrics` weight record, builds deterministic draft targets, retrieves Helms Nutrition Pyramid context through `retrieve-knowledge-context`, asks Claude to finalize the plan, then writes:
+  - `pt_client_nutrition_doc.daily_targets`
+  - `pt_client_nutrition_doc.phase_nutrition_strategy`
+  - `pt_client_nutrition_doc.pyramid_finalizer`
+  - approved `pt_phase_nutrition` rows for every active programme phase
+  - `pt_program_assignments.nutrition_sync`
+  - structured client brain updates via `update-client-brain`
+  - refreshed embeddings via `embed-client-brain`
+- The client nutrition dashboard reads `daily_targets` and approved `pt_phase_nutrition`.
+- Pedro's client card reads the same nutrition doc, phase nutrition rows, body profile fields, and latest `pt_client_brain_reports`.
+- Weekly cron calls `weekly-client-brain-review`, which creates/upserts one report per client/week.
+
+Important implementation details:
+- The Helms PDF is not parsed directly in the nutrition function. The function uses the existing knowledge/RAG layer, and `retrieve-knowledge-context` already prioritizes "Eric Helms Nutrition Pyramid" by title patterns (`muscle and strength pyramid`, `nutrition v2`, `helms nutrition`). This avoids repeatedly loading/parsing a large PDF.
+- `generate-nutrition-programme` is deployed `--no-verify-jwt` but performs its own auth. It allows the logged-in client for their own row, Pedro/admin, or service-role internal calls.
+- `weekly-client-brain-review` is also deployed `--no-verify-jwt` and allows Pedro/admin, service role, or the cron token `cerebro-cron-2026`.
+- The generator was intentionally not smoke-tested against a real client because it auto-publishes real targets and would mutate production client nutrition.
+
+Future TODOs:
+- Run the full first-login nutrition flow in Pedro's logged-in browser with a chosen client and confirm the screen hides after completion.
+- Add a coach-facing "Regenerate nutrition" button on the client card for cases where Pedro updates weight/activity/goals later.
+- Add a "Reset nutrition onboarding" admin action for incorrect client input.
+- Add a manual review/audit panel showing Pyramid principles applied, changes from draft, and Claude finalizer notes.
+- Decide whether the weekly brain report should email Pedro, surface as an open coaching task, or only live on the client card.
+- Consider moving the cron auth token from hardcoded fallback to a Supabase secret before this becomes sensitive.
+- Add test fixtures or a non-production client for `generate-nutrition-programme` so future agents can smoke-test without mutating a real client.
+
+Token-efficiency notes for future agents:
+- Do not reread the whole Nutrition Pyramid PDF unless changing the retrieval/finalizer logic. Use `retrieve-knowledge-context` for targeted excerpts.
+- Do not run broad `rg nutrition` across the whole repo unless needed; start with `ClientPortal.tsx`, `NutritionTab.tsx`, `PTClientDetail.tsx`, `generate-nutrition-programme`, `weekly-client-brain-review`, and `utils/pt/types.ts`.
+- For Supabase verification, prefer focused SQL checks on the exact new columns/tables/jobs and `supabase functions list`. Advisor output is large and mostly contains old unrelated warnings.
+- Do not smoke-test auto-publish flows on real clients unless Pedro names the client. Use build, deployment, schema checks, and non-mutating weekly report tests instead.
 
 ### Trello-style board view for phase workouts (2026-05-22, LATEST)
 
