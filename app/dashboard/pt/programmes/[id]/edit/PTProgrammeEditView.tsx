@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks } from '@/utils/pt/programme';
 import type {
-  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramAssignment,
+  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise, PTProgramAssignment,
 } from '@/utils/pt/types';
 import PTDayEditor from '../../PTDayEditor';
 
@@ -118,6 +118,9 @@ export default function PTProgrammeEditView({
   const [buildOpen, setBuildOpen] = useState(false);
   const [building, setBuilding] = useState(false);
   const [buildStatus, setBuildStatus] = useState('');
+  const [boardView, setBoardView] = useState(false);
+  const [dragEx, setDragEx] = useState<{ dayIndex: number; exId: string } | null>(null);
+  const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const highlightedPhase = Number.parseInt(highlight?.phase ?? '', 10);
   const highlightedDay = Number.parseInt(highlight?.day ?? '', 10);
   const [activePhaseTab, setActivePhaseTab] = useState(Number.isFinite(highlightedPhase) ? highlightedPhase : 0);
@@ -200,6 +203,55 @@ export default function PTProgrammeEditView({
       return p;
     });
     setEditingPhase((cur) => (cur === from ? to : cur));
+  };
+
+  // Board view: move an exercise between days (or reorder within a day) by drag-drop.
+  // section_start only marks the first exercise of a section, so we flatten each day to
+  // {exercise, section}, move, then rebuild section_start markers in canonical order.
+  const SECTION_ORDER = ['Warm Up', 'Workout', 'MetCon', 'Stretches'];
+  const resolveDayExercises = (exs: PTProgrammeExercise[]): Array<{ ex: PTProgrammeExercise; section: string }> => {
+    let current = '';
+    return exs.map((ex) => {
+      if (ex.section_start !== undefined) current = ex.section_start || '';
+      return { ex, section: current };
+    });
+  };
+  const buildDayExercises = (items: Array<{ ex: PTProgrammeExercise; section: string }>): PTProgrammeExercise[] => {
+    const rank = (s: string) => { const i = SECTION_ORDER.indexOf(s); return i >= 0 ? i : (s === '' ? -1 : SECTION_ORDER.length); };
+    const sorted = items
+      .map((it, i) => ({ it, i }))
+      .sort((a, b) => (rank(a.it.section) - rank(b.it.section)) || (a.i - b.i))
+      .map((x) => x.it);
+    let prev: string | null = null;
+    return sorted.map(({ ex, section }) => {
+      const first = section !== prev;
+      prev = section;
+      return { ...ex, section_start: first && section ? section : undefined };
+    });
+  };
+  const moveExerciseToDay = (fromDay: number, exId: string, toDay: number, beforeExId?: string) => {
+    update((p) => {
+      const ph = p.phases[activePhaseTab];
+      if (!ph || !ph.days[fromDay] || !ph.days[toDay]) return p;
+      const fromItems = resolveDayExercises(ph.days[fromDay].exercises);
+      const idx = fromItems.findIndex((it) => it.ex.id === exId);
+      if (idx === -1) return p;
+      const [moved] = fromItems.splice(idx, 1);
+      if (fromDay === toDay) {
+        let at = beforeExId ? fromItems.findIndex((it) => it.ex.id === beforeExId) : fromItems.length;
+        if (at === -1) at = fromItems.length;
+        fromItems.splice(at, 0, moved);
+        ph.days[fromDay].exercises = buildDayExercises(fromItems);
+      } else {
+        const toItems = resolveDayExercises(ph.days[toDay].exercises);
+        let at = beforeExId ? toItems.findIndex((it) => it.ex.id === beforeExId) : toItems.length;
+        if (at === -1) at = toItems.length;
+        toItems.splice(at, 0, moved);
+        ph.days[fromDay].exercises = buildDayExercises(fromItems);
+        ph.days[toDay].exercises = buildDayExercises(toItems);
+      }
+      return p;
+    });
   };
 
   // Build a phase from freeform text via the build-workout-from-text edge function.
@@ -686,13 +738,24 @@ export default function PTProgrammeEditView({
       <div>
         <div className="mb-4 flex items-center justify-between gap-3">
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Workouts</p>
-          <button
-            type="button"
-            onClick={() => setBuildOpen((v) => !v)}
-            className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
-          >
-            {buildOpen ? 'Close' : '+ Build from text'}
-          </button>
+          <div className="flex items-center gap-2">
+            {phase && phase.days.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setBoardView((v) => !v); setActiveDay(null); }}
+                className={`border px-3 py-1.5 text-xs transition-colors ${boardView ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/35'}`}
+              >
+                {boardView ? 'List view' : 'Board view'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setBuildOpen((v) => !v)}
+              className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
+            >
+              {buildOpen ? 'Close' : '+ Build from text'}
+            </button>
+          </div>
         </div>
 
         {buildOpen && (
@@ -741,7 +804,50 @@ export default function PTProgrammeEditView({
         </div>
 
         {phase && (
-          currentDay === null ? (
+          boardView ? (
+            <div className="space-y-3">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">
+                {phase.title} — drag exercises between days
+              </p>
+              <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(0, 1fr))` }}>
+                {phase.days.map((day, di) => (
+                  <div
+                    key={day.id}
+                    onDragOver={(e) => { e.preventDefault(); if (dragOverDay !== di) setDragOverDay(di); }}
+                    onDragLeave={() => setDragOverDay((c) => (c === di ? null : c))}
+                    onDrop={(e) => { e.preventDefault(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di); setDragEx(null); setDragOverDay(null); }}
+                    className={`flex min-h-[8rem] flex-col rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-1 px-1">
+                      <p className="text-xs font-medium leading-tight">{day.title || `Day ${di + 1}`}</p>
+                      <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="shrink-0 text-[0.6rem] text-black/35 hover:text-black">edit</button>
+                    </div>
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      {day.exercises.map((ex) => (
+                        <div key={ex.id}>
+                          {ex.section_start && <p className="px-1 pb-0.5 pt-1 text-[0.55rem] uppercase tracking-wider text-black/30">{ex.section_start}</p>}
+                          <div
+                            draggable
+                            onDragStart={(e) => { setDragEx({ dayIndex: di, exId: ex.id }); e.dataTransfer.effectAllowed = 'move'; }}
+                            onDragEnd={() => { setDragEx(null); setDragOverDay(null); }}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di, ex.id); setDragEx(null); setDragOverDay(null); }}
+                            className={`cursor-grab rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${dragEx?.exId === ex.id ? 'opacity-40' : 'border-black/10 hover:border-black/25'}`}
+                          >
+                            <p className="font-medium leading-tight">{ex.name}</p>
+                            <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {day.exercises.length === 0 && (
+                        <p className="px-1 py-4 text-center text-[0.62rem] text-black/25">Drop here</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : currentDay === null ? (
             <div className="space-y-3">
               <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">
                 {phase.title} — select a day to edit

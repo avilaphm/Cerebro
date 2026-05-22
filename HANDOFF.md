@@ -1,12 +1,27 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - Exercise Library: pinned the detail/edit panel (fixed, always in view) + much stronger selected-card state. Earlier same day (Codex): programme day exercise feed internally scrollable. Also: multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
+2026-05-22 by Claude - Trello-style board view for phase workouts (all days side by side, drag-drop exercises between days). Earlier same day: Exercise Library pinned detail panel; multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
-0140503 - Update handoff for exercise editor scroll (exercise-library detail-panel commit follows)
+31772f6 - Exercise Library pin detail panel (board-view commit follows)
 
 ## What just happened (read first)
+
+### Trello-style board view for phase workouts (2026-05-22, LATEST)
+
+Pedro wanted, on the programme editor Workouts section, a button to see ALL days of a phase side by side (like Trello) and drag-drop exercises between days. 3 days = 3 columns, 6 days = 6 columns, all visible at once.
+
+All in PTProgrammeEditView.tsx:
+- "Board view" / "List view" toggle button in the Workouts header (shows only when the active phase has days).
+- Board renders a CSS grid with `gridTemplateColumns: repeat(n, minmax(0,1fr))` where n = phase.days.length, so every day fits side by side regardless of count. Each column is a day with its exercises as compact draggable cards, grouped by section_start header.
+- Cross-day drag-drop: each exercise card is draggable (native HTML5 DnD, matching the rest of the app); a day column is a drop target (append) and each card is a drop target (insert before). Dropping moves the exercise between days or reorders within a day.
+- section_start only marks the FIRST exercise of a section, so moves go through resolveDayExercises() (flatten to {ex, section} by walking section_start) -> splice -> buildDayExercises() (stable sort by canonical Warm Up/Workout/MetCon/Stretches order, re-stamp section_start on the first of each section). Both source and target days are rebuilt so section markers stay valid.
+- Each column has an "edit" link that drops back to the single-day editor for fine edits.
+
+Changes are local edits via the existing `update()` (structuredClone) helper, so the board mutates the same `programme` state the editor saves on "Save changes". Verified: tsc clean, production build passes. In-browser drag-drop click-through needs Pedro's session.
+
+### Exercise Library: pinned detail panel + clearer selected card (2026-05-22)
 
 ### Exercise Library: pinned detail panel + clearer selected card (2026-05-22, LATEST)
 
