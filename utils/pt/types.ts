@@ -35,6 +35,11 @@ export interface PTClient {
   regular_training_slot: string | null;
   coaching_focus: string | null;
   event_goal: string | null;
+  height_cm?: number | null;
+  current_weight_kg?: number | null;
+  activity_level?: number | null;
+  activity_tag?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'athlete_level' | null;
+  nutrition_onboarding_completed_at?: string | null;
   created_at?: string;
 }
 
@@ -192,6 +197,22 @@ export interface PTProgramAssignment {
   current_week: number;
   current_block_index: number;
   pt_clients?: Pick<PTClient, 'name' | 'email'> | null;
+}
+
+export interface PTPhaseNutrition {
+  id: string;
+  client_id: string;
+  assignment_id: string | null;
+  generation_run_id: string | null;
+  phase_index: number;
+  phase_title: string;
+  phase_type: string;
+  training_context: Record<string, unknown>;
+  recommendations: Record<string, unknown>;
+  finalizer_notes?: Record<string, unknown>;
+  review_status: 'draft' | 'needs_review' | 'approved' | 'archived';
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface PTSetLog {

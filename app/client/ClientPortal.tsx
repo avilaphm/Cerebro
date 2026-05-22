@@ -123,6 +123,12 @@ interface MetricDraft {
   notes: string;
 }
 
+interface NutritionOnboardingDraft {
+  height_cm: string;
+  weight_kg: string;
+  activity_level: string;
+}
+
 type ClientScreen = 'overview' | 'nutrition' | 'workout' | 'booking' | 'settings';
 type BookingCalendarView = '3days' | 'week' | 'month';
 const BOOKING_CALENDAR_START_HOUR = 6;
@@ -219,6 +225,15 @@ function formatWeekRange(weekStart: string) {
 
 function formatMetric(value: number | null, suffix: string) {
   return value === null || value === undefined ? '-' : `${Number(value).toLocaleString('en-AU')} ${suffix}`;
+}
+
+function activityLabel(value: number | null | undefined) {
+  if (value === 1) return '1 - Mostly seated';
+  if (value === 2) return '2 - Lightly active';
+  if (value === 3) return '3 - Moderately active';
+  if (value === 4) return '4 - Very active';
+  if (value === 5) return '5 - Athlete-level';
+  return 'Not set';
 }
 
 function timeToMinutes(value: string) {
@@ -481,6 +496,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     source: 'scale',
     notes: '',
   });
+  const [nutritionDraft, setNutritionDraft] = useState<NutritionOnboardingDraft>({
+    height_cm: '',
+    weight_kg: '',
+    activity_level: '3',
+  });
+  const [nutritionSubmitting, setNutritionSubmitting] = useState(false);
   const [setDrafts, setSetDrafts] = useState<Record<string, SetDraft>>({});
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
@@ -525,6 +546,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     if (clientError) console.error(clientError);
     const currentClient = ((clientRows ?? []) as PTClient[])[0] ?? null;
     setClient(currentClient);
+    if (currentClient) {
+      setNutritionDraft({
+        height_cm: currentClient.height_cm ? String(currentClient.height_cm) : '',
+        weight_kg: currentClient.current_weight_kg ? String(currentClient.current_weight_kg) : '',
+        activity_level: currentClient.activity_level ? String(currentClient.activity_level) : '3',
+      });
+    }
 
     if (!currentClient) {
       setLoading(false);
@@ -699,6 +727,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     if (next >= 0) return next;
     return 0;
   }, [assignment, phaseProgress]);
+  const needsNutritionOnboarding = Boolean(
+    client &&
+    !isPedro &&
+    (!client.nutrition_onboarding_completed_at ||
+      !client.height_cm ||
+      !client.current_weight_kg ||
+      !client.activity_level),
+  );
 
   useEffect(() => {
     if (!client) return;
@@ -1156,6 +1192,47 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setSubmittingMetric(false);
   };
 
+  const submitNutritionOnboarding = async () => {
+    if (!client || nutritionSubmitting) return;
+    const height = Number(nutritionDraft.height_cm);
+    const weight = Number(nutritionDraft.weight_kg);
+    const activity = Number(nutritionDraft.activity_level);
+    if (!Number.isFinite(height) || height < 100 || height > 240) {
+      setStatus('Enter your height in centimetres.');
+      return;
+    }
+    if (!Number.isFinite(weight) || weight < 30 || weight > 250) {
+      setStatus('Enter your weight in kilograms.');
+      return;
+    }
+    if (!Number.isFinite(activity) || activity < 1 || activity > 5) {
+      setStatus('Choose your activity level from 1 to 5.');
+      return;
+    }
+
+    setNutritionSubmitting(true);
+    setStatus('Creating your nutrition programme...');
+    const { error } = await supabase.functions.invoke('generate-nutrition-programme', {
+      body: {
+        client_id: client.id,
+        height_cm: height,
+        weight_kg: weight,
+        activity_level: activity,
+      },
+    });
+
+    if (error) {
+      setStatus(error.message ?? 'Could not create your nutrition programme.');
+      setNutritionSubmitting(false);
+      return;
+    }
+
+    setStatus('Nutrition programme created.');
+    setNutritionSubmitting(false);
+    await loadPortal();
+    setActiveScreen('overview');
+  };
+
   const markPlanItemStatus = async (item: PTWeeklyPlanItem, nextStatus: 'done' | 'skipped') => {
     const completedAt = nextStatus === 'done' ? new Date().toISOString() : null;
     const { error } = await supabase
@@ -1482,6 +1559,84 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </div>
       </div>
     </header>
+  );
+
+  const renderNutritionOnboardingScreen = () => (
+    <div className="mx-auto flex min-h-[calc(100dvh-11rem)] max-w-3xl items-center">
+      <section className="w-full border border-black/10 bg-white p-6 md:p-8">
+        <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Welcome</p>
+        <h2 className="mt-3 font-display text-3xl font-light tracking-[-0.02em] md:text-4xl">
+          {client?.name ? `Good to have you here, ${client.name.split(' ')[0]}.` : 'Good to have you here.'}
+        </h2>
+        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-black/55">
+          If you have any questions or want to talk to Pedro, use the black message box in the top right and say “Hey coach”.
+        </p>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-black/55">
+          To create your nutrition programme, we need your height, weight, and how active you are right now.
+        </p>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Height</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={nutritionDraft.height_cm}
+              onChange={(event) => setNutritionDraft((current) => ({ ...current, height_cm: event.target.value }))}
+              placeholder="cm"
+              className="w-full border border-black/10 bg-[#fbfbf8] px-4 py-3 text-sm outline-none focus:border-black/40"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Weight</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={nutritionDraft.weight_kg}
+              onChange={(event) => setNutritionDraft((current) => ({ ...current, weight_kg: event.target.value }))}
+              placeholder="kg"
+              className="w-full border border-black/10 bg-[#fbfbf8] px-4 py-3 text-sm outline-none focus:border-black/40"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Activity level</p>
+          <div className="mt-3 grid grid-cols-5 gap-2">
+            {[1, 2, 3, 4, 5].map((level) => {
+              const selected = nutritionDraft.activity_level === String(level);
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setNutritionDraft((current) => ({ ...current, activity_level: String(level) }))}
+                  className={`border px-2 py-3 text-center transition-colors ${
+                    selected
+                      ? 'border-black bg-black text-white'
+                      : 'border-black/10 bg-[#fbfbf8] text-black/45 hover:border-black/30 hover:text-black'
+                  }`}
+                >
+                  <span className="block text-lg font-medium">{level}</span>
+                  <span className="mt-1 block text-[0.55rem] uppercase tracking-[0.1em] opacity-70">
+                    {level === 1 ? 'Low' : level === 3 ? 'Moderate' : level === 5 ? 'High' : ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-black/40">{activityLabel(Number(nutritionDraft.activity_level))}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void submitNutritionOnboarding()}
+          disabled={nutritionSubmitting}
+          className="mt-6 w-full border border-black bg-black px-5 py-4 text-sm font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-wait disabled:opacity-40"
+        >
+          {nutritionSubmitting ? 'Creating programme...' : 'Create my nutrition programme'}
+        </button>
+      </section>
+    </div>
   );
 
   const DEFAULT_PROGRAMME_PHASES = [
@@ -3135,6 +3290,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   );
 
   const renderActiveScreen = () => {
+    if (needsNutritionOnboarding) return renderNutritionOnboardingScreen();
     if (selectedWorkout?.started) return renderWorkoutLogger();
     if (selectedWorkout) return renderWorkoutPreview();
     if (activeScreen === 'workout') return renderWorkoutHome();
@@ -3196,7 +3352,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         )}
       </div>
 
-      {client && (() => {
+      {client && !needsNutritionOnboarding && (() => {
         const navItems = [
           ['overview', Home, 'Overview'],
           ['nutrition', Salad, 'Nutrition'],

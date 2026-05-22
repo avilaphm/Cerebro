@@ -1,12 +1,36 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Claude - Trello-style board view for phase workouts (all days side by side, drag-drop exercises between days). Earlier same day: Exercise Library pinned detail panel; multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
+2026-05-22 by Codex - Nutrition onboarding + Helms Nutrition Pyramid finalizer + weekly client brain report bot. Earlier same day: Trello-style board view; Exercise Library pinned detail panel; multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
 
 ## Last code fix commit
 31772f6 - Exercise Library pin detail panel (board-view commit follows)
 
 ## What just happened (read first)
+
+### Nutrition onboarding + Pyramid finalizer (2026-05-22, LATEST)
+
+Pedro wanted the nutrition side to start when the client first logs in because client weight/height/activity were missing from uploaded docs. Built the first-login nutrition onboarding gate and the finalization workflow around `Cerebro Knowledge/The Muscle and Strength Pyramid - Nutrition v2.0 .pdf.pdf`.
+
+Changes shipped:
+- Added local skills and AGENTS chain: `pt-nutrition-onboarding`, `pt-nutrition-orchestrator`, `pt-nutrition-target-calculator`, `pt-nutrition-pyramid-finalizer`, `pt-nutrition-phase-builder`, and `pt-weekly-client-brain-review`.
+- DB migration applied remotely and committed locally: `pt_clients` now stores height/current weight/activity level/activity tag/nutrition onboarding timestamp; `pt_client_nutrition_doc` stores `pyramid_finalizer`; `pt_phase_nutrition` stores `finalizer_notes`; new `pt_client_brain_reports` table stores weekly client brain reports; cron job `weekly-client-brain-review` runs Sundays 20:00 UTC.
+- New Edge Function `generate-nutrition-programme` deployed v1, then redeployed v2 with service-role support. It validates client/admin/service access, stores onboarding data, inserts a weight metric, builds deterministic draft targets, retrieves Nutrition Pyramid context via `retrieve-knowledge-context`, runs a Claude finalizer, then auto-publishes `daily_targets`, approved `pt_phase_nutrition`, `nutrition_sync`, and brain updates.
+- New Edge Function `weekly-client-brain-review` deployed v1. It reads weekly workouts, set logs, nutrition logs, check-ins, messages, metrics, active programme, nutrition doc, and approved phase nutrition, then upserts a durable `pt_client_brain_reports` row and updates the brain docs.
+- Client portal now shows a welcome/onboarding screen only when nutrition onboarding is incomplete. It asks height, weight, activity level 1-5 and tells the client to use the black message box top-right and say "Hey coach" to reach Pedro.
+- Nutrition tab now shows approved programme phase nutrition. Pedro's client card now shows body profile, activity tag, daily targets, current phase nutrition, and latest weekly brain report.
+
+Verification:
+- `npm run build` passes.
+- Remote migration applied successfully through Supabase MCP.
+- `supabase functions list` shows `generate-nutrition-programme` and `weekly-client-brain-review` active.
+- Remote schema checks confirmed new columns/table/cron.
+- Weekly brain report runtime smoke test succeeded for Thaisa (`client_id` 7e0023d9), creating report `0f97a2ee`.
+- `deno check` could not run locally because `deno` is not installed.
+- `generate-nutrition-programme` was not smoke-tested against a real client to avoid publishing real nutrition targets without Pedro choosing a client.
+
+Advisor notes:
+- Supabase security/performance advisors still show existing project warnings (pg_net in public, old SECURITY DEFINER grants, old unindexed FKs/duplicate indexes). No new nutrition-table-specific advisor issue was identified in the output.
 
 ### Trello-style board view for phase workouts (2026-05-22, LATEST)
 

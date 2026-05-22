@@ -18,6 +18,8 @@ import type {
   PTClient,
   PTClientGoal,
   PTClientMetric,
+  PTClientNutritionDoc,
+  PTPhaseNutrition,
   PTCoachingReview,
   PTCoachingTask,
   PTProgramAssignment,
@@ -137,6 +139,16 @@ interface Props {
   reviews: PTCoachingReview[];
   checkinSessions?: PTCheckinSession[];
   oneRmTests?: PT1RMTest[];
+  nutritionDoc?: PTClientNutritionDoc | null;
+  phaseNutrition?: PTPhaseNutrition[];
+  brainReports?: Array<{
+    id: string;
+    week_start: string;
+    coach_summary: string | null;
+    nutrition_summary: string | null;
+    training_summary: string | null;
+    flags: unknown;
+  }>;
 }
 
 interface SpeechRecognitionResultItemLike { transcript: string; }
@@ -356,6 +368,9 @@ export default function PTClientDetail({
   reviews: initialReviews,
   checkinSessions = [],
   oneRmTests: initialOneRmTests = [],
+  nutritionDoc = null,
+  phaseNutrition = [],
+  brainReports = [],
 }: Props) {
   const supabase = createClient();
   const router = useRouter();
@@ -732,6 +747,11 @@ export default function PTClientDetail({
     ?? latestReviewByType(reviews, 'weekly');
   const selectedMonthlyReview = reviews.find((review) => review.review_type === 'monthly' && review.period_start === selectedMonthStart)
     ?? latestReviewByType(reviews, 'monthly');
+  const latestBrainReport = brainReports[0] ?? null;
+  const dailyTargets = nutritionDoc?.daily_targets ?? null;
+  const currentPhaseNutrition = activeAssignment
+    ? phaseNutrition.find((phase) => phase.assignment_id === activeAssignment.id)
+    : phaseNutrition[0] ?? null;
   const weightPair = latestMetricPair(metrics, 'weight_kg');
   const waistPair = latestMetricPair(metrics, 'waist_cm');
   const bodyFatPair = latestMetricPair(metrics, 'body_fat_pct');
@@ -1661,6 +1681,47 @@ export default function PTClientDetail({
                   <p className="mt-1 text-sm leading-relaxed text-black/70">{client.lifestyle_context || 'Not set'}</p>
                 </div>
               </div>
+            </div>
+
+            <div className="border border-black/10 bg-white px-6 py-5">
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Nutrition brain</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                  <p className="text-xs text-black/35">Body profile</p>
+                  <p className="mt-1 text-sm text-black/70">
+                    {client.height_cm ? `${client.height_cm}cm` : '-'} / {client.current_weight_kg ? `${client.current_weight_kg}kg` : '-'}
+                  </p>
+                </div>
+                <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                  <p className="text-xs text-black/35">Activity</p>
+                  <p className="mt-1 text-sm text-black/70">{client.activity_tag?.replace(/_/g, ' ') || 'Not set'}</p>
+                </div>
+                <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                  <p className="text-xs text-black/35">Daily target</p>
+                  <p className="mt-1 text-sm text-black/70">
+                    {dailyTargets?.calories ? `${dailyTargets.calories} kcal` : 'Not set'}
+                  </p>
+                </div>
+              </div>
+              {dailyTargets && (
+                <p className="mt-3 text-xs text-black/50">
+                  Protein {dailyTargets.protein_g ?? '-'}g / Carbs {dailyTargets.carbs_g ?? '-'}g / Fat {dailyTargets.fat_g ?? '-'}g / Fibre {dailyTargets.fibre_g ?? '-'}g
+                </p>
+              )}
+              {currentPhaseNutrition && (
+                <div className="mt-3 border-t border-black/8 pt-3">
+                  <p className="text-xs font-medium text-black/70">{currentPhaseNutrition.phase_title}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-black/50">
+                    {String((currentPhaseNutrition.recommendations?.strategy ?? currentPhaseNutrition.recommendations?.client_summary ?? 'Phase nutrition is approved.') as string)}
+                  </p>
+                </div>
+              )}
+              {latestBrainReport && (
+                <div className="mt-3 border-t border-black/8 pt-3">
+                  <p className="text-xs text-black/35">Latest weekly brain report - {formatDate(latestBrainReport.week_start)}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-black/55">{latestBrainReport.coach_summary || latestBrainReport.nutrition_summary || 'Report saved.'}</p>
+                </div>
+              )}
             </div>
 
             <div className="border border-black/10 px-6 py-5">

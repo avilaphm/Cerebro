@@ -47,6 +47,18 @@ interface DailyTargets {
   calories: number;
 }
 
+interface PhaseNutrition {
+  id: string;
+  phase_index: number;
+  phase_title: string;
+  phase_type: string;
+  recommendations: {
+    daily_targets?: Partial<DailyTargets>;
+    strategy?: string;
+    client_summary?: string;
+  } | null;
+}
+
 const DEFAULT_TARGETS: DailyTargets = {
   protein_g: 150,
   carbs_g: 200,
@@ -473,6 +485,7 @@ export default function NutritionTab({ clientId }: Props) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [logs, setLogs] = useState<NutritionLog[]>([]);
   const [targets, setTargets] = useState<DailyTargets>(DEFAULT_TARGETS);
+  const [phaseNutrition, setPhaseNutrition] = useState<PhaseNutrition[]>([]);
   const [loading, setLoading] = useState(true);
   const [showLogModal, setShowLogModal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -503,6 +516,13 @@ export default function NutritionTab({ clientId }: Props) {
       if (data?.daily_targets) {
         setTargets({ ...DEFAULT_TARGETS, ...(data.daily_targets as Partial<DailyTargets>) });
       }
+      const { data: phases } = await supabase
+        .from('pt_phase_nutrition')
+        .select('id, phase_index, phase_title, phase_type, recommendations')
+        .eq('client_id', clientId)
+        .eq('review_status', 'approved')
+        .order('phase_index', { ascending: true });
+      setPhaseNutrition((phases ?? []) as PhaseNutrition[]);
     })();
   }, [clientId, supabase]);
 
@@ -683,6 +703,34 @@ export default function NutritionTab({ clientId }: Props) {
           <p className="mt-3 text-[0.6rem] text-black/30">{logs.length} meal{logs.length !== 1 ? 's' : ''} logged</p>
         )}
       </div>
+
+      {phaseNutrition.length > 0 && (
+        <div className="mx-auto max-w-5xl border border-black/10 bg-white p-5">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Programme nutrition</p>
+          <div className="mt-4 grid gap-3">
+            {phaseNutrition.map((phase) => {
+              const phaseTargets = phase.recommendations?.daily_targets;
+              return (
+                <div key={phase.id} className="border border-black/8 bg-[#fbfbf8] px-4 py-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium">{phase.phase_title}</p>
+                      {phase.recommendations?.strategy && (
+                        <p className="mt-1 text-xs leading-relaxed text-black/50">{phase.recommendations.strategy}</p>
+                      )}
+                    </div>
+                    {phaseTargets?.calories && (
+                      <p className="shrink-0 text-xs tabular-nums text-black/45">
+                        <span className="font-medium text-black">{phaseTargets.calories}</span> kcal
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Track food CTA */}
       <div className="mx-auto max-w-5xl">
