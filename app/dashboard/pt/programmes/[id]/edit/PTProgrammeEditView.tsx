@@ -112,6 +112,8 @@ export default function PTProgrammeEditView({
   const [status, setStatus] = useState('');
 
   const [editingPhase, setEditingPhase] = useState<number | null>(null);
+  const [dragPhaseIdx, setDragPhaseIdx] = useState<number | null>(null);
+  const [dragOverPhaseIdx, setDragOverPhaseIdx] = useState<number | null>(null);
   const highlightedPhase = Number.parseInt(highlight?.phase ?? '', 10);
   const highlightedDay = Number.parseInt(highlight?.day ?? '', 10);
   const [activePhaseTab, setActivePhaseTab] = useState(Number.isFinite(highlightedPhase) ? highlightedPhase : 0);
@@ -185,6 +187,16 @@ export default function PTProgrammeEditView({
   });
 
   const removePhase = (i: number) => update((p) => { p.phases.splice(i, 1); return p; });
+
+  const movePhase = (from: number, to: number) => {
+    if (from === to) return;
+    update((p) => {
+      const [moved] = p.phases.splice(from, 1);
+      p.phases.splice(to, 0, moved);
+      return p;
+    });
+    setEditingPhase((cur) => (cur === from ? to : cur));
+  };
 
   const addDay = (phaseIdx: number) => update((p) => {
     const ph = p.phases[phaseIdx];
@@ -509,10 +521,18 @@ export default function PTProgrammeEditView({
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-col gap-3 border border-black/10 px-4 py-4 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <div
+                  draggable
+                  onDragStart={(e) => { setDragPhaseIdx(i); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragOver={(e) => { e.preventDefault(); if (dragOverPhaseIdx !== i) setDragOverPhaseIdx(i); }}
+                  onDragLeave={() => setDragOverPhaseIdx((cur) => (cur === i ? null : cur))}
+                  onDrop={(e) => { e.preventDefault(); if (dragPhaseIdx !== null) movePhase(dragPhaseIdx, i); setDragPhaseIdx(null); setDragOverPhaseIdx(null); }}
+                  onDragEnd={() => { setDragPhaseIdx(null); setDragOverPhaseIdx(null); }}
+                  className={`flex flex-col gap-3 border px-4 py-4 transition-colors sm:flex-row sm:items-center sm:justify-between sm:px-5 ${dragPhaseIdx === i ? 'opacity-40' : ''} ${dragOverPhaseIdx === i && dragPhaseIdx !== null && dragPhaseIdx !== i ? 'border-black/40 bg-black/[0.03]' : 'border-black/10 hover:border-black/25'}`}
+                >
                   <button type="button" className="flex-1 text-left" onClick={() => setEditingPhase(i)}>
                     <div className="flex items-center gap-2">
-                      <span className="text-[0.55rem] text-black/30">☰</span>
+                      <span className="cursor-grab text-[0.7rem] text-black/30 select-none" title="Drag to reorder phase">☰</span>
                       <p className="font-medium text-sm">{ph.title || `Phase ${i + 1}`}</p>
                       <span className="text-[0.55rem] text-black/25 ml-auto">starts week {startWeek}</span>
                     </div>
