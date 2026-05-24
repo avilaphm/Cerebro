@@ -140,13 +140,51 @@ Deno.serve(async (req: Request) => {
     ]);
 
     if (clientRes.error || !clientRes.data) return json({ error: 'Client not found.' }, 404);
-    if (assignmentRes.error || !assignmentRes.data) return json({ error: 'No active training programme found for this client.' }, 400);
 
     const client = clientRes.data as Record<string, unknown>;
+
+    // No active programme — save biometrics only and mark onboarding complete
+    // so the client can access the portal. Phase nutrition targets are generated
+    // once Pedro assigns a programme.
+    if (assignmentRes.error || !assignmentRes.data) {
+      const now = new Date().toISOString();
+      const activityTag = activityTagFor(activityLevel);
+      const draft = buildBasicDraft({ client, heightCm, weightKg, activityLevel, activityTag });
+      const existingEatingHabits = ((nutritionDocRes.data?.eating_habits as Record<string, unknown>) ?? {});
+      await Promise.all([
+        admin.from('pt_clients').update({
+          height_cm: heightCm,
+          current_weight_kg: weightKg,
+          activity_level: activityLevel,
+          activity_tag: activityTag,
+          nutrition_onboarding_completed_at: now,
+          updated_at: now,
+        }).eq('id', clientId),
+        admin.from('pt_client_metrics').insert({
+          client_id: clientId,
+          measured_at: now.slice(0, 10),
+          weight_kg: weightKg,
+          source: 'manual',
+          notes: 'Nutrition onboarding weight.',
+        }),
+        admin.from('pt_client_nutrition_doc').upsert({
+          client_id: clientId,
+          daily_targets: draft.daily_targets,
+          phase_nutrition_strategy: {},
+          eating_habits: {
+            ...existingEatingHabits,
+            body_profile: { height_cm: heightCm, weight_kg: weightKg, activity_level: activityLevel, activity_tag: activityTag, updated_at: now },
+            nutrition_programme_summary: 'Basic targets set from biometrics. Phase targets will be generated once a training programme is assigned.',
+          },
+          updated_at: now,
+        }, { onConflict: 'client_id' }),
+      ]);
+      return json({ ok: true, client_id: clientId, activity_tag: activityTag, draft, no_programme: true });
+    }
+
     const assignment = assignmentRes.data as Record<string, unknown>;
     const programme = (assignment.programme as { phases?: Array<Record<string, unknown>> } | null) ?? { phases: [] };
     const phases = Array.isArray(programme.phases) ? programme.phases : [];
-    if (phases.length === 0) return json({ error: 'Active programme has no phases.' }, 400);
 
     const activityTag = activityTagFor(activityLevel);
     const draft = buildDraftPlan({
@@ -571,6 +609,35 @@ async function callInternalFunction(supabaseUrl: string, serviceKey: string, nam
     body: JSON.stringify(body),
   });
   if (!res.ok) console.error(`${name} failed:`, await res.text());
+}
+
+function buildBasicDraft(input: {
+  client: Record<string, unknown>;
+  heightCm: number;
+  weightKg: number;
+  activityLevel: number;
+  activityTag: ActivityTag;
+}): DraftPlan {
+  const gender = typeof input.client.gender === 'string' ? input.client.gender : null;
+  const age = ageFromDate(input.client.date_of_birth);
+  const bmr = estimateBmr(input.weightKg, input.heightCm, age, gender);
+  const tdee = Math.round(bmr * activityMultiplier(input.activityLevel));
+  const goalText = `${input.client.goals ?? ''} ${input.client.coaching_focus ?? ''}`.toLowerCase();
+  const goal = inferGoal(goalText);
+  const calories = applyGoalCalories(tdee, goal);
+  const proteinG = clamp(Math.round(input.weightKg * (goal === 'fat_loss' ? 2.1 : 1.9)), 90, 260);
+  const fatG = clamp(Math.round(input.weightKg * 0.8), 40, 110);
+  const remainingCalories = Math.max(0, calories - proteinG * 4 - fatG * 9);
+  const carbsG = clamp(Math.round(remainingCalories / 4), 80, 500);
+  const fibreG = Math.max(25, Math.round((calories / 1000) * 14));
+  return {
+    daily_targets: normalizeTargets({ calories, protein_g: proteinG, carbs_g: carbsG, fat_g: fatG, fibre_g: fibreG }),
+    phase_targets: [],
+    assumptions: ['No active programme — basic daily targets only.'],
+    goal_interpretation: goal,
+    activity_tag: input.activityTag,
+    estimated_tdee: tdee,
+  };
 }
 
 function draftAsFinalPlan(draft: DraftPlan): FinalPlan {

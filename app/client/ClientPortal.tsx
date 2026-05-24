@@ -1223,7 +1223,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     });
 
     if (error) {
-      setStatus(error.message ?? 'Could not create your nutrition programme.');
+      let message = 'Could not create your nutrition programme. Please try again.';
+      try {
+        const ctx = (error as { context?: unknown }).context;
+        if (ctx instanceof Response) {
+          const body = await ctx.json() as { error?: string };
+          if (typeof body?.error === 'string') message = body.error;
+        }
+      } catch { /* ignore parse failure */ }
+      setStatus(message);
       setNutritionSubmitting(false);
       return;
     }
