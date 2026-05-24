@@ -159,25 +159,45 @@ Deno.serve(async (req: Request) => {
       activityTag,
     });
 
-    const pyramidContext = await retrievePyramidContext({
-      supabaseUrl,
-      serviceKey,
-      clientGoal: String(client.goals ?? assignment.goal ?? ''),
-    });
+    // Try AI-enhanced finalization; fall back to the mathematical draft on any failure
+    // so biometrics are always saved and onboarding always completes.
+    let finalPlan: FinalPlan;
+    let pyramidMeta: { confidence_score: number; referenced_documents: Array<Record<string, unknown>> } = {
+      confidence_score: 0,
+      referenced_documents: [],
+    };
 
-    if (!pyramidContext.ok) return json({ error: pyramidContext.error }, 502);
+    try {
+      const pyramidContext = await retrievePyramidContext({
+        supabaseUrl,
+        serviceKey,
+        clientGoal: String(client.goals ?? assignment.goal ?? ''),
+      });
 
-    const finalPlan = await finalizeWithPyramid({
-      anthropicKey,
-      client,
-      assignment,
-      draft,
-      nutritionDoc: nutritionDocRes.data as Record<string, unknown> | null,
-      exerciseDoc: exerciseDocRes.data as Record<string, unknown> | null,
-      lifestyleDoc: lifestyleDocRes.data as Record<string, unknown> | null,
-      documents: (documentsRes.data ?? []) as Array<Record<string, unknown>>,
-      pyramidContext,
-    });
+      if (pyramidContext.ok) {
+        finalPlan = await finalizeWithPyramid({
+          anthropicKey,
+          client,
+          assignment,
+          draft,
+          nutritionDoc: nutritionDocRes.data as Record<string, unknown> | null,
+          exerciseDoc: exerciseDocRes.data as Record<string, unknown> | null,
+          lifestyleDoc: lifestyleDocRes.data as Record<string, unknown> | null,
+          documents: (documentsRes.data ?? []) as Array<Record<string, unknown>>,
+          pyramidContext,
+        });
+        pyramidMeta = {
+          confidence_score: pyramidContext.confidence_score,
+          referenced_documents: pyramidContext.referenced_documents,
+        };
+      } else {
+        console.warn('Pyramid retrieval failed, using draft:', pyramidContext.error);
+        finalPlan = draftAsFinalPlan(draft);
+      }
+    } catch (aiError) {
+      console.error('AI finalization failed, falling back to draft:', aiError);
+      finalPlan = draftAsFinalPlan(draft);
+    }
 
     const now = new Date().toISOString();
     const bodyProfile = {
@@ -199,9 +219,11 @@ Deno.serve(async (req: Request) => {
       },
     ]));
     const finalizerAudit = {
-      source_document: 'The Muscle and Strength Pyramid - Nutrition v2.0 .pdf.pdf',
-      retrieved_documents: pyramidContext.referenced_documents,
-      confidence_score: pyramidContext.confidence_score,
+      source_document: pyramidMeta.referenced_documents.length > 0
+        ? 'The Muscle and Strength Pyramid - Nutrition v2.0 .pdf.pdf'
+        : 'draft_calculation',
+      retrieved_documents: pyramidMeta.referenced_documents,
+      confidence_score: pyramidMeta.confidence_score,
       principles_applied: finalPlan.pyramid_principles_applied,
       changes_from_draft: finalPlan.changes_from_draft,
       client_goal_alignment: finalPlan.client_goal_alignment,
@@ -309,10 +331,7 @@ Deno.serve(async (req: Request) => {
       activity_tag: activityTag,
       draft,
       final_plan: finalPlan,
-      pyramid_context: {
-        confidence_score: pyramidContext.confidence_score,
-        referenced_documents: pyramidContext.referenced_documents,
-      },
+      pyramid_context: pyramidMeta,
     });
   } catch (error) {
     console.error('generate-nutrition-programme error:', error);
@@ -552,6 +571,18 @@ async function callInternalFunction(supabaseUrl: string, serviceKey: string, nam
     body: JSON.stringify(body),
   });
   if (!res.ok) console.error(`${name} failed:`, await res.text());
+}
+
+function draftAsFinalPlan(draft: DraftPlan): FinalPlan {
+  return {
+    final_daily_targets: draft.daily_targets,
+    phase_targets: draft.phase_targets,
+    pyramid_principles_applied: [],
+    client_goal_alignment: `Goal interpreted as ${draft.goal_interpretation}.`,
+    changes_from_draft: [],
+    coach_notes: '',
+    client_summary: 'Your nutrition targets have been calculated based on your body metrics and training programme.',
+  };
 }
 
 function numberInRange(value: unknown, min: number, max: number): number | null {
