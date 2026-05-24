@@ -481,6 +481,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [recurringWeeks, setRecurringWeeks] = useState('1');
   const [bookingReason, setBookingReason] = useState('');
   const [modalStep, setModalStep] = useState<ModalStep>(null);
+  const [dismissedOnboarding, setDismissedOnboarding] = useState(false);
   const [bookAnotherDate, setBookAnotherDate] = useState('');
   const [moveDayTarget, setMoveDayTarget] = useState<string | null>(null);
   const [bookingBusy, setBookingBusy] = useState(false);
@@ -1563,7 +1564,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const renderNutritionOnboardingScreen = () => (
     <div className="mx-auto flex min-h-[calc(100dvh-11rem)] max-w-3xl items-center">
-      <section className="w-full border border-black/10 bg-white p-6 md:p-8">
+      <section className="relative w-full border border-black/10 bg-white p-6 md:p-8">
+        <button
+          type="button"
+          onClick={() => setDismissedOnboarding(true)}
+          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center text-black/30 transition-colors hover:text-black"
+          aria-label="Skip"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
         <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Welcome</p>
         <h2 className="mt-3 font-display text-3xl font-light tracking-[-0.02em] md:text-4xl">
           {client?.name ? `Good to have you here, ${client.name.split(' ')[0]}.` : 'Good to have you here.'}
@@ -3290,7 +3302,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   );
 
   const renderActiveScreen = () => {
-    if (needsNutritionOnboarding) return renderNutritionOnboardingScreen();
+    if (needsNutritionOnboarding && !dismissedOnboarding) return renderNutritionOnboardingScreen();
     if (selectedWorkout?.started) return renderWorkoutLogger();
     if (selectedWorkout) return renderWorkoutPreview();
     if (activeScreen === 'workout') return renderWorkoutHome();
