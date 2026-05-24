@@ -1,12 +1,70 @@
 # Handoff
 
 ## Last updated
-2026-05-22 by Codex - Nutrition onboarding + Helms Nutrition Pyramid finalizer + weekly client brain report bot. Earlier same day: Trello-style board view; Exercise Library pinned detail panel; multi-programme toggle; text-to-workout builder; drag-drop phase reordering; draft autosave + 24h auto-delete; fixed the generation JSON failure + synthesis hang.
+2026-05-25 by Claude Sonnet 4.6 - Nutrition calculation overhaul: protein range 1.5-2g/kg, 100g carb floor, goals header formatted block, no-programme path, X dismiss button, real error message parsing. Edge function v5 deployed.
 
 ## Last code fix commit
-b376719 - Update nutrition workflow handoff
+See git log - latest is the nutrition calculation overhaul commit this session.
 
 ## What just happened (read first)
+
+### Nutrition calculation overhaul + UX fixes (2026-05-25, LATEST)
+
+Pedro flagged the nutrition calculation was completely off. Rebuilt the entire edge function with Pedro's exact methodology and added UX improvements.
+
+Changes shipped:
+
+1. **X close button on nutrition onboarding popup** (`ClientPortal.tsx`): clients can now dismiss the popup and access their training directly. Dismiss is session-only - the popup reappears on next login so they are encouraged to complete it. Button is positioned absolute top-right inside the onboarding panel.
+
+2. **Real error message parsing** (`ClientPortal.tsx`): Supabase `functions.invoke()` returns a generic "Edge Function returned a non-2xx status code" string in `error.message`. Fixed by parsing `error.context` (a Response object) and extracting the actual JSON body from the edge function so Pedro and clients see the real error.
+
+3. **No-programme path** (`generate-nutrition-programme` v4): clients without an active programme now complete onboarding successfully. The function saves biometrics, computes basic daily targets, upserts the nutrition doc with `daily_targets`, `protein_range_g`, and `goals_header`, and returns `ok: true`. Previously it returned 400 and the client was blocked.
+
+4. **Full calculation overhaul** (`generate-nutrition-programme` v5): replaced the old ad-hoc formula with Pedro's exact methodology:
+   - BMR: Mifflin-St Jeor if age + gender available, else `22 x weight_kg`
+   - TDEE: BMR x activity multiplier (1.2/1.375/1.55/1.725/1.9 for levels 1-5)
+   - Calories: TDEE x 0.85 (fat loss) / 1.07 (gain) / 1.03 (strength) / 1.0 (recomp)
+   - Protein: always 1.5-2g/kg range. Target = 2.0g/kg fat loss, 1.8g/kg everything else. Never changes based on goal.
+   - Fat: 0.9g/kg, clamped 50-120g
+   - Carbs: remaining calories / 4, hard floor 100g always
+   - Fibre: max(25, calories/1000 x 14), ceiling 70g
+   - Phase adjustments: hypertrophy +120 kcal/+30g carbs, strength/testing +80/+20, deload -80/-20. 100g carb floor applies to phases too.
+
+5. **Protein range stored as `{ min, max }` jsonb** (`pt_client_nutrition_doc.protein_range_g`): the range is now always stored separately from the single daily target so it can be displayed as "117g - 156g" to clients.
+
+6. **Goals header stored as plain text** (`pt_client_nutrition_doc.goals_header`): a formatted block shown at the top of the client nutrition doc:
+   ```
+   NUTRITION GOALS - 25 May 2026
+   Goal: Fat Loss  |  Activity: Very Active
+   ----------------------------------------
+   Calories:  1,950 kcal
+   Protein:   117g - 156g  (1.5-2g per kg body weight)
+   Carbs:     145g
+   Fat:       70g
+   Fibre:     27g
+   ----------------------------------------
+   ```
+
+7. **Anthropic system prompt hard rules**: the Claude finalizer is now explicitly told protein must stay within 1.5-2g/kg, carbs never below 100g, fat never below 50g, and protein does not shift based on goal.
+
+8. **Three skill files updated** (outside cerebro-site, not in git here):
+   - `skills/pt-nutrition-target-calculator/SKILL.md` - complete rewrite with Pedro's exact 7-step formula
+   - `skills/pt-nutrition-pyramid-finalizer/SKILL.md` - added HARD CONSTRAINTS section, updated failure behaviour to fall back instead of blocking
+   - `skills/pt-nutrition-orchestrator/SKILL.md` - added goals header format, `protein_range_g` and `goals_header` to write sequence, no-programme path documentation
+
+DB migration applied earlier in this session:
+```sql
+ALTER TABLE pt_client_nutrition_doc
+  ADD COLUMN IF NOT EXISTS protein_range_g jsonb,
+  ADD COLUMN IF NOT EXISTS goals_header text;
+```
+
+Edge function versions deployed this session:
+- v3: AI fallback (try/catch around Anthropic calls, `draftAsFinalPlan` helper)
+- v4: No-programme path (return 200 with basic targets when no active programme)
+- v5: Full calculation overhaul (Pedro's exact formula, protein range, goals header, carb floor, Anthropic HARD RULES)
+
+
 
 ### Nutrition onboarding + Pyramid finalizer (2026-05-22, LATEST)
 

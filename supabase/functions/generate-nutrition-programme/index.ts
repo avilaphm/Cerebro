@@ -37,6 +37,7 @@ interface PhaseTarget {
 
 interface DraftPlan {
   daily_targets: DailyTargets;
+  protein_range_g: { min: number; max: number };
   phase_targets: PhaseTarget[];
   assumptions: string[];
   goal_interpretation: string;
@@ -170,6 +171,8 @@ Deno.serve(async (req: Request) => {
         admin.from('pt_client_nutrition_doc').upsert({
           client_id: clientId,
           daily_targets: draft.daily_targets,
+          protein_range_g: draft.protein_range_g,
+          goals_header: formatGoalsHeader(draft.daily_targets, draft.protein_range_g, draft.goal_interpretation, activityTag, now),
           phase_nutrition_strategy: {},
           eating_habits: {
             ...existingEatingHabits,
@@ -297,6 +300,8 @@ Deno.serve(async (req: Request) => {
         .upsert({
           client_id: clientId,
           daily_targets: finalPlan.final_daily_targets,
+          protein_range_g: draft.protein_range_g,
+          goals_header: formatGoalsHeader(finalPlan.final_daily_targets, draft.protein_range_g, draft.goal_interpretation, activityTag, now),
           phase_nutrition_strategy: phaseStrategy,
           pyramid_finalizer: finalizerAudit,
           eating_habits: {
@@ -411,15 +416,12 @@ function buildDraftPlan(input: {
   const goalText = `${input.client.goals ?? ''} ${input.client.coaching_focus ?? ''} ${input.assignment.goal ?? ''}`.toLowerCase();
   const goal = inferGoal(goalText);
   const calories = applyGoalCalories(tdee, goal);
-  const proteinG = clamp(Math.round(input.weightKg * (goal === 'fat_loss' ? 2.1 : 1.9)), 90, 260);
-  const fatG = clamp(Math.round(input.weightKg * 0.8), 40, 110);
-  const remainingCalories = Math.max(0, calories - proteinG * 4 - fatG * 9);
-  const carbsG = clamp(Math.round(remainingCalories / 4), 80, 500);
-  const fibreG = Math.max(25, Math.round((calories / 1000) * 14));
-  const dailyTargets = normalizeTargets({ calories, protein_g: proteinG, carbs_g: carbsG, fat_g: fatG, fibre_g: fibreG });
+  const { protein_g, protein_range_g, fat_g, carbs_g, fibre_g } = computeMacros(input.weightKg, calories, goal);
+  const dailyTargets = normalizeTargets({ calories, protein_g, carbs_g, fat_g, fibre_g });
 
   return {
     daily_targets: dailyTargets,
+    protein_range_g,
     phase_targets: input.phases.map((phase, index) => {
       const title = String(phase.title ?? `Phase ${index + 1}`);
       const phaseType = phaseTypeFrom(title, String(phase.focus ?? ''));
@@ -435,9 +437,10 @@ function buildDraftPlan(input: {
       };
     }),
     assumptions: [
-      gender && age ? 'BMR estimated with available age and gender.' : 'BMR estimated conservatively from body weight because age or gender was unavailable.',
-      `Activity level ${input.activityLevel}/5 mapped to ${input.activityTag}.`,
-      `Goal interpreted as ${goal}.`,
+      gender && age ? 'BMR estimated with Mifflin-St Jeor using age and gender.' : 'BMR estimated from body weight only (age or gender unavailable).',
+      `Protein range: ${protein_range_g.min}g–${protein_range_g.max}g (1.5–2g/kg). Target: ${protein_g}g.`,
+      `Activity level ${input.activityLevel}/5 mapped to ${input.activityTag}. TDEE: ${tdee} kcal.`,
+      `Goal interpreted as ${goal}. Calorie target: ${calories} kcal.`,
     ],
     goal_interpretation: goal,
     activity_tag: input.activityTag,
@@ -517,8 +520,15 @@ async function finalizeWithPyramid(input: {
 Return only valid JSON. No markdown.
 
 Use the supplied excerpts from "The Muscle and Strength Pyramid - Nutrition v2.0" as the primary source.
-Apply the hierarchy: calories, macros, micronutrients/fibre/food quality, timing, supplements.
+Apply the Pyramid hierarchy: calories → macros → micronutrients/fibre → timing → supplements.
 Do not invent medical advice. Keep changes conservative and practical for an active PT client.
+
+HARD RULES — never override these:
+1. Protein must stay within 1.5–2g per kg body weight. The proposed draft already sets it correctly. Do NOT reduce protein.
+2. Carbs must never go below 100g per day in any target or phase — even for fat loss.
+3. Fat must never go below 50g per day.
+4. Protein is the same regardless of goal — only calories and carbs shift between goals.
+
 The output must match this schema:
 {
   "final_daily_targets": {"calories": number, "protein_g": number, "carbs_g": number, "fat_g": number, "fibre_g": number},
@@ -625,15 +635,16 @@ function buildBasicDraft(input: {
   const goalText = `${input.client.goals ?? ''} ${input.client.coaching_focus ?? ''}`.toLowerCase();
   const goal = inferGoal(goalText);
   const calories = applyGoalCalories(tdee, goal);
-  const proteinG = clamp(Math.round(input.weightKg * (goal === 'fat_loss' ? 2.1 : 1.9)), 90, 260);
-  const fatG = clamp(Math.round(input.weightKg * 0.8), 40, 110);
-  const remainingCalories = Math.max(0, calories - proteinG * 4 - fatG * 9);
-  const carbsG = clamp(Math.round(remainingCalories / 4), 80, 500);
-  const fibreG = Math.max(25, Math.round((calories / 1000) * 14));
+  const { protein_g, protein_range_g, fat_g, carbs_g, fibre_g } = computeMacros(input.weightKg, calories, goal);
   return {
-    daily_targets: normalizeTargets({ calories, protein_g: proteinG, carbs_g: carbsG, fat_g: fatG, fibre_g: fibreG }),
+    daily_targets: normalizeTargets({ calories, protein_g, carbs_g, fat_g, fibre_g }),
+    protein_range_g,
     phase_targets: [],
-    assumptions: ['No active programme — basic daily targets only.'],
+    assumptions: [
+      'No active programme — basic daily targets from biometrics.',
+      `Protein range: ${protein_range_g.min}g–${protein_range_g.max}g (1.5–2g/kg). Target: ${protein_g}g.`,
+      `TDEE: ${tdee} kcal. Goal: ${goal}. Calorie target: ${calories} kcal.`,
+    ],
     goal_interpretation: goal,
     activity_tag: input.activityTag,
     estimated_tdee: tdee,
@@ -713,6 +724,30 @@ function phaseTypeFrom(title: string, focus: string): string {
   return 'general';
 }
 
+// Pedro's macro formula: protein 1.5–2g/kg, carbs min 100g always, fat 0.9g/kg
+function computeMacros(
+  weightKg: number,
+  calories: number,
+  goal: string,
+): { protein_g: number; protein_range_g: { min: number; max: number }; fat_g: number; carbs_g: number; fibre_g: number } {
+  const proteinMin = Math.round(weightKg * 1.5);
+  const proteinMax = Math.round(weightKg * 2.0);
+  // Fat loss: use top of range to preserve muscle; everything else: 1.8g/kg
+  const proteinTarget = clamp(Math.round(weightKg * (goal === 'fat_loss' ? 2.0 : 1.8)), proteinMin, proteinMax);
+  const fatG = clamp(Math.round(weightKg * 0.9), 50, 120);
+  const remainingCalories = Math.max(0, calories - proteinTarget * 4 - fatG * 9);
+  const carbsRaw = Math.round(remainingCalories / 4);
+  const carbsG = Math.max(100, carbsRaw); // hard floor: never below 100g
+  const fibreG = clamp(Math.max(25, Math.round((calories / 1000) * 14)), 20, 70);
+  return {
+    protein_g: proteinTarget,
+    protein_range_g: { min: proteinMin, max: proteinMax },
+    fat_g: fatG,
+    carbs_g: carbsG,
+    fibre_g: fibreG,
+  };
+}
+
 function adjustTargetsForPhase(base: DailyTargets, phaseType: string, goal: string): DailyTargets {
   let calories = base.calories;
   let carbs = base.carbs_g;
@@ -726,7 +761,44 @@ function adjustTargetsForPhase(base: DailyTargets, phaseType: string, goal: stri
     calories -= 80;
     carbs -= 20;
   }
+  // Carb floor applies to phase adjustments too
+  carbs = Math.max(100, carbs);
   return normalizeTargets({ ...base, calories, carbs_g: carbs });
+}
+
+function formatGoalsHeader(
+  targets: DailyTargets,
+  proteinRange: { min: number; max: number },
+  goal: string,
+  activityTag: string,
+  isoDate: string,
+): string {
+  const date = new Date(isoDate);
+  const dateStr = date.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
+  const goalLabel: Record<string, string> = {
+    fat_loss: 'Fat Loss',
+    muscle_gain: 'Muscle Gain',
+    strength: 'Strength',
+    recomposition: 'Recomposition',
+  };
+  const activityLabel: Record<string, string> = {
+    sedentary: 'Sedentary',
+    lightly_active: 'Lightly Active',
+    moderately_active: 'Moderately Active',
+    very_active: 'Very Active',
+    athlete_level: 'Athlete Level',
+  };
+  return [
+    `NUTRITION GOALS — ${dateStr}`,
+    `Goal: ${goalLabel[goal] ?? goal}  |  Activity: ${activityLabel[activityTag] ?? activityTag}`,
+    '──────────────────────────────────────',
+    `Calories:  ${targets.calories.toLocaleString('en-AU')} kcal`,
+    `Protein:   ${proteinRange.min}g – ${proteinRange.max}g  (1.5–2g per kg body weight)`,
+    `Carbs:     ${targets.carbs_g}g`,
+    `Fat:       ${targets.fat_g}g`,
+    `Fibre:     ${targets.fibre_g}g`,
+    '──────────────────────────────────────',
+  ].join('\n');
 }
 
 function draftStrategyForPhase(phaseType: string, goal: string): string {
@@ -744,8 +816,8 @@ function normalizeTargets(targets: DailyTargets): DailyTargets {
   return {
     calories: clamp(Math.round(targets.calories), 1200, 5000),
     protein_g: clamp(Math.round(targets.protein_g), 60, 300),
-    carbs_g: clamp(Math.round(targets.carbs_g), 50, 650),
-    fat_g: clamp(Math.round(targets.fat_g), 35, 180),
+    carbs_g: clamp(Math.round(targets.carbs_g), 100, 650), // Pedro's rule: 100g floor
+    fat_g: clamp(Math.round(targets.fat_g), 50, 180),
     fibre_g: clamp(Math.round(targets.fibre_g), 20, 70),
   };
 }
