@@ -40,9 +40,13 @@ Infer equipment from the client documents, Step 1 programming text, client notes
 For 3-day Foundation:
 
 - Day 1: unilateral emphasis. Include single-arm and single-leg work.
-- Day 2: unilateral emphasis. Include different single-arm and single-leg patterns from Day 1.
-- Day 3: bilateral emphasis. Include both-arms/both-legs patterns and controlled heavier practice.
+- Day 2: bilateral emphasis. Include two-arm and two-leg patterns and controlled heavier practice.
+- Day 3: unilateral emphasis. Include different single-arm and single-leg patterns from Day 1.
 - Every day remains full-body.
+- Pain and movement restrictions outrank performance goals. A pull-up goal gets one pull slot per day, not repeated pull-up variations.
+- Every Foundation Workout day needs 1 pull, 1 push, 1 anterior lower, 1 posterior lower, and hip/core corrective coverage.
+- Do not repeat multiple variations of the same root exercise family in one day.
+- Generated Foundation days only contain Warm Up and Workout. Do not append MetCon or Stretches to Foundation.
 
 Tempo work is mandatory on every Foundation exercise. Every Foundation exercise note must include a tempo, controlled eccentric, pause, range, or intent cue the client can see.
 

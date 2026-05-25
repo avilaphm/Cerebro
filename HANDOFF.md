@@ -1,12 +1,54 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:53 AEST by Codex - Centered the journey week labels against the milestone circles.
+2026-05-25 17:00 AEST by Codex - Shipped skill-driven Foundation exercise selection guardrails.
 
 ## Last code fix commit
-95988f0 - Show journey week percentages
+Pending commit - Foundation exercise selection guardrails
 
 ## What just happened (read first)
+
+### Foundation programme exercise selection guardrails (2026-05-25, LATEST)
+
+Pedro found a generated Foundation day where every workout exercise was a pull-up variation. He clarified the Foundation model from screenshots:
+- Pain and movement restrictions outrank performance goals.
+- A pull-up goal gets one pull slot per day, not a day full of pull-up variations.
+- The rule applies to all exercise families, not only pull-ups.
+- Foundation days should be Day 1 unilateral, Day 2 bilateral, Day 3 unilateral.
+- Generated Foundation days should only have `Warm Up` and `Workout`.
+
+Changes shipped:
+- Updated local skill source of truth:
+  - `../skills/pt-programme-equipment-foundation-rules/SKILL.md`
+  - `../skills/pt-programming-workflow/SKILL.md`
+  - `../skills/pt-programme-builder/SKILL.md`
+  - `../skills/pt-programme-intelligence/SKILL.md`
+- `supabase/functions/pt-programme-orchestrator/index.ts`
+  - Passes `muscle_mind_map` into `programme-synthesis-agent`.
+- `supabase/functions/programme-synthesis-agent/index.ts`
+  - Foundation now uses the full exercise library plus safety filters, not the trimmed synthesis slice.
+  - Foundation uses a slot selector: pull, push, anterior lower, posterior lower, hip/core corrective.
+  - Foundation caps same-day root-family duplicates.
+  - Foundation no longer appends `MetCon` or `Stretches`.
+  - Warm-up/corrective fallbacks reject strength-compound pull-up/press/deadlift rows.
+- `supabase/functions/programme-validation-agent/index.ts`
+  - Foundation hard-fails unexpected sections, repeated exercise families, or missing required slots.
+- `supabase/functions/pt-programming-agent/index.ts` and `programming-principles.md`
+  - Legacy/manual path rule text now matches the skill-owned Foundation model.
+
+Deployed:
+- `programme-synthesis-agent`
+- `programme-validation-agent`
+- `pt-programme-orchestrator`
+- `pt-programming-agent`
+
+Verification:
+- `npm run build` passes.
+- Live smoke run `69dd8369-1796-483b-96a1-5a065ecfa7b9` completed `needs_review` with `passed: true`, no findings, no hard failures.
+- Smoke Foundation output had only `Warm Up` and `Workout`, one pull slot per day, and no same-day pull-up variation stack.
+
+Notes:
+- A prior smoke against client `4f8e...` was invalidated because that client was deleted during the run and the draft row disappeared by cascade. Final verification used active client Thaisa.
 
 ### Workout journey rail tightened (2026-05-25, LATEST)
 

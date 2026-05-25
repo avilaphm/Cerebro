@@ -19,7 +19,7 @@ week_blocks MANDATORY: [{"weeks":2,"sets":"2"},{"weeks":5,"sets":"3"}]
 Weeks 1-2: 2 sets. Slow tempo. Movement quality. Weeks 3-7: 3 sets. Weeks 3-4: Controlled tempo. Weeks 5-7: Introduce Big 5 compounds (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up) so client is familiar before 1RM testing.
 
 Equipment access: infer from client documents and Pedro instructions. If not stated, assume gym. For gym Foundation, do not use banded exercises; use DB/KB/cable/machine/bodyweight options. Never use banded deadlifts for gym Foundation.
-Foundation day balance: Day 1 and Day 2 bias single-arm and single-leg work. Day 3 biases bilateral both-arms/both-legs work. Every Foundation exercise note must include tempo or controlled execution intent.
+Foundation day balance: pain and movement restrictions outrank performance goals. Day 1 and Day 3 bias single-arm and single-leg work. Day 2 biases bilateral/two-arm/two-leg work. Every Foundation Workout day needs 1 pull, 1 push, 1 anterior lower, 1 posterior lower, and hip/core corrective coverage. Do not repeat multiple variations of the same exercise family in one day. Generated Foundation days only contain Warm Up and Workout. Every Foundation exercise note must include tempo or controlled execution intent.
 Preferred Foundation staples: Hip flexor cable pull, standing hip flexor KB pull, half kneeling adductor slides sideways/front, single-leg glute bridge/hip thrust, single-arm cable pull, DB push, single-leg step-up, cable crunch, back extension, QL extension, leg press, knee extension, hamstring curl, single-leg DB RDL, seated shoulder press, Hip CARs.
 
 ## Warm-Up (every day)
@@ -736,7 +736,7 @@ function buildRetrievalQuestion(context: Record<string, unknown>, mode: AgentMod
     assignment.name ? `Current programme: ${text(assignment.name, '')}.` : '',
     instructions ? `Pedro instruction: ${instructions}.` : '',
     'Equipment rule: if client documents/text do not explicitly say bands-only/bodyweight/home/no-gym, assume gym access. For gym Foundation, do not use banded exercises.',
-    'Foundation rule: Day 1 and Day 2 single-arm/single-leg emphasis, Day 3 bilateral emphasis, tempo/control note on every exercise.',
+    'Foundation rule: pain/movement restrictions outrank performance goals; Day 1 and Day 3 single-arm/single-leg emphasis; Day 2 bilateral emphasis; pull/push/anterior-lower/posterior-lower/hip-core slots; no same-day repeated exercise-family variations; tempo/control note on every exercise.',
     'Need phase roadmap, foundations, warm-ups, 1RM testing, hypertrophy, strength, retest, taper, phase nutrition, and validation rules.',
   ].filter(Boolean).join('\n');
 }
@@ -976,7 +976,8 @@ Audit and adapt the programme using these hard rules:
 - Infer equipment from client documents, notes, messages, logs, and Pedro instructions. If equipment is not explicitly limited to bands/bodyweight/home/no-gym/travel, assume gym access.
 - For gym Foundation, remove banded exercises. No banded deadlifts, hinges, squats, rows, presses, or banded lower-body substitutes.
 - For gym Foundation hinges, prefer DB deadlift, KB deadlift, single-leg DB RDL, cable pull-through style work, machines, or bodyweight regressions.
-- Foundation is 3 full-body days. Day 1 and Day 2 must emphasize single-arm and single-leg work. Day 3 must emphasize bilateral both-arm/both-leg work.
+- Foundation is 3 full-body days. Pain and movement restrictions outrank performance goals. Day 1 and Day 3 must emphasize single-arm and single-leg work. Day 2 must emphasize bilateral/two-arm/two-leg work.
+- Every Foundation Workout day needs 1 pull, 1 push, 1 anterior lower, 1 posterior lower, and hip/core corrective coverage. Do not repeat multiple variations of the same exercise family in one day. Generated Foundation days only contain Warm Up and Workout.
 - Every Foundation exercise note must include tempo, controlled eccentric, pause, range, or execution intent.
 - Prefer these Foundation staples when relevant: Hip flexor cable pull, Standing hip flexor KB pull, Half kneeling adductor slides sideways, Half kneeling adductor slides front/front-splits, Single-leg glute bridge, Single-leg hip thrust, Single-arm cable pull, DB push, Single-leg step-up, Cable crunch, Back extension, QL extension on back extension machine, Leg press, Knee extension, Hamstring curl, Single-leg DB RDL, Seated shoulder press, Hip CARs.
 - Compare the programme against the client's goals, injuries, dislikes, schedule, training history, and logs. Adapt exercises until the plan fits the client.

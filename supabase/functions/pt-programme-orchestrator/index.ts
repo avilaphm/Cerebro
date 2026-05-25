@@ -249,6 +249,7 @@ async function runPipeline(ctx: {
 
       const step = await callAgent('programme-synthesis-agent', {
         client_analysis: clientAnalysis,
+        muscle_mind_map: muscleMindMap,
         methodology_plan_phase: methodologyPhases[i],
         phase_index: i,
         programme_name: programmeName,

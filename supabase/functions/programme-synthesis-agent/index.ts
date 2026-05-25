@@ -79,7 +79,11 @@ HARD RULES (violating any = failure):
      bodyweight-only, home-only, travel-only, or no-gym, assume gym access.
    - For gym Foundation, NEVER use banded exercises. No banded deadlifts, banded hinges, banded squats, banded rows,
      banded presses, or banded lower-body substitutes. Use DB, KB, cable, machine, or bodyweight choices instead.
-   - Day 1 and Day 2 must emphasize single-arm and single-leg work. Day 3 must emphasize bilateral work.
+   - Pain, injury history, movement restrictions, and movement-screen findings outrank performance goals.
+     A pull-up goal gets one pulling slot per day; hip/back/knee issues still drive the rest of Foundation.
+   - Day 1 and Day 3 must emphasize single-arm and single-leg work. Day 2 must emphasize bilateral/two-arm/two-leg work.
+   - Each Foundation Workout day needs: 1 pull, 1 push, 1 anterior lower-body, 1 posterior lower-body,
+     and 1-2 hip/core/corrective exercises. Do not repeat multiple variations of the same root exercise family.
    - Every Foundation exercise note must include tempo, controlled eccentric, pause, range, or execution intent.
    - Preferred Foundation staples: Hip flexor cable pull, Standing hip flexor KB pull, Half kneeling adductor slides
      sideways/front, Single-leg glute bridge/hip thrust, Single-arm cable pull, DB push, Single-leg step-up,
@@ -105,9 +109,9 @@ HARD RULES (violating any = failure):
    Use superset_id to pair exercises (e.g. "ss-1" for exercises 1 and 2, "ss-2" for 3 and 4, "ss-3" for 5 and 6).
    For Hypertrophy/Strength phases, the Big 5 occupy slots; other exercises are accessory.
 
-6. CARDIO BLOCK: do not output cardio exercises. The server appends them when MethodologyPlan phase.cardio_block_minutes is set.
+6. CARDIO BLOCK: do not output cardio exercises. The server appends them outside Foundation when MethodologyPlan phase.cardio_block_minutes is set.
 
-7. MOBILITY BLOCK: do not output mobility/stretching exercises. The server appends them when MethodologyPlan phase.mobility_block_minutes is set.
+7. MOBILITY BLOCK: do not output mobility/stretching exercises. The server appends them outside Foundation when MethodologyPlan phase.mobility_block_minutes is set.
 
 8. 1RM TEST / RETEST: ONE workout day containing only the 5 Big 5, sets="5" each, reps="1", rest="3-5 min".
    Phase weeks = 1. No warm-up section needed inside the exercises array (the 1RM warm-up ramp is on the client side).
@@ -135,6 +139,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json() as {
       client_analysis: Record<string, unknown>;
+      muscle_mind_map?: Record<string, unknown>;
       methodology_plan_phase: Record<string, unknown>;
       phase_index: number;
       programme_name?: string;
@@ -170,7 +175,7 @@ Deno.serve(async (req) => {
         .map((e) => e.exercise_id as string),
     );
 
-    const deterministic = buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis, priorityIds);
+    const deterministic = buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis, body.muscle_mind_map ?? {}, priorityIds);
     if (deterministic) return json({ ok: true, ...deterministic });
 
     const userMessage = [
@@ -262,6 +267,7 @@ function buildDeterministicPhase(
   filteredLibrary: ExerciseRow[],
   phaseIndex: number,
   analysis: Record<string, unknown>,
+  muscleMindMap: Record<string, unknown> = {},
   priorityIds: Set<string> = new Set(),
 ): Record<string, unknown> | null {
   const type = String(methodologyPhase.type ?? '').toLowerCase();
@@ -345,24 +351,22 @@ function buildDeterministicPhase(
   if (type === 'foundation') {
     const sets = String((weekBlocks[0]?.sets as string | undefined) ?? '2');
     const isGymAccess = inferGymAccess(analysis);
-    const foundationLibrary = isGymAccess ? filteredLibrary.filter((exercise) => !isBandedExercise(exercise)) : filteredLibrary;
-    const foundationWarmups = pickWarmups(foundationLibrary);
-    const mainPools = pickFoundationDayPools(foundationLibrary, big5, priorityIds, isGymAccess);
+    const foundationLibrary = prepareFoundationLibrary(library, analysis, isGymAccess);
+    const foundationContext = foundationPriorityContext(analysis, muscleMindMap);
     const days = [0, 1, 2].map((dayIndex) => {
-      const main = mainPools[dayIndex] ?? rotate(mainPools.flat(), dayIndex).slice(0, 6);
+      const foundationDay = buildFoundationDay(dayIndex, foundationLibrary, foundationContext, priorityIds);
       const exercises = [
-        ...foundationWarmups.map((row, index) => buildExercise(row, index + 1, '1', '10-12', '30 sec', foundationTempoNote(row, true), index === 0 ? 'Warm Up' : null, null)),
-        ...main.map((row, index) => buildExercise(row, index + 5, sets, '10-12', '60 sec', foundationTempoNote(row, false), index === 0 ? 'Workout' : null, `ss-${Math.floor(index / 2) + 1}`)),
+        ...foundationDay.warmups.map((row, index) => buildExercise(row, index + 1, '1', '10-12', '30 sec', foundationTempoNote(row, true), index === 0 ? 'Warm Up' : null, 'warmup')),
+        ...foundationDay.workout.map((row, index) => buildExercise(row, index + 5, sets, '10-12', '60 sec', foundationTempoNote(row, false), index === 0 ? 'Workout' : null, `ss-${foundationDay.supersetIds[index] ?? Math.floor(index / 2) + 1}`)),
       ];
       const day = {
         id: `day-${dayIndex + 1}`,
-        title: `Day ${dayIndex + 1} - ${dayIndex < 2 ? 'Unilateral' : 'Bilateral'} Foundation`,
-        focus: dayIndex < 2
-          ? 'Single-arm and single-leg control, movement quality, glute strength, and core control.'
-          : 'Bilateral pattern confidence, controlled loading, and compound readiness.',
+        title: `Day ${dayIndex + 1} - ${dayIndex === 1 ? 'Bilateral' : 'Unilateral'} Foundation`,
+        focus: dayIndex === 1
+          ? 'Bilateral pattern confidence, controlled loading, and compound readiness.'
+          : 'Single-arm and single-leg control, movement quality, glute strength, and core control.',
         exercises,
       };
-      appendConditionalBlocks(day, foundationLibrary, methodologyPhase);
       return day;
     });
 
@@ -492,6 +496,269 @@ function pickAccessories(library: ExerciseRow[], exclude: ExerciseRow[], priorit
   const priority = candidates.filter((e) => priorityIds.has(e.id));
   const rest = candidates.filter((e) => !priorityIds.has(e.id));
   return [...priority, ...rest].slice(0, 9);
+}
+
+interface FoundationContext {
+  raw: string;
+  hasHipPriority: boolean;
+  hasBackPriority: boolean;
+  hasKneePriority: boolean;
+  hasPullGoal: boolean;
+}
+
+interface FoundationDaySelection {
+  warmups: ExerciseRow[];
+  workout: ExerciseRow[];
+  supersetIds: string[];
+}
+
+function prepareFoundationLibrary(library: ExerciseRow[], analysis: Record<string, unknown>, isGymAccess: boolean): ExerciseRow[] {
+  const raw = JSON.stringify(analysis).toLowerCase();
+  return library.filter((exercise) => {
+    const name = exercise.name.toLowerCase();
+    if (isGymAccess && isBandedExercise(exercise)) return false;
+    if (/(burpee|box jump|jump|hop|plyo|skipping|sprint)/i.test(name) && /(dizz|meniscus|knee|impact|jump)/i.test(raw)) return false;
+    if (/(pistol|sissy squat)/i.test(name) && /(meniscus|knee|single-leg stability|balance poor)/i.test(raw)) return false;
+    return true;
+  });
+}
+
+function foundationPriorityContext(analysis: Record<string, unknown>, muscleMindMap: Record<string, unknown>): FoundationContext {
+  const raw = `${JSON.stringify(analysis)} ${JSON.stringify(muscleMindMap)}`.toLowerCase();
+  return {
+    raw,
+    hasHipPriority: /(hip|glute|adductor|piriformis|faber|internal rotation|ir\b)/i.test(raw),
+    hasBackPriority: /(back|lumbar|ql|erector|spine|pelvis|pelvic)/i.test(raw),
+    hasKneePriority: /(knee|meniscus|patella|vmo|single-leg stability|balance)/i.test(raw),
+    hasPullGoal: /(pull[- ]?up|chin[- ]?up|pulling)/i.test(raw),
+  };
+}
+
+function buildFoundationDay(dayIndex: number, library: ExerciseRow[], context: FoundationContext, priorityIds: Set<string>): FoundationDaySelection {
+  const usedIds = new Set<string>();
+  const usedFamilies = new Set<string>();
+  const warmups = pickFoundationWarmups(dayIndex, library, context, usedIds, usedFamilies);
+
+  const workoutUsedIds = new Set<string>(warmups.map((exercise) => exercise.id));
+  const workoutUsedFamilies = new Set<string>();
+  const daySlots = foundationWorkoutSlots(dayIndex, context);
+  const workout = daySlots.map((slot) =>
+    pickForFoundationSlot(library, slot.patterns, workoutUsedIds, workoutUsedFamilies, priorityIds, slot.fallbackCategory)
+  ).filter((row): row is ExerciseRow => Boolean(row));
+
+  while (workout.length < 6) {
+    const fallback = pickForFoundationSlot(
+      library,
+      [/cable crunch|pallof|dead bug|plank|back extension|ql/i, /hip|glute|row|press|squat|lunge|deadlift|rdl/i],
+      workoutUsedIds,
+      workoutUsedFamilies,
+      priorityIds,
+      'corrective',
+    );
+    if (!fallback) break;
+    workout.push(fallback);
+  }
+
+  return {
+    warmups,
+    workout: workout.slice(0, 6),
+    supersetIds: daySlots.map((slot) => slot.supersetId).slice(0, 6),
+  };
+}
+
+function pickFoundationWarmups(
+  dayIndex: number,
+  library: ExerciseRow[],
+  context: FoundationContext,
+  usedIds: Set<string>,
+  usedFamilies: Set<string>,
+): ExerciseRow[] {
+  const hipFirst = context.hasHipPriority || context.hasBackPriority || context.hasKneePriority;
+  const patterns = dayIndex === 1
+    ? [
+      /pigeon|90\/90|90-90|hip.*external|hip.*rotation/i,
+      /adductor.*rock|adductor.*slide|cossack.*prep/i,
+      /open book|thread.*needle|thoracic|cat[- ]?cow/i,
+      /calf raise|ankle|bodyweight.*squat|dead bug/i,
+    ]
+    : dayIndex === 2
+      ? [
+        /hip airplane/i,
+        /thoracic|open book|thread.*needle|cat[- ]?cow/i,
+        /clamshell|glute bridge|side plank/i,
+        /hip.*car|capsular|hip.*ir|90\/90|90-90/i,
+      ]
+      : [
+        /90\/90|90-90|hip.*external|hip.*rotation|hip.*car/i,
+        /hip flexor|couch stretch|triangle/i,
+        /thread.*needle|open book|thoracic|cat[- ]?cow/i,
+        /jefferson curl|dead bug|bodyweight.*squat|glute bridge/i,
+      ];
+  const fallback = hipFirst ? [/hip|glute|adductor|thoracic|dead bug|cat[- ]?cow|mobility/i] : [/mobility|activation|opener|bodyweight/i];
+  return patterns.map((pattern) => pickForFoundationSlot(library, [pattern, ...fallback], usedIds, usedFamilies, new Set(), 'warmup'))
+    .filter((row): row is ExerciseRow => Boolean(row))
+    .slice(0, 4);
+}
+
+function foundationWorkoutSlots(dayIndex: number, context: FoundationContext): Array<{ patterns: RegExp[]; fallbackCategory: string; supersetId: string }> {
+  const corrective = context.hasHipPriority || context.hasBackPriority || context.hasKneePriority
+    ? [
+      /hip airplane|hip.*ir|standing.*hip|hip.*car|capsular/i,
+      /adductor|cossack|patrick|step down|cable crunch|pallof|ql|back extension/i,
+    ]
+    : [/cable crunch|pallof|dead bug|plank/i, /hip|glute|back extension/i];
+
+  if (dayIndex === 1) {
+    return [
+      { patterns: [/double.*kettlebell.*sumo.*deadlift|double.*kb.*deadlift/i, /kb.*deadlift|kettlebell.*deadlift|dumbbell.*deadlift|trap bar.*deadlift/i, /deadlift/i], fallbackCategory: 'bilateral_posterior_lower', supersetId: '1' },
+      { patterns: [/^dumbbell bench press$/i, /dumbbell.*bench press|db.*bench/i, /chest press|seated shoulder press|cable.*chest.*fly/i, /bench press/i], fallbackCategory: 'push', supersetId: '1' },
+      { patterns: [/assisted.*cossack|cossack/i, /leg press|goblet squat|knee extension|squat/i], fallbackCategory: 'bilateral_anterior_lower', supersetId: '2' },
+      { patterns: [/lat pulldown|seated row|cable row|row|pull up/i], fallbackCategory: 'pull', supersetId: '2' },
+      { patterns: [/single.*leg.*glute bridge|glute bridge|hip thrust/i, corrective[0]], fallbackCategory: 'corrective', supersetId: '3' },
+      { patterns: [/ql|back extension|cable crunch|pallof|dead bug|plank/i, corrective[1]], fallbackCategory: 'corrective', supersetId: '3' },
+    ];
+  }
+
+  if (dayIndex === 2) {
+    return [
+      { patterns: [/reverse lunge|split squat|step[- ]?down|step[- ]?up|patrick/i], fallbackCategory: 'anterior_lower', supersetId: '1' },
+      { patterns: [/seated row|cable row|single.*arm.*row|half kneeling.*row|single.*arm.*cable.*pull|lat pulldown|pull up/i], fallbackCategory: 'pull', supersetId: '1' },
+      { patterns: [/landmine.*half kneeling.*press|half kneeling.*shoulder press|single.*arm.*shoulder press|dumbbell.*shoulder press|db.*press|push/i], fallbackCategory: 'push', supersetId: '2' },
+      { patterns: [/single.*leg.*rdl|dumbbell.*single.*leg.*romanian|db.*single.*leg.*rdl|rdl|romanian deadlift/i], fallbackCategory: 'posterior_lower', supersetId: '2' },
+      { patterns: [corrective[0], /hip airplane|hip.*ir|hip.*car|capsular/i], fallbackCategory: 'corrective', supersetId: '3' },
+      { patterns: [corrective[1], /cable crunch|pallof|ql|back extension|adductor|step[- ]?down/i], fallbackCategory: 'corrective', supersetId: '3' },
+    ];
+  }
+
+  return [
+    { patterns: [/goblet squat|step[- ]?up|reverse lunge|split squat|step[- ]?down|leg press/i], fallbackCategory: 'anterior_lower', supersetId: '1' },
+    { patterns: [/half kneeling.*single.*arm.*high row|single.*arm.*row|single.*arm.*cable.*pull|seated row|cable row|lat pulldown|pull up/i], fallbackCategory: 'pull', supersetId: '1' },
+    { patterns: [/single.*leg.*rdl|db.*single.*leg.*rdl|dumbbell.*single.*leg.*romanian|rdl|hip thrust|glute bridge/i], fallbackCategory: 'posterior_lower', supersetId: '2' },
+    { patterns: [/half kneeling.*shoulder press|single.*arm.*shoulder press|landmine.*press|db.*press|dumbbell.*press|cable.*chest.*fly|bench press/i], fallbackCategory: 'push', supersetId: '2' },
+    { patterns: [corrective[0], /hip airplane|hip.*car|capsular|hip.*ir/i], fallbackCategory: 'corrective', supersetId: '3' },
+    { patterns: [corrective[1], /patrick|step[- ]?down|adductor|cable crunch|pallof|ql|back extension/i], fallbackCategory: 'corrective', supersetId: '3' },
+  ];
+}
+
+function pickForFoundationSlot(
+  library: ExerciseRow[],
+  patterns: RegExp[],
+  usedIds: Set<string>,
+  usedFamilies: Set<string>,
+  priorityIds: Set<string>,
+  fallbackCategory: string,
+): ExerciseRow | null {
+  const candidates = [
+    ...orderedPatternMatches(library, patterns).filter((row) => priorityIds.has(row.id)),
+    ...orderedPatternMatches(library, patterns),
+    ...library.filter((row) => categoryMatchesFoundationFallback(row, fallbackCategory)),
+  ].filter((row) => slotAllowsFoundationRow(row, fallbackCategory));
+  for (const row of candidates) {
+    const family = exerciseFamily(row);
+    if (usedIds.has(row.id) || usedFamilies.has(family)) continue;
+    usedIds.add(row.id);
+    usedFamilies.add(family);
+    return row;
+  }
+  for (const row of candidates) {
+    if (usedIds.has(row.id)) continue;
+    usedIds.add(row.id);
+    usedFamilies.add(exerciseFamily(row));
+    return row;
+  }
+  return null;
+}
+
+function orderedPatternMatches(library: ExerciseRow[], patterns: RegExp[]): ExerciseRow[] {
+  const seen = new Set<string>();
+  const rows: ExerciseRow[] = [];
+  for (const pattern of patterns) {
+    for (const row of library) {
+      if (!seen.has(row.id) && exerciseMatches(row, pattern)) {
+        rows.push(row);
+        seen.add(row.id);
+      }
+    }
+  }
+  return rows;
+}
+
+function categoryMatchesFoundationFallback(row: ExerciseRow, fallbackCategory: string): boolean {
+  const category = foundationCategory(row);
+  const name = row.name.toLowerCase();
+  if (fallbackCategory === 'bilateral_anterior_lower') {
+    return category === 'anterior_lower' && !/(single|split squat|lunge|step[- ]?up|step[- ]?down|pistol)/.test(name);
+  }
+  if (fallbackCategory === 'bilateral_posterior_lower') {
+    return category === 'posterior_lower' && !/(single|b-stance|kickstand)/.test(name);
+  }
+  return category === fallbackCategory;
+}
+
+function slotAllowsFoundationRow(row: ExerciseRow, fallbackCategory: string): boolean {
+  const category = foundationCategory(row);
+  const name = row.name.toLowerCase();
+  const tags = (row.tags ?? []).join(' ').toLowerCase();
+  if (fallbackCategory === 'warmup') {
+    return (category === 'corrective' || category === 'warmup') && !/(strength-compound|strength-isolation)/.test(tags) && !/(pull[- ]?up|chin[- ]?up|bench|deadlift|rdl|press|row)/.test(name);
+  }
+  if (fallbackCategory === 'corrective') {
+    if (category === 'pull' || category === 'push') return false;
+    if (/(pull[- ]?up|chin[- ]?up|bench press|deadlift|rdl|romanian|shoulder press)/.test(name)) return false;
+    return category === 'corrective' || /(glute bridge|side plank|clamshell|hip airplane|hip.*car|hip.*ir|capsular|adductor|patrick|step[- ]?down|cable crunch|pallof|dead bug|plank|ql|back extension)/.test(name);
+  }
+  if (fallbackCategory === 'bilateral_anterior_lower' || fallbackCategory === 'bilateral_posterior_lower') {
+    return categoryMatchesFoundationFallback(row, fallbackCategory) && !isFoundationBig5Regression(row);
+  }
+  if ((fallbackCategory === 'push' || fallbackCategory === 'posterior_lower' || fallbackCategory === 'anterior_lower') && isFoundationBig5Regression(row)) return false;
+  return category === fallbackCategory;
+}
+
+function isFoundationBig5Regression(row: ExerciseRow): boolean {
+  const name = row.name.toLowerCase();
+  return /(back squat|barbell bench press|conventional deadlift|overhead press)\b/.test(name);
+}
+
+function exerciseMatches(row: ExerciseRow, pattern: RegExp): boolean {
+  return pattern.test(`${row.name} ${row.equipment ?? ''} ${(row.tags ?? []).join(' ')} ${(row.muscles ?? []).join(' ')}`);
+}
+
+function foundationCategory(row: ExerciseRow): string {
+  const name = row.name.toLowerCase();
+  const tags = (row.tags ?? []).join(' ').toLowerCase();
+  const value = `${name} ${tags}`;
+  if (/pull[- ]?up|chin[- ]?up|lat pulldown|row|single.*arm.*cable.*pull/.test(value)) return 'pull';
+  if (/bench|press|push|fly|chest/.test(value)) return 'push';
+  if (/squat|lunge|step[- ]?up|step[- ]?down|leg press|knee extension|cossack|patrick/.test(value)) return 'anterior_lower';
+  if (/deadlift|rdl|romanian|hinge|hamstring curl|hip thrust|glute bridge|back extension/.test(value)) return 'posterior_lower';
+  if (/hip|adductor|pallof|plank|dead bug|crunch|ql|core|thoracic|mobility|stretch/.test(value)) return 'corrective';
+  if (/mobility|activation|opener|bodyweight/.test(value)) return 'warmup';
+  return 'corrective';
+}
+
+function exerciseFamily(row: ExerciseRow): string {
+  const name = row.name.toLowerCase();
+  if (/pull[- ]?up|chin[- ]?up/.test(name)) return 'pull-up';
+  if (/lat pulldown/.test(name)) return 'lat-pulldown';
+  if (/row/.test(name)) return 'row';
+  if (/rdl|romanian/.test(name)) return 'rdl';
+  if (/deadlift/.test(name)) return 'deadlift';
+  if (/cossack/.test(name)) return 'cossack';
+  if (/goblet|squat|leg press|knee extension/.test(name)) return 'squat-knee';
+  if (/lunge|split squat/.test(name)) return 'lunge';
+  if (/step[- ]?up|step[- ]?down|patrick/.test(name)) return 'step';
+  if (/hip thrust|glute bridge|bridge/.test(name)) return 'hip-thrust-bridge';
+  if (/hamstring curl/.test(name)) return 'hamstring-curl';
+  if (/bench|chest press|fly|push up|push/.test(name)) return 'horizontal-push';
+  if (/shoulder press|landmine.*press|overhead press/.test(name)) return 'shoulder-press';
+  if (/hip airplane/.test(name)) return 'hip-airplane';
+  if (/hip.*ir|internal rotation|capsular/.test(name)) return 'hip-ir';
+  if (/hip flexor/.test(name)) return 'hip-flexor';
+  if (/adductor|pigeon|90\/90|90-90/.test(name)) return 'hip-adductor-rotation';
+  if (/thoracic|open book|thread.*needle|cat[- ]?cow/.test(name)) return 'thoracic';
+  if (/ql|back extension|jefferson/.test(name)) return 'trunk-extension';
+  if (/dead bug|plank|pallof|crunch|core/.test(name)) return 'core';
+  return name.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || row.id;
 }
 
 function pickFoundationMain(library: ExerciseRow[], big5: ExerciseRow[], priorityIds: Set<string> = new Set()): ExerciseRow[] {
