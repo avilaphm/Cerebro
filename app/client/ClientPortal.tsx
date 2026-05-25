@@ -1547,9 +1547,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const renderHeader = () => (
     <header className="border-b border-black/10 bg-white px-4 py-4 md:px-10 md:py-5">
-      <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Pedro Avila Coaching</p>
+      <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Pedro Avila Coaching App</p>
       <div className="mt-2 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <h1 className="font-display text-2xl font-light tracking-[-0.02em] md:text-3xl">Training</h1>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <p className="max-w-[13rem] truncate text-xs text-black/40 md:max-w-none">{userEmail}</p>
           {isPedro ? (

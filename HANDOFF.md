@@ -1,12 +1,35 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:05 AEST by Codex - Renamed the client chat AI to Henrique and deployed the updated chat prompt.
+2026-05-25 15:16 AEST by Codex - Renamed the client dashboard title to Pedro Avila Coaching App.
 
 ## Last code fix commit
-HEAD - Rename client chat assistant Henrique
+HEAD - Rename client dashboard title
 
 ## What just happened (read first)
+
+### Client dashboard title updated (2026-05-25, LATEST)
+
+Pedro wanted the client-facing dashboard title at the top left to say `Pedro Avila Coaching App` and to remove the old `Training` label.
+
+Changes shipped:
+- `app/client/ClientPortal.tsx`
+  - Top-left brand text now says `Pedro Avila Coaching App`.
+  - The `Training` heading directly under it was removed.
+
+Verification:
+- `npm run build` passes.
+
+Notes:
+- Existing unrelated dirty changes are still present and were not staged by this task:
+  - `supabase/functions/compute-client-metrics/index.ts`
+  - `supabase/functions/embed-client-brain/index.ts`
+  - `supabase/functions/explain-journey-phase/index.ts`
+  - `supabase/functions/ingest-knowledge-document/index.ts`
+  - `supabase/functions/query-knowledge-brain/index.ts`
+  - `supabase/functions/seed-exercise-library/index.ts`
+  - `supabase/migrations/20260525045450_revoke_public_execute_on_security_definer_rpcs.sql`
+  - `supabase/migrations/20260525045511_revoke_public_role_execute_on_security_definer_rpcs.sql`
 
 ### Client chat AI renamed to Henrique (2026-05-25, LATEST)
 
