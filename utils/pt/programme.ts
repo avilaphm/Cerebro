@@ -1,4 +1,4 @@
-import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammePhase, PTProgrammeWeekBlock, PTProgrammeExerciseBlockOverride } from './types';
+import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammePhase, PTProgrammeWeekBlock, PTProgrammeExerciseBlockOverride, PTProgrammeDay } from './types';
 
 export const emptyProgramme: PTProgramme = { phases: [] };
 
@@ -109,6 +109,42 @@ export function moveExerciseBetweenProgrammeDays(
   days[toDay] = { ...days[toDay], exercises: rebuildDayExercises(toItems) };
 
   return { ...phase, days };
+}
+
+export function findFoundationPhaseIndex(phases: PTProgrammePhase[]): number {
+  const titleMatch = phases.findIndex((phase) => phase.title.toLowerCase().includes('foundation'));
+  if (titleMatch >= 0) return titleMatch;
+  return phases.length > 0 ? 0 : -1;
+}
+
+export function appendDaysToFoundationPhase(programme: PTProgramme, importedDays: PTProgrammeDay[]): { programme: PTProgramme; phaseIndex: number } {
+  let phaseIndex = findFoundationPhaseIndex(programme.phases);
+  if (phaseIndex === -1) {
+    programme.phases.push({ id: makeId('phase'), title: 'Phase 1 - Foundation', focus: 'Movement quality & base conditioning', weeks: '7', progression: '', days: [] });
+    phaseIndex = 0;
+  }
+
+  const phase = programme.phases[phaseIndex];
+  const existingCount = phase.days.length;
+  const days = importedDays.map((day, dayIndex) => ({
+    id: makeId('day'),
+    title: `Current Programme - ${day.title?.trim() || `Day ${existingCount + dayIndex + 1}`}`,
+    focus: day.focus ?? '',
+    exercises: day.exercises.map((exercise) => ({
+      ...exercise,
+      id: makeId('exercise'),
+      sets: exercise.sets ?? '',
+      reps: exercise.reps ?? '',
+      rest: exercise.rest ?? '',
+      notes: exercise.notes ?? '',
+      cues: exercise.cues ?? [],
+      video_url: exercise.video_url ?? null,
+      exercise_id: exercise.exercise_id ?? null,
+    })),
+  }));
+
+  phase.days.push(...days);
+  return { programme, phaseIndex };
 }
 
 export function getPhaseStartWeeks(phases: PTProgrammePhase[]): number[] {

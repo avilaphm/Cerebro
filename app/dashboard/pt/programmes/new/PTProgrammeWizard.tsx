@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays } from '@/utils/pt/programme';
+import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase } from '@/utils/pt/programme';
 import type {
   PTClient, PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay,
 } from '@/utils/pt/types';
 import PTDayEditor from '../PTDayEditor';
+import CurrentWorkoutImportModal from '../CurrentWorkoutImportModal';
 
 interface SpeechRecognitionResultItemLike { transcript: string; }
 interface SpeechRecognitionResultLike {
@@ -38,6 +39,11 @@ interface ProgrammingAgentDraft {
   validation_summary?: Record<string, unknown>;
   phase_nutrition?: unknown;
   programme?: unknown;
+}
+
+interface CurrentWorkoutImportResult {
+  created_exercises?: Array<{ name: string; exercise_id: string }>;
+  matched_count?: number;
 }
 
 function draftReviewSummary(draft: ProgrammingAgentDraft, fallback: string) {
@@ -140,6 +146,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [boardView, setBoardView] = useState(false);
   const [dragEx, setDragEx] = useState<{ dayIndex: number; exId: string } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const [currentWorkoutImportOpen, setCurrentWorkoutImportOpen] = useState(false);
+  const [currentWorkoutImportStatus, setCurrentWorkoutImportStatus] = useState('');
   const [saving, setSaving] = useState(false);
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
@@ -493,6 +501,23 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       p.phases[activePhaseTab] = moveExerciseBetweenProgrammeDays(ph, fromDay, exId, toDay, beforeExId);
       return p;
     });
+  };
+
+  const handleCurrentWorkoutImported = (days: PTProgrammeDay[], result: CurrentWorkoutImportResult) => {
+    let foundationIndex = 0;
+    update((p) => {
+      const appended = appendDaysToFoundationPhase(p, days);
+      foundationIndex = appended.phaseIndex;
+      return appended.programme;
+    });
+    setActivePhaseTab(foundationIndex);
+    setActiveDay(null);
+    setBoardView(true);
+    const created = result.created_exercises?.length ?? 0;
+    setCurrentWorkoutImportStatus(
+      `Added ${days.length} current workout day${days.length === 1 ? '' : 's'} to Foundation`
+      + (created > 0 ? ` and created ${created} exercise card${created === 1 ? '' : 's'} for videos later.` : '.'),
+    );
   };
 
   const save = async () => {
@@ -925,16 +950,26 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                 <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">
                   {phase.title} {boardView ? '— drag exercises between days' : '— select a day to edit'}
                 </p>
-                {phase.days.length > 0 && (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {phase.days.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setBoardView((v) => !v); setActiveDay(null); }}
+                      className={`border px-3 py-1.5 text-xs transition-colors ${boardView ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/35'}`}
+                    >
+                      {boardView ? 'List view' : 'Board view'}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => { setBoardView((v) => !v); setActiveDay(null); }}
-                    className={`border px-3 py-1.5 text-xs transition-colors ${boardView ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/35'}`}
+                    onClick={() => setCurrentWorkoutImportOpen(true)}
+                    className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
                   >
-                    {boardView ? 'List view' : 'Board view'}
+                    + Add current workout
                   </button>
-                )}
+                </div>
               </div>
+              {currentWorkoutImportStatus && <p className="mb-4 text-xs text-black/50">{currentWorkoutImportStatus}</p>}
 
               {boardView ? (
                 <div className="space-y-3">
@@ -1064,6 +1099,12 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               Finish →
             </button>
           </div>
+
+          <CurrentWorkoutImportModal
+            open={currentWorkoutImportOpen}
+            onClose={() => setCurrentWorkoutImportOpen(false)}
+            onImported={handleCurrentWorkoutImported}
+          />
         </div>
       )}
 

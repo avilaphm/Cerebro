@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays } from '@/utils/pt/programme';
+import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase } from '@/utils/pt/programme';
 import type {
   PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramAssignment,
 } from '@/utils/pt/types';
 import PTDayEditor from '../../PTDayEditor';
+import CurrentWorkoutImportModal from '../../CurrentWorkoutImportModal';
 
 interface SpeechRecognitionResultItemLike { transcript: string; }
 interface SpeechRecognitionResultLike {
@@ -38,6 +39,11 @@ interface ProgrammingAgentDraft {
   validation_summary?: Record<string, unknown>;
   phase_nutrition?: unknown;
   programme?: unknown;
+}
+
+interface CurrentWorkoutImportResult {
+  created_exercises?: Array<{ name: string; exercise_id: string }>;
+  matched_count?: number;
 }
 
 interface PhaseNutritionRow {
@@ -121,6 +127,8 @@ export default function PTProgrammeEditView({
   const [boardView, setBoardView] = useState(false);
   const [dragEx, setDragEx] = useState<{ dayIndex: number; exId: string } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const [currentWorkoutImportOpen, setCurrentWorkoutImportOpen] = useState(false);
+  const [currentWorkoutImportStatus, setCurrentWorkoutImportStatus] = useState('');
   const highlightedPhase = Number.parseInt(highlight?.phase ?? '', 10);
   const highlightedDay = Number.parseInt(highlight?.day ?? '', 10);
   const [activePhaseTab, setActivePhaseTab] = useState(Number.isFinite(highlightedPhase) ? highlightedPhase : 0);
@@ -212,6 +220,23 @@ export default function PTProgrammeEditView({
       p.phases[activePhaseTab] = moveExerciseBetweenProgrammeDays(ph, fromDay, exId, toDay, beforeExId);
       return p;
     });
+  };
+
+  const handleCurrentWorkoutImported = (days: PTProgrammeDay[], result: CurrentWorkoutImportResult) => {
+    let foundationIndex = 0;
+    update((p) => {
+      const appended = appendDaysToFoundationPhase(p, days);
+      foundationIndex = appended.phaseIndex;
+      return appended.programme;
+    });
+    setActivePhaseTab(foundationIndex);
+    setActiveDay(null);
+    setBoardView(true);
+    const created = result.created_exercises?.length ?? 0;
+    setCurrentWorkoutImportStatus(
+      `Added ${days.length} current workout day${days.length === 1 ? '' : 's'} to Foundation`
+      + (created > 0 ? ` and created ${created} exercise card${created === 1 ? '' : 's'} for videos later. Save changes to keep the imported days.` : '. Save changes to keep the imported days.'),
+    );
   };
 
   // Build a phase from freeform text via the build-workout-from-text edge function.
@@ -710,6 +735,13 @@ export default function PTProgrammeEditView({
             )}
             <button
               type="button"
+              onClick={() => setCurrentWorkoutImportOpen(true)}
+              className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
+            >
+              + Add current workout
+            </button>
+            <button
+              type="button"
               onClick={() => setBuildOpen((v) => !v)}
               className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
             >
@@ -717,6 +749,7 @@ export default function PTProgrammeEditView({
             </button>
           </div>
         </div>
+        {currentWorkoutImportStatus && <p className="mb-4 text-xs text-black/50">{currentWorkoutImportStatus}</p>}
 
         {buildOpen && (
           <div className="mb-6 border border-black/15 bg-black/[0.02] p-4">
@@ -874,6 +907,12 @@ export default function PTProgrammeEditView({
           )
         )}
       </div>
+
+      <CurrentWorkoutImportModal
+        open={currentWorkoutImportOpen}
+        onClose={() => setCurrentWorkoutImportOpen(false)}
+        onImported={handleCurrentWorkoutImported}
+      />
 
       {/* Apply nutrition modal */}
       {nutritionApplyOpen && (

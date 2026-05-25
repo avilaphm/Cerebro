@@ -1,12 +1,63 @@
 # Handoff
 
 ## Last updated
-2026-05-25 10:07 AEST by Codex - Added Trello-style phase workout board to step 3 of new programme creation wizard; shared cross-day exercise drag/drop helper with edit view; build and local smoke test passed.
+2026-05-25 10:41 AEST by Codex - Added current workout import workflow: screenshots/text modal, import-current-workout Edge Function, Foundation appender, buttons in programme creation/edit, project skill chain, deployed function v1.
 
 ## Last code fix commit
-HEAD - Add programme wizard board view
+HEAD - Add current workout import
 
 ## What just happened (read first)
+
+### Current workout import into Foundation (2026-05-25, LATEST)
+
+Pedro wanted a new button beside the recently added board/list view button so he can paste text or upload screenshots of a client's current programme and append those workouts into Phase 1 Foundation, without changing the AI-generated programme.
+
+Changes shipped:
+- New shared modal: `app/dashboard/pt/programmes/CurrentWorkoutImportModal.tsx`.
+  - Accepts pasted workout text and up to 3 screenshots.
+  - Preview calls `import-current-workout` in `preview` mode.
+  - Confirm calls `commit` mode, then returns structured days to the parent UI.
+- New Edge Function: `supabase/functions/import-current-workout/index.ts`.
+  - Uses Anthropic vision/text to extract workout days from text/images.
+  - Matches parsed exercises to `pt_exercises`.
+  - In preview mode, returns missing exercise names without writing rows.
+  - In commit mode, creates missing exercise cards with `source = ai` and `video_url = null`.
+  - Deployed as active function v1 on Supabase project `otcnrkfvgyvwolironoz`.
+- New programme wizard step 3:
+  - `+ Add current workout` button appears next to Board/List view.
+  - Confirmed imports append to Foundation, switch to board view, and show status.
+- Existing programme edit view:
+  - Same `+ Add current workout` button in the Workouts toolbar.
+  - Imported days append to Foundation and require normal `Save changes` to persist.
+- Shared helper in `utils/pt/programme.ts`:
+  - `findFoundationPhaseIndex()`
+  - `appendDaysToFoundationPhase()`
+  - Finds Foundation by title, fallback phase 0, generates fresh IDs, prefixes imported days as `Current Programme - ...`.
+- New local skill chain added outside `cerebro-site`:
+  - `skills/pt-current-workout-import-orchestrator`
+  - `skills/pt-current-workout-extract-source`
+  - `skills/pt-current-workout-structure-days`
+  - `skills/pt-current-workout-resolve-exercises`
+  - `skills/pt-current-workout-append-foundation`
+  - Root `AGENTS.md` updated with the chain and additive-only hard rule.
+
+Verification:
+- `npm run build` passes.
+- `supabase functions deploy import-current-workout` succeeded.
+- `supabase functions list` shows `import-current-workout` ACTIVE v1.
+- Browser smoke test on `http://localhost:3001/dashboard/pt/programmes/new?draftKey=codex-import-smoke`:
+  - loaded a draft programme,
+  - opened step 3,
+  - confirmed `+ Add current workout` beside Board view,
+  - pasted a current workout,
+  - Preview returned 1 day, 3 matched exercises, 0 new exercise cards,
+  - Add to Foundation appended `Current Programme - Day 1` after generated Foundation days and switched to board view.
+
+Notes:
+- The official skill validator could not run because local Python is missing `PyYAML` (`ModuleNotFoundError: No module named 'yaml'`). Skill frontmatter was still kept minimal and manually checked.
+- Existing unrelated local changes were present and not touched/staged by this task:
+  - `utils/pt/types.ts` activity_tag union change.
+  - `supabase/migrations/20260525000000_add_activity_level_6_extra_active.sql`.
 
 ### New programme wizard step 3 board view (2026-05-25, LATEST)
 
