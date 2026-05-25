@@ -1,15 +1,33 @@
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+
+const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB
+const MAX_PAGES = 60;
 
 type PdfTextItem = { str?: string };
 
 export async function POST(req: NextRequest) {
   try {
+    // Require an authenticated user — this endpoint is only used by dashboard uploads.
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+
     const form = await req.formData();
     const file = form.get('file');
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json({ error: 'File too large (max 15MB).' }, { status: 413 });
     }
     const buffer = await file.arrayBuffer();
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -21,8 +39,9 @@ export async function POST(req: NextRequest) {
       disableWorker: true,
     } as unknown as Parameters<typeof pdfjs.getDocument>[0]).promise;
 
+    const pageCount = Math.min(document.numPages, MAX_PAGES);
     const pages: string[] = [];
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
       const pageText = content.items
