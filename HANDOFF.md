@@ -1,27 +1,28 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:24 AEST by Codex - Refined the workout journey rail into a two-line snake so Phase 2 / Phase 3 week checkpoints stay inside the viewport.
+2026-05-25 15:35 AEST by Codex - Reworked the workout journey rail into a vertical milestone spine with smaller week circles so the phase checkpoints stay readable.
 
 ## Last code fix commit
-a213aaf - Refine journey rail layout
+18f6222 - Update handoff for journey rail
 
 ## What just happened (read first)
 
 ### Workout journey rail tightened (2026-05-25, LATEST)
 
-Pedro wanted the workout screen's "Your Journey" dropdown to keep Phase 2 / Phase 3 week checkpoints inside the container and read as a 2-line serpentine progression.
+Pedro wanted the workout screen's "Your Journey" dropdown to keep Phase 2 / Phase 3 week checkpoints inside the container and read as a vertical milestone spine with small circles on the line.
 
 Changes shipped:
 - `app/client/ClientPortal.tsx`
-  - The journey week rail now renders as a two-row snake instead of a crowded linear stack.
-  - Week cards were compressed to smaller checkpoints labeled `W1` through `W12`.
-  - The connecting path was reworked so the rail bends down at the end of the first row and returns on the second row without forcing overflow.
+  - The journey week rail now renders as a vertical spine with small circle checkpoints instead of the crowded card stack.
+  - Week labels were compressed to smaller `W1` through `W12` markers so they do not overlap.
+  - The spine runs behind the circles so the green fill can light up each milestone as it is reached.
+  - The rail now falls back to the phase week count when explicit week blocks are missing, so the layout still renders consistently.
   - The layout was verified in both desktop and narrow mobile viewports.
 
 Verification:
 - `npm run build` passes.
-- Playwright checks confirmed the week labels stay inside the container on a 390px-wide viewport.
+- Playwright checks confirmed the week labels stay inside the container on a 390px-wide viewport and the circles remain vertically spaced.
 
 Notes:
 - Existing unrelated dirty changes remain in the broader repo, but this work only touched `app/client/ClientPortal.tsx` and the session docs.

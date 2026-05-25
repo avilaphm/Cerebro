@@ -1800,81 +1800,57 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       isActivePhase: boolean,
       isDonePhase: boolean,
       progress: PhaseProgress | null,
+      fallbackWeekCount: number,
     ) => {
-      if (blocks.length === 0) return null;
-
-      const topBlocks = blocks.slice(0, Math.ceil(blocks.length / 2));
-      const bottomBlocks = blocks.slice(Math.ceil(blocks.length / 2));
-      const topPositions = topBlocks.map((_, index) => (
-        topBlocks.length === 1 ? 50 : 10 + ((80 / (topBlocks.length - 1)) * index)
-      ));
-      const bottomPositions = bottomBlocks.map((_, index) => (
-        bottomBlocks.length === 1 ? 50 : 90 - ((80 / (bottomBlocks.length - 1)) * index)
-      ));
-
-      const topStart = topPositions[0] ?? 50;
-      const topEnd = topPositions[topPositions.length - 1] ?? topStart;
-      const bottomStart = bottomPositions[0] ?? topEnd;
-      const bottomEnd = bottomPositions[bottomPositions.length - 1] ?? bottomStart;
-      const hasBottom = bottomBlocks.length > 0;
-
-      const pathD = hasBottom
-        ? `M 6 30 H ${topStart} C ${topStart + 4} 30 ${topStart + 4} 30 ${topStart + 4} 34 H ${topEnd - 4} C ${topEnd} 34 ${topEnd} 58 ${topEnd} 64 V 112 C ${topEnd} 120 ${topEnd - 4} 124 ${bottomStart} 124 H ${bottomEnd + 4} C ${bottomEnd} 124 ${bottomEnd} 124 ${bottomEnd} 118`
-        : `M 6 30 H ${topStart} H ${topEnd}`;
-
-      const blockCardClass = (isDone: boolean, isActive: boolean) => (
-        `absolute w-[4.35rem] -translate-x-1/2 rounded-[1rem] border px-2 py-2 text-center shadow-sm transition-all sm:w-[4.8rem] ${
-          isDone
-            ? 'border-[rgba(46,213,115,0.38)] bg-white shadow-[0_10px_30px_-22px_rgba(46,213,115,0.65)]'
-            : isActive
-              ? 'border-black bg-white'
-              : 'border-black/10 bg-white/90'
-        }`
-      );
+      const visibleBlocks = blocks.length > 0
+        ? blocks
+        : Array.from(
+          { length: Math.max(0, fallbackWeekCount) },
+          () => ({ weeks: 1, sets: '', weight_pct: '' } satisfies PTProgrammeWeekBlock),
+        );
+      if (visibleBlocks.length === 0) return null;
 
       return (
-        <div className="relative mt-4 overflow-hidden rounded-[1.4rem] border border-black/8 bg-[#fcfcfa] px-3 py-5 sm:px-4">
-          <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 140" preserveAspectRatio="none" aria-hidden="true">
-            <path d={pathD} fill="none" stroke="rgba(0,0,0,0.10)" strokeWidth="1.2" strokeLinecap="round" />
-            <path d={pathD} fill="none" stroke="rgb(46,213,115)" strokeOpacity="0.92" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
+        <div className="relative mt-4 overflow-hidden rounded-[1.4rem] border border-black/8 bg-[#fcfcfa] px-3 py-4 sm:px-4">
+          <div className="relative pl-8">
+            <div className="absolute bottom-1 left-[0.72rem] top-1 w-px bg-black/8" />
+            <div
+              className="absolute left-[0.72rem] top-1 w-px bg-[rgb(46,213,115)] transition-all duration-700"
+              style={{ height: `${Math.max(12, Math.min(100, ((progress?.blockIndex ?? -1) + 1) / visibleBlocks.length * 100))}%` }}
+            />
 
-          <div className="relative h-[10.75rem] sm:h-[11.75rem]">
-            {topBlocks.map((block, index) => {
-              const blockIndex = index;
-              const isBlockDone = isDonePhase || (progress !== null && progress.blockIndex > blockIndex);
-              const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === blockIndex;
-              const label = block.weight_pct ?? block.sets ?? '';
-              const weekLabel = `W${index + 1}`;
-              return (
-                <div
-                  key={`top-${index}`}
-                  className={blockCardClass(isBlockDone, isBlockActive)}
-                  style={{ left: `${topPositions[index]}%`, top: '20px' }}
-                >
-                  <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
-                  <p className="mt-1 text-[0.54rem] uppercase tracking-[0.12em] text-black/40">{label}</p>
-                </div>
-              );
-            })}
+            <div className="space-y-1.5">
+              {visibleBlocks.map((block, index) => {
+                const isBlockDone = isDonePhase || (progress !== null && progress.blockIndex > index);
+                const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === index;
+                const weekLabel = `W${index + 1}`;
+                const metricLabel = block.weight_pct ?? block.sets ?? `${block.weeks} wk`;
+                return (
+                  <div key={`week-${index}`} className="relative flex items-start gap-3 rounded-[0.9rem] px-1 py-1">
+                    <div
+                      className={`absolute left-[0.72rem] top-4 z-10 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all ${
+                        isBlockDone
+                          ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
+                          : isBlockActive
+                            ? 'border-black bg-white shadow-[0_0_0_3px_rgba(0,0,0,0.05)]'
+                            : 'border-black/18 bg-white'
+                      }`}
+                    >
+                      {isBlockDone && <Check className="absolute inset-0 m-auto h-2 w-2 text-white" />}
+                    </div>
 
-            {bottomBlocks.map((block, index) => {
-              const blockIndex = topBlocks.length + index;
-              const isBlockDone = isDonePhase || (progress !== null && progress.blockIndex > blockIndex);
-              const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === blockIndex;
-              const label = block.weight_pct ?? block.sets ?? '';
-              const weekLabel = `W${topBlocks.length + index + 1}`;
-              return (
-                <div
-                  key={`bottom-${index}`}
-                  className={blockCardClass(isBlockDone, isBlockActive)}
-                  style={{ left: `${bottomPositions[index]}%`, top: '88px' }}
-                >
-                  <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
-                  <p className="mt-1 text-[0.54rem] uppercase tracking-[0.12em] text-black/40">{label}</p>
-                </div>
-              );
-            })}
+                    <div className="min-w-0 pl-4">
+                      <div className="flex items-center gap-2">
+                        <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
+                        <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${isBlockDone ? 'text-[rgb(46,213,115)]' : 'text-black/30'}`}>
+                          {metricLabel}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       );
@@ -1955,6 +1931,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 const blocks = hasProgramme && step.phaseIndex !== null
                   ? (assignment.programme.phases[step.phaseIndex]?.week_blocks ?? [])
                   : [];
+                const phaseWeekCount = hasProgramme && step.phaseIndex !== null
+                  ? Number.parseInt(assignment.programme.phases[step.phaseIndex]?.weeks ?? '', 10)
+                  : 0;
                 const stepKey = `${step.type}-${index}`;
                 const isLoadingThis = journeyLoadingKey === stepKey;
 
@@ -2030,7 +2009,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         <p className="mt-1.5 text-[0.7rem] leading-relaxed text-black/35">You&apos;re here right now.</p>
                       )}
 
-                      {blocks.length > 0 && renderWeekRail(blocks, isActivePhase, isDonePhase, pp)}
+                      {renderWeekRail(blocks, isActivePhase, isDonePhase, pp, Number.isFinite(phaseWeekCount) ? phaseWeekCount : 0)}
                     </div>
                   </div>
                 );
