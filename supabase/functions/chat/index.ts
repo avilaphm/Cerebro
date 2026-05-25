@@ -7,6 +7,11 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Escape visitor-controlled values before interpolating into email HTML.
+const esc = (v: unknown): string =>
+  String(v ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c));
+
 // =============================================================================
 // SYSTEM PROMPT — Cerebro chat assistant
 //
@@ -319,8 +324,8 @@ Deno.serve(async (req: Request) => {
             subject: `We heard you, ${firstName}.`,
             html: `
               <div style="font-family:Georgia,serif;max-width:580px;margin:0 auto;padding:48px 24px;color:#000;line-height:1.8;">
-                <p style="margin:0 0 20px 0;">Hey ${firstName},</p>
-                <p style="margin:0 0 20px 0;">Got everything you shared. We're putting together a tailored plan for ${businessLabel} now, with a few specifics built around what you described.</p>
+                <p style="margin:0 0 20px 0;">Hey ${esc(firstName)},</p>
+                <p style="margin:0 0 20px 0;">Got everything you shared. We're putting together a tailored plan for ${esc(businessLabel)} now, with a few specifics built around what you described.</p>
                 <p style="margin:0 0 20px 0;">It'll land in your inbox within the hour. If anything stands out, Pedro will follow up directly to set up a call.</p>
                 <p style="margin:0 0 6px 0;">Pedro</p>
                 <p style="margin:0;color:#666;font-size:13px;">Cerebro</p>
@@ -354,13 +359,13 @@ Deno.serve(async (req: Request) => {
         const transcriptHtml = messages
           .map(
             (m) =>
-              `<p style="margin:0 0 12px 0;"><strong>${m.role === 'user' ? 'Visitor' : 'Cerebro'}:</strong> ${m.content}</p>`,
+              `<p style="margin:0 0 12px 0;"><strong>${m.role === 'user' ? 'Visitor' : 'Cerebro'}:</strong> ${esc(m.content)}</p>`,
           )
           .join('');
 
         const phrasesHtml =
           leadData.exact_phrases && leadData.exact_phrases.length
-            ? `<ul style="margin:0 0 16px 0;padding-left:20px;">${leadData.exact_phrases.map((p) => `<li style="margin:0 0 6px 0;">"${p}"</li>`).join('')}</ul>`
+            ? `<ul style="margin:0 0 16px 0;padding-left:20px;">${leadData.exact_phrases.map((p) => `<li style="margin:0 0 6px 0;">"${esc(p)}"</li>`).join('')}</ul>`
             : '<em>None extracted</em>';
 
         const notifyRes = await fetch('https://api.resend.com/emails', {
@@ -378,22 +383,22 @@ Deno.serve(async (req: Request) => {
                 <h2 style="font-size:20px;margin:0 0 8px 0;">New lead captured</h2>
                 <p style="margin:0 0 24px 0;color:#666;font-size:13px;">Proposal generation kicked off. Full proposal email arrives in a few minutes.</p>
 
-                <p style="margin:0 0 8px 0;"><strong>Name:</strong> ${leadData.name ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Email:</strong> ${leadData.email ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Business:</strong> ${leadData.business_type ?? 'N/A'} ${leadData.industry ? '(' + leadData.industry + ')' : ''}</p>
-                <p style="margin:0 0 8px 0;"><strong>Website:</strong> ${leadData.website ?? '<em style="color:#999;">not provided</em>'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Bottleneck:</strong> ${leadData.pain_point ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Impact:</strong> ${leadData.impact ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Current tools:</strong> ${leadData.current_tools ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Team size:</strong> ${leadData.team_size ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Budget:</strong> ${leadData.budget ?? 'N/A'}</p>
-                <p style="margin:0 0 8px 0;"><strong>Timeline:</strong> ${leadData.timeline ?? 'N/A'}</p>
+                <p style="margin:0 0 8px 0;"><strong>Name:</strong> ${esc(leadData.name ?? 'N/A')}</p>
+                <p style="margin:0 0 8px 0;"><strong>Email:</strong> ${esc(leadData.email ?? 'N/A')}</p>
+                <p style="margin:0 0 8px 0;"><strong>Business:</strong> ${esc(leadData.business_type ?? 'N/A')} ${leadData.industry ? '(' + esc(leadData.industry) + ')' : ''}</p>
+                <p style="margin:0 0 8px 0;"><strong>Website:</strong> ${leadData.website ? esc(leadData.website) : '<em style="color:#999;">not provided</em>'}</p>
+                <p style="margin:0 0 8px 0;"><strong>Bottleneck:</strong> ${esc(leadData.pain_point ?? 'N/A')}</p>
+                <p style="margin:0 0 8px 0;"><strong>Impact:</strong> ${esc(leadData.impact ?? 'N/A')}</p>
+                <p style="margin:0 0 8px 0;"><strong>Current tools:</strong> ${esc(leadData.current_tools ?? 'N/A')}</p>
+                <p style="margin:0 0 8px 0;"><strong>Team size:</strong> ${esc(leadData.team_size ?? 'N/A')}</p>
+                <p style="margin:0 0 8px 0;"><strong>Budget:</strong> ${esc(leadData.budget ?? 'N/A')}</p>
+                <p style="margin:0 0 8px 0;"><strong>Timeline:</strong> ${esc(leadData.timeline ?? 'N/A')}</p>
 
                 <h3 style="font-size:15px;margin:24px 0 8px 0;">Their words (verbatim)</h3>
                 ${phrasesHtml}
 
                 <h3 style="font-size:15px;margin:24px 0 8px 0;">Summary</h3>
-                <p style="margin:0 0 24px 0;">${leadData.summary ?? composedMessage ?? 'N/A'}</p>
+                <p style="margin:0 0 24px 0;">${esc(leadData.summary ?? composedMessage ?? 'N/A')}</p>
 
                 <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;" />
 
