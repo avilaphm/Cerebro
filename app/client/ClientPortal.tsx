@@ -1761,29 +1761,33 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
         <div className="mt-5">
           <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Activity level</p>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {([
               [1, 'Sedentary', 'Little or no exercise'],
-              [2, 'Light', '1-3 days/week'],
-              [3, 'Moderate', '3-5 days/week'],
-              [4, 'Active', '6-7 days/week'],
+              [2, 'Light', 'Exercise 1-3 days/week'],
+              [3, 'Moderate', 'Exercise 3-5 days/week'],
+              [4, 'Active', 'Exercise 6-7 days/week'],
               [5, 'Very Active', 'Hard exercise daily'],
-              [6, 'Extra Active', 'Physical job / 2x/day'],
             ] as [number, string, string][]).map(([level, label, desc]) => {
               const selected = nutritionDraft.activity_level === String(level);
+              const selectActivity = () => setNutritionDraft((current) => ({ ...current, activity_level: String(level) }));
               return (
                 <button
                   key={level}
                   type="button"
-                  onClick={() => setNutritionDraft((current) => ({ ...current, activity_level: String(level) }))}
-                  className={`border px-3 py-3 text-left transition-colors ${
+                  onPointerDown={selectActivity}
+                  onClick={selectActivity}
+                  className={`min-h-[4.5rem] touch-manipulation border px-4 py-4 text-left transition-colors ${
                     selected
                       ? 'border-black bg-black text-white'
                       : 'border-black/10 bg-[#fbfbf8] text-black/70 hover:border-black/30 hover:text-black'
                   }`}
                 >
-                  <span className="block text-sm font-medium">{label}</span>
-                  <span className={`mt-0.5 block text-[0.6rem] leading-tight ${selected ? 'text-white/60' : 'text-black/40'}`}>{desc}</span>
+                  <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm leading-relaxed">
+                    <span className="font-semibold">{label}</span>
+                    <span className={selected ? 'text-white/55' : 'text-black/35'}>-</span>
+                    <span className={selected ? 'text-white/70' : 'text-black/55'}>{desc}</span>
+                  </span>
                 </button>
               );
             })}
