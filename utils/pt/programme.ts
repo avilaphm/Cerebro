@@ -48,6 +48,69 @@ export function sortExercisesBySectionOrder(exercises: PTProgrammeExercise[]): P
   return result;
 }
 
+function resolveDayExercises(exercises: PTProgrammeExercise[]): Array<{ exercise: PTProgrammeExercise; section: string }> {
+  let current = '';
+  return exercises.map((exercise) => {
+    if (exercise.section_start !== undefined) current = exercise.section_start || '';
+    return { exercise, section: current };
+  });
+}
+
+function rebuildDayExercises(items: Array<{ exercise: PTProgrammeExercise; section: string }>): PTProgrammeExercise[] {
+  const sectionRank = (section: string): number => {
+    const idx = CANONICAL_SECTION_ORDER.indexOf(section as typeof CANONICAL_SECTION_ORDER[number]);
+    if (idx >= 0) return idx;
+    return section === '' ? -1 : CANONICAL_SECTION_ORDER.length;
+  };
+
+  const sorted = items
+    .map((item, originalIndex) => ({ item, originalIndex }))
+    .sort((a, b) => sectionRank(a.item.section) - sectionRank(b.item.section) || a.originalIndex - b.originalIndex)
+    .map(({ item }) => item);
+
+  let previous: string | null = null;
+  return sorted.map(({ exercise, section }) => {
+    const firstInSection = section !== previous;
+    previous = section;
+    return { ...exercise, section_start: firstInSection && section ? section : undefined };
+  });
+}
+
+export function moveExerciseBetweenProgrammeDays(
+  phase: PTProgrammePhase,
+  fromDay: number,
+  exerciseId: string,
+  toDay: number,
+  beforeExerciseId?: string,
+): PTProgrammePhase {
+  if (!phase.days[fromDay] || !phase.days[toDay]) return phase;
+
+  const days = phase.days.map((day) => ({ ...day, exercises: day.exercises.slice() }));
+  const fromItems = resolveDayExercises(days[fromDay].exercises);
+  const movedIndex = fromItems.findIndex((item) => item.exercise.id === exerciseId);
+  if (movedIndex === -1) return phase;
+
+  const [moved] = fromItems.splice(movedIndex, 1);
+
+  if (fromDay === toDay) {
+    let insertAt = beforeExerciseId ? fromItems.findIndex((item) => item.exercise.id === beforeExerciseId) : fromItems.length;
+    if (insertAt === -1) insertAt = fromItems.length;
+    fromItems.splice(insertAt, 0, moved);
+    days[fromDay] = { ...days[fromDay], exercises: rebuildDayExercises(fromItems) };
+    return { ...phase, days };
+  }
+
+  const toItems = resolveDayExercises(days[toDay].exercises);
+  let insertAt = beforeExerciseId ? toItems.findIndex((item) => item.exercise.id === beforeExerciseId) : toItems.length;
+  if (insertAt === -1) insertAt = toItems.length;
+  toItems.splice(insertAt, 0, moved);
+
+  days[fromDay] = { ...days[fromDay], exercises: rebuildDayExercises(fromItems) };
+  days[toDay] = { ...days[toDay], exercises: rebuildDayExercises(toItems) };
+
+  return { ...phase, days };
+}
+
 export function getPhaseStartWeeks(phases: PTProgrammePhase[]): number[] {
   const startWeeks: number[] = [];
   let cumulative = 1;

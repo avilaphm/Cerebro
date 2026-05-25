@@ -1,12 +1,36 @@
 # Handoff
 
 ## Last updated
-2026-05-25 by Claude Sonnet 4.6 - Nutrition calculation overhaul: protein range 1.5-2g/kg, 100g carb floor, goals header formatted block, no-programme path, X dismiss button, real error message parsing. Edge function v5 deployed.
+2026-05-25 10:07 AEST by Codex - Added Trello-style phase workout board to step 3 of new programme creation wizard; shared cross-day exercise drag/drop helper with edit view; build and local smoke test passed.
 
 ## Last code fix commit
-See git log - latest is the nutrition calculation overhaul commit this session.
+HEAD - Add programme wizard board view
 
 ## What just happened (read first)
+
+### New programme wizard step 3 board view (2026-05-25, LATEST)
+
+Pedro wanted the multi-workout programme board available while creating a client's programme, not just after the programme already exists. Step 3 of `/dashboard/pt/programmes/new` now has the same Trello-style phase workout board as the assignment edit page.
+
+Changes shipped:
+- `PTProgrammeWizard.tsx`: added `Board view` / `List view` toggle in step 3 for the active phase.
+- Board view renders every workout day in the selected phase side by side, with compact exercise cards showing exercise name, sets, reps, and rest.
+- Exercises can be dragged from one day to another, or dropped before another exercise to reorder.
+- The wizard expands to `max-w-7xl` in board mode so 3-6 day phases have more usable width.
+- `utils/pt/programme.ts`: added shared `moveExerciseBetweenProgrammeDays()` helper that preserves section context and re-stamps `section_start` markers after moves.
+- `PTProgrammeEditView.tsx`: now uses the same shared helper instead of carrying duplicate board-move logic.
+
+Verification:
+- `npm run build` passes.
+- Local smoke test on existing dev server `http://localhost:3001/dashboard/pt/programmes/new?draftKey=codex-board-smoke`:
+  - loaded a sessionStorage draft into the wizard,
+  - opened step 3,
+  - toggled `Board view`,
+  - confirmed Day 1, Day 2, Day 3 rendered side by side with exercise names,
+  - dragged Back Squat from Day 1 to Day 3 and confirmed the DOM updated.
+
+Notes:
+- No DB schema changes. This is global because it edits the programme JSON in the shared new-programme wizard used for any selected client, and the existing assignment edit board still works through the same helper.
 
 ### Nutrition calculation overhaul + UX fixes (2026-05-25, LATEST)
 

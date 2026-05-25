@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, safeProgramme, exerciseFromLibrary, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, getPhaseStartWeeks } from '@/utils/pt/programme';
+import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays } from '@/utils/pt/programme';
 import type {
   PTClient, PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay,
 } from '@/utils/pt/types';
@@ -135,9 +135,11 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [progName, setProgName] = useState('');
   const [progGoal, setProgGoal] = useState('');
 
-  const [editingPhase, setEditingPhase] = useState<number | null>(null);
   const [activePhaseTab, setActivePhaseTab] = useState(0);
   const [activeDay, setActiveDay] = useState<number | null>(null);
+  const [boardView, setBoardView] = useState(false);
+  const [dragEx, setDragEx] = useState<{ dayIndex: number; exId: string } | null>(null);
+  const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
@@ -484,6 +486,15 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     p.phases[pi].days[di] = { ...p.phases[pi].days[di], ...patch }; return p;
   });
 
+  const moveExerciseToDay = (fromDay: number, exId: string, toDay: number, beforeExId?: string) => {
+    update((p) => {
+      const ph = p.phases[activePhaseTab];
+      if (!ph) return p;
+      p.phases[activePhaseTab] = moveExerciseBetweenProgrammeDays(ph, fromDay, exId, toDay, beforeExId);
+      return p;
+    });
+  };
+
   const save = async () => {
     if (!progName.trim()) return;
     setSaving(true);
@@ -567,7 +578,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   };
 
   return (
-    <div className="max-w-4xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <div className={`${step === 3 && boardView ? 'max-w-7xl' : 'max-w-4xl'} px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10`}>
       <div className="mb-8 flex flex-wrap items-center gap-3">
         <Link href="/dashboard/pt/programmes" className="text-black/30 hover:text-black text-sm transition-colors">
           ← Programmes
@@ -910,11 +921,66 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
           {phase && (
             <div>
-              {currentDay === null ? (
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">
+                  {phase.title} {boardView ? '— drag exercises between days' : '— select a day to edit'}
+                </p>
+                {phase.days.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setBoardView((v) => !v); setActiveDay(null); }}
+                    className={`border px-3 py-1.5 text-xs transition-colors ${boardView ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/35'}`}
+                  >
+                    {boardView ? 'List view' : 'Board view'}
+                  </button>
+                )}
+              </div>
+
+              {boardView ? (
                 <div className="space-y-3">
-                  <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">
-                    {phase.title} — select a day to edit
-                  </p>
+                  <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(0, 1fr))` }}>
+                    {phase.days.map((day, di) => (
+                      <div
+                        key={day.id}
+                        onDragOver={(e) => { e.preventDefault(); if (dragOverDay !== di) setDragOverDay(di); }}
+                        onDragLeave={() => setDragOverDay((current) => (current === di ? null : current))}
+                        onDrop={(e) => { e.preventDefault(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di); setDragEx(null); setDragOverDay(null); }}
+                        className={`flex min-h-[8rem] flex-col rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
+                      >
+                        <div className="mb-2 flex items-start justify-between gap-1 px-1">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium leading-tight">{day.title || `Day ${di + 1}`}</p>
+                            {day.focus && <p className="mt-0.5 truncate text-[0.62rem] text-black/35">{day.focus}</p>}
+                          </div>
+                          <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="shrink-0 text-[0.6rem] text-black/35 hover:text-black">edit</button>
+                        </div>
+                        <div className="flex flex-1 flex-col gap-1.5">
+                          {day.exercises.map((ex) => (
+                            <div key={ex.id}>
+                              {ex.section_start && <p className="px-1 pb-0.5 pt-1 text-[0.55rem] uppercase tracking-wider text-black/30">{ex.section_start}</p>}
+                              <div
+                                draggable
+                                onDragStart={(e) => { setDragEx({ dayIndex: di, exId: ex.id }); e.dataTransfer.effectAllowed = 'move'; }}
+                                onDragEnd={() => { setDragEx(null); setDragOverDay(null); }}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di, ex.id); setDragEx(null); setDragOverDay(null); }}
+                                className={`cursor-grab rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${dragEx?.exId === ex.id ? 'opacity-40' : 'border-black/10 hover:border-black/25'}`}
+                              >
+                                <p className="font-medium leading-tight">{ex.name}</p>
+                                <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
+                              </div>
+                            </div>
+                          ))}
+                          {day.exercises.length === 0 && (
+                            <p className="px-1 py-4 text-center text-[0.62rem] text-black/25">Drop here</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : currentDay === null ? (
+                <div className="space-y-3">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {phase.days.map((day, di) => (
                       <button

@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks } from '@/utils/pt/programme';
+import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays } from '@/utils/pt/programme';
 import type {
-  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise, PTProgramAssignment,
+  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramAssignment,
 } from '@/utils/pt/types';
 import PTDayEditor from '../../PTDayEditor';
 
@@ -205,51 +205,11 @@ export default function PTProgrammeEditView({
     setEditingPhase((cur) => (cur === from ? to : cur));
   };
 
-  // Board view: move an exercise between days (or reorder within a day) by drag-drop.
-  // section_start only marks the first exercise of a section, so we flatten each day to
-  // {exercise, section}, move, then rebuild section_start markers in canonical order.
-  const SECTION_ORDER = ['Warm Up', 'Workout', 'MetCon', 'Stretches'];
-  const resolveDayExercises = (exs: PTProgrammeExercise[]): Array<{ ex: PTProgrammeExercise; section: string }> => {
-    let current = '';
-    return exs.map((ex) => {
-      if (ex.section_start !== undefined) current = ex.section_start || '';
-      return { ex, section: current };
-    });
-  };
-  const buildDayExercises = (items: Array<{ ex: PTProgrammeExercise; section: string }>): PTProgrammeExercise[] => {
-    const rank = (s: string) => { const i = SECTION_ORDER.indexOf(s); return i >= 0 ? i : (s === '' ? -1 : SECTION_ORDER.length); };
-    const sorted = items
-      .map((it, i) => ({ it, i }))
-      .sort((a, b) => (rank(a.it.section) - rank(b.it.section)) || (a.i - b.i))
-      .map((x) => x.it);
-    let prev: string | null = null;
-    return sorted.map(({ ex, section }) => {
-      const first = section !== prev;
-      prev = section;
-      return { ...ex, section_start: first && section ? section : undefined };
-    });
-  };
   const moveExerciseToDay = (fromDay: number, exId: string, toDay: number, beforeExId?: string) => {
     update((p) => {
       const ph = p.phases[activePhaseTab];
-      if (!ph || !ph.days[fromDay] || !ph.days[toDay]) return p;
-      const fromItems = resolveDayExercises(ph.days[fromDay].exercises);
-      const idx = fromItems.findIndex((it) => it.ex.id === exId);
-      if (idx === -1) return p;
-      const [moved] = fromItems.splice(idx, 1);
-      if (fromDay === toDay) {
-        let at = beforeExId ? fromItems.findIndex((it) => it.ex.id === beforeExId) : fromItems.length;
-        if (at === -1) at = fromItems.length;
-        fromItems.splice(at, 0, moved);
-        ph.days[fromDay].exercises = buildDayExercises(fromItems);
-      } else {
-        const toItems = resolveDayExercises(ph.days[toDay].exercises);
-        let at = beforeExId ? toItems.findIndex((it) => it.ex.id === beforeExId) : toItems.length;
-        if (at === -1) at = toItems.length;
-        toItems.splice(at, 0, moved);
-        ph.days[fromDay].exercises = buildDayExercises(fromItems);
-        ph.days[toDay].exercises = buildDayExercises(toItems);
-      }
+      if (!ph) return p;
+      p.phases[activePhaseTab] = moveExerciseBetweenProgrammeDays(ph, fromDay, exId, toDay, beforeExId);
       return p;
     });
   };
