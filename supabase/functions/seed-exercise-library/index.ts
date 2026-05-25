@@ -444,9 +444,14 @@ interface ExerciseMeta {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  // Auth handled by platform verify_jwt: true (pass service role JWT as Bearer token)
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  // Internal/admin maintenance only: require the service-role key as bearer.
+  const authHeader = req.headers.get('Authorization') ?? '';
+  if (authHeader !== `Bearer ${supabaseKey}`) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY')!;
 
   let body: { limit?: number } = {};

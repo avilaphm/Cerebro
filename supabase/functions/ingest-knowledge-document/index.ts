@@ -6,6 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
 const CHUNK_SIZE = 1500;
 const CHUNK_OVERLAP = 150;
 
@@ -87,6 +88,19 @@ Deno.serve(async (req: Request) => {
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const openaiKey = Deno.env.get('OPENAI_API_KEY')!;
     const db = createClient(url, serviceKey);
+
+    // Admin-only: knowledge base ingestion.
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const userClient = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: authData, error: authError } = await userClient.auth.getUser();
+    if (authError || !authData.user) return json({ error: 'Unauthorized.' }, 401);
+    const requesterEmail = authData.user.email?.toLowerCase() ?? '';
+    const { data: ingestProfile } = await db.from('profiles').select('role').eq('id', authData.user.id).maybeSingle();
+    if (ingestProfile?.role !== 'admin' && !PEDRO_EMAILS.includes(requesterEmail)) {
+      return json({ error: 'Only Pedro/admin can ingest knowledge documents.' }, 403);
+    }
 
     const body = (await req.json()) as {
       document_id?: string;

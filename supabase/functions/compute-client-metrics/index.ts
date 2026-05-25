@@ -48,6 +48,11 @@ interface WeekVolumeAccumulator {
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const authHeader = req.headers.get('Authorization') ?? '';
+  if (authHeader !== `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
   try {
     const { client_id } = await req.json() as { client_id: string };
     if (!client_id) return json({ error: 'client_id required' }, 400);

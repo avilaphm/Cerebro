@@ -20,6 +20,12 @@ const OVERLAP_CHARS = 200;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  const authHeader = req.headers.get('Authorization') ?? '';
+  if (authHeader !== `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
   try {
     const body = await req.json() as { client_id?: string };
     if (!body.client_id) return json({ error: 'client_id required' }, 400);

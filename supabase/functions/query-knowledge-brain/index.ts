@@ -25,6 +25,8 @@ interface HistoryMessage {
   content: string;
 }
 
+const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -45,6 +47,13 @@ Deno.serve(async (req: Request) => {
 
     const { data: authData, error: authError } = await userClient.auth.getUser();
     if (authError || !authData.user) return json({ error: 'Unauthorized.' }, 401);
+
+    const requesterEmail = authData.user.email?.toLowerCase() ?? '';
+    const { data: requesterProfile } = await adminClient
+      .from('profiles').select('role').eq('id', authData.user.id).maybeSingle();
+    if (requesterProfile?.role !== 'admin' && !PEDRO_EMAILS.includes(requesterEmail)) {
+      return json({ error: 'Only Pedro/admin users can query the knowledge brain.' }, 403);
+    }
 
     const body = (await req.json()) as { query: string; history?: HistoryMessage[] };
     if (!body.query?.trim()) return json({ error: 'Missing query.' }, 400);

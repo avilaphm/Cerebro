@@ -17,6 +17,13 @@ function json(data: unknown, status = 200) {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const userClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: authData, error: authError } = await userClient.auth.getUser();
+  if (authError || !authData.user) return json({ error: 'Unauthorized' }, 401);
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -35,6 +42,11 @@ Deno.serve(async (req) => {
   };
 
   const { client_id, step_label, step_type, milestone, phase_index, total_steps, programme_phases, is_active, is_done } = body;
+
+  // Verify the caller owns this client record before exposing any coaching data.
+  const { data: ownerRow } = await supabase
+    .from('pt_clients').select('id').eq('id', client_id).eq('user_id', authData.user.id).maybeSingle();
+  if (!ownerRow) return json({ error: 'Forbidden' }, 403);
 
   // --- Fetch client context ---
   const [clientRes, brainRes, exDocRes] = await Promise.all([
