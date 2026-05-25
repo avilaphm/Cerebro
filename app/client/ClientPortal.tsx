@@ -1823,8 +1823,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               {visibleBlocks.map((block, index) => {
                 const isBlockDone = isDonePhase || (progress !== null && progress.blockIndex > index);
                 const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === index;
-                const weekLabel = `W${index + 1}`;
-                const metricLabel = block.weight_pct ?? block.sets ?? `${block.weeks} wk`;
+                const weekLabel = `Week ${index + 1}`;
+                const weekSets = block.sets?.trim();
                 return (
                   <div key={`week-${index}`} className="relative flex items-start gap-3 rounded-[0.9rem] px-1 py-1">
                     <div
@@ -1842,9 +1842,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                     <div className="min-w-0 pl-4">
                       <div className="flex items-center gap-2">
                         <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
-                        <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${isBlockDone ? 'text-[rgb(46,213,115)]' : 'text-black/30'}`}>
-                          {metricLabel}
-                        </span>
+                        {weekSets && (
+                          <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${isBlockDone ? 'text-[rgb(46,213,115)]' : 'text-black/30'}`}>
+                            ({weekSets} sets)
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1928,6 +1930,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 const isActivePhase = state.isActive;
                 const isDone = state.isDone || isDonePhase;
                 const isTest = step.type === 'test';
+                const journeyLabel = isTest
+                  ? (/re-?test/i.test(step.label) ? '1RM Retest Day' : '1RM Testing Day')
+                  : step.label;
                 const blocks = hasProgramme && step.phaseIndex !== null
                   ? (assignment.programme.phases[step.phaseIndex]?.week_blocks ?? [])
                   : [];
@@ -1976,7 +1981,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                                   : 'text-xs text-black/22'
                           }`}
                         >
-                          {step.label}
+                          {journeyLabel}
                         </p>
                         {isActivePhase && (
                           <span className="text-[0.5rem] uppercase tracking-[0.14em] text-[rgb(46,213,115)]">
@@ -1986,12 +1991,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         <button
                           type="button"
                           onClick={() => void explainJourneyStep(
-                            stepKey, step.label, step.type, undefined,
+                            stepKey, journeyLabel, step.type, undefined,
                             step.phaseIndex, journeySteps, isActivePhase, isDone,
                           )}
                           disabled={isLoadingThis}
                           className="journey-info-pill inline-flex items-center rounded-full border border-black/8 bg-white/30 px-2 py-px text-[0.5rem] uppercase tracking-[0.1em] transition-colors hover:bg-white/50 disabled:opacity-50"
-                          aria-label={`Explain ${step.label}`}
+                          aria-label={`Explain ${journeyLabel}`}
                         >
                           {isLoadingThis ? <span className="animate-spin text-[0.6rem]">·</span> : 'info'}
                         </button>

@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:35 AEST by Codex - Reworked the workout journey rail into a vertical milestone spine with smaller week circles so the phase checkpoints stay readable.
+2026-05-25 15:42 AEST by Codex - Updated the workout journey labels to say Week 1, Week 2, etc, with set counts and explicit 1RM testing/retest day labels.
 
 ## Last code fix commit
-18f6222 - Update handoff for journey rail
+749760c - Refine journey milestone spine
 
 ## What just happened (read first)
 
@@ -15,7 +15,8 @@ Pedro wanted the workout screen's "Your Journey" dropdown to keep Phase 2 / Phas
 Changes shipped:
 - `app/client/ClientPortal.tsx`
   - The journey week rail now renders as a vertical spine with small circle checkpoints instead of the crowded card stack.
-  - Week labels were compressed to smaller `W1` through `W12` markers so they do not overlap.
+  - Week labels now render as `Week 1`, `Week 2`, etc, with the weekly set count shown in parentheses when available.
+  - The 1RM test and retest steps now render as `1RM Testing Day` and `1RM Retest Day`.
   - The spine runs behind the circles so the green fill can light up each milestone as it is reached.
   - The rail now falls back to the phase week count when explicit week blocks are missing, so the layout still renders consistently.
   - The layout was verified in both desktop and narrow mobile viewports.
