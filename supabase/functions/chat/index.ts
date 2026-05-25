@@ -138,6 +138,37 @@ Deno.serve(async (req: Request) => {
       messages: Message[];
     };
 
+    // ── Abuse guards (public, unauthenticated endpoint) ──────────────────────
+    if (!Array.isArray(messages) || messages.length === 0 || messages.length > 40) {
+      return new Response(JSON.stringify({ error: 'Invalid request.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const totalChars = messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0);
+    if (totalChars > 24_000) {
+      return new Response(JSON.stringify({ error: 'Message too long.' }), {
+        status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // The expensive capture path (extraction + emails + proposal) needs a real conversation.
+    if (action === 'capture' && messages.length < 3) {
+      return new Response(JSON.stringify({ error: 'Conversation too short.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    // Per-IP fixed-window rate limit (30 requests / 10 min) to cap LLM/email spend.
+    const clientIp = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || 'unknown';
+    const rateClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    );
+    const { data: allowed } = await rateClient.rpc('check_chat_rate_limit', { p_ip: clientIp });
+    if (allowed === false) {
+      return new Response(JSON.stringify({ error: 'Too many requests. Please slow down and try again shortly.' }), {
+        status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const anthropic = new Anthropic({
       apiKey: Deno.env.get('ANTHROPIC_API_KEY')!,
     });
