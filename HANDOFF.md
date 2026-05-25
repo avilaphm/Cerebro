@@ -34,12 +34,13 @@ Worked through the security audit. Everything below is committed + pushed and ve
 - **DB RPCs:** revoked anon/authenticated/**PUBLIC** EXECUTE on `match_client_brain_chunks` (was letting anyone with the public anon key dump any client's private brain) and `delete_stale_program_drafts`. Migrations `20260525045450` + `20260525045511`. The default PUBLIC grant was the real hole; revoking just anon/authenticated wasn't enough.
 - **Edge-function auth (HIGH-1 complete):** gates added so anonymous callers 401. `explain-journey-phase` (caller must own the `client_id`), `ingest-knowledge-document` + `query-knowledge-brain` (admin/PEDRO_EMAILS), `compute-client-metrics` + `embed-client-brain` + `seed-exercise-library` (service-role bearer; callers already send it). Pipeline agents were locked in a prior commit; `supabase/config.toml` pins `verify_jwt=false` so deploys can't silently re-lock them.
 - **App:** `app/api/pt/parse-pdf/route.ts` now requires an authenticated session + caps size (15MB) / pages (60); `next.config.ts` adds HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy.
-- **Commits:** `e06deea` (pipeline secret), `86d2599` (RPC revokes + function gates), `cd30c65` (parse-pdf + headers).
+- **Then completed the rest the same day:**
+  - HIGH-2: public chat bot now has per-IP rate limiting (`check_chat_rate_limit`, service-role only), message caps, capture min-turns. Verified.
+  - HIGH-4: `post-to-x` cron fixed with a dedicated `CEREBRO_CRON_SECRET` in Supabase Vault; post-to-x set `verify_jwt=false` to accept the raw-secret bearer; cron re-pointed at Vault. Verified. No scheduled-post backlog existed.
+  - MED-5 (ingest untrusted-data delimiters), LOW-2 (dropped bucket listing policy), LOW-5 (escaped lead email HTML).
 - **Verified NON-issues:** `/finance` + `/operators` are public marketing pages (not admin); several functions were already gated.
-- **Still open, need Pedro / a decision (see `../SECURITY-AUDIT.md` for how):**
-  - HIGH-4: `post-to-x` cron 401. Cron sends stale `Bearer cerebro-cron-2026` but `CEREBRO_INTERNAL_SECRET` differs. Fix needs the real secret via Supabase Vault (don't hardcode in the public repo).
-  - HIGH-2: rate-limit the public chat bot (DB-backed). Needs go-ahead before changing the live bot.
-  - HIGH-3 (pixel HMAC, low risk), MED-5, LOW-2/3/5.
+- **Accepted / blocked (not live vulns):** HIGH-3 (email-open pixel HMAC; pixel URL not generated in code + random UUIDs), LOW-1 (HIBP needs Pro plan), LOW-3 (`pg_net` in public; moving it risks the cron).
+- **Commits:** `e06deea`, `86d2599`, `cd30c65`, `b871dbd`, `8b048fa`, `47128f2`.
 - **Did NOT touch** the in-progress `app/client/ClientPortal.tsx` change; left for its owner.
 
 ### Henrique chat header clarified (2026-05-25, LATEST)
