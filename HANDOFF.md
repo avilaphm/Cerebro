@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:42 AEST by Codex - Updated the workout journey labels to say Week 1, Week 2, etc, with set counts and explicit 1RM testing/retest day labels.
+2026-05-25 15:47 AEST by Codex - Added percentage labels beside each journey week and kept the 1RM testing/retest day wording.
 
 ## Last code fix commit
-749760c - Refine journey milestone spine
+95988f0 - Show journey week percentages
 
 ## What just happened (read first)
 
@@ -16,6 +16,7 @@ Changes shipped:
 - `app/client/ClientPortal.tsx`
   - The journey week rail now renders as a vertical spine with small circle checkpoints instead of the crowded card stack.
   - Week labels now render as `Week 1`, `Week 2`, etc, with the weekly set count shown in parentheses when available.
+  - Percentage targets now render beside the set count in their own parentheses, matching the prior phase styling.
   - The 1RM test and retest steps now render as `1RM Testing Day` and `1RM Retest Day`.
   - The spine runs behind the circles so the green fill can light up each milestone as it is reached.
   - The rail now falls back to the phase week count when explicit week blocks are missing, so the layout still renders consistently.
