@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
+2026-05-25 by Claude (Opus 4.7) - Security remediation pass (RPC revokes, edge-function auth gates, parse-pdf hardening, security headers). See the "Security remediation" entry below and `../SECURITY-AUDIT.md`.
 2026-05-25 15:18 AEST by Codex - Added the role label to Henrique at the top of the client chat.
 
 ## Last code fix commit
-HEAD - Clarify Henrique chat header
+cd30c65 - Harden parse-pdf and add security headers (security pass); newest non-security HEAD is "Clarify Henrique chat header"
 
 ## What just happened (read first)
+
+### Security remediation pass (2026-05-25, Claude) - full tracker in `../SECURITY-AUDIT.md`
+Worked through the security audit. Everything below is committed + pushed and verified live (anonymous calls return 401; Supabase advisor lints cleared).
+- **DB RPCs:** revoked anon/authenticated/**PUBLIC** EXECUTE on `match_client_brain_chunks` (was letting anyone with the public anon key dump any client's private brain) and `delete_stale_program_drafts`. Migrations `20260525045450` + `20260525045511`. The default PUBLIC grant was the real hole; revoking just anon/authenticated wasn't enough.
+- **Edge-function auth (HIGH-1 complete):** gates added so anonymous callers 401. `explain-journey-phase` (caller must own the `client_id`), `ingest-knowledge-document` + `query-knowledge-brain` (admin/PEDRO_EMAILS), `compute-client-metrics` + `embed-client-brain` + `seed-exercise-library` (service-role bearer; callers already send it). Pipeline agents were locked in a prior commit; `supabase/config.toml` pins `verify_jwt=false` so deploys can't silently re-lock them.
+- **App:** `app/api/pt/parse-pdf/route.ts` now requires an authenticated session + caps size (15MB) / pages (60); `next.config.ts` adds HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy.
+- **Commits:** `e06deea` (pipeline secret), `86d2599` (RPC revokes + function gates), `cd30c65` (parse-pdf + headers).
+- **Verified NON-issues:** `/finance` + `/operators` are public marketing pages (not admin); several functions were already gated.
+- **Still open, need Pedro / a decision (see `../SECURITY-AUDIT.md` for how):**
+  - HIGH-4: `post-to-x` cron 401. Cron sends stale `Bearer cerebro-cron-2026` but `CEREBRO_INTERNAL_SECRET` differs. Fix needs the real secret via Supabase Vault (don't hardcode in the public repo).
+  - HIGH-2: rate-limit the public chat bot (DB-backed). Needs go-ahead before changing the live bot.
+  - HIGH-3 (pixel HMAC, low risk), MED-5, LOW-2/3/5.
+- **Did NOT touch** the in-progress `app/client/ClientPortal.tsx` change; left for its owner.
 
 ### Henrique chat header clarified (2026-05-25, LATEST)
 
