@@ -265,7 +265,7 @@ function normalizeWordNumbers(text: string): string {
     eleven: '11', twelve: '12',
   };
   // "first week" → "1 week" (ordinal directly before "week", not before a number like "first 2 weeks")
-  let result = text.replace(
+  const result = text.replace(
     /\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+week\b/gi,
     (_, ord) => `${ORDINAL_WEEKS[ord.toLowerCase()] ?? ord} week`,
   );

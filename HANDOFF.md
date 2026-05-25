@@ -1,12 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-05-25 by Claude Sonnet 4.6 - Nutrition calculation overhaul v6: AI reads client documents to determine real body-composition goal, 6-level activity system, full reasoning chain (9 steps) stored per client, correct Mifflin-St Jeor + PAL calculation.
+2026-05-25 10:52 AEST by Codex - Current workout import cleanup verification: removed ignored stale `.claude` worktree, fixed touched programme helper lint issue, confirmed build still passes.
 
 ## Last code fix commit
-HEAD - Nutrition overhaul v6: AI document reader, 6-level activity, reasoning steps
+HEAD - Clean current workout import follow-up
 
 ## What just happened (read first)
+
+### Current workout import cleanup verification (2026-05-25, LATEST)
+
+Pedro asked to double-check the new current-workout import feature and remove anything not connected to the build.
+
+Checked:
+- `CurrentWorkoutImportModal` is imported and used by both the new programme wizard and existing programme edit view.
+- `appendDaysToFoundationPhase()` is imported and used by both programme screens.
+- The modal calls the deployed `import-current-workout` Edge Function.
+- The current-workout skill chain is referenced from root `AGENTS.md`.
+- Skill folders only contain valid `SKILL.md` plus `agents/openai.yaml` metadata; no placeholder/TODO files were found.
+
+Cleanup:
+- Removed ignored stale local folder `.claude/` from `cerebro-site`; it was not part of the product build and was making lint scan old worktree files.
+- Fixed the only lint issue in the current feature/touched helper: `normalizeWordNumbers()` now uses `const` where no reassignment occurs.
+
+Verification:
+- `npm run build` passes after cleanup.
+- `npm run lint` still fails because of pre-existing repo-wide lint debt in unrelated files (`app/client/*`, old Supabase functions, `public/pdf.worker.min.mjs`). No current-workout feature lint error remains.
 
 ### Nutrition calculation overhaul v6: AI document reader + correct methodology (2026-05-25, LATEST)
 
