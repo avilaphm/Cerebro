@@ -1,13 +1,30 @@
 # Handoff
 
 ## Last updated
-2026-05-25 by Claude (Opus 4.7) - Security remediation pass (RPC revokes, edge-function auth gates, parse-pdf hardening, security headers). See the "Security remediation" entry below and `../SECURITY-AUDIT.md`.
-2026-05-25 15:18 AEST by Codex - Added the role label to Henrique at the top of the client chat.
+2026-05-25 15:24 AEST by Codex - Refined the workout journey rail into a two-line snake so Phase 2 / Phase 3 week checkpoints stay inside the viewport.
 
 ## Last code fix commit
-cd30c65 - Harden parse-pdf and add security headers (security pass); newest non-security HEAD is "Clarify Henrique chat header"
+a213aaf - Refine journey rail layout
 
 ## What just happened (read first)
+
+### Workout journey rail tightened (2026-05-25, LATEST)
+
+Pedro wanted the workout screen's "Your Journey" dropdown to keep Phase 2 / Phase 3 week checkpoints inside the container and read as a 2-line serpentine progression.
+
+Changes shipped:
+- `app/client/ClientPortal.tsx`
+  - The journey week rail now renders as a two-row snake instead of a crowded linear stack.
+  - Week cards were compressed to smaller checkpoints labeled `W1` through `W12`.
+  - The connecting path was reworked so the rail bends down at the end of the first row and returns on the second row without forcing overflow.
+  - The layout was verified in both desktop and narrow mobile viewports.
+
+Verification:
+- `npm run build` passes.
+- Playwright checks confirmed the week labels stay inside the container on a 390px-wide viewport.
+
+Notes:
+- Existing unrelated dirty changes remain in the broader repo, but this work only touched `app/client/ClientPortal.tsx` and the session docs.
 
 ### Security remediation pass (2026-05-25, Claude) - full tracker in `../SECURITY-AUDIT.md`
 Worked through the security audit. Everything below is committed + pushed and verified live (anonymous calls return 401; Supabase advisor lints cleared).
