@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 const SECTIONS = ['Warm Up', 'Workout', 'MetCon', 'Stretches'] as const;
-const MAX_IMAGES = 3;
+const MAX_IMAGES = 8;
 const MAX_TEXT_CHARS = 30000;
 
 function json(data: unknown, status = 200) {

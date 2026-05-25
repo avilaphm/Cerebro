@@ -67,6 +67,7 @@ async function functionErrorMessage(error: unknown, fallback: string): Promise<s
 
 export default function CurrentWorkoutImportModal({ open, onClose, onImported }: Props) {
   const supabase = createClient();
+  const MAX_IMAGES = 8;
   const [text, setText] = useState('');
   const [images, setImages] = useState<ImportImage[]>([]);
   const [preview, setPreview] = useState<ImportResult | null>(null);
@@ -86,11 +87,11 @@ export default function CurrentWorkoutImportModal({ open, onClose, onImported }:
 
   const addImages = async (files: FileList | null) => {
     if (!files) return;
-    const next = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, Math.max(0, 3 - images.length));
+    const next = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, Math.max(0, MAX_IMAGES - images.length));
     if (next.length === 0) return;
     setStatus('Reading screenshot...');
     const loaded = await Promise.all(next.map(fileToImportImage));
-    setImages((cur) => [...cur, ...loaded].slice(0, 3));
+    setImages((cur) => [...cur, ...loaded].slice(0, MAX_IMAGES));
     setPreview(null);
     setStatus('');
   };
@@ -131,7 +132,7 @@ export default function CurrentWorkoutImportModal({ open, onClose, onImported }:
         <div className="flex items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm font-medium">Add current workout to Foundation</p>
-            <p className="mt-1 text-xs text-black/45">Paste text or upload screenshots. Imported days are appended after the generated Foundation days.</p>
+            <p className="mt-1 text-xs text-black/45">Paste text or upload screenshots. Imported days are appended after the generated Foundation days. Up to {MAX_IMAGES} screenshots.</p>
           </div>
           <button type="button" onClick={resetAndClose} className="text-xl leading-none text-black/35 hover:text-black">x</button>
         </div>
@@ -211,10 +212,10 @@ export default function CurrentWorkoutImportModal({ open, onClose, onImported }:
           <button type="button" onClick={resetAndClose} disabled={busy} className="border border-black/15 px-4 py-2 text-sm hover:border-black/35 disabled:opacity-40">
             Cancel
           </button>
-          <button type="button" onClick={() => void runImport('preview')} disabled={busy} className="border border-black/15 px-4 py-2 text-sm hover:border-black/35 disabled:opacity-40">
+          <button type="button" onClick={() => void runImport('preview')} disabled={busy || (text.trim().length < 5 && images.length === 0)} className="border border-black/15 px-4 py-2 text-sm hover:border-black/35 disabled:opacity-40">
             Preview
           </button>
-          <button type="button" onClick={() => void runImport('commit')} disabled={busy || !preview?.days?.length} className="border border-black bg-black px-4 py-2 text-sm text-white hover:bg-white hover:text-black disabled:opacity-30">
+          <button type="button" onClick={() => void runImport('commit')} disabled={busy || (text.trim().length < 5 && images.length === 0)} className="border border-black bg-black px-4 py-2 text-sm text-white hover:bg-white hover:text-black disabled:opacity-30">
             Add to Foundation
           </button>
         </div>
