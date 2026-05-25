@@ -2209,10 +2209,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             <button
               type="button"
               onClick={() => isRecording ? stopNoteVoice() : startNoteVoice(noteKey)}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${isRecording ? 'border-red-500 bg-red-500 text-white' : 'border-black/15 bg-[#fbfbf8] text-black/45 hover:border-black/30 hover:text-black'}`}
+              className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${isRecording ? 'border-red-500 bg-red-500 text-white' : 'border-black/15 bg-[#fbfbf8] text-black/45 hover:border-black/30 hover:text-black'}`}
               aria-label={isRecording ? 'Stop recording' : 'Record voice note'}
             >
-              {isRecording ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+              {isRecording ? <MicOff className="h-4.5 w-4.5" /> : <Mic className="h-4.5 w-4.5" />}
             </button>
           </div>
           {isRecording && (
