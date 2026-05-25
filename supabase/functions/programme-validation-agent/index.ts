@@ -59,6 +59,13 @@ function phaseKind(title: string | undefined): 'foundation' | '1rm_test' | 'hype
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const internalSecret = Deno.env.get('CEREBRO_INTERNAL_SECRET');
+  if (!internalSecret || authHeader !== `Bearer ${internalSecret}`) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
   try {
     const body = await req.json() as { programme: Programme; emphasis?: { needs_cardio_block?: boolean; needs_mobility_block?: boolean } };
     const programme = body.programme;

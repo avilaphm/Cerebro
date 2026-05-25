@@ -1,0 +1,82 @@
+project_id = "otcnrkfvgyvwolironoz"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Edge function JWT settings — DO NOT REMOVE.
+#
+# `supabase functions deploy <name>` defaults verify_jwt = true. Functions that
+# are called edge-to-edge (orchestrator -> agents) or by anonymous visitors must
+# stay verify_jwt = false, or the platform rejects the call with HTTP 401 before
+# the function runs. Pinning the flag here makes every deploy deterministic so a
+# routine redeploy can never silently re-lock these and break the pipeline.
+#
+# Functions NOT listed here default to verify_jwt = true (correct for the
+# user-facing, JWT-authenticated functions — ai-client-chat, manage-pt-booking,
+# log-nutrition, etc.). Only add a function below if it must accept calls that
+# are NOT a Supabase user JWT.
+#
+# Internal functions (orchestrator + agents) are protected in-code by a
+# CEREBRO_INTERNAL_SECRET bearer check, so verify_jwt = false does not expose them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# --- PT programme pipeline (internal; guarded by CEREBRO_INTERNAL_SECRET) ---
+[functions.pt-programme-orchestrator]
+verify_jwt = false
+
+[functions.client-analysis-agent]
+verify_jwt = false
+
+[functions.movement-analysis-agent]
+verify_jwt = false
+
+[functions.methodology-plan-agent]
+verify_jwt = false
+
+[functions.programme-synthesis-agent]
+verify_jwt = false
+
+[functions.programme-validation-agent]
+verify_jwt = false
+
+[functions.exercise-intelligence-agent]
+verify_jwt = false
+
+# --- Other internal / service-to-service functions ---
+[functions.retrieve-knowledge-context]
+verify_jwt = false
+
+[functions.embed-client-brain]
+verify_jwt = false
+
+[functions.compute-client-metrics]
+verify_jwt = false
+
+[functions.recalculate-percentage-loads]
+verify_jwt = false
+
+[functions.weekly-client-brain-review]
+verify_jwt = false
+
+[functions.explain-journey-phase]
+verify_jwt = false
+
+[functions.ingest-knowledge-document]
+verify_jwt = false
+
+[functions.seed-exercise-library]
+verify_jwt = false
+
+[functions.search-exercise-videos]
+verify_jwt = false
+
+# --- Public / anonymous-facing functions ---
+[functions.chat]
+verify_jwt = false
+
+[functions.generate-proposal]
+verify_jwt = false
+
+[functions.generate-social-drafts]
+verify_jwt = false
+
+[functions.generate-x-posts]
+verify_jwt = false

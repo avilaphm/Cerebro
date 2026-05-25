@@ -63,6 +63,12 @@ KEEP THE OUTPUT COMPACT. Every string field should be a short phrase, not a para
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const internalSecret = Deno.env.get('CEREBRO_INTERNAL_SECRET');
+  if (!internalSecret || authHeader !== `Bearer ${internalSecret}`) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
   try {
     const body = await req.json() as { client_id?: string; intake_text?: string };
     if (!body.client_id) return json({ error: 'client_id required' }, 400);

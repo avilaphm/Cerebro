@@ -70,6 +70,7 @@ async function runPipeline(ctx: {
   serviceKey: string;
 }) {
   const { runId, body, admin, supabaseUrl, serviceKey } = ctx;
+  const internalSecret = Deno.env.get('CEREBRO_INTERNAL_SECRET')!;
   try {
 
     const callAgent = async (path: string, input: Record<string, unknown>, timeoutMs = 115_000): Promise<{ ok: boolean; output: Record<string, unknown>; error?: string }> => {
@@ -90,7 +91,7 @@ async function runPipeline(ctx: {
           const res = await fetch(`${supabaseUrl}/functions/v1/${path}`, {
             method: 'POST',
             headers: {
-              Authorization: `Bearer ${serviceKey}`,
+              Authorization: `Bearer ${internalSecret}`,
               apikey: serviceKey,
               'Content-Type': 'application/json',
             },

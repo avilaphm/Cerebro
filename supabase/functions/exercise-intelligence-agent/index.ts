@@ -86,6 +86,13 @@ HARD RULES:
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const internalSecret = Deno.env.get('CEREBRO_INTERNAL_SECRET');
+  if (!internalSecret || authHeader !== `Bearer ${internalSecret}`) {
+    return json({ error: 'Unauthorized' }, 401);
+  }
+
   try {
     const body = await req.json() as {
       client_id: string;
