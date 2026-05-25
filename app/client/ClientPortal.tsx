@@ -1827,9 +1827,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 const weekSets = block.sets?.trim();
                 const weekPct = block.weight_pct?.trim();
                 return (
-                  <div key={`week-${index}`} className="relative flex items-start gap-3 rounded-[0.9rem] px-1 py-1">
+                  <div key={`week-${index}`} className="relative flex items-center gap-3 rounded-[0.9rem] px-1 py-1">
                     <div
-                      className={`absolute left-[0.72rem] top-4 z-10 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all ${
+                      className={`absolute left-[0.72rem] top-1/2 z-10 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all ${
                         isBlockDone
                           ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
                           : isBlockActive
@@ -1840,7 +1840,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       {isBlockDone && <Check className="absolute inset-0 m-auto h-2 w-2 text-white" />}
                     </div>
 
-                    <div className="min-w-0 pl-4">
+                    <div className="min-w-0 pl-4 translate-y-px">
                       <div className="flex items-center gap-2">
                         <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
                         {weekSets && (

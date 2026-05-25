@@ -1,7 +1,7 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:47 AEST by Codex - Added percentage labels beside each journey week and kept the 1RM testing/retest day wording.
+2026-05-25 15:53 AEST by Codex - Centered the journey week labels against the milestone circles.
 
 ## Last code fix commit
 95988f0 - Show journey week percentages
@@ -20,6 +20,7 @@ Changes shipped:
   - The 1RM test and retest steps now render as `1RM Testing Day` and `1RM Retest Day`.
   - The spine runs behind the circles so the green fill can light up each milestone as it is reached.
   - The rail now falls back to the phase week count when explicit week blocks are missing, so the layout still renders consistently.
+  - The week text row was nudged to visually center against the milestone circles.
   - The layout was verified in both desktop and narrow mobile viewports.
 
 Verification:
