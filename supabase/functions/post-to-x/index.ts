@@ -156,9 +156,11 @@ Deno.serve(async (req: Request) => {
   const serviceKey     = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const anonKey        = Deno.env.get('SUPABASE_ANON_KEY')!;
   const internalSecret = Deno.env.get('CEREBRO_INTERNAL_SECRET');
+  const cronSecret     = Deno.env.get('CEREBRO_CRON_SECRET');
   const authHeader     = req.headers.get('Authorization') ?? '';
 
-  const isInternal = internalSecret && authHeader === `Bearer ${internalSecret}`;
+  const isInternal = (internalSecret && authHeader === `Bearer ${internalSecret}`)
+    || (cronSecret && authHeader === `Bearer ${cronSecret}`);
   const svc = createClient(supabaseUrl, serviceKey);
 
   let authorized = isInternal;

@@ -68,6 +68,12 @@ verify_jwt = false
 [functions.search-exercise-videos]
 verify_jwt = false
 
+# post-to-x: cron + admin caller. Must be verify_jwt=false so the cron's
+# Bearer ${CEREBRO_CRON_SECRET} reaches the in-code isInternal check (a raw
+# secret is not a JWT, so verify_jwt=true would reject it at the gateway).
+[functions.post-to-x]
+verify_jwt = false
+
 # --- Public / anonymous-facing functions ---
 [functions.chat]
 verify_jwt = false
