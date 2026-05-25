@@ -61,7 +61,7 @@ body {
   color: rgba(0,0,0,0.6);
 }
 
-/* Halftone dot texture overlay — mid-tone via pattern, never flat grey */
+/* Halftone dot texture overlay: mid-tone via pattern, never flat grey */
 body::before {
   content: '';
   position: fixed;
@@ -286,6 +286,20 @@ body::before {
 .liquid-dashboard .border-black,
 .client-liquid .border-black {
   border-color: var(--liquid-fg-1) !important;
+}
+
+/* Dialogs/modals opt out of the translucent glass: solid surface (so page
+   content doesn't bleed through) and a guaranteed-white CTA label. Placed
+   after the glass rules so it wins the equal-specificity cascade. */
+.liquid-dashboard main .liquid-solid,
+.client-liquid .liquid-solid {
+  background: #f3f1ea !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.liquid-dashboard main .liquid-solid [class*="text-white"],
+.client-liquid .liquid-solid [class*="text-white"] {
+  color: #ffffff !important;
 }
 
 /* Workout exercise sections: strip ALL glass treatment and fix text colour.

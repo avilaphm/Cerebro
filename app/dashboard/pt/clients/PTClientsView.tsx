@@ -47,12 +47,31 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
       .single();
     if (err) {
       setError(err.message);
-    } else {
-      setClients((prev) => [data as PTClient, ...prev]);
-      setForm({ name: '', email: '', goals: '', notes: '' });
-      setShowAdd(false);
-      router.refresh();
+      setSaving(false);
+      return;
     }
+
+    const created = data as PTClient;
+    setClients((prev) => [created, ...prev]);
+
+    // Send the welcome / setup email immediately on creation, via the same edge
+    // function the "Resend link" button uses. Without this, new clients only
+    // got an email when the link was manually resent.
+    const { error: inviteErr } = await supabase.functions.invoke('invite-pt-client', {
+      body: { client_id: created.id },
+    });
+    if (inviteErr) {
+      // Client exists; only the email failed. Keep the modal open so the coach
+      // sees it and can resend from the client's profile.
+      setError(`${created.name} was created, but the welcome email failed to send (${inviteErr.message}). Open their profile and use "Resend link".`);
+      router.refresh();
+      setSaving(false);
+      return;
+    }
+
+    setForm({ name: '', email: '', goals: '', notes: '' });
+    setShowAdd(false);
+    router.refresh();
     setSaving(false);
   };
 
@@ -125,7 +144,7 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
 
       {showAdd && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto border border-black/10 bg-white">
+            <div className="liquid-solid max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto border border-black/10 bg-white">
             <div className="px-6 py-5 border-b border-black/8">
               <h2 className="font-display text-lg font-light">Add client</h2>
             </div>
