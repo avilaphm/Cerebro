@@ -1795,6 +1795,91 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return { isDone: pp?.allBlocksDone ?? false, isActive: step.phaseIndex === activePi };
     };
 
+    const renderWeekRail = (
+      blocks: PTProgrammeWeekBlock[],
+      isActivePhase: boolean,
+      isDonePhase: boolean,
+      progress: PhaseProgress | null,
+    ) => {
+      if (blocks.length === 0) return null;
+
+      const topBlocks = blocks.slice(0, Math.ceil(blocks.length / 2));
+      const bottomBlocks = blocks.slice(Math.ceil(blocks.length / 2));
+      const topPositions = topBlocks.map((_, index) => (
+        topBlocks.length === 1 ? 50 : 10 + ((80 / (topBlocks.length - 1)) * index)
+      ));
+      const bottomPositions = bottomBlocks.map((_, index) => (
+        bottomBlocks.length === 1 ? 50 : 90 - ((80 / (bottomBlocks.length - 1)) * index)
+      ));
+
+      const topStart = topPositions[0] ?? 50;
+      const topEnd = topPositions[topPositions.length - 1] ?? topStart;
+      const bottomStart = bottomPositions[0] ?? topEnd;
+      const bottomEnd = bottomPositions[bottomPositions.length - 1] ?? bottomStart;
+      const hasBottom = bottomBlocks.length > 0;
+
+      const pathD = hasBottom
+        ? `M 6 30 H ${topStart} C ${topStart + 4} 30 ${topStart + 4} 30 ${topStart + 4} 34 H ${topEnd - 4} C ${topEnd} 34 ${topEnd} 58 ${topEnd} 64 V 112 C ${topEnd} 120 ${topEnd - 4} 124 ${bottomStart} 124 H ${bottomEnd + 4} C ${bottomEnd} 124 ${bottomEnd} 124 ${bottomEnd} 118`
+        : `M 6 30 H ${topStart} H ${topEnd}`;
+
+      const blockCardClass = (isDone: boolean, isActive: boolean) => (
+        `absolute w-[4.35rem] -translate-x-1/2 rounded-[1rem] border px-2 py-2 text-center shadow-sm transition-all sm:w-[4.8rem] ${
+          isDone
+            ? 'border-[rgba(46,213,115,0.38)] bg-white shadow-[0_10px_30px_-22px_rgba(46,213,115,0.65)]'
+            : isActive
+              ? 'border-black bg-white'
+              : 'border-black/10 bg-white/90'
+        }`
+      );
+
+      return (
+        <div className="relative mt-4 overflow-hidden rounded-[1.4rem] border border-black/8 bg-[#fcfcfa] px-3 py-5 sm:px-4">
+          <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 140" preserveAspectRatio="none" aria-hidden="true">
+            <path d={pathD} fill="none" stroke="rgba(0,0,0,0.10)" strokeWidth="1.2" strokeLinecap="round" />
+            <path d={pathD} fill="none" stroke="rgb(46,213,115)" strokeOpacity="0.92" strokeWidth="1.6" strokeLinecap="round" />
+          </svg>
+
+          <div className="relative h-[10.75rem] sm:h-[11.75rem]">
+            {topBlocks.map((block, index) => {
+              const blockIndex = index;
+              const isBlockDone = isDonePhase || (progress !== null && progress.blockIndex > blockIndex);
+              const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === blockIndex;
+              const label = block.weight_pct ?? block.sets ?? '';
+              const weekLabel = `W${index + 1}`;
+              return (
+                <div
+                  key={`top-${index}`}
+                  className={blockCardClass(isBlockDone, isBlockActive)}
+                  style={{ left: `${topPositions[index]}%`, top: '20px' }}
+                >
+                  <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
+                  <p className="mt-1 text-[0.54rem] uppercase tracking-[0.12em] text-black/40">{label}</p>
+                </div>
+              );
+            })}
+
+            {bottomBlocks.map((block, index) => {
+              const blockIndex = topBlocks.length + index;
+              const isBlockDone = isDonePhase || (progress !== null && progress.blockIndex > blockIndex);
+              const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === blockIndex;
+              const label = block.weight_pct ?? block.sets ?? '';
+              const weekLabel = `W${topBlocks.length + index + 1}`;
+              return (
+                <div
+                  key={`bottom-${index}`}
+                  className={blockCardClass(isBlockDone, isBlockActive)}
+                  style={{ left: `${bottomPositions[index]}%`, top: '88px' }}
+                >
+                  <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
+                  <p className="mt-1 text-[0.54rem] uppercase tracking-[0.12em] text-black/40">{label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div className="mx-auto max-w-5xl">
         <button
@@ -1945,38 +2030,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         <p className="mt-1.5 text-[0.7rem] leading-relaxed text-black/35">You&apos;re here right now.</p>
                       )}
 
-                      {blocks.length > 0 && (
-                        <div className="mt-4 flex gap-5">
-                          {blocks.map((block, bi) => {
-                            const blockDone = isDonePhase || (pp !== null && pp.blockIndex > bi);
-                            const isActiveBlock = isActivePhase && pp !== null && pp.blockIndex === bi;
-                            const blockTopLabel = block.sets
-                              ? `${block.sets} sets`
-                              : block.weight_pct
-                                ? block.weight_pct
-                                : `Block ${bi + 1}`;
-                            return (
-                              <div key={bi} className="flex flex-col items-center gap-1.5">
-                                <div
-                                  className={`h-2.5 w-2.5 rounded-full transition-colors ${
-                                    blockDone
-                                      ? 'bg-[rgb(46,213,115)]'
-                                      : isActiveBlock
-                                        ? 'border-[1.5px] border-black/60 bg-transparent'
-                                        : 'border border-black/12 bg-transparent'
-                                  }`}
-                                />
-                                <span className="max-w-[3rem] text-center text-[0.44rem] uppercase leading-tight tracking-wide text-black/28">
-                                  <span className="block">{blockTopLabel}</span>
-                                  {block.weeks > 0 && (
-                                    <span className="block text-black/20">{block.weeks}wk</span>
-                                  )}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                      {blocks.length > 0 && renderWeekRail(blocks, isActivePhase, isDonePhase, pp)}
                     </div>
                   </div>
                 );
