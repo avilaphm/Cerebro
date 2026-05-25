@@ -1,12 +1,38 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:15 AEST by Codex - Made the overview next-session card open Booking, added clickable due-today items, and introduced the weekly check-in card.
+2026-05-25 15:18 AEST by Codex - Added the role label to Henrique at the top of the client chat.
 
 ## Last code fix commit
-HEAD - Overview booking and check-in cards
+HEAD - Clarify Henrique chat header
 
 ## What just happened (read first)
+
+### Henrique chat header clarified (2026-05-25, LATEST)
+
+Pedro wanted the chat header to show that Henrique is the personalised AI Coach, not just a name.
+
+Changes shipped:
+- `app/client/MessageBubble.tsx`
+  - The top of the chat now shows `Henrique` with a second line: `Your personalised AI Coach`.
+- `app/client/ClientPortal.tsx`
+  - The intro copy on the overview screen now says `Henrique, your personalised AI Coach`.
+
+Verification:
+- `npm run build` passes.
+
+Notes:
+- Existing unrelated dirty changes are still present and were not staged by this task:
+  - `app/api/pt/parse-pdf/route.ts`
+  - `next.config.ts`
+  - `supabase/functions/compute-client-metrics/index.ts`
+  - `supabase/functions/embed-client-brain/index.ts`
+  - `supabase/functions/explain-journey-phase/index.ts`
+  - `supabase/functions/ingest-knowledge-document/index.ts`
+  - `supabase/functions/query-knowledge-brain/index.ts`
+  - `supabase/functions/seed-exercise-library/index.ts`
+  - `supabase/migrations/20260525045450_revoke_public_execute_on_security_definer_rpcs.sql`
+  - `supabase/migrations/20260525045511_revoke_public_role_execute_on_security_definer_rpcs.sql`
 
 ### Overview booking + weekly check-in cards (2026-05-25, LATEST)
 

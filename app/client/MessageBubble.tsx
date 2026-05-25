@@ -405,6 +405,9 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
             <div className="flex-1 px-3 text-center sm:px-0 sm:text-left">
               <p className="text-sm font-medium leading-tight">Henrique</p>
               <p className="mt-0.5 text-[0.6rem] leading-tight text-black/35">
+                Your personalised AI Coach
+              </p>
+              <p className="mt-0.5 text-[0.6rem] leading-tight text-black/35">
                 {workoutContext
                   ? `${workoutContext.phase_title} · ${workoutContext.day_title}`
                   : 'Say "hey Pedro" to reach Pedro directly'}
