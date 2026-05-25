@@ -1825,6 +1825,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === index;
                 const weekLabel = `Week ${index + 1}`;
                 const weekSets = block.sets?.trim();
+                const weekPct = block.weight_pct?.trim();
                 return (
                   <div key={`week-${index}`} className="relative flex items-start gap-3 rounded-[0.9rem] px-1 py-1">
                     <div
@@ -1845,6 +1846,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         {weekSets && (
                           <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${isBlockDone ? 'text-[rgb(46,213,115)]' : 'text-black/30'}`}>
                             ({weekSets} sets)
+                          </span>
+                        )}
+                        {weekPct && (
+                          <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${isBlockDone ? 'text-[rgb(46,213,115)]' : 'text-black/30'}`}>
+                            ({weekPct})
                           </span>
                         )}
                       </div>
