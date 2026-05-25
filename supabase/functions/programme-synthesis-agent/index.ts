@@ -75,6 +75,16 @@ HARD RULES (violating any = failure):
    add the desired name to "missing_exercises" and skip — do NOT invent an exercise_id.
 
 2. FOUNDATION PHASE: exactly 3 full-body days. Day 1, Day 2, Day 3 are different workouts but cover the full body.
+   - Infer equipment from ClientAnalysis.constraints.equipment and cited notes. If equipment is not explicitly bands-only,
+     bodyweight-only, home-only, travel-only, or no-gym, assume gym access.
+   - For gym Foundation, NEVER use banded exercises. No banded deadlifts, banded hinges, banded squats, banded rows,
+     banded presses, or banded lower-body substitutes. Use DB, KB, cable, machine, or bodyweight choices instead.
+   - Day 1 and Day 2 must emphasize single-arm and single-leg work. Day 3 must emphasize bilateral work.
+   - Every Foundation exercise note must include tempo, controlled eccentric, pause, range, or execution intent.
+   - Preferred Foundation staples: Hip flexor cable pull, Standing hip flexor KB pull, Half kneeling adductor slides
+     sideways/front, Single-leg glute bridge/hip thrust, Single-arm cable pull, DB push, Single-leg step-up,
+     Cable crunch, Back extension, QL extension, Leg press, Knee extension, Hamstring curl, Single-leg DB RDL,
+     Seated shoulder press, Hip CARs.
    - All 3 days share the same exercise list across week_blocks (set count varies per block, but exercises stay).
    - In the LAST week block (substitution_rule.from_week onward), swap simpler movements to the Big 5:
      goblet squat → BB Squat, KB/DB deadlift → BB Deadlift, DB bench → BB Bench Press,
@@ -327,20 +337,25 @@ function buildDeterministicPhase(
 
   if (type === 'foundation') {
     const sets = String((weekBlocks[0]?.sets as string | undefined) ?? '2');
-    const mainPool = pickFoundationMain(filteredLibrary, big5, priorityIds);
+    const isGymAccess = inferGymAccess(analysis);
+    const foundationLibrary = isGymAccess ? filteredLibrary.filter((exercise) => !isBandedExercise(exercise)) : filteredLibrary;
+    const foundationWarmups = pickWarmups(foundationLibrary);
+    const mainPools = pickFoundationDayPools(foundationLibrary, big5, priorityIds, isGymAccess);
     const days = [0, 1, 2].map((dayIndex) => {
-      const main = rotate(mainPool, dayIndex).slice(0, 6);
+      const main = mainPools[dayIndex] ?? rotate(mainPools.flat(), dayIndex).slice(0, 6);
       const exercises = [
-        ...warmups.map((row, index) => buildExercise(row, index + 1, '1', '10-12', '30 sec', '', index === 0 ? 'Warm Up' : null, null)),
-        ...main.map((row, index) => buildExercise(row, index + 5, sets, '10-12', '60 sec', '', index === 0 ? 'Workout' : null, `ss-${Math.floor(index / 2) + 1}`)),
+        ...foundationWarmups.map((row, index) => buildExercise(row, index + 1, '1', '10-12', '30 sec', foundationTempoNote(row, true), index === 0 ? 'Warm Up' : null, null)),
+        ...main.map((row, index) => buildExercise(row, index + 5, sets, '10-12', '60 sec', foundationTempoNote(row, false), index === 0 ? 'Workout' : null, `ss-${Math.floor(index / 2) + 1}`)),
       ];
       const day = {
         id: `day-${dayIndex + 1}`,
-        title: `Day ${dayIndex + 1} - Full Body ${String.fromCharCode(65 + dayIndex)}`,
-        focus: 'Movement quality, glute strength, core control, and confidence.',
+        title: `Day ${dayIndex + 1} - ${dayIndex < 2 ? 'Unilateral' : 'Bilateral'} Foundation`,
+        focus: dayIndex < 2
+          ? 'Single-arm and single-leg control, movement quality, glute strength, and core control.'
+          : 'Bilateral pattern confidence, controlled loading, and compound readiness.',
         exercises,
       };
-      appendConditionalBlocks(day, filteredLibrary, methodologyPhase);
+      appendConditionalBlocks(day, foundationLibrary, methodologyPhase);
       return day;
     });
 
@@ -458,7 +473,7 @@ function pickBig5(library: ExerciseRow[]): ExerciseRow[] {
 }
 
 function pickWarmups(library: ExerciseRow[]): ExerciseRow[] {
-  const patterns = [/glute bridge/i, /dead bug/i, /clamshell/i, /cat[- ]?cow|thoracic/i, /hip/i, /band/i];
+  const patterns = [/hip cars/i, /glute bridge/i, /dead bug/i, /cat[- ]?cow|thoracic/i, /hip/i, /bodyweight squat/i];
   return pickByPatterns(library, patterns, 4);
 }
 
@@ -485,6 +500,86 @@ function pickFoundationMain(library: ExerciseRow[], big5: ExerciseRow[], priorit
   }
   const picked = pickByPatterns(library, patterns, 8);
   return picked.length >= 6 ? picked : [...picked, ...big5].slice(0, 6);
+}
+
+function pickFoundationDayPools(library: ExerciseRow[], big5: ExerciseRow[], priorityIds: Set<string> = new Set(), isGymAccess = true): ExerciseRow[][] {
+  const source = isGymAccess ? library.filter((exercise) => !isBandedExercise(exercise)) : library;
+  const day1 = pickByPatterns(source, [
+    /single[- ]leg.*rdl/i,
+    /single[- ]arm.*cable.*pull/i,
+    /single[- ]leg.*step[- ]?up/i,
+    /hip flexor.*cable/i,
+    /single[- ]leg.*glute bridge|single[- ]leg.*hip thrust/i,
+    /seated shoulder press/i,
+    /cable crunch/i,
+    /hip cars/i,
+  ], 6);
+  const day2 = pickByPatterns(source, [
+    /single[- ]leg.*hip thrust|single[- ]leg.*glute bridge/i,
+    /standing.*hip flexor.*kb/i,
+    /half kneeling.*adductor.*side/i,
+    /db push|dumbbell.*push/i,
+    /hamstring curl/i,
+    /back extension/i,
+    /single[- ]arm/i,
+    /single[- ]leg/i,
+  ], 6);
+  const day3 = pickByPatterns(source, [
+    /leg press/i,
+    /knee extension/i,
+    /hamstring curl/i,
+    /kb.*deadlift|kettlebell.*deadlift|db.*deadlift|dumbbell.*deadlift/i,
+    /seated shoulder press/i,
+    /cable crunch/i,
+    /back extension/i,
+    /goblet squat/i,
+  ], 6);
+
+  const fallback = pickFoundationMain(source, big5, priorityIds);
+  return [fillFoundationPool(day1, fallback, 6), fillFoundationPool(day2, rotate(fallback, 2), 6), fillFoundationPool(day3, rotate(fallback, 4), 6)];
+}
+
+function fillFoundationPool(primary: ExerciseRow[], fallback: ExerciseRow[], count: number): ExerciseRow[] {
+  const combined = [...primary, ...fallback];
+  const seen = new Set<string>();
+  return combined.filter((exercise) => {
+    if (seen.has(exercise.id)) return false;
+    seen.add(exercise.id);
+    return true;
+  }).slice(0, count);
+}
+
+function inferGymAccess(analysis: Record<string, unknown>): boolean {
+  const raw = JSON.stringify(analysis).toLowerCase();
+  const limitedSignals = [
+    'bands only',
+    'band only',
+    'bodyweight only',
+    'body weight only',
+    'home only',
+    'home workout',
+    'no gym',
+    'without gym',
+    'minimal equipment',
+    'travel workout',
+    'hotel workout',
+  ];
+  return !limitedSignals.some((signal) => raw.includes(signal));
+}
+
+function isBandedExercise(exercise: ExerciseRow): boolean {
+  const value = `${exercise.name} ${exercise.equipment ?? ''} ${(exercise.tags ?? []).join(' ')}`.toLowerCase();
+  return /\bband(ed)?\b|\bresistance band\b|\bmini band\b/.test(value);
+}
+
+function foundationTempoNote(row: ExerciseRow, warmup: boolean): string {
+  if (warmup) return 'Move slowly with control through the full range; no rushing.';
+  const name = row.name.toLowerCase();
+  if (/deadlift|rdl|hinge/.test(name)) return 'Tempo 3-1-2: controlled 3 sec lower, 1 sec pause, smooth drive up.';
+  if (/squat|leg press|step|lunge|knee extension|hamstring curl/.test(name)) return 'Tempo 3-1-1: slow 3 sec eccentric, brief pause, controlled lift.';
+  if (/press|push|row|pull|shoulder/.test(name)) return 'Tempo 2-1-2: controlled pull or press, pause, slow return.';
+  if (/bridge|hip thrust|back extension|ql|crunch/.test(name)) return 'Controlled tempo with a 2 sec squeeze or pause at the strongest position.';
+  return 'Use a slow controlled tempo and own the full range before adding load.';
 }
 
 function pickByPatterns(library: ExerciseRow[], patterns: RegExp[], count: number): ExerciseRow[] {

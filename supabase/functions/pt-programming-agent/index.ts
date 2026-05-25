@@ -18,6 +18,10 @@ ALWAYS exactly 3 workout days. Full body every session.
 week_blocks MANDATORY: [{"weeks":2,"sets":"2"},{"weeks":5,"sets":"3"}]
 Weeks 1-2: 2 sets. Slow tempo. Movement quality. Weeks 3-7: 3 sets. Weeks 3-4: Controlled tempo. Weeks 5-7: Introduce Big 5 compounds (BB Squat, BB Deadlift, BB Bench Press, BB Shoulder Press, Pull-up) so client is familiar before 1RM testing.
 
+Equipment access: infer from client documents and Pedro instructions. If not stated, assume gym. For gym Foundation, do not use banded exercises; use DB/KB/cable/machine/bodyweight options. Never use banded deadlifts for gym Foundation.
+Foundation day balance: Day 1 and Day 2 bias single-arm and single-leg work. Day 3 biases bilateral both-arms/both-legs work. Every Foundation exercise note must include tempo or controlled execution intent.
+Preferred Foundation staples: Hip flexor cable pull, standing hip flexor KB pull, half kneeling adductor slides sideways/front, single-leg glute bridge/hip thrust, single-arm cable pull, DB push, single-leg step-up, cable crunch, back extension, QL extension, leg press, knee extension, hamstring curl, single-leg DB RDL, seated shoulder press, Hip CARs.
+
 ## Warm-Up (every day)
 Exactly 4 warm-up exercises. 1 set each. 10-12 reps. Use section_start "Warm Up" on first warm-up only.
 
@@ -222,6 +226,8 @@ The context includes knowledge_base_catalog listing ALL indexed documents. You M
 - Prefer supplied exercise library IDs. Copy library cues and video URLs when available.
 - Respect injuries, pain, dislikes, schedule, equipment, and recent performance.
 - Include warm up, main work, conditioning, stretches, or cool down sections where useful.
+- Apply the equipment and Foundation rules before output: default to gym when equipment is not stated; no banded exercises in gym Foundation; Foundation has two unilateral-emphasis days and one bilateral-emphasis day; every Foundation exercise note includes tempo/control.
+- Run a client-specific audit before output. Compare the draft to the client's goals, injuries, dislikes, training history, equipment, notes, messages, logs, and Pedro's instruction. Adapt exercises until they fit this client while preserving phase order and week_blocks.
 - Keep the result directly editable in the existing Cerebro programme editor.`;
 
 Deno.serve(async (req: Request) => {
@@ -347,11 +353,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: result.error, run_id: run.id }, 500);
     }
 
+    result = await refineProgrammeForEquipmentAndFoundationRules(openaiKey, result, generationContext, principles);
+
     const programme = safeProgramme(result.programme);
     const coachingReasoning = safeRecord(result.coaching_reasoning);
     const phaseRoadmap = Array.isArray(result.phase_roadmap) ? result.phase_roadmap : buildPhaseRoadmap(programme);
     const phaseNutrition = safePhaseNutrition(result.phase_nutrition, programme);
-    const validation = validateProgramme(programme, phaseNutrition, retrieval, mode);
+    const validation = validateProgramme(programme, phaseNutrition, retrieval, mode, generationContext);
 
     await recordGenerationOutputs(adminClient, steps, programme, phaseRoadmap, phaseNutrition);
     await createReviewOutputs(adminClient, run.id, clientId, context.active_assignment?.id ?? null, validation, programme, phaseNutrition);
@@ -727,6 +735,8 @@ function buildRetrievalQuestion(context: Record<string, unknown>, mode: AgentMod
     `Notes: ${text(client.notes, 'none')}.`,
     assignment.name ? `Current programme: ${text(assignment.name, '')}.` : '',
     instructions ? `Pedro instruction: ${instructions}.` : '',
+    'Equipment rule: if client documents/text do not explicitly say bands-only/bodyweight/home/no-gym, assume gym access. For gym Foundation, do not use banded exercises.',
+    'Foundation rule: Day 1 and Day 2 single-arm/single-leg emphasis, Day 3 bilateral emphasis, tempo/control note on every exercise.',
     'Need phase roadmap, foundations, warm-ups, 1RM testing, hypertrophy, strength, retest, taper, phase nutrition, and validation rules.',
   ].filter(Boolean).join('\n');
 }
@@ -941,6 +951,59 @@ async function generateWithText(
   return parseJsonResult(chatJson.choices?.[0]?.message.content ?? '{}');
 }
 
+async function refineProgrammeForEquipmentAndFoundationRules(
+  openaiKey: string,
+  result: Record<string, unknown>,
+  context: Record<string, unknown>,
+  principles: string,
+): Promise<Record<string, unknown>> {
+  const chatRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'gpt-4.1',
+      temperature: 0.1,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `${SYSTEM_PROMPT}
+
+You are the final programming rule-review layer before Pedro sees the draft.
+Return the SAME top-level JSON schema you receive. Do not add commentary.
+
+Audit and adapt the programme using these hard rules:
+- Infer equipment from client documents, notes, messages, logs, and Pedro instructions. If equipment is not explicitly limited to bands/bodyweight/home/no-gym/travel, assume gym access.
+- For gym Foundation, remove banded exercises. No banded deadlifts, hinges, squats, rows, presses, or banded lower-body substitutes.
+- For gym Foundation hinges, prefer DB deadlift, KB deadlift, single-leg DB RDL, cable pull-through style work, machines, or bodyweight regressions.
+- Foundation is 3 full-body days. Day 1 and Day 2 must emphasize single-arm and single-leg work. Day 3 must emphasize bilateral both-arm/both-leg work.
+- Every Foundation exercise note must include tempo, controlled eccentric, pause, range, or execution intent.
+- Prefer these Foundation staples when relevant: Hip flexor cable pull, Standing hip flexor KB pull, Half kneeling adductor slides sideways, Half kneeling adductor slides front/front-splits, Single-leg glute bridge, Single-leg hip thrust, Single-arm cable pull, DB push, Single-leg step-up, Cable crunch, Back extension, QL extension on back extension machine, Leg press, Knee extension, Hamstring curl, Single-leg DB RDL, Seated shoulder press, Hip CARs.
+- Compare the programme against the client's goals, injuries, dislikes, schedule, training history, and logs. Adapt exercises until the plan fits the client.
+- Preserve phase order, week_blocks, 1RM test/retest structure, Big 5 exposure, exercise object shape, and editability.
+
+Pedro programming principles:
+${principles}`,
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            context,
+            generated_draft: result,
+          }),
+        },
+      ],
+    }),
+  });
+
+  if (!chatRes.ok) return result;
+  const chatJson = (await chatRes.json().catch(() => ({}))) as { choices?: Array<{ message: { content: string } }>; error?: { message: string } };
+  if (chatJson.error) return result;
+  const refined = parseJsonResult(chatJson.choices?.[0]?.message.content ?? '{}');
+  if (typeof refined.error === 'string') return result;
+  return refined;
+}
+
 async function loadPrinciples() {
   try {
     return await Deno.readTextFile(new URL('./programming-principles.md', import.meta.url));
@@ -1028,9 +1091,11 @@ function validateProgramme(
   phaseNutrition: Array<Record<string, unknown>>,
   retrieval: Record<string, unknown>,
   mode: AgentMode,
+  context: Record<string, unknown>,
 ): Record<string, unknown> {
   const findings: string[] = [];
   const hardRuleFailures: string[] = [];
+  const isGymAccess = inferGymAccess(context);
 
   if (programme.phases.length === 0) hardRuleFailures.push('Programme has no phases.');
   if (mode === 'new_programme' && programme.phases.length < 5) {
@@ -1047,6 +1112,36 @@ function validateProgramme(
     const isFoundations = phase.title.toLowerCase().includes('foundation') || phaseIndex === 0;
     if (isFoundations && phase.days.length !== 3) {
       hardRuleFailures.push(`${phase.title || 'Phase 1'} must have exactly 3 full-body workout days (currently has ${phase.days.length}).`);
+    }
+    if (isFoundations && isGymAccess) {
+      const banded = phase.days.flatMap((day) =>
+        day.exercises
+          .filter((exercise) => isBandedExercise(exercise.name))
+          .map((exercise) => `${day.title || 'day'}: ${exercise.name}`)
+      );
+      if (banded.length > 0) {
+        hardRuleFailures.push(`${phase.title || 'Phase 1'} is gym Foundation but contains banded exercises: ${banded.join(', ')}.`);
+      }
+    }
+    if (isFoundations) {
+      const missingTempo = phase.days.flatMap((day) =>
+        day.exercises
+          .filter((exercise) => !hasTempoOrControlCue(exercise.notes))
+          .map((exercise) => `${day.title || 'day'}: ${exercise.name}`)
+      );
+      if (missingTempo.length > 0) {
+        hardRuleFailures.push(`${phase.title || 'Phase 1'} must include tempo/control notes on every exercise. Missing: ${missingTempo.slice(0, 8).join(', ')}${missingTempo.length > 8 ? '...' : ''}.`);
+      }
+      if (phase.days.length === 3) {
+        const unilateralDays = phase.days.filter((day) => dayHasUnilateralEmphasis(day));
+        if (unilateralDays.length < 2) {
+          hardRuleFailures.push(`${phase.title || 'Phase 1'} must have at least 2 Foundation days with single-arm and/or single-leg emphasis.`);
+        }
+        const bilateralDay = phase.days.some((day) => dayHasBilateralEmphasis(day));
+        if (!bilateralDay) {
+          findings.push(`${phase.title || 'Phase 1'} should include one bilateral-emphasis Foundation day.`);
+        }
+      }
     }
 
     const isHypertrophy = phase.title.toLowerCase().includes('hypertrophy');
@@ -1096,11 +1191,92 @@ function validateProgramme(
     status: hardRuleFailures.length > 0 ? 'failed' : 'needs_review',
     findings,
     hard_rule_failures: hardRuleFailures,
+    inferred_equipment: isGymAccess ? 'gym' : 'limited',
     retrieval_low_confidence: retrieval.low_confidence === true,
     phase_count: programme.phases.length,
     nutrition_phase_count: phaseNutrition.length,
     validated_at: new Date().toISOString(),
   };
+}
+
+function inferGymAccess(context: Record<string, unknown>): boolean {
+  const raw = JSON.stringify(context).toLowerCase();
+  const limitedEquipmentSignals = [
+    'bands only',
+    'band only',
+    'bodyweight only',
+    'body weight only',
+    'home only',
+    'home workout',
+    'home workouts',
+    'no gym',
+    'without gym',
+    'minimal equipment',
+    'travel workout',
+    'hotel workout',
+  ];
+  return !limitedEquipmentSignals.some((signal) => raw.includes(signal));
+}
+
+function isBandedExercise(name: string): boolean {
+  const value = name.toLowerCase();
+  return /\bband(ed)?\b|\bresistance band\b|\bmini band\b/.test(value);
+}
+
+function hasTempoOrControlCue(notes: string): boolean {
+  const value = notes.toLowerCase();
+  return [
+    'tempo',
+    'eccentric',
+    'descent',
+    'lower',
+    'pause',
+    'hold',
+    'controlled',
+    'control',
+    'slow',
+    'range',
+    'rom',
+    'intent',
+  ].some((signal) => value.includes(signal));
+}
+
+function dayHasUnilateralEmphasis(day: ProgrammeDay): boolean {
+  const names = day.exercises.map((exercise) => exercise.name.toLowerCase()).join(' ');
+  return [
+    'single arm',
+    'single-arm',
+    'single leg',
+    'single-leg',
+    'one arm',
+    'one-arm',
+    'one leg',
+    'one-leg',
+    'split squat',
+    'step-up',
+    'step up',
+    'lunge',
+    'unilateral',
+  ].some((signal) => names.includes(signal));
+}
+
+function dayHasBilateralEmphasis(day: ProgrammeDay): boolean {
+  const names = day.exercises.map((exercise) => exercise.name.toLowerCase()).join(' ');
+  return [
+    'leg press',
+    'goblet squat',
+    'db deadlift',
+    'dumbbell deadlift',
+    'kb deadlift',
+    'kettlebell deadlift',
+    'barbell',
+    'bb ',
+    'bench press',
+    'seated shoulder press',
+    'back extension',
+    'hamstring curl',
+    'knee extension',
+  ].some((signal) => names.includes(signal));
 }
 
 function phaseTypeFromTitle(title: string, focus: string): string {

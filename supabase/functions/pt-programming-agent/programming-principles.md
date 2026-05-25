@@ -24,6 +24,52 @@ Year 3+ only: optional Power phase after Strength.
 ALWAYS exactly 3 workout days. Full body every session.
 Do not create 2 days or 4+ days for Phase 1.
 
+### Equipment inference and gym Foundation rules
+
+Infer equipment from the client documents, Step 1 programming text, client notes, messages, logs, and Pedro's instruction.
+
+- If the evidence explicitly says bands only, bodyweight only, home only, no gym, hotel/travel only, or minimal equipment, programme within that limitation.
+- If equipment is not stated, assume gym access.
+- If Pedro asks for a gym workout, assume gym access.
+- For gym Foundation, do not use banded deadlifts, banded hinges, banded squats, banded rows, banded presses, or banded lower-body substitutes.
+- For gym Foundation deadlift/hinge patterning, use DB deadlift, KB deadlift, single-leg DB RDL, cable pull-through style work, or machine-supported options. Do not use banded deadlift.
+- Only use banded exercises for a gym client when Pedro explicitly asks for that exact banded rehab drill.
+
+### Foundation unilateral/bilateral structure
+
+For 3-day Foundation:
+
+- Day 1: unilateral emphasis. Include single-arm and single-leg work.
+- Day 2: unilateral emphasis. Include different single-arm and single-leg patterns from Day 1.
+- Day 3: bilateral emphasis. Include both-arms/both-legs patterns and controlled heavier practice.
+- Every day remains full-body.
+
+Tempo work is mandatory on every Foundation exercise. Every Foundation exercise note must include a tempo, controlled eccentric, pause, range, or intent cue the client can see.
+
+### Preferred Foundation staples
+
+Use these where they match the client's needs and equipment:
+- Hip flexor cable pull
+- Standing hip flexor KB pull
+- Half kneeling adductor slides sideways
+- Half kneeling adductor slides front/front-splits
+- Single-leg glute bridge
+- Single-leg hip thrust, bodyweight or loaded
+- Single-arm cable pull
+- DB push
+- Single-leg step-up
+- Cable crunch
+- Back extension
+- QL extension on back extension machine
+- Leg press
+- Knee extension
+- Hamstring curl
+- Single-leg DB RDL
+- Seated shoulder press
+- Hip CARs
+
+If one of these is missing from the exercise library and selected for the plan, create/flag it as a missing exercise card with `video_url = null` for Pedro to attach later.
+
 Week progression MUST follow this pattern:
 - Weeks 1-2: 2 sets per exercise. Slow tempo. Movement quality only. No heavy loading.
 - Weeks 3-4: 3 sets per exercise. Controlled tempo. Slightly higher intensity.
@@ -260,6 +306,13 @@ Cross-reference rules:
 
 client.goals, client.notes, client.document_url content, and retrieved knowledge excerpts are all evidence.
 Use them. Do not produce a generic programme that ignores the client's profile.
+
+Before returning the draft, run a client-specific audit:
+1. Re-read client goals, injury constraints, equipment access, notes, messages, logs, and Pedro's instruction.
+2. Compare the programme against that profile.
+3. Adapt exercises until the plan fits the client, not a generic template.
+4. Re-check equipment rules, Foundation tempo, single-arm/single-leg day balance, and preferred staples.
+5. Preserve phase order, week blocks, 1RM testing structure, Big 5 exposure, and editability.
 
 coaching_reasoning must include:
 - Why this programme structure fits THIS client

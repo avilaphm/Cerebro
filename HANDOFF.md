@@ -1,12 +1,54 @@
 # Handoff
 
 ## Last updated
-2026-05-25 10:52 AEST by Codex - Current workout import cleanup verification: removed ignored stale `.claude` worktree, fixed touched programme helper lint issue, confirmed build still passes.
+2026-05-25 11:41 AEST by Codex - Programme generation Foundation equipment rules: no banded gym Foundation, 2 unilateral days + 1 bilateral day, tempo notes, staple library seed, deployed synthesis/legacy agents.
 
 ## Last code fix commit
-HEAD - Clean current workout import follow-up
+HEAD - Add Foundation equipment guardrails
 
 ## What just happened (read first)
+
+### Programme generation Foundation equipment guardrails (2026-05-25, LATEST)
+
+Pedro wanted new PT programme-generation rules:
+- If documents/Step 1 text explicitly say bands/bodyweight/home/no-gym only, programme for that.
+- If equipment is not stated, default to gym.
+- For gym Foundation, do not use banded exercises, especially not banded deadlifts.
+- For gym Foundation hinges, prefer DB/KB/cable/machine options like DB deadlift, KB deadlift, single-leg DB RDL.
+- Foundation should use tempo notes on every exercise.
+- Foundation 3-day structure should be 2 single-arm/single-leg emphasis days and 1 bilateral emphasis day.
+- Add Pedro's new Foundation staples and make the AI compare generated programming against client needs before returning the draft.
+
+Changes shipped:
+- New local skill: `skills/pt-programme-equipment-foundation-rules/SKILL.md`.
+- Root `AGENTS.md` now includes this skill in the PT programme generation chain.
+- Updated local PT programming skills:
+  - `pt-programming-workflow`
+  - `pt-programme-builder`
+  - `pt-programme-intelligence`
+- Active wizard path updated in `programme-synthesis-agent`:
+  - deterministic Foundation generation filters out banded exercises when gym access is inferred,
+  - Foundation Day 1/2 become unilateral emphasis,
+  - Foundation Day 3 becomes bilateral emphasis,
+  - every Foundation exercise gets tempo/control notes,
+  - preferred staple patterns are picked first where present in the library.
+- Legacy/manual path updated in `pt-programming-agent`:
+  - prompt principles include the same rules,
+  - added a final AI rule-review pass before validation,
+  - validation now hard-fails gym Foundation drafts containing banded exercises or missing Foundation tempo/control notes.
+- Exercise library:
+  - Verified all 18 requested staples now exist in `pt_exercises`.
+  - Added 11 missing exercise cards with `video_url = null` so Pedro can attach videos.
+  - Added migration `20260525013700_seed_foundation_staples.sql` so the seed is tracked.
+
+Deployed:
+- `programme-synthesis-agent` ACTIVE v13.
+- `pt-programming-agent` ACTIVE v13.
+
+Verification:
+- `npm run build` passes.
+- Supabase function list confirms both functions active.
+- Skill validator still cannot run locally because Python lacks `PyYAML` (`ModuleNotFoundError: No module named 'yaml'`); skill frontmatter and metadata were manually checked.
 
 ### Current workout import cleanup verification (2026-05-25, LATEST)
 
