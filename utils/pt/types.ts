@@ -38,7 +38,7 @@ export interface PTClient {
   height_cm?: number | null;
   current_weight_kg?: number | null;
   activity_level?: number | null;
-  activity_tag?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'athlete_level' | null;
+  activity_tag?: 'sedentary' | 'lightly_active' | 'light_active' | 'moderately_active' | 'active' | 'very_active' | 'extra_active' | 'athlete_level' | null;
   nutrition_onboarding_completed_at?: string | null;
   created_at?: string;
 }

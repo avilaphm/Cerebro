@@ -9,7 +9,9 @@ const corsHeaders = {
 
 const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au', 'avila.phm@gmail.com'];
 
-type ActivityTag = 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'athlete_level';
+type ActivityTag = 'sedentary' | 'light_active' | 'moderately_active' | 'active' | 'very_active' | 'extra_active';
+type NutritionGoal = 'maintain' | 'weight_loss' | 'weight_gain';
+type GoalSeverity = 'none' | 'mild' | 'moderate' | 'extreme';
 
 interface RequestBody {
   client_id?: string;
@@ -35,11 +37,23 @@ interface PhaseTarget {
   strategy: string;
 }
 
+interface ClientProfile {
+  confirmed_age: number | null;
+  confirmed_sex: 'male' | 'female' | null;
+  nutrition_goal: NutritionGoal;
+  goal_severity: GoalSeverity;
+  reasoning: string;
+  relevant_notes: string[];
+}
+
 interface DraftPlan {
   daily_targets: DailyTargets;
   protein_range_g: { min: number; max: number };
   phase_targets: PhaseTarget[];
+  reasoning_steps: string[];
   assumptions: string[];
+  nutrition_goal: NutritionGoal;
+  goal_severity: GoalSeverity;
   goal_interpretation: string;
   activity_tag: ActivityTag;
   estimated_tdee: number;
@@ -81,7 +95,7 @@ Deno.serve(async (req: Request) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!anthropicKey) return json({ error: 'ANTHROPIC_API_KEY is required for the Nutrition Pyramid finalizer.' }, 500);
+    if (!anthropicKey) return json({ error: 'ANTHROPIC_API_KEY is required.' }, 500);
 
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -103,8 +117,8 @@ Deno.serve(async (req: Request) => {
     if (!clientId) return json({ error: 'client_id required.' }, 400);
     if (!heightCm) return json({ error: 'height_cm must be between 100 and 240.' }, 400);
     if (!weightKg) return json({ error: 'weight_kg must be between 30 and 250.' }, 400);
-    if (!Number.isFinite(activityLevel) || activityLevel < 1 || activityLevel > 5) {
-      return json({ error: 'activity_level must be 1-5.' }, 400);
+    if (!Number.isFinite(activityLevel) || activityLevel < 1 || activityLevel > 6) {
+      return json({ error: 'activity_level must be 1-6.' }, 400);
     }
 
     const authz = isServiceRequest
@@ -137,20 +151,44 @@ Deno.serve(async (req: Request) => {
         .select('title, document_type, content_text, created_at')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false })
-        .limit(6),
+        .limit(8),
     ]);
 
     if (clientRes.error || !clientRes.data) return json({ error: 'Client not found.' }, 404);
 
     const client = clientRes.data as Record<string, unknown>;
+    const activityTag = activityTagFor(activityLevel);
 
-    // No active programme — save biometrics only and mark onboarding complete
-    // so the client can access the portal. Phase nutrition targets are generated
-    // once Pedro assigns a programme.
+    // Step 0: Read client profile and documents to determine nutrition goal
+    // This runs before any calculation so the calorie target reflects the client's
+    // actual body composition goal, not the PT programme type.
+    let clientProfile: ClientProfile;
+    try {
+      clientProfile = await inferClientProfile({
+        anthropicKey,
+        client,
+        nutritionDoc: nutritionDocRes.data as Record<string, unknown> | null,
+        exerciseDoc: exerciseDocRes.data as Record<string, unknown> | null,
+        lifestyleDoc: lifestyleDocRes.data as Record<string, unknown> | null,
+        documents: (documentsRes.data ?? []) as Array<Record<string, unknown>>,
+      });
+    } catch {
+      clientProfile = {
+        confirmed_age: ageFromDate(client.date_of_birth),
+        confirmed_sex: typeof client.gender === 'string' && (client.gender === 'male' || client.gender === 'female')
+          ? client.gender
+          : null,
+        nutrition_goal: 'maintain',
+        goal_severity: 'none',
+        reasoning: 'Profile read failed. Defaulting to maintenance calories.',
+        relevant_notes: [],
+      };
+    }
+
+    // No active programme path
     if (assignmentRes.error || !assignmentRes.data) {
       const now = new Date().toISOString();
-      const activityTag = activityTagFor(activityLevel);
-      const draft = buildBasicDraft({ client, heightCm, weightKg, activityLevel, activityTag });
+      const draft = buildBasicDraft({ client, clientProfile, heightCm, weightKg, activityLevel, activityTag });
       const existingEatingHabits = ((nutritionDocRes.data?.eating_habits as Record<string, unknown>) ?? {});
       await Promise.all([
         admin.from('pt_clients').update({
@@ -172,7 +210,8 @@ Deno.serve(async (req: Request) => {
           client_id: clientId,
           daily_targets: draft.daily_targets,
           protein_range_g: draft.protein_range_g,
-          goals_header: formatGoalsHeader(draft.daily_targets, draft.protein_range_g, draft.goal_interpretation, activityTag, now),
+          goals_header: formatGoalsHeader(draft.daily_targets, draft.protein_range_g, draft.nutrition_goal, draft.goal_severity, activityTag, now),
+          reasoning_steps: draft.reasoning_steps,
           phase_nutrition_strategy: {},
           eating_habits: {
             ...existingEatingHabits,
@@ -182,16 +221,16 @@ Deno.serve(async (req: Request) => {
           updated_at: now,
         }, { onConflict: 'client_id' }),
       ]);
-      return json({ ok: true, client_id: clientId, activity_tag: activityTag, draft, no_programme: true });
+      return json({ ok: true, client_id: clientId, activity_tag: activityTag, client_profile: clientProfile, draft, no_programme: true });
     }
 
     const assignment = assignmentRes.data as Record<string, unknown>;
     const programme = (assignment.programme as { phases?: Array<Record<string, unknown>> } | null) ?? { phases: [] };
     const phases = Array.isArray(programme.phases) ? programme.phases : [];
 
-    const activityTag = activityTagFor(activityLevel);
     const draft = buildDraftPlan({
       client,
+      clientProfile,
       assignment,
       phases,
       heightCm,
@@ -200,8 +239,7 @@ Deno.serve(async (req: Request) => {
       activityTag,
     });
 
-    // Try AI-enhanced finalization; fall back to the mathematical draft on any failure
-    // so biometrics are always saved and onboarding always completes.
+    // Try AI-enhanced finalization; fall back to draft on any failure
     let finalPlan: FinalPlan;
     let pyramidMeta: { confidence_score: number; referenced_documents: Array<Record<string, unknown>> } = {
       confidence_score: 0,
@@ -219,6 +257,7 @@ Deno.serve(async (req: Request) => {
         finalPlan = await finalizeWithPyramid({
           anthropicKey,
           client,
+          clientProfile,
           assignment,
           draft,
           nutritionDoc: nutritionDocRes.data as Record<string, unknown> | null,
@@ -259,6 +298,12 @@ Deno.serve(async (req: Request) => {
         updated_at: now,
       },
     ]));
+
+    const pyramidStep = pyramidMeta.referenced_documents.length > 0
+      ? `Step 9 - Pyramid Review: Helms Nutrition Pyramid applied. ${finalPlan.pyramid_principles_applied.slice(0, 2).join('; ')}`
+      : 'Step 9 - Pyramid Review: Draft used directly (Pyramid retrieval unavailable).';
+    const reasoningSteps = [...draft.reasoning_steps, pyramidStep];
+
     const finalizerAudit = {
       source_document: pyramidMeta.referenced_documents.length > 0
         ? 'The Muscle and Strength Pyramid - Nutrition v2.0 .pdf.pdf'
@@ -270,6 +315,7 @@ Deno.serve(async (req: Request) => {
       client_goal_alignment: finalPlan.client_goal_alignment,
       coach_notes: finalPlan.coach_notes,
       client_summary: finalPlan.client_summary,
+      client_profile: clientProfile,
       draft,
       finalized_at: now,
     };
@@ -301,7 +347,8 @@ Deno.serve(async (req: Request) => {
           client_id: clientId,
           daily_targets: finalPlan.final_daily_targets,
           protein_range_g: draft.protein_range_g,
-          goals_header: formatGoalsHeader(finalPlan.final_daily_targets, draft.protein_range_g, draft.goal_interpretation, activityTag, now),
+          goals_header: formatGoalsHeader(finalPlan.final_daily_targets, draft.protein_range_g, draft.nutrition_goal, draft.goal_severity, activityTag, now),
+          reasoning_steps: reasoningSteps,
           phase_nutrition_strategy: phaseStrategy,
           pyramid_finalizer: finalizerAudit,
           eating_habits: {
@@ -355,10 +402,11 @@ Deno.serve(async (req: Request) => {
       callInternalFunction(supabaseUrl, serviceKey, 'update-client-brain', {
         client_id: clientId,
         trigger_type: 'metric_added',
-        content: `Nutrition onboarding completed. Height ${heightCm}cm, weight ${weightKg}kg, activity level ${activityLevel}/5 (${activityTag}). Final targets: ${finalPlan.final_daily_targets.calories} kcal, ${finalPlan.final_daily_targets.protein_g}g protein.`,
+        content: `Nutrition onboarding completed. Height ${heightCm}cm, weight ${weightKg}kg, activity level ${activityLevel}/6 (${activityTag}). Nutrition goal: ${draft.nutrition_goal} (${draft.goal_severity}). Final targets: ${finalPlan.final_daily_targets.calories} kcal, ${finalPlan.final_daily_targets.protein_g}g protein.`,
         structured_data: {
           nutrition_priorities: {
             body_profile: bodyProfile,
+            client_profile: clientProfile,
             final_daily_targets: finalPlan.final_daily_targets,
             pyramid_principles_applied: finalPlan.pyramid_principles_applied,
           },
@@ -372,6 +420,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       client_id: clientId,
       activity_tag: activityTag,
+      client_profile: clientProfile,
       draft,
       final_plan: finalPlan,
       pyramid_context: pyramidMeta,
@@ -400,8 +449,103 @@ async function authorizeClient(
   return { ok: false, error: 'Not allowed to generate nutrition for this client.', status: 403 };
 }
 
+// Reads client documents and determines the real nutrition goal.
+// The body composition goal (lose/maintain/gain) is separate from the PT programme type.
+async function inferClientProfile(input: {
+  anthropicKey: string;
+  client: Record<string, unknown>;
+  nutritionDoc: Record<string, unknown> | null;
+  exerciseDoc: Record<string, unknown> | null;
+  lifestyleDoc: Record<string, unknown> | null;
+  documents: Array<Record<string, unknown>>;
+}): Promise<ClientProfile> {
+  const fallbackAge = ageFromDate(input.client.date_of_birth);
+  const fallbackSex = typeof input.client.gender === 'string' &&
+    (input.client.gender === 'male' || input.client.gender === 'female')
+    ? input.client.gender as 'male' | 'female'
+    : null;
+
+  const documentTexts = input.documents
+    .map((doc) => `[${doc.title ?? 'Document'}]: ${String(doc.content_text ?? '').slice(0, 1200)}`)
+    .join('\n\n');
+
+  const clientContext = JSON.stringify({
+    goals: input.client.goals,
+    coaching_focus: input.client.coaching_focus,
+    event_goal: input.client.event_goal,
+    notes: input.client.notes,
+    gender: input.client.gender,
+    date_of_birth: input.client.date_of_birth,
+    nutrition_habits: (input.nutritionDoc?.eating_habits as Record<string, unknown> | null) ?? null,
+    lifestyle: input.lifestyleDoc ? compactDoc(input.lifestyleDoc) : null,
+  });
+
+  const anthropic = new Anthropic({ apiKey: input.anthropicKey });
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 400,
+    system: `You are reading a PT client profile to determine their body composition goal for nutrition planning.
+Return only valid JSON. No markdown, no explanation.
+
+Determine:
+1. confirmed_age: from date_of_birth field OR any mention of age in documents. Return number or null.
+2. confirmed_sex: "male" or "female" from gender field OR documents. Return null if unknown.
+3. nutrition_goal: what the client wants to do with their body.
+   - "weight_loss" if they mention losing fat, losing weight, cutting, leaning out, getting smaller
+   - "weight_gain" if they mention gaining muscle, bulking, adding size, gaining weight
+   - "maintain" if they want to stay the same, maintain weight, or have no body comp goal stated
+   Default to "maintain" when unclear.
+4. goal_severity: for weight_loss/weight_gain only:
+   - "mild": gradual, slow, small amount, first time dieting
+   - "moderate": clear intent, standard pace
+   - "extreme": aggressive, fast, large amount, medical reason, event deadline
+   Return "none" for maintain.
+5. reasoning: one sentence quoting the exact phrase from goals/documents that drove this decision.
+6. relevant_notes: array of strings for dietary restrictions or medical conditions that affect nutrition.
+
+Output schema:
+{"confirmed_age":number|null,"confirmed_sex":"male"|"female"|null,"nutrition_goal":"maintain"|"weight_loss"|"weight_gain","goal_severity":"none"|"mild"|"moderate"|"extreme","reasoning":"string","relevant_notes":["string"]}`,
+    messages: [{
+      role: 'user',
+      content: `CLIENT PROFILE:\n${clientContext}\n\nUPLOADED DOCUMENTS:\n${documentTexts || 'None'}`,
+    }],
+  });
+
+  const raw = response.content[0]?.type === 'text' ? response.content[0].text : '';
+  const parsed = parseJson(raw) as Partial<ClientProfile> | null;
+
+  if (!parsed) {
+    return {
+      confirmed_age: fallbackAge,
+      confirmed_sex: fallbackSex,
+      nutrition_goal: 'maintain',
+      goal_severity: 'none',
+      reasoning: 'Could not parse AI response. Using maintenance calories as safe default.',
+      relevant_notes: [],
+    };
+  }
+
+  return {
+    confirmed_age: typeof parsed.confirmed_age === 'number' ? parsed.confirmed_age : fallbackAge,
+    confirmed_sex: parsed.confirmed_sex === 'male' || parsed.confirmed_sex === 'female'
+      ? parsed.confirmed_sex
+      : fallbackSex,
+    nutrition_goal: (['maintain', 'weight_loss', 'weight_gain'] as const).includes(parsed.nutrition_goal as NutritionGoal)
+      ? parsed.nutrition_goal as NutritionGoal
+      : 'maintain',
+    goal_severity: (['none', 'mild', 'moderate', 'extreme'] as const).includes(parsed.goal_severity as GoalSeverity)
+      ? parsed.goal_severity as GoalSeverity
+      : 'none',
+    reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : 'Goal inferred from client profile.',
+    relevant_notes: Array.isArray(parsed.relevant_notes)
+      ? parsed.relevant_notes.filter((n): n is string => typeof n === 'string').slice(0, 6)
+      : [],
+  };
+}
+
 function buildDraftPlan(input: {
   client: Record<string, unknown>;
+  clientProfile: ClientProfile;
   assignment: Record<string, unknown>;
   phases: Array<Record<string, unknown>>;
   heightCm: number;
@@ -409,15 +553,29 @@ function buildDraftPlan(input: {
   activityLevel: number;
   activityTag: ActivityTag;
 }): DraftPlan {
-  const gender = typeof input.client.gender === 'string' ? input.client.gender : null;
-  const age = ageFromDate(input.client.date_of_birth);
-  const bmr = estimateBmr(input.weightKg, input.heightCm, age, gender);
-  const tdee = Math.round(bmr * activityMultiplier(input.activityLevel));
-  const goalText = `${input.client.goals ?? ''} ${input.client.coaching_focus ?? ''} ${input.assignment.goal ?? ''}`.toLowerCase();
-  const goal = inferGoal(goalText);
-  const calories = applyGoalCalories(tdee, goal);
-  const { protein_g, protein_range_g, fat_g, carbs_g, fibre_g } = computeMacros(input.weightKg, calories, goal);
+  const { confirmed_age, confirmed_sex, nutrition_goal, goal_severity, reasoning } = input.clientProfile;
+  const bmr = estimateBmr(input.weightKg, input.heightCm, confirmed_age, confirmed_sex);
+  const pal = activityMultiplier(input.activityLevel);
+  const tdee = Math.round(bmr * pal);
+  const calories = applyGoalCalories(tdee, nutrition_goal, goal_severity);
+  const { protein_g, protein_range_g, fat_g, carbs_g, fibre_g } = computeMacros(input.weightKg, calories, nutrition_goal);
   const dailyTargets = normalizeTargets({ calories, protein_g, carbs_g, fat_g, fibre_g });
+
+  const bmrMethod = confirmed_age && confirmed_sex
+    ? `Mifflin-St Jeor (${confirmed_sex})`
+    : 'conservative estimate (22 x weight)';
+  const goalLabel = goalDisplayLabel(nutrition_goal, goal_severity);
+
+  const reasoningSteps = [
+    `Step 1 - Client Profile: Age ${confirmed_age ?? 'unknown'}, Sex ${confirmed_sex ?? 'unknown'}. Source: ${confirmed_age ? 'date_of_birth / documents' : 'not found'}.`,
+    `Step 2 - Nutrition Goal: ${goalLabel}. Reasoning: ${reasoning}`,
+    `Step 3 - BMR: ${bmrMethod}. BMR = ${bmr} kcal`,
+    `Step 4 - TDEE: Activity level ${input.activityLevel}/6 (${activityTagLabel(input.activityTag)}, PAL ${pal}). TDEE = ${tdee} kcal`,
+    `Step 5 - Calorie Target: ${goalLabel} (x${goalMultiplier(nutrition_goal, goal_severity)}). Target = ${dailyTargets.calories} kcal`,
+    `Step 6 - Protein: ${input.weightKg}kg x ${nutrition_goal === 'weight_loss' ? '2.0' : '1.8'}g/kg = ${protein_g}g. Range: ${protein_range_g.min}g-${protein_range_g.max}g`,
+    `Step 7 - Fat: ${input.weightKg}kg x 0.9g/kg = ${fat_g}g`,
+    `Step 8 - Carbs: (${dailyTargets.calories} - ${protein_g * 4} - ${fat_g * 9}) / 4 = ${carbs_g}g${carbs_g === 100 ? ' (100g floor applied)' : ''}`,
+  ];
 
   return {
     daily_targets: dailyTargets,
@@ -426,23 +584,72 @@ function buildDraftPlan(input: {
       const title = String(phase.title ?? `Phase ${index + 1}`);
       const phaseType = phaseTypeFrom(title, String(phase.focus ?? ''));
       const weeks = parseInt(String(phase.weeks ?? '1'), 10) || 1;
-      const adjusted = adjustTargetsForPhase(dailyTargets, phaseType, goal);
+      const adjusted = adjustTargetsForPhase(dailyTargets, phaseType, nutrition_goal);
       return {
         phase_index: index,
         phase_title: title,
         phase_type: phaseType,
         weeks,
         targets: adjusted,
-        strategy: draftStrategyForPhase(phaseType, goal),
+        strategy: draftStrategyForPhase(phaseType, nutrition_goal),
       };
     }),
+    reasoning_steps: reasoningSteps,
     assumptions: [
-      gender && age ? 'BMR estimated with Mifflin-St Jeor using age and gender.' : 'BMR estimated from body weight only (age or gender unavailable).',
-      `Protein range: ${protein_range_g.min}g–${protein_range_g.max}g (1.5–2g/kg). Target: ${protein_g}g.`,
-      `Activity level ${input.activityLevel}/5 mapped to ${input.activityTag}. TDEE: ${tdee} kcal.`,
-      `Goal interpreted as ${goal}. Calorie target: ${calories} kcal.`,
+      confirmed_age && confirmed_sex
+        ? `BMR calculated with Mifflin-St Jeor (${confirmed_sex}, age ${confirmed_age}).`
+        : 'BMR estimated from body weight only (age or sex unavailable).',
+      `Protein range: ${protein_range_g.min}g-${protein_range_g.max}g (1.5-2g/kg). Target: ${protein_g}g.`,
+      `Activity level ${input.activityLevel}/6 (${activityTagLabel(input.activityTag)}, PAL ${pal}). TDEE: ${tdee} kcal.`,
+      `Nutrition goal: ${goalLabel}. Calorie target: ${dailyTargets.calories} kcal.`,
     ],
-    goal_interpretation: goal,
+    nutrition_goal,
+    goal_severity,
+    goal_interpretation: goalLabel,
+    activity_tag: input.activityTag,
+    estimated_tdee: tdee,
+  };
+}
+
+function buildBasicDraft(input: {
+  client: Record<string, unknown>;
+  clientProfile: ClientProfile;
+  heightCm: number;
+  weightKg: number;
+  activityLevel: number;
+  activityTag: ActivityTag;
+}): DraftPlan {
+  const { confirmed_age, confirmed_sex, nutrition_goal, goal_severity, reasoning } = input.clientProfile;
+  const bmr = estimateBmr(input.weightKg, input.heightCm, confirmed_age, confirmed_sex);
+  const pal = activityMultiplier(input.activityLevel);
+  const tdee = Math.round(bmr * pal);
+  const calories = applyGoalCalories(tdee, nutrition_goal, goal_severity);
+  const { protein_g, protein_range_g, fat_g, carbs_g, fibre_g } = computeMacros(input.weightKg, calories, nutrition_goal);
+  const dailyTargets = normalizeTargets({ calories, protein_g, carbs_g, fat_g, fibre_g });
+  const goalLabel = goalDisplayLabel(nutrition_goal, goal_severity);
+
+  return {
+    daily_targets: dailyTargets,
+    protein_range_g,
+    phase_targets: [],
+    reasoning_steps: [
+      `Step 1 - Client Profile: Age ${confirmed_age ?? 'unknown'}, Sex ${confirmed_sex ?? 'unknown'}.`,
+      `Step 2 - Nutrition Goal: ${goalLabel}. ${reasoning}`,
+      `Step 3 - BMR: ${bmr} kcal`,
+      `Step 4 - TDEE: PAL ${pal} (${activityTagLabel(input.activityTag)}). TDEE = ${tdee} kcal`,
+      `Step 5 - Calorie Target: ${goalLabel} (x${goalMultiplier(nutrition_goal, goal_severity)}). Target = ${dailyTargets.calories} kcal`,
+      `Step 6 - Protein: ${protein_g}g. Range: ${protein_range_g.min}g-${protein_range_g.max}g`,
+      `Step 7 - Fat: ${fat_g}g`,
+      `Step 8 - Carbs: ${carbs_g}g`,
+      'Step 9 - No active programme. Basic targets only.',
+    ],
+    assumptions: [
+      'No active programme - basic daily targets from biometrics.',
+      `Nutrition goal: ${goalLabel}. Calorie target: ${dailyTargets.calories} kcal.`,
+    ],
+    nutrition_goal,
+    goal_severity,
+    goal_interpretation: goalLabel,
     activity_tag: input.activityTag,
     estimated_tdee: tdee,
   };
@@ -481,11 +688,11 @@ async function retrievePyramidContext(input: {
   const referenced = (data.referenced_documents ?? []) as Array<Record<string, unknown>>;
   const hasPyramid = referenced.some((doc) => String(doc.title ?? '').toLowerCase().includes('nutrition'));
   if (excerpts.length === 0 || !hasPyramid) {
-    return { ok: false, error: 'Nutrition Pyramid retrieval returned no usable Pyramid excerpts.' };
+    return { ok: false, error: 'Nutrition Pyramid retrieval returned no usable excerpts.' };
   }
   const confidence = Number(data.confidence_score ?? 0);
   if (!Number.isFinite(confidence) || confidence < 0.45) {
-    return { ok: false, error: 'Nutrition Pyramid retrieval confidence was too low to auto-publish.' };
+    return { ok: false, error: 'Nutrition Pyramid retrieval confidence was too low.' };
   }
   return {
     ok: true,
@@ -499,6 +706,7 @@ async function retrievePyramidContext(input: {
 async function finalizeWithPyramid(input: {
   anthropicKey: string;
   client: Record<string, unknown>;
+  clientProfile: ClientProfile;
   assignment: Record<string, unknown>;
   draft: DraftPlan;
   nutritionDoc: Record<string, unknown> | null;
@@ -520,14 +728,18 @@ async function finalizeWithPyramid(input: {
 Return only valid JSON. No markdown.
 
 Use the supplied excerpts from "The Muscle and Strength Pyramid - Nutrition v2.0" as the primary source.
-Apply the Pyramid hierarchy: calories → macros → micronutrients/fibre → timing → supplements.
+Apply the Pyramid hierarchy: calories -> macros -> micronutrients/fibre -> timing -> supplements.
 Do not invent medical advice. Keep changes conservative and practical for an active PT client.
 
-HARD RULES — never override these:
-1. Protein must stay within 1.5–2g per kg body weight. The proposed draft already sets it correctly. Do NOT reduce protein.
-2. Carbs must never go below 100g per day in any target or phase — even for fat loss.
+The client's nutrition goal and calorie target have already been correctly set based on their documents.
+Your job is to validate and refine the draft, not to override the goal.
+
+HARD RULES - never override these:
+1. Protein must stay within 1.5-2g per kg body weight. Do NOT reduce protein.
+2. Carbs must never go below 100g per day in any target or phase - even for fat loss.
 3. Fat must never go below 50g per day.
-4. Protein is the same regardless of goal — only calories and carbs shift between goals.
+4. Protein is the same regardless of goal - only calories and carbs shift between goals.
+5. The calorie target reflects the client's stated body composition goal. Do not second-guess it.
 
 The output must match this schema:
 {
@@ -543,6 +755,7 @@ The output must match this schema:
       role: 'user',
       content: JSON.stringify({
         client: compactClient(input.client),
+        client_profile: input.clientProfile,
         active_programme: {
           id: input.assignment.id,
           name: input.assignment.name,
@@ -555,7 +768,7 @@ The output must match this schema:
         recent_documents: input.documents.map((doc) => ({
           title: doc.title,
           document_type: doc.document_type,
-          excerpt: String(doc.content_text ?? '').slice(0, 1800),
+          excerpt: String(doc.content_text ?? '').slice(0, 1500),
         })),
         proposed_draft: input.draft,
         pyramid_context: input.pyramidContext,
@@ -601,7 +814,7 @@ The output must match this schema:
     final_daily_targets: finalDaily,
     phase_targets: phaseTargets,
     pyramid_principles_applied: textArray(parsed.pyramid_principles_applied).slice(0, 8),
-    client_goal_alignment: text(parsed.client_goal_alignment, 'Final targets were aligned to the client goal and current training cycle.'),
+    client_goal_alignment: text(parsed.client_goal_alignment, 'Final targets aligned to client goal and training cycle.'),
     changes_from_draft: textArray(parsed.changes_from_draft).slice(0, 8),
     coach_notes: text(parsed.coach_notes, ''),
     client_summary: text(parsed.client_summary, 'Your nutrition targets are now set for the current training cycle.'),
@@ -621,45 +834,15 @@ async function callInternalFunction(supabaseUrl: string, serviceKey: string, nam
   if (!res.ok) console.error(`${name} failed:`, await res.text());
 }
 
-function buildBasicDraft(input: {
-  client: Record<string, unknown>;
-  heightCm: number;
-  weightKg: number;
-  activityLevel: number;
-  activityTag: ActivityTag;
-}): DraftPlan {
-  const gender = typeof input.client.gender === 'string' ? input.client.gender : null;
-  const age = ageFromDate(input.client.date_of_birth);
-  const bmr = estimateBmr(input.weightKg, input.heightCm, age, gender);
-  const tdee = Math.round(bmr * activityMultiplier(input.activityLevel));
-  const goalText = `${input.client.goals ?? ''} ${input.client.coaching_focus ?? ''}`.toLowerCase();
-  const goal = inferGoal(goalText);
-  const calories = applyGoalCalories(tdee, goal);
-  const { protein_g, protein_range_g, fat_g, carbs_g, fibre_g } = computeMacros(input.weightKg, calories, goal);
-  return {
-    daily_targets: normalizeTargets({ calories, protein_g, carbs_g, fat_g, fibre_g }),
-    protein_range_g,
-    phase_targets: [],
-    assumptions: [
-      'No active programme — basic daily targets from biometrics.',
-      `Protein range: ${protein_range_g.min}g–${protein_range_g.max}g (1.5–2g/kg). Target: ${protein_g}g.`,
-      `TDEE: ${tdee} kcal. Goal: ${goal}. Calorie target: ${calories} kcal.`,
-    ],
-    goal_interpretation: goal,
-    activity_tag: input.activityTag,
-    estimated_tdee: tdee,
-  };
-}
-
 function draftAsFinalPlan(draft: DraftPlan): FinalPlan {
   return {
     final_daily_targets: draft.daily_targets,
     phase_targets: draft.phase_targets,
     pyramid_principles_applied: [],
-    client_goal_alignment: `Goal interpreted as ${draft.goal_interpretation}.`,
+    client_goal_alignment: `Goal: ${draft.goal_interpretation}.`,
     changes_from_draft: [],
     coach_notes: '',
-    client_summary: 'Your nutrition targets have been calculated based on your body metrics and training programme.',
+    client_summary: 'Your nutrition targets have been calculated based on your body metrics and goals.',
   };
 }
 
@@ -670,15 +853,24 @@ function numberInRange(value: unknown, min: number, max: number): number | null 
 }
 
 function activityTagFor(level: number): ActivityTag {
-  if (level <= 1) return 'sedentary';
-  if (level === 2) return 'lightly_active';
-  if (level === 3) return 'moderately_active';
-  if (level === 4) return 'very_active';
-  return 'athlete_level';
+  const tags: ActivityTag[] = ['sedentary', 'light_active', 'moderately_active', 'active', 'very_active', 'extra_active'];
+  return tags[Math.max(1, Math.min(6, level)) - 1] ?? 'moderately_active';
+}
+
+function activityTagLabel(tag: ActivityTag): string {
+  const labels: Record<ActivityTag, string> = {
+    sedentary: 'Sedentary',
+    light_active: 'Light (1-3 days/week)',
+    moderately_active: 'Moderate (3-5 days/week)',
+    active: 'Active (6-7 days/week)',
+    very_active: 'Very Active (hard exercise daily)',
+    extra_active: 'Extra Active (physical job / twice-daily)',
+  };
+  return labels[tag] ?? tag;
 }
 
 function activityMultiplier(level: number): number {
-  return [1.2, 1.375, 1.55, 1.725, 1.9][Math.max(1, Math.min(5, level)) - 1] ?? 1.55;
+  return [1.2, 1.375, 1.55, 1.725, 1.9, 2.2][Math.max(1, Math.min(6, level)) - 1] ?? 1.55;
 }
 
 function ageFromDate(value: unknown): number | null {
@@ -692,76 +884,71 @@ function ageFromDate(value: unknown): number | null {
   return age > 10 && age < 100 ? age : null;
 }
 
-function estimateBmr(weightKg: number, heightCm: number, age: number | null, gender: string | null): number {
-  if (age && (gender === 'male' || gender === 'female')) {
+function estimateBmr(weightKg: number, heightCm: number, age: number | null, sex: 'male' | 'female' | null): number {
+  if (age && (sex === 'male' || sex === 'female')) {
     const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
-    return Math.round(base + (gender === 'male' ? 5 : -161));
+    return Math.round(base + (sex === 'male' ? 5 : -161));
   }
   return Math.round(22 * weightKg);
 }
 
-function inferGoal(textValue: string): 'fat_loss' | 'muscle_gain' | 'strength' | 'recomposition' {
-  if (/lose|loss|fat|cut|lean|weight down|drop/.test(textValue)) return 'fat_loss';
-  if (/gain|muscle|hypertrophy|bulk|size/.test(textValue)) return 'muscle_gain';
-  if (/strength|strong|1rm|power/.test(textValue)) return 'strength';
-  return 'recomposition';
+function applyGoalCalories(tdee: number, goal: NutritionGoal, severity: GoalSeverity): number {
+  return Math.round(tdee * goalMultiplier(goal, severity));
 }
 
-function applyGoalCalories(tdee: number, goal: string): number {
-  if (goal === 'fat_loss') return Math.round(tdee * 0.85);
-  if (goal === 'muscle_gain') return Math.round(tdee * 1.07);
-  if (goal === 'strength') return Math.round(tdee * 1.03);
-  return tdee;
+function goalMultiplier(goal: NutritionGoal, severity: GoalSeverity): number {
+  if (goal === 'weight_loss') {
+    if (severity === 'mild') return 0.9;
+    if (severity === 'moderate') return 0.8;
+    if (severity === 'extreme') return 0.6;
+    return 0.9;
+  }
+  if (goal === 'weight_gain') {
+    if (severity === 'mild') return 1.1;
+    if (severity === 'moderate') return 1.2;
+    if (severity === 'extreme') return 1.4;
+    return 1.1;
+  }
+  return 1.0; // maintain
+}
+
+function goalDisplayLabel(goal: NutritionGoal, severity: GoalSeverity): string {
+  if (goal === 'weight_loss') return `${severity === 'mild' ? 'Mild' : severity === 'moderate' ? 'Moderate' : 'Extreme'} Weight Loss`;
+  if (goal === 'weight_gain') return `${severity === 'mild' ? 'Mild' : severity === 'moderate' ? 'Moderate' : 'Extreme'} Weight Gain`;
+  return 'Maintain Weight';
 }
 
 function phaseTypeFrom(title: string, focus: string): string {
-  const textValue = `${title} ${focus}`.toLowerCase();
-  if (textValue.includes('foundation')) return 'foundation';
-  if (textValue.includes('hypertrophy')) return 'hypertrophy';
-  if (textValue.includes('deload')) return 'deload';
-  if (textValue.includes('strength')) return 'strength';
-  if (textValue.includes('test') || textValue.includes('1rm')) return 'testing';
+  const t = `${title} ${focus}`.toLowerCase();
+  if (t.includes('foundation')) return 'foundation';
+  if (t.includes('hypertrophy')) return 'hypertrophy';
+  if (t.includes('deload')) return 'deload';
+  if (t.includes('strength')) return 'strength';
+  if (t.includes('test') || t.includes('1rm')) return 'testing';
   return 'general';
 }
 
-// Pedro's macro formula: protein 1.5–2g/kg, carbs min 100g always, fat 0.9g/kg
 function computeMacros(
   weightKg: number,
   calories: number,
-  goal: string,
+  goal: NutritionGoal,
 ): { protein_g: number; protein_range_g: { min: number; max: number }; fat_g: number; carbs_g: number; fibre_g: number } {
   const proteinMin = Math.round(weightKg * 1.5);
   const proteinMax = Math.round(weightKg * 2.0);
-  // Fat loss: use top of range to preserve muscle; everything else: 1.8g/kg
-  const proteinTarget = clamp(Math.round(weightKg * (goal === 'fat_loss' ? 2.0 : 1.8)), proteinMin, proteinMax);
+  const proteinTarget = clamp(Math.round(weightKg * (goal === 'weight_loss' ? 2.0 : 1.8)), proteinMin, proteinMax);
   const fatG = clamp(Math.round(weightKg * 0.9), 50, 120);
   const remainingCalories = Math.max(0, calories - proteinTarget * 4 - fatG * 9);
-  const carbsRaw = Math.round(remainingCalories / 4);
-  const carbsG = Math.max(100, carbsRaw); // hard floor: never below 100g
+  const carbsG = Math.max(100, Math.round(remainingCalories / 4));
   const fibreG = clamp(Math.max(25, Math.round((calories / 1000) * 14)), 20, 70);
-  return {
-    protein_g: proteinTarget,
-    protein_range_g: { min: proteinMin, max: proteinMax },
-    fat_g: fatG,
-    carbs_g: carbsG,
-    fibre_g: fibreG,
-  };
+  return { protein_g: proteinTarget, protein_range_g: { min: proteinMin, max: proteinMax }, fat_g: fatG, carbs_g: carbsG, fibre_g: fibreG };
 }
 
-function adjustTargetsForPhase(base: DailyTargets, phaseType: string, goal: string): DailyTargets {
+function adjustTargetsForPhase(base: DailyTargets, phaseType: string, goal: NutritionGoal): DailyTargets {
   let calories = base.calories;
   let carbs = base.carbs_g;
-  if (phaseType === 'hypertrophy' && goal !== 'fat_loss') {
-    calories += 120;
-    carbs += 30;
-  } else if (phaseType === 'strength' || phaseType === 'testing') {
-    calories += 80;
-    carbs += 20;
-  } else if (phaseType === 'deload') {
-    calories -= 80;
-    carbs -= 20;
-  }
-  // Carb floor applies to phase adjustments too
+  if (phaseType === 'hypertrophy' && goal !== 'weight_loss') { calories += 120; carbs += 30; }
+  else if (phaseType === 'strength' || phaseType === 'testing') { calories += 80; carbs += 20; }
+  else if (phaseType === 'deload') { calories -= 80; carbs -= 20; }
   carbs = Math.max(100, carbs);
   return normalizeTargets({ ...base, calories, carbs_g: carbs });
 }
@@ -769,41 +956,37 @@ function adjustTargetsForPhase(base: DailyTargets, phaseType: string, goal: stri
 function formatGoalsHeader(
   targets: DailyTargets,
   proteinRange: { min: number; max: number },
-  goal: string,
-  activityTag: string,
+  goal: NutritionGoal,
+  severity: GoalSeverity,
+  activityTag: ActivityTag,
   isoDate: string,
 ): string {
   const date = new Date(isoDate);
   const dateStr = date.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
-  const goalLabel: Record<string, string> = {
-    fat_loss: 'Fat Loss',
-    muscle_gain: 'Muscle Gain',
-    strength: 'Strength',
-    recomposition: 'Recomposition',
-  };
-  const activityLabel: Record<string, string> = {
+  const activityLabel: Record<ActivityTag, string> = {
     sedentary: 'Sedentary',
-    lightly_active: 'Lightly Active',
-    moderately_active: 'Moderately Active',
+    light_active: 'Light',
+    moderately_active: 'Moderate',
+    active: 'Active',
     very_active: 'Very Active',
-    athlete_level: 'Athlete Level',
+    extra_active: 'Extra Active',
   };
   return [
-    `NUTRITION GOALS — ${dateStr}`,
-    `Goal: ${goalLabel[goal] ?? goal}  |  Activity: ${activityLabel[activityTag] ?? activityTag}`,
-    '──────────────────────────────────────',
+    `NUTRITION GOALS - ${dateStr}`,
+    `Goal: ${goalDisplayLabel(goal, severity)}  |  Activity: ${activityLabel[activityTag] ?? activityTag}`,
+    '------------------------------------------',
     `Calories:  ${targets.calories.toLocaleString('en-AU')} kcal`,
-    `Protein:   ${proteinRange.min}g – ${proteinRange.max}g  (1.5–2g per kg body weight)`,
+    `Protein:   ${proteinRange.min}g - ${proteinRange.max}g  (1.5-2g per kg body weight)`,
     `Carbs:     ${targets.carbs_g}g`,
     `Fat:       ${targets.fat_g}g`,
     `Fibre:     ${targets.fibre_g}g`,
-    '──────────────────────────────────────',
+    '------------------------------------------',
   ].join('\n');
 }
 
-function draftStrategyForPhase(phaseType: string, goal: string): string {
+function draftStrategyForPhase(phaseType: string, goal: NutritionGoal): string {
   if (phaseType === 'foundation') return 'Build consistency first: hit protein, fibre, hydration, and simple repeatable meals.';
-  if (phaseType === 'hypertrophy') return goal === 'fat_loss'
+  if (phaseType === 'hypertrophy') return goal === 'weight_loss'
     ? 'Keep deficit conservative so training volume and recovery do not collapse.'
     : 'Support high training volume with enough carbs and a small calorie surplus when appropriate.';
   if (phaseType === 'strength') return 'Keep protein stable and bias carbs around lifting sessions to support performance.';
@@ -816,7 +999,7 @@ function normalizeTargets(targets: DailyTargets): DailyTargets {
   return {
     calories: clamp(Math.round(targets.calories), 1200, 5000),
     protein_g: clamp(Math.round(targets.protein_g), 60, 300),
-    carbs_g: clamp(Math.round(targets.carbs_g), 100, 650), // Pedro's rule: 100g floor
+    carbs_g: clamp(Math.round(targets.carbs_g), 100, 650),
     fat_g: clamp(Math.round(targets.fat_g), 50, 180),
     fibre_g: clamp(Math.round(targets.fibre_g), 20, 70),
   };
@@ -828,17 +1011,10 @@ function clamp(value: number, min: number, max: number) {
 
 function compactClient(client: Record<string, unknown>) {
   return {
-    id: client.id,
-    name: client.name,
-    goals: client.goals,
-    coaching_focus: client.coaching_focus,
-    event_goal: client.event_goal,
-    gender: client.gender,
-    date_of_birth: client.date_of_birth,
-    height_cm: client.height_cm,
-    current_weight_kg: client.current_weight_kg,
-    activity_level: client.activity_level,
-    activity_tag: client.activity_tag,
+    id: client.id, name: client.name, goals: client.goals, coaching_focus: client.coaching_focus,
+    event_goal: client.event_goal, gender: client.gender, date_of_birth: client.date_of_birth,
+    height_cm: client.height_cm, current_weight_kg: client.current_weight_kg,
+    activity_level: client.activity_level, activity_tag: client.activity_tag,
   };
 }
 
@@ -851,11 +1027,7 @@ function compactDoc(doc: Record<string, unknown> | null) {
 function parseJson(textValue: string): unknown | null {
   const match = textValue.match(/\{[\s\S]*\}/);
   if (!match) return null;
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(match[0]); } catch { return null; }
 }
 
 function text(value: unknown, fallback: string) {
@@ -863,5 +1035,7 @@ function text(value: unknown, fallback: string) {
 }
 
 function textArray(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
 }

@@ -228,11 +228,12 @@ function formatMetric(value: number | null, suffix: string) {
 }
 
 function activityLabel(value: number | null | undefined) {
-  if (value === 1) return '1 - Mostly seated';
-  if (value === 2) return '2 - Lightly active';
-  if (value === 3) return '3 - Moderately active';
-  if (value === 4) return '4 - Very active';
-  if (value === 5) return '5 - Athlete-level';
+  if (value === 1) return 'Sedentary - little or no exercise';
+  if (value === 2) return 'Light - exercise 1-3 days/week';
+  if (value === 3) return 'Moderate - exercise 3-5 days/week';
+  if (value === 4) return 'Active - exercise 6-7 days/week';
+  if (value === 5) return 'Very Active - hard exercise daily';
+  if (value === 6) return 'Extra Active - physical job or twice-daily training';
   return 'Not set';
 }
 
@@ -1206,8 +1207,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       setStatus('Enter your weight in kilograms.');
       return;
     }
-    if (!Number.isFinite(activity) || activity < 1 || activity > 5) {
-      setStatus('Choose your activity level from 1 to 5.');
+    if (!Number.isFinite(activity) || activity < 1 || activity > 6) {
+      setStatus('Choose your activity level.');
       return;
     }
 
@@ -1622,29 +1623,33 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
         <div className="mt-5">
           <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Activity level</p>
-          <div className="mt-3 grid grid-cols-5 gap-2">
-            {[1, 2, 3, 4, 5].map((level) => {
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {([
+              [1, 'Sedentary', 'Little or no exercise'],
+              [2, 'Light', '1-3 days/week'],
+              [3, 'Moderate', '3-5 days/week'],
+              [4, 'Active', '6-7 days/week'],
+              [5, 'Very Active', 'Hard exercise daily'],
+              [6, 'Extra Active', 'Physical job / 2x/day'],
+            ] as [number, string, string][]).map(([level, label, desc]) => {
               const selected = nutritionDraft.activity_level === String(level);
               return (
                 <button
                   key={level}
                   type="button"
                   onClick={() => setNutritionDraft((current) => ({ ...current, activity_level: String(level) }))}
-                  className={`border px-2 py-3 text-center transition-colors ${
+                  className={`border px-3 py-3 text-left transition-colors ${
                     selected
                       ? 'border-black bg-black text-white'
-                      : 'border-black/10 bg-[#fbfbf8] text-black/45 hover:border-black/30 hover:text-black'
+                      : 'border-black/10 bg-[#fbfbf8] text-black/70 hover:border-black/30 hover:text-black'
                   }`}
                 >
-                  <span className="block text-lg font-medium">{level}</span>
-                  <span className="mt-1 block text-[0.55rem] uppercase tracking-[0.1em] opacity-70">
-                    {level === 1 ? 'Low' : level === 3 ? 'Moderate' : level === 5 ? 'High' : ''}
-                  </span>
+                  <span className="block text-sm font-medium">{label}</span>
+                  <span className={`mt-0.5 block text-[0.6rem] leading-tight ${selected ? 'text-white/60' : 'text-black/40'}`}>{desc}</span>
                 </button>
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-black/40">{activityLabel(Number(nutritionDraft.activity_level))}</p>
         </div>
 
         <button

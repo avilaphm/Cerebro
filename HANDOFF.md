@@ -1,14 +1,55 @@
 # Handoff
 
 ## Last updated
-2026-05-25 10:41 AEST by Codex - Added current workout import workflow: screenshots/text modal, import-current-workout Edge Function, Foundation appender, buttons in programme creation/edit, project skill chain, deployed function v1.
+2026-05-25 by Claude Sonnet 4.6 - Nutrition calculation overhaul v6: AI reads client documents to determine real body-composition goal, 6-level activity system, full reasoning chain (9 steps) stored per client, correct Mifflin-St Jeor + PAL calculation.
 
 ## Last code fix commit
-HEAD - Add current workout import
+HEAD - Nutrition overhaul v6: AI document reader, 6-level activity, reasoning steps
 
 ## What just happened (read first)
 
-### Current workout import into Foundation (2026-05-25, LATEST)
+### Nutrition calculation overhaul v6: AI document reader + correct methodology (2026-05-25, LATEST)
+
+Pedro flagged that John's nutrition (78kg, 54yo male, 171cm) was producing 2,975 kcal and 446g carbs.
+Two root causes: the goal was being inferred from the PT programme type (strength → +3%), and
+activity level 4 mapped to the wrong PAL.
+
+Changes shipped:
+
+1. **AI profile reader** (`generate-nutrition-programme` v6): new `inferClientProfile()` function makes
+   a small Haiku (claude-haiku-4-5-20251001, max_tokens 400) call to read the client's documents
+   (nutrition doc, exercise doc, lifestyle doc, pt_client_documents) and classify the real body-composition
+   goal before calculating anything. Falls back to `maintain/none` on failure.
+
+2. **6-level activity system** (replacing vague 1-5 numeric): PAL multipliers now match the standard
+   Mifflin-St Jeor table exactly:
+   - Level 1 Sedentary: 1.2 / Level 2 Light: 1.375 / Level 3 Moderate: 1.55
+   - Level 4 Active: 1.725 / Level 5 Very Active: 1.9 / Level 6 Extra Active: 2.2
+
+3. **Goal-based calorie multipliers** (7 categories, driven by client documents NOT PT programme):
+   - maintain: ×1.0 / weight_loss mild: ×0.9 / moderate: ×0.8 / extreme: ×0.6
+   - weight_gain mild: ×1.1 / moderate: ×1.2 / extreme: ×1.4
+
+4. **Full reasoning chain** (9 steps logged per client): every nutrition plan now stores `reasoning_steps`
+   as a jsonb array in `pt_client_nutrition_doc` so Pedro can audit the entire calculation:
+   BMR → TDEE → goal multiplier → macros → phase adjustments → pyramid review.
+
+5. **6-level activity selector UI** (`ClientPortal.tsx`): replaced 5 numeric tiles with 6 descriptive
+   buttons in a 2-col/3-col grid, each showing label + short description.
+
+6. **DB migration** applied: `activity_level` constraint now allows 1-6, `activity_tag` constraint
+   includes `extra_active`, `reasoning_steps jsonb` column added to `pt_client_nutrition_doc`.
+
+7. **Skills updated**: new `pt-nutrition-client-profile-reader/SKILL.md`, updated
+   `pt-nutrition-target-calculator/SKILL.md`, updated `pt-nutrition-orchestrator/SKILL.md`.
+
+8. **Types updated** (`utils/pt/types.ts`): `PTClient.activity_tag` union includes `active`, `extra_active`.
+
+Edge function version: v6 ACTIVE.
+
+Next: re-run John's nutrition to verify correct numbers (goal read from documents, carbs lower).
+
+### Current workout import into Foundation (2026-05-25)
 
 Pedro wanted a new button beside the recently added board/list view button so he can paste text or upload screenshots of a client's current programme and append those workouts into Phase 1 Foundation, without changing the AI-generated programme.
 
