@@ -1841,6 +1841,7 @@ Shipped most recently:
 - `PTClientDetail.tsx` and `page.tsx` already include AI Check-in Sessions section (last 8 sessions, per-session focus card, activity list, health tips).
 
 Previously shipped in this session:
+- Nutrition tab now shows a collapsed `Nutrition journey` dropdown with a checkpoint-style rail, a one-line goal summary, phase week labels, and the `Track your food` CTA moved above it. The old `Nutrition programme created` banner is cleared after onboarding success.
 - Audited the coach PT dashboard mobile experience across Overview, Messages, Bookings, Clients, Groups, Programmes, Emails, Settings, client detail, and programme editor/create flows.
 - Fixed the shared PT layout so the PT nav becomes a horizontal scroll rail on mobile and remains a sidebar on desktop.
 - Added `min-w-0` to dashboard shells to prevent nested content from squeezing or causing hidden horizontal overflow.

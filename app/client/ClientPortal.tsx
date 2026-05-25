@@ -1279,7 +1279,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       return;
     }
 
-    setStatus('Nutrition programme created.');
+    setStatus('');
     setNutritionSubmitting(false);
     await loadPortal();
     setActiveScreen('overview');

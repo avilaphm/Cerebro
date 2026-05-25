@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, GripVertical, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, GripVertical, X } from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
@@ -52,6 +52,11 @@ interface PhaseNutrition {
   phase_index: number;
   phase_title: string;
   phase_type: string;
+  training_context?: {
+    phase_weeks?: number;
+    programme_name?: string;
+    programme_goal?: string;
+  } | null;
   recommendations: {
     daily_targets?: Partial<DailyTargets>;
     strategy?: string;
@@ -488,6 +493,7 @@ export default function NutritionTab({ clientId }: Props) {
   const [phaseNutrition, setPhaseNutrition] = useState<PhaseNutrition[]>([]);
   const [loading, setLoading] = useState(true);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [nutritionJourneyExpanded, setNutritionJourneyExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletedEntries, setDeletedEntries] = useState<DeletedEntry[]>([]);
   const [undoingId, setUndoingId] = useState<string | null>(null);
@@ -518,7 +524,7 @@ export default function NutritionTab({ clientId }: Props) {
       }
       const { data: phases } = await supabase
         .from('pt_phase_nutrition')
-        .select('id, phase_index, phase_title, phase_type, recommendations')
+        .select('id, phase_index, phase_title, phase_type, training_context, recommendations')
         .eq('client_id', clientId)
         .eq('review_status', 'approved')
         .order('phase_index', { ascending: true });
@@ -660,6 +666,17 @@ export default function NutritionTab({ clientId }: Props) {
 
   const today = new Date();
   const canGoForward = weekOffset < 0;
+  const nutritionJourneyGoal = useMemo(() => {
+    const phase = phaseNutrition[0];
+    const summary = phase?.recommendations?.client_summary?.trim()
+      || phase?.recommendations?.strategy?.trim()
+      || 'Stay consistent with the current nutrition targets.';
+    return summary.replace(/\s+/g, ' ');
+  }, [phaseNutrition]);
+  const nutritionJourneyWeeks = useMemo(
+    () => phaseNutrition.reduce((total, phase) => total + (phase.training_context?.phase_weeks ?? 0), 0),
+    [phaseNutrition],
+  );
 
   const handleDaySelect = (date: Date) => {
     if (date > today) return;
@@ -704,35 +721,6 @@ export default function NutritionTab({ clientId }: Props) {
         )}
       </div>
 
-      {phaseNutrition.length > 0 && (
-        <div className="mx-auto max-w-5xl border border-black/10 bg-white p-5">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Programme nutrition</p>
-          <div className="mt-4 grid gap-3">
-            {phaseNutrition.map((phase) => {
-              const phaseTargets = phase.recommendations?.daily_targets;
-              return (
-                <div key={phase.id} className="border border-black/8 bg-[#fbfbf8] px-4 py-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium">{phase.phase_title}</p>
-                      {phase.recommendations?.strategy && (
-                        <p className="mt-1 text-xs leading-relaxed text-black/50">{phase.recommendations.strategy}</p>
-                      )}
-                    </div>
-                    {phaseTargets?.calories && (
-                      <p className="shrink-0 text-xs tabular-nums text-black/45">
-                        <span className="font-medium text-black">{phaseTargets.calories}</span> kcal
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Track food CTA */}
       <div className="mx-auto max-w-5xl">
         <button
           type="button"
@@ -740,7 +728,7 @@ export default function NutritionTab({ clientId }: Props) {
           className="group flex w-full items-center justify-between border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:border-black/25"
         >
           <div>
-            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Log food</p>
+            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Track your food</p>
             <p className="mt-0.5 text-sm font-medium">Track your food here</p>
             <p className="mt-0.5 text-[0.65rem] text-black/35">Voice dump, photos, or type — AI splits it into meals</p>
           </div>
@@ -753,6 +741,70 @@ export default function NutritionTab({ clientId }: Props) {
           </svg>
         </button>
       </div>
+
+      {phaseNutrition.length > 0 && (
+        <div className="mx-auto max-w-5xl border border-black/10 bg-white p-5">
+        <button
+          type="button"
+          onClick={() => setNutritionJourneyExpanded((value) => !value)}
+          className="w-full text-left transition-colors hover:bg-[#fcfcfa]"
+        >
+          <div>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Nutrition journey</p>
+                <p className="mt-1 text-sm font-medium leading-relaxed text-black/75">
+                  {nutritionJourneyGoal}
+                  {nutritionJourneyWeeks > 0 ? ` · ${nutritionJourneyWeeks} week plan` : ''}
+                </p>
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-black/25 transition-transform ${nutritionJourneyExpanded ? 'rotate-180' : ''}`}
+              />
+            </div>
+          </div>
+        </button>
+
+        {nutritionJourneyExpanded && (
+          <div className="border border-t-0 border-black/10 bg-white px-5 pb-5 pt-1">
+            <div className="relative">
+              <div className="absolute bottom-3 left-[0.6rem] top-3 w-px bg-black/8" />
+              <div className="space-y-1">
+                {phaseNutrition.map((phase) => {
+                  const phaseTargets = phase.recommendations?.daily_targets;
+                  const phaseWeeks = phase.training_context?.phase_weeks ?? null;
+                  return (
+                    <div key={phase.id} className="flex gap-4 py-3">
+                      <div className="relative z-10 flex w-5 shrink-0 justify-center pt-0.5">
+                        <div className="h-3.5 w-3.5 rounded-full border border-black/15 bg-white" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                          <p className="text-sm font-medium leading-snug text-black">{phase.phase_title}</p>
+                          {phaseWeeks ? (
+                            <span className="text-[0.58rem] uppercase tracking-[0.12em] text-black/35">
+                              {phaseWeeks} weeks
+                            </span>
+                          ) : null}
+                          {phaseTargets?.calories ? (
+                            <span className="text-[0.58rem] uppercase tracking-[0.12em] text-black/35">
+                              {phaseTargets.calories} kcal
+                            </span>
+                          ) : null}
+                        </div>
+                        {phase.recommendations?.strategy && (
+                          <p className="mt-1 text-xs leading-relaxed text-black/50">{phase.recommendations.strategy}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      )}
 
       {/* Day selector */}
       <div className="mx-auto max-w-5xl">
