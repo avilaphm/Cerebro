@@ -227,6 +227,46 @@ function formatMetric(value: number | null, suffix: string) {
   return value === null || value === undefined ? '-' : `${Number(value).toLocaleString('en-AU')} ${suffix}`;
 }
 
+function startOfLocalDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function parseLocalDate(value: string) {
+  return new Date(`${value}T00:00:00`);
+}
+
+function mostRecentFriday(date: Date) {
+  const next = startOfLocalDay(date);
+  const day = next.getDay();
+  const delta = day >= 5 ? day - 5 : day + 2;
+  next.setDate(next.getDate() - delta);
+  return next;
+}
+
+function daysBetween(left: Date, right: Date) {
+  return Math.max(0, Math.floor((startOfLocalDay(left).getTime() - startOfLocalDay(right).getTime()) / 86400000));
+}
+
+function checkinCopy(daysLate: number) {
+  if (daysLate <= 0) return 'Weekly check-in';
+  if (daysLate === 1) return 'You are late 1 day.';
+  if (daysLate === 2) return 'You are late 2 days.';
+  if (daysLate === 3) return 'You are late 3 days.';
+  if (daysLate === 4) return 'Why are you not doing it? Can we help?';
+  return 'You do you, bo. Just letting you know we are here whenever you need us.';
+}
+
+function checkinCardClasses(daysLate: number) {
+  if (daysLate <= 0) return 'border-amber-200 bg-amber-50 text-amber-950';
+  if (daysLate === 1) return 'border-orange-200 bg-orange-50 text-orange-950';
+  if (daysLate === 2) return 'border-red-200 bg-red-50 text-red-950';
+  if (daysLate === 3) return 'border-rose-200 bg-rose-50 text-rose-950';
+  if (daysLate === 4) return 'border-rose-300 bg-rose-100 text-rose-950';
+  return 'border-red-300 bg-red-100 text-red-950';
+}
+
 function activityLabel(value: number | null | undefined) {
   if (value === 1) return 'Sedentary - little or no exercise';
   if (value === 2) return 'Light - exercise 1-3 days/week';
@@ -794,18 +834,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     ? phaseProgress[selectedWorkout.phaseIndex] ?? null
     : null;
   const currentWeekStart = weekStartInputValue();
-  const nextMondayStr = (() => {
-    const now = new Date();
-    const day = now.getDay();
-    const daysUntilMonday = ((8 - day) % 7) || 7;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + daysUntilMonday);
-    const y = monday.getFullYear();
-    const m = String(monday.getMonth() + 1).padStart(2, '0');
-    const d = String(monday.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  })();
-  const checkinDue = !checkinSession || checkinSession.week_start < nextMondayStr;
   const latestCheckin = weeklyCheckins[0] ?? null;
   const latestMetric = metrics[0] ?? null;
   const weightPair = latestMetricPair(metrics, 'weight_kg');
@@ -826,8 +854,22 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       if (dateCompare !== 0) return dateCompare;
       return a.sort_order - b.sort_order;
     });
-  const dueTodayItems = currentWeeklyPlanItems.filter((item) => item.scheduled_date === todayInputValue() && item.status === 'planned');
-  const nextPlanItem = currentWeeklyPlanItems.find((item) => item.status === 'planned') ?? null;
+  const today = startOfLocalDay(new Date());
+  const weeklyCheckinPlanItem = currentWeeklyPlanItems.find((item) => item.item_type === 'check_in') ?? null;
+  const checkinAnchorDate = weeklyCheckinPlanItem?.scheduled_date
+    ? parseLocalDate(weeklyCheckinPlanItem.scheduled_date)
+    : mostRecentFriday(today);
+  const checkinDaysLate = weeklyCheckinPlanItem?.scheduled_date
+    ? daysBetween(today, checkinAnchorDate)
+    : daysBetween(today, checkinAnchorDate);
+  const checkinCardVisible = weeklyCheckinPlanItem
+    ? weeklyCheckinPlanItem.status === 'planned' && checkinAnchorDate.getTime() <= today.getTime()
+    : (!checkinSession || checkinSession.status !== 'completed') && (today.getDay() >= 5 || checkinSession?.status === 'in_progress');
+  const dueTodayPlanItems = currentWeeklyPlanItems.filter((item) =>
+    item.scheduled_date === todayInputValue() && item.status === 'planned' && item.item_type !== 'check_in'
+  );
+  const dueTodayItems = dueTodayPlanItems.slice(0, 3);
+  const remainingDueTodayCount = dueTodayPlanItems.length - dueTodayItems.length;
   const nextWorkoutDayIndex = activePhase
     ? activePhase.days.findIndex((_, i) => !workoutIsDone(workoutLogs, activePhaseIndex, i, activeProgress))
     : -1;
@@ -1264,6 +1306,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         ? { ...planItem, status: nextStatus, completed_at: completedAt }
         : planItem
     )));
+  };
+
+  const completeWeeklyCheckin = async (focus: CheckinWeeklyFocus) => {
+    setCheckinFocus(focus);
+    setShowCheckinModal(false);
+    if (weeklyCheckinPlanItem) {
+      await markPlanItemStatus(weeklyCheckinPlanItem, 'done');
+    }
+    await loadPortal();
   };
 
   const bookSelectedSlot = async () => {
@@ -2446,21 +2497,60 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               </p>
             )}
           </div>
+          {checkinCardVisible && (
+            <button
+              type="button"
+              onClick={() => setShowCheckinModal(true)}
+              className={`mt-5 w-full border px-4 py-4 text-left transition-colors hover:brightness-[0.985] ${checkinCardClasses(checkinDaysLate)}`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.6rem] uppercase tracking-[0.14em] opacity-55">Weekly check-in</p>
+                  <p className="mt-1 text-sm font-medium leading-relaxed">{checkinCopy(checkinDaysLate)}</p>
+                  <p className="mt-1 text-xs opacity-70">Tap to complete it.</p>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 opacity-50" />
+              </div>
+            </button>
+          )}
           <div className="mt-5 grid gap-2 sm:grid-cols-3">
-            <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedWorkout(null);
+                setActiveScreen('booking');
+                scrollRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+              }}
+              className="border border-black/8 bg-[#fbfbf8] px-3 py-3 text-left transition-colors hover:border-black/20 hover:bg-white"
+            >
               <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Next session</p>
               <p className="mt-1.5 text-sm font-medium">{nextBooking ? formatBookingDate(nextBooking.start_at) : 'Not booked'}</p>
               {nextBooking
                 ? <p className="mt-0.5 text-xs text-black/40">{formatBookingTime(nextBooking.start_at)}</p>
-                : <p className="mt-0.5 text-xs text-black/40">Use Tools to book</p>}
-            </div>
+                : <p className="mt-0.5 text-xs text-black/40">Booking</p>}
+            </button>
             <div className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
               <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Due today</p>
               <p className="mt-1.5 text-sm font-medium">
-                {dueTodayItems.length > 0 ? `${dueTodayItems.length} item${dueTodayItems.length === 1 ? '' : 's'}` : 'Clear'}
+                {dueTodayPlanItems.length > 0 ? `${dueTodayPlanItems.length} item${dueTodayPlanItems.length === 1 ? '' : 's'}` : 'Clear'}
               </p>
               {dueTodayItems.length > 0 && (
-                <p className="mt-0.5 text-xs text-black/40">{dueTodayItems[0].title}</p>
+                <div className="mt-2 space-y-1.5">
+                  {dueTodayItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => void markPlanItemStatus(item, 'done')}
+                      className="flex w-full items-start gap-2 text-left text-xs leading-relaxed text-black/65 transition-colors hover:text-black"
+                    >
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-black/40" />
+                      <span className="min-w-0">{item.title}</span>
+                    </button>
+                  ))}
+                  {remainingDueTodayCount > 0 && (
+                    <p className="text-[0.6rem] uppercase tracking-[0.12em] text-black/30">+{remainingDueTodayCount} more</p>
+                  )}
+                </div>
               )}
             </div>
             <button
@@ -3454,11 +3544,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           clientId={client.id}
           clientName={client.name}
           onClose={() => setShowCheckinModal(false)}
-          onComplete={(focus) => {
-            setCheckinFocus(focus);
-            setShowCheckinModal(false);
-            void loadPortal();
-          }}
+          onComplete={(focus) => { void completeWeeklyCheckin(focus); }}
         />
       )}
 

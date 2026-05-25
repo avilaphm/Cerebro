@@ -59,6 +59,7 @@ Rules:
 - Use dates within the supplied week range only.
 - Keep client-facing item titles short and practical.
 - Include one in-person PT session if a regular slot exists, with confirmation_status confirmed if the slot is stable or needs_confirmation if the reset suggests uncertainty.
+- Include one check-in item on Friday with item_type check_in, title "Weekly check-in", and a short client-facing note reminding the client to complete it.
 - Include no more than 7 plan items unless the reset clearly requires it.
 - For solo_strength items, link to the active assignment and use zero-based phase/day indexes when the active programme context provides a suitable day.
 - Do not make medical claims. For pain, soreness, injury, or GLP-1/medication topics, write a conservative planning note for Pedro and suggest checking in.
@@ -199,7 +200,7 @@ Deno.serve(async (req: Request) => {
 });
 
 function normaliseItems(items: DraftItem[], weekStart: string, weekEnd: string, assignmentId: string | null) {
-  return items
+  const mapped = items
     .filter((item) => isPlanItemType(item.item_type) && item.title?.trim())
     .slice(0, 8)
     .map((item, index) => ({
@@ -215,6 +216,25 @@ function normaliseItems(items: DraftItem[], weekStart: string, weekEnd: string, 
       linked_day_index: typeof item.linked_day_index === 'number' ? item.linked_day_index : null,
       sort_order: index,
     }));
+
+  if (mapped.some((item) => item.item_type === 'check_in')) {
+    return mapped.slice(0, 7);
+  }
+
+  return [
+    ...mapped.slice(0, 6),
+    {
+      item_type: 'check_in' as const,
+      scheduled_date: addDays(weekStart, 4),
+      title: 'Weekly check-in',
+      details: 'Complete your weekly check-in.',
+      confirmation_status: 'none' as const,
+      linked_assignment_id: null,
+      linked_phase_index: null,
+      linked_day_index: null,
+      sort_order: mapped.length,
+    },
+  ];
 }
 
 function summariseProgramme(assignment: { id: string; name: string; goal: string | null; current_week: number | null; current_block_index: number | null; programme: unknown }) {

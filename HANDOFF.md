@@ -1,12 +1,45 @@
 # Handoff
 
 ## Last updated
-2026-05-25 15:16 AEST by Codex - Renamed the client dashboard title to Pedro Avila Coaching App.
+2026-05-25 15:15 AEST by Codex - Made the overview next-session card open Booking, added clickable due-today items, and introduced the weekly check-in card.
 
 ## Last code fix commit
-HEAD - Rename client dashboard title
+HEAD - Overview booking and check-in cards
 
 ## What just happened (read first)
+
+### Overview booking + weekly check-in cards (2026-05-25, LATEST)
+
+Pedro wanted the client overview to behave consistently across booking and check-in workflows.
+
+Changes shipped:
+- `app/client/ClientPortal.tsx`
+  - Next-session card now opens the Booking screen when clicked.
+  - The stale `Use Tools to book` text was replaced with `Booking`.
+  - Due-today now shows up to three clickable items that mark themselves done from the overview.
+  - A weekly check-in card now appears above due-today when the check-in is due, with colour states that intensify as the check-in gets later.
+- `supabase/functions/draft-weekly-plan/index.ts`
+  - Weekly plan drafts now explicitly request a Friday `check_in` item titled `Weekly check-in`.
+  - If the model omits it, the function appends a fallback `check_in` item so the overview always has a generated anchor item for the card.
+
+Deployed:
+- `draft-weekly-plan` redeployed on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npm run build` passes.
+
+Notes:
+- Existing unrelated dirty changes are still present and were not staged by this task:
+  - `app/api/pt/parse-pdf/route.ts`
+  - `next.config.ts`
+  - `supabase/functions/compute-client-metrics/index.ts`
+  - `supabase/functions/embed-client-brain/index.ts`
+  - `supabase/functions/explain-journey-phase/index.ts`
+  - `supabase/functions/ingest-knowledge-document/index.ts`
+  - `supabase/functions/query-knowledge-brain/index.ts`
+  - `supabase/functions/seed-exercise-library/index.ts`
+  - `supabase/migrations/20260525045450_revoke_public_execute_on_security_definer_rpcs.sql`
+  - `supabase/migrations/20260525045511_revoke_public_role_execute_on_security_definer_rpcs.sql`
 
 ### Client dashboard title updated (2026-05-25, LATEST)
 
