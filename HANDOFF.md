@@ -1841,6 +1841,7 @@ Shipped most recently:
 - `PTClientDetail.tsx` and `page.tsx` already include AI Check-in Sessions section (last 8 sessions, per-session focus card, activity list, health tips).
 
 Previously shipped in this session:
+- Nutrition onboarding now shows a dedicated creation screen after the client submits height, weight, and activity level. It includes a percentage progress ring and rotating guidance about phase-linked nutrition, meal context, plate photo quality, and 10-20% tracking variance.
 - Workout logger section note cards now use a larger mic button in the top-right corner so the voice action is easier to hit.
 - Programme creation Step 3 import now accepts up to 8 screenshots, and the import modal commit action is enabled for text-only, image-only, or mixed text-plus-image inputs.
 - Nutrition tab now shows a collapsed `Nutrition journey` dropdown with a checkpoint-style rail, a one-line goal summary, phase week labels, and the `Track your food` CTA moved above it. The old `Nutrition programme created` banner is cleared after onboarding success.

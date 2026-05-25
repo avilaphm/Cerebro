@@ -60,6 +60,13 @@ const PLAN_ITEM_LABELS: Record<PTWeeklyPlanItemType, string> = {
   fitness_class: 'Fitness class',
 };
 
+const NUTRITION_CREATION_PHRASES = [
+  'Your nutrition programme is being created in conjunction with your workout phases.',
+  'When tracking your nutrition, always give more context with your meal for more accurate tracking.',
+  'The camera cannot see depth on your plate. Spread foods out across the plate for better tracking.',
+  'Tracking can vary 10-20% on calories and macronutrients, so do not get too caught up in the numbers. They are there to give you a high-level understanding of what you are eating.',
+];
+
 interface SpeechResultItemLike { transcript: string; }
 interface SpeechResultLike { isFinal: boolean; length: number; [index: number]: SpeechResultItemLike; }
 interface SpeechEventLike extends Event { results: ArrayLike<SpeechResultLike>; resultIndex: number; }
@@ -544,6 +551,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     activity_level: '3',
   });
   const [nutritionSubmitting, setNutritionSubmitting] = useState(false);
+  const [nutritionCreationProgress, setNutritionCreationProgress] = useState(0);
   const [setDrafts, setSetDrafts] = useState<Record<string, SetDraft>>({});
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
@@ -556,6 +564,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     document.body.style.overflow = journeyPopup !== null ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [journeyPopup]);
+  useEffect(() => {
+    if (!nutritionSubmitting) return;
+    setNutritionCreationProgress(8);
+    const timer = window.setInterval(() => {
+      setNutritionCreationProgress((current) => {
+        if (current >= 94) return current;
+        const increment = current < 40 ? 7 : current < 74 ? 5 : 2;
+        return Math.min(94, current + increment);
+      });
+    }, 850);
+    return () => window.clearInterval(timer);
+  }, [nutritionSubmitting]);
   const [recordingNoteKey, setRecordingNoteKey] = useState<string | null>(null);
   const noteRecognitionRef = useRef<SpeechRecogLike | null>(null);
   const noteInterimRef = useRef('');
@@ -1255,7 +1275,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     }
 
     setNutritionSubmitting(true);
-    setStatus('Creating your nutrition programme...');
+    setNutritionCreationProgress(8);
+    setStatus('');
     const { error } = await supabase.functions.invoke('generate-nutrition-programme', {
       body: {
         client_id: client.id,
@@ -1276,9 +1297,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       } catch { /* ignore parse failure */ }
       setStatus(message);
       setNutritionSubmitting(false);
+      setNutritionCreationProgress(0);
       return;
     }
 
+    setNutritionCreationProgress(100);
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
     setStatus('');
     setNutritionSubmitting(false);
     await loadPortal();
@@ -1621,7 +1645,71 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     </header>
   );
 
-  const renderNutritionOnboardingScreen = () => (
+  const renderNutritionCreationScreen = () => {
+    const phraseIndex = nutritionCreationProgress < 28 ? 0 : nutritionCreationProgress < 52 ? 1 : nutritionCreationProgress < 76 ? 2 : 3;
+    const circumference = 2 * Math.PI * 44;
+    const dashOffset = circumference * (1 - nutritionCreationProgress / 100);
+
+    return (
+      <div className="mx-auto flex min-h-[calc(100dvh-11rem)] max-w-3xl items-center">
+        <section className="w-full border border-black/10 bg-white p-6 text-center md:p-8">
+          <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Nutrition setup</p>
+          <h2 className="mt-3 font-display text-3xl font-light tracking-[-0.02em] md:text-4xl">
+            Creating your nutrition programme
+          </h2>
+
+          <div className="mx-auto mt-8 flex h-32 w-32 items-center justify-center">
+            <div className="relative h-28 w-28">
+              <svg className="absolute inset-0 -rotate-90" width="112" height="112" viewBox="0 0 112 112">
+                <circle cx="56" cy="56" r="44" fill="none" stroke="currentColor" strokeWidth="5" className="text-black/8" />
+                <circle
+                  cx="56"
+                  cy="56"
+                  r="44"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="5"
+                  strokeLinecap="round"
+                  className="text-black transition-all duration-700"
+                  style={{
+                    strokeDasharray: `${circumference}`,
+                    strokeDashoffset: `${dashOffset}`,
+                  }}
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-2xl font-semibold tabular-nums">
+                {nutritionCreationProgress}%
+              </span>
+            </div>
+          </div>
+
+          <div className="mx-auto mt-6 max-w-xl">
+            <p className="min-h-[4.25rem] text-sm leading-relaxed text-black/60">
+              {NUTRITION_CREATION_PHRASES[phraseIndex]}
+            </p>
+            <div className="mt-5 grid grid-cols-4 gap-2">
+              {NUTRITION_CREATION_PHRASES.map((phrase, index) => {
+                const active = index <= phraseIndex;
+                return (
+                  <div
+                    key={phrase}
+                    className={`h-1 rounded-full transition-colors ${active ? 'bg-black' : 'bg-black/10'}`}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="mt-6 text-xs text-black/35">This usually takes a moment. Keep this page open.</p>
+        </section>
+      </div>
+    );
+  };
+
+  const renderNutritionOnboardingScreen = () => {
+    if (nutritionSubmitting) return renderNutritionCreationScreen();
+
+    return (
     <div className="mx-auto flex min-h-[calc(100dvh-11rem)] max-w-3xl items-center">
       <section className="relative w-full border border-black/10 bg-white p-6 md:p-8">
         <button
@@ -1712,7 +1800,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </button>
       </section>
     </div>
-  );
+    );
+  };
 
   const DEFAULT_PROGRAMME_PHASES = [
     'Phase 1 - Foundation',
