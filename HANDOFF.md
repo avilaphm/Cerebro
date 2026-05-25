@@ -1,12 +1,46 @@
 # Handoff
 
 ## Last updated
-2026-05-25 11:47 AEST by Codex - Fixed local skill validator dependency: installed PyYAML and validated `pt-programme-equipment-foundation-rules`.
+2026-05-25 15:05 AEST by Codex - Renamed the client chat AI to Henrique and deployed the updated chat prompt.
 
 ## Last code fix commit
-HEAD - Note skill validator fix
+HEAD - Rename client chat assistant Henrique
 
 ## What just happened (read first)
+
+### Client chat AI renamed to Henrique (2026-05-25, LATEST)
+
+Pedro wanted the client-facing AI chat to be named Henrique because his full first name is Pedro Henrique, so Henrique represents the second version of Pedro inside the app.
+
+Changes shipped:
+- `app/client/MessageBubble.tsx`
+  - Chat header now says `Henrique` instead of `AI Coach`.
+  - AI message labels and the typing/thinking label now say `Henrique`.
+  - Input placeholder now says `Message Henrique...`.
+  - Handoff helper text now says `Say "hey Pedro" to reach Pedro directly`.
+- `app/client/ClientPortal.tsx`
+  - Nutrition onboarding intro now tells clients to message Henrique for questions and say `Hey Pedro` when they want Pedro directly.
+- `supabase/functions/ai-client-chat/index.ts`
+  - System prompt now identifies the assistant as Henrique.
+  - If a client asks why the name is Henrique, the assistant explains that Pedro's full first name is Pedro Henrique, Henrique is his second first name, and the name fits because the assistant is the second version of Pedro inside the app.
+  - The assistant is explicitly told not to pretend to be Pedro himself.
+
+Deployed:
+- `ai-client-chat` redeployed on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npm run build` passes.
+
+Notes:
+- Existing unrelated dirty changes are still present and were not staged by this task:
+  - `supabase/functions/compute-client-metrics/index.ts`
+  - `supabase/functions/embed-client-brain/index.ts`
+  - `supabase/functions/explain-journey-phase/index.ts`
+  - `supabase/functions/ingest-knowledge-document/index.ts`
+  - `supabase/functions/query-knowledge-brain/index.ts`
+  - `supabase/functions/seed-exercise-library/index.ts`
+  - `supabase/migrations/20260525045450_revoke_public_execute_on_security_definer_rpcs.sql`
+  - `supabase/migrations/20260525045511_revoke_public_role_execute_on_security_definer_rpcs.sql`
 
 ### Skill validator dependency fixed (2026-05-25, LATEST)
 

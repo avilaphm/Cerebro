@@ -403,11 +403,11 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
             </button>
 
             <div className="flex-1 px-3 text-center sm:px-0 sm:text-left">
-              <p className="text-sm font-medium leading-tight">AI Coach</p>
+              <p className="text-sm font-medium leading-tight">Henrique</p>
               <p className="mt-0.5 text-[0.6rem] leading-tight text-black/35">
                 {workoutContext
                   ? `${workoutContext.phase_title} · ${workoutContext.day_title}`
-                  : 'Say "hey Pedro" to reach your coach'}
+                  : 'Say "hey Pedro" to reach Pedro directly'}
               </p>
             </div>
 
@@ -434,7 +434,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
                         </span>
                       )}
                       {isAI && (
-                        <span className="px-1 text-[0.55rem] uppercase tracking-[0.12em] text-black/35">AI Coach</span>
+                        <span className="px-1 text-[0.55rem] uppercase tracking-[0.12em] text-black/35">Henrique</span>
                       )}
                       <div className={`px-3.5 py-2.5 text-sm leading-relaxed shadow-sm ${
                         isClient
@@ -455,7 +455,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
             {aiThinking && (
               <div className="mb-2 flex justify-start">
                 <div className="flex max-w-[82%] flex-col gap-0.5 items-start">
-                  <span className="px-1 text-[0.55rem] uppercase tracking-[0.12em] text-black/35">AI Coach</span>
+                  <span className="px-1 text-[0.55rem] uppercase tracking-[0.12em] text-black/35">Henrique</span>
                   <div className="rounded-[1.2rem] rounded-bl-sm bg-white px-3.5 py-2.5 text-sm text-black/40 shadow-sm">
                     Thinking...
                   </div>
@@ -507,7 +507,7 @@ export default function MessageBubble({ clientId, workoutContext }: Props) {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={handleKey}
-                placeholder={recording ? 'Listening…' : 'Message AI Coach…'}
+                placeholder={recording ? 'Listening…' : 'Message Henrique…'}
                 rows={1}
                 className={`w-full resize-none bg-transparent px-4 pb-2 pt-3.5 text-sm leading-relaxed outline-none transition-colors placeholder:text-black/30 ${
                   recording ? 'text-red-700 placeholder:text-red-300' : ''

@@ -1590,7 +1590,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           {client?.name ? `Good to have you here, ${client.name.split(' ')[0]}.` : 'Good to have you here.'}
         </h2>
         <p className="mt-4 max-w-2xl text-sm leading-relaxed text-black/55">
-          If you have any questions or want to talk to Pedro, use the black message box in the top right and say “Hey coach”.
+          If you have any questions, message Henrique in the black message box. If you want Pedro directly, say “Hey Pedro”.
         </p>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-black/55">
           To create your nutrition programme, we need your height, weight, and how active you are right now.
