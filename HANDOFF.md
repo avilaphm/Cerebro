@@ -1,12 +1,24 @@
 # Handoff
 
 ## Last updated
-2026-05-25 11:41 AEST by Codex - Programme generation Foundation equipment rules: no banded gym Foundation, 2 unilateral days + 1 bilateral day, tempo notes, staple library seed, deployed synthesis/legacy agents.
+2026-05-25 11:47 AEST by Codex - Fixed local skill validator dependency: installed PyYAML and validated `pt-programme-equipment-foundation-rules`.
 
 ## Last code fix commit
-HEAD - Add Foundation equipment guardrails
+HEAD - Note skill validator fix
 
 ## What just happened (read first)
+
+### Skill validator dependency fixed (2026-05-25, LATEST)
+
+Pedro asked to fix the remaining validator issue after the Foundation equipment guardrail work.
+
+Fix:
+- Installed `PyYAML` into the local Python 3.14 user site packages.
+- Re-ran the official skill creator validator:
+  - `python3 /Users/pedroavila/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/pt-programme-equipment-foundation-rules`
+  - Result: `Skill is valid!`
+
+This means future skill validation can run locally without the previous `ModuleNotFoundError: No module named 'yaml'` blocker.
 
 ### Programme generation Foundation equipment guardrails (2026-05-25, LATEST)
 
@@ -48,7 +60,7 @@ Deployed:
 Verification:
 - `npm run build` passes.
 - Supabase function list confirms both functions active.
-- Skill validator still cannot run locally because Python lacks `PyYAML` (`ModuleNotFoundError: No module named 'yaml'`); skill frontmatter and metadata were manually checked.
+- Skill validator now passes after installing local `PyYAML`.
 
 ### Current workout import cleanup verification (2026-05-25, LATEST)
 
