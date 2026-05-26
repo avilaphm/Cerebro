@@ -1,7 +1,16 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+const COACH_HOSTS = ['pedroavila.coach', 'www.pedroavila.coach'];
+
 export async function middleware(request: NextRequest) {
+  const host = request.headers.get('host') ?? '';
+  if (COACH_HOSTS.includes(host) && request.nextUrl.pathname === '/') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/coach';
+    return NextResponse.rewrite(url);
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -48,5 +57,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/client/:path*'],
+  matcher: ['/', '/dashboard/:path*', '/client/:path*'],
 };
