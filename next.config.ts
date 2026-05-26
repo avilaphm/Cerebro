@@ -12,6 +12,20 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  async rewrites() {
+    return [
+      {
+        source: "/",
+        has: [{ type: "host", value: "pedroavila.coach" }],
+        destination: "/coach",
+      },
+      {
+        source: "/",
+        has: [{ type: "host", value: "www.pedroavila.coach" }],
+        destination: "/coach",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
