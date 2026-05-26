@@ -1043,7 +1043,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                             draggable={false}
                                             value={ex.name}
                                             onChange={(e) => patchBoardExercise(activePhaseTab, di, ex.id, { name: e.target.value, exercise_id: null, video_url: null })}
-                                            onBlur={() => setTimeout(() => setBoardEditExId(null), 150)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === 'Escape' || e.key === 'Enter') setBoardEditExId(null);
+                                            }}
                                             placeholder="Exercise name"
                                             className="w-full border border-black/20 bg-white px-1.5 py-0.5 text-[0.7rem] outline-none focus:border-black/40"
                                           />
@@ -1084,7 +1086,16 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                     </div>
                                   ) : (
                                     <>
-                                      <p className="font-medium leading-tight cursor-text hover:text-black/60" onClick={() => setBoardEditExId(ex.id)}>{ex.name}</p>
+                                      <p
+                                        className="font-medium leading-tight cursor-text hover:text-black/60"
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setBoardEditExId(ex.id);
+                                        }}
+                                      >
+                                        {ex.name}
+                                      </p>
                                       <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
                                     </>
                                   )}

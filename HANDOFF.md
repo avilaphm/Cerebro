@@ -1,12 +1,39 @@
 # Handoff
 
 ## Last updated
-2026-05-26 by Codex - Added PT email drafts, personalization, drag/drop, and uploads.
+2026-05-26 by Codex - Fixed programme board exercise edit and current-workout PDF upload.
 
 ## Last code fix commit
 see `git log -1`
 
 ## What just happened (read first)
+
+### Programme builder board edit + current-workout PDF upload fix (2026-05-26, LATEST)
+
+Pedro reported two issues in the programme builder:
+- Step 3 board view exercise click flickered and did not stay open for swapping exercises.
+- `+ Add current workout` could not upload PDFs.
+
+Changes shipped:
+- `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`
+  - Board-view exercise names now enter edit mode on `mouseDown` with drag propagation stopped, so native drag no longer steals the click.
+  - Removed the blur timeout that closed the inline editor while Pedro was trying to type/select a replacement.
+  - The inline exercise editor now closes on `Enter`, `Escape`, selecting an autocomplete result, or delete.
+- `app/dashboard/pt/programmes/CurrentWorkoutImportModal.tsx`
+  - File input now accepts `image/*,.pdf,application/pdf`.
+  - Uploaded PDFs are parsed through the existing authenticated `/api/pt/parse-pdf` route.
+  - Parsed PDF text is appended into the workout text box and then sent through the existing `import-current-workout` flow.
+  - UI copy now says screenshots/PDFs.
+
+Verification:
+- `npm run build` passes.
+- `npx eslint app/dashboard/pt/programmes/CurrentWorkoutImportModal.tsx` passes.
+- `npx eslint app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx app/dashboard/pt/programmes/CurrentWorkoutImportModal.tsx` still hits pre-existing warnings plus the existing `react-hooks/set-state-in-effect` error around draft hydration in `PTProgrammeWizard.tsx`.
+- Playwright verified `/dashboard/pt/programmes/new` on `http://localhost:3001`:
+  - test draft loaded into Step 3 board view
+  - clicking `Goblet Squat` kept the inline exercise input open
+  - typing in the input showed autocomplete
+  - `+ Add current workout` modal file input advertises `image/*,.pdf,application/pdf`
 
 ### PT email editor drafts, personalization, drag/drop, and uploads (2026-05-26, LATEST)
 

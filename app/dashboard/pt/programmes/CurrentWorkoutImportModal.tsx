@@ -29,6 +29,8 @@ interface FunctionErrorWithContext {
   };
 }
 
+type PdfParseResponse = { text?: string; error?: string };
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -47,6 +49,20 @@ async function fileToImportImage(file: File): Promise<ImportImage> {
     mime_type: file.type || 'image/png',
     base64: dataUrl.split(',')[1] ?? dataUrl,
   };
+}
+
+async function readPdfText(file: File): Promise<string> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/pt/parse-pdf', { method: 'POST', body: form });
+  const contentType = res.headers.get('content-type') ?? '';
+  const payload = contentType.includes('application/json')
+    ? await res.json() as PdfParseResponse
+    : { error: await res.text() };
+  if (!res.ok || payload.error || !payload.text?.trim()) {
+    throw new Error(payload.error ?? 'Could not read PDF.');
+  }
+  return payload.text.trim();
 }
 
 async function functionErrorMessage(error: unknown, fallback: string): Promise<string> {
@@ -87,13 +103,35 @@ export default function CurrentWorkoutImportModal({ open, onClose, onImported }:
 
   const addImages = async (files: FileList | null) => {
     if (!files) return;
-    const next = Array.from(files).filter((file) => file.type.startsWith('image/')).slice(0, Math.max(0, MAX_IMAGES - images.length));
-    if (next.length === 0) return;
-    setStatus('Reading screenshot...');
-    const loaded = await Promise.all(next.map(fileToImportImage));
-    setImages((cur) => [...cur, ...loaded].slice(0, MAX_IMAGES));
+    const selected = Array.from(files);
+    const imageFiles = selected
+      .filter((file) => file.type.startsWith('image/'))
+      .slice(0, Math.max(0, MAX_IMAGES - images.length));
+    const pdfFiles = selected.filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+
+    if (imageFiles.length === 0 && pdfFiles.length === 0) {
+      setStatus('Upload screenshots, images, or PDFs.');
+      return;
+    }
+
     setPreview(null);
-    setStatus('');
+    try {
+      if (imageFiles.length > 0) {
+        setStatus(`Reading ${imageFiles.length === 1 ? 'screenshot' : 'screenshots'}...`);
+        const loaded = await Promise.all(imageFiles.map(fileToImportImage));
+        setImages((cur) => [...cur, ...loaded].slice(0, MAX_IMAGES));
+      }
+      if (pdfFiles.length > 0) {
+        setStatus(`Reading ${pdfFiles.length === 1 ? pdfFiles[0].name : `${pdfFiles.length} PDFs`}...`);
+        const pdfTexts = await Promise.all(pdfFiles.map(readPdfText));
+        setText((current) => [current.trim(), ...pdfTexts.map((pdfText, index) => `PDF: ${pdfFiles[index].name}\n${pdfText}`)]
+          .filter(Boolean)
+          .join('\n\n'));
+      }
+      setStatus(pdfFiles.length > 0 ? 'PDF added to workout text.' : '');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const runImport = async (mode: 'preview' | 'commit') => {
@@ -132,7 +170,7 @@ export default function CurrentWorkoutImportModal({ open, onClose, onImported }:
         <div className="flex items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm font-medium">Add current workout to Foundation</p>
-            <p className="mt-1 text-xs text-black/45">Paste text or upload screenshots. Imported days are appended after the generated Foundation days. Up to {MAX_IMAGES} screenshots.</p>
+            <p className="mt-1 text-xs text-black/45">Paste text or upload screenshots/PDFs. Imported days are appended after the generated Foundation days. Up to {MAX_IMAGES} screenshots.</p>
           </div>
           <button type="button" onClick={resetAndClose} className="text-xl leading-none text-black/35 hover:text-black">x</button>
         </div>
@@ -144,16 +182,16 @@ export default function CurrentWorkoutImportModal({ open, onClose, onImported }:
               value={text}
               onChange={(e) => { setText(e.target.value); setPreview(null); }}
               rows={7}
-              placeholder={'Paste the client current programme here, or add screenshots below.\nExample: Day 1 - Lower body. Leg press 3x10, RDL 3x8, split squat 3x10...'}
+              placeholder={'Paste the client current programme here, or add screenshots/PDFs below.\nExample: Day 1 - Lower body. Leg press 3x10, RDL 3x8, split squat 3x10...'}
               className="w-full resize-y border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Screenshots</label>
+            <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Screenshots or PDF</label>
             <input
               type="file"
-              accept="image/*"
+              accept="image/*,.pdf,application/pdf"
               multiple
               onChange={(e) => { void addImages(e.target.files); e.currentTarget.value = ''; }}
               className="block w-full border border-black/10 bg-white px-3 py-2 text-xs"
