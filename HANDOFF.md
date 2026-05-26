@@ -1,12 +1,63 @@
 # Handoff
 
 ## Last updated
-2026-05-26 by Claude Sonnet 4.6 - Built pedroavila.coach coach landing page.
+2026-05-26 by Codex - Added PT email drafts, personalization, drag/drop, and uploads.
 
 ## Last code fix commit
-b1c1d59
+see `git log -1`
 
 ## What just happened (read first)
+
+### PT email editor drafts, personalization, drag/drop, and uploads (2026-05-26, LATEST)
+
+Pedro wanted the PT Email builder to feel closer to Klaviyo:
+- recipient names in headings/titles at scale
+- wider editor cards aligned to the selected workflow card
+- Add Block menu as a card below the workflow card, 3 options per row
+- subject, preview, and content blocks using the same wide column
+- drag/drop reordering
+- image/GIF upload from the computer
+- Save Draft and Make Live workflow states
+
+Changes shipped:
+- `app/dashboard/pt/emails/PTEmailsView.tsx`
+  - Added personalization tokens for client name, client email, and setup link.
+  - Default new-client heading now uses `{{ .Data.full_name }}` so the recipient sees their own name.
+  - Preview renders sample token values, e.g. `Raquel`, so Pedro can see the personalised result while editing.
+  - Builder layout is now wider with a single full-width editing column.
+  - Personalisation and Add Block are full-width cards below the selected workflow card.
+  - Add Block shows Heading, Text, Button, Photo/GIF, Divider, Spacer in a 2x3 grid on desktop.
+  - Blocks can be reordered with drag handles via `@dnd-kit/core`.
+  - Image blocks support local file upload for JPG, PNG, WebP, and GIF plus manual URL, alt text, and caption.
+  - Added `Save draft` and `Make live` actions. `Make live` still validates that the invite email contains `{{ .ConfirmationURL }}` before updating Supabase Auth.
+- `supabase/migrations/20260526015708_pt_email_templates_and_assets.sql`
+  - Added `pt_email_templates` table for draft/live template state.
+  - Added RLS policies restricted to Pedro/admin users.
+  - Added public `pt-email-assets` storage bucket with 10MB image/GIF limit and admin write policies.
+- `supabase/migrations/20260526020308_pt_email_template_fk_indexes.sql`
+  - Added FK indexes for `updated_by` and `published_by`.
+
+Deployment / database:
+- `supabase db push` was blocked by existing remote migration drift unrelated to this feature.
+- Applied both migrations with Supabase MCP `apply_migration`.
+- Supabase performance advisor was re-run after adding FK indexes; no new `pt_email_templates` warnings remain.
+- Security advisor still shows only pre-existing warnings: `pg_net` in public and leaked-password protection disabled.
+
+Verification:
+- `npx eslint app/dashboard/pt/emails/PTEmailsView.tsx app/dashboard/pt/emails/page.tsx` passes.
+- `npm run build` passes.
+- Playwright verified `/dashboard/pt/emails` on local `http://localhost:3001`:
+  - no desktop horizontal overflow
+  - no 390px mobile horizontal overflow
+  - `Add name to heading` shows `Raquel` in preview
+  - Photo/GIF block exposes upload and URL fields
+  - Save draft returns `Draft saved.`
+  - local PNG upload returns `Image uploaded.`
+
+Notes:
+- Current live publishing still only updates the Supabase Auth invite template for the new-client password setup email.
+- Other visible workflows can be edited and drafted in `pt_email_templates`, but their senders still need to be wired to read from this template table before `Make live` can control them.
+- A test draft and one test asset may exist in production from browser verification.
 
 ### pedroavila.coach coach landing page (2026-05-26, LATEST)
 

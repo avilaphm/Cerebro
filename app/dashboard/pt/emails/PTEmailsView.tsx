@@ -2,16 +2,29 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  DndContext,
+  PointerSensor,
+  type DragEndEvent,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
+import {
   ArrowDown,
   ArrowUp,
   Check,
   Copy,
+  GripVertical,
   Image as ImageIcon,
   Mail,
   Plus,
+  Send,
   Save,
   Sparkles,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
@@ -69,12 +82,29 @@ interface InviteTemplateResponse {
   html?: string;
 }
 
+interface TemplateRow {
+  workflow_key: WorkflowKey;
+  subject: string;
+  preview: string;
+  design: EmailDesign;
+  html: string;
+  status: 'draft' | 'live';
+  updated_at: string;
+  published_at: string | null;
+}
+
+const PERSONALIZATION_TOKENS = [
+  { label: 'Client name', value: '{{ .Data.full_name }}' },
+  { label: 'Client email', value: '{{ .Email }}' },
+  { label: 'Setup link', value: '{{ .ConfirmationURL }}' },
+];
+
 const CLIENT_SETUP_DEFAULT: EmailDesign = {
   subject: 'Your Pedro Avila Coaching programme',
   preview: 'Create your password and access your programme.',
   blocks: [
     { id: 'intro-eyebrow', type: 'eyebrow', content: 'Pedro Avila Coaching' },
-    { id: 'intro-heading', type: 'heading', content: 'Your coaching app is ready.' },
+    { id: 'intro-heading', type: 'heading', content: '{{ .Data.full_name }}, your coaching app is ready.' },
     {
       id: 'intro-copy',
       type: 'text',
@@ -291,6 +321,13 @@ function textToHtml(value: string) {
     .join('<br>');
 }
 
+function previewTokenValue(value: string) {
+  return value
+    .replaceAll('{{ .Data.full_name }}', 'Raquel')
+    .replaceAll('{{ .Email }}', 'client@email.com')
+    .replaceAll('{{ .ConfirmationURL }}', '#');
+}
+
 function renderEmailHtml(design: EmailDesign) {
   const blocks = design.blocks.map((block) => {
     if (block.type === 'eyebrow') {
@@ -391,21 +428,147 @@ function notificationLabel(type: string) {
   return type.replace(/_/g, ' ');
 }
 
+function SortableBlock({
+  block,
+  index,
+  total,
+  onPatch,
+  onMove,
+  onRemove,
+  onUpload,
+}: {
+  block: EmailBlock;
+  index: number;
+  total: number;
+  onPatch: (patch: Partial<EmailBlock>) => void;
+  onMove: (direction: -1 | 1) => void;
+  onRemove: () => void;
+  onUpload: (file: File) => void;
+}) {
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({ id: block.id });
+  const { attributes, listeners, setNodeRef: setDraggableRef, transform, isDragging } = useDraggable({ id: block.id });
+  const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
+
+  return (
+    <div
+      ref={setDroppableRef}
+      className={`border bg-black/[0.015] p-3 transition-colors ${
+        isOver ? 'border-black/45 bg-black/[0.04]' : 'border-black/10'
+      } ${isDragging ? 'relative z-10 opacity-70' : ''}`}
+      style={style}
+    >
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            ref={setDraggableRef}
+            type="button"
+            className="cursor-grab p-1.5 text-black/30 active:cursor-grabbing"
+            aria-label={`Drag ${block.type} block`}
+            {...listeners}
+            {...attributes}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+          <span className="text-[0.6rem] font-medium uppercase tracking-[0.16em] text-black/35">{block.type}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => onMove(-1)} disabled={index === 0} className="p-1.5 text-black/35 hover:text-black disabled:opacity-20">
+            <ArrowUp className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={() => onMove(1)} disabled={index === total - 1} className="p-1.5 text-black/35 hover:text-black disabled:opacity-20">
+            <ArrowDown className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" onClick={onRemove} className="p-1.5 text-black/35 hover:text-red-600">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {block.type === 'image' ? (
+        <div className="grid gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <label className="inline-flex cursor-pointer items-center justify-center gap-2 border border-black bg-black px-3 py-2.5 text-sm text-white transition-colors hover:bg-white hover:text-black">
+              <Upload className="h-4 w-4" />
+              Upload image
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) onUpload(file);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            <input
+              value={block.url ?? ''}
+              onChange={(event) => onPatch({ url: event.target.value })}
+              placeholder="Photo or GIF URL"
+              className="min-w-0 flex-1 border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
+            />
+          </div>
+          <input
+            value={block.alt ?? ''}
+            onChange={(event) => onPatch({ alt: event.target.value })}
+            placeholder="Alt text"
+            className="w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
+          />
+          <input
+            value={block.content}
+            onChange={(event) => onPatch({ content: event.target.value })}
+            placeholder="Optional caption"
+            className="w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
+          />
+        </div>
+      ) : block.type === 'button' ? (
+        <div className="grid gap-2">
+          <input
+            value={block.content}
+            onChange={(event) => onPatch({ content: event.target.value })}
+            placeholder="Button label"
+            className="w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
+          />
+          <input
+            value={block.url ?? ''}
+            onChange={(event) => onPatch({ url: event.target.value })}
+            placeholder="{{ .ConfirmationURL }}"
+            className="w-full border border-black/15 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-black/40"
+          />
+        </div>
+      ) : block.type === 'divider' || block.type === 'spacer' ? (
+        <p className="text-xs text-black/35">{block.type === 'divider' ? 'Divider line' : 'Whitespace block'}</p>
+      ) : (
+        <textarea
+          value={block.content}
+          onChange={(event) => onPatch({ content: event.target.value })}
+          rows={block.type === 'heading' ? 2 : 4}
+          className="w-full resize-y border border-black/15 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-black/40"
+        />
+      )}
+    </div>
+  );
+}
+
 export default function PTEmailsView({
   recentNotifications,
 }: {
   recentNotifications: PTEmailNotification[];
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [selectedKey, setSelectedKey] = useState<WorkflowKey>('client_setup_invite');
   const [designs, setDesigns] = useState<Record<WorkflowKey, EmailDesign>>(() =>
     Object.fromEntries(WORKFLOWS.map((workflow) => [workflow.key, cloneDesign(workflow.defaultDesign)])) as Record<WorkflowKey, EmailDesign>,
   );
+  const [templateRows, setTemplateRows] = useState<Record<string, TemplateRow>>({});
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingBlockId, setUploadingBlockId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const workflow = WORKFLOWS.find((item) => item.key === selectedKey) ?? WORKFLOWS[0];
   const design = designs[selectedKey];
+  const selectedTemplateRow = templateRows[selectedKey];
   const html = useMemo(() => renderEmailHtml(design), [design]);
 
   useEffect(() => {
@@ -427,6 +590,37 @@ export default function PTEmailsView({
     };
 
     void loadInviteTemplate();
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadDrafts = async () => {
+      const { data, error } = await supabase
+        .from('pt_email_templates')
+        .select('*');
+
+      if (!mounted) return;
+      if (error) {
+        setStatus((current) => current || `Saved drafts could not be loaded: ${error.message}`);
+        return;
+      }
+
+      const rows = (data ?? []) as TemplateRow[];
+      setTemplateRows(Object.fromEntries(rows.map((row) => [row.workflow_key, row])));
+      setDesigns((current) => {
+        const next = { ...current };
+        rows.forEach((row) => {
+          next[row.workflow_key] = row.design;
+        });
+        return next;
+      });
+    };
+
+    void loadDrafts();
     return () => {
       mounted = false;
     };
@@ -472,7 +666,73 @@ export default function PTEmailsView({
     patchDesign({ blocks: next });
   };
 
-  const saveLiveTemplate = async () => {
+  const handleDragEnd = (event: DragEndEvent) => {
+    const activeId = String(event.active.id);
+    const overId = event.over?.id ? String(event.over.id) : '';
+    if (!overId || activeId === overId) return;
+    const from = design.blocks.findIndex((block) => block.id === activeId);
+    const to = design.blocks.findIndex((block) => block.id === overId);
+    if (from < 0 || to < 0) return;
+    const next = [...design.blocks];
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    patchDesign({ blocks: next });
+  };
+
+  const uploadImage = async (blockIdToUpdate: string, file: File) => {
+    setUploadingBlockId(blockIdToUpdate);
+    setStatus(`Uploading ${file.name}...`);
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
+    const safeName = file.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '');
+    const path = `${selectedKey}/${blockIdToUpdate}-${file.lastModified}-${safeName || `asset.${extension}`}`;
+    const { error } = await supabase.storage.from('pt-email-assets').upload(path, file, {
+      cacheControl: '31536000',
+      upsert: false,
+    });
+    setUploadingBlockId(null);
+    if (error) {
+      setStatus(`Image upload failed: ${error.message}`);
+      return;
+    }
+    const { data } = supabase.storage.from('pt-email-assets').getPublicUrl(path);
+    patchBlock(blockIdToUpdate, { url: data.publicUrl, alt: file.name.replace(/\.[^.]+$/, '') });
+    setStatus('Image uploaded.');
+  };
+
+  const saveDraft = async (nextStatus: 'draft' | 'live' = 'draft') => {
+    setSaving(true);
+    setStatus(nextStatus === 'draft' ? 'Saving draft...' : 'Saving published design...');
+    const { data: userData } = await supabase.auth.getUser();
+    const row = {
+      workflow_key: selectedKey,
+      subject: design.subject,
+      preview: design.preview,
+      design,
+      html,
+      status: nextStatus,
+      updated_at: new Date().toISOString(),
+      updated_by: userData.user?.id ?? null,
+      ...(nextStatus === 'live'
+        ? { published_at: new Date().toISOString(), published_by: userData.user?.id ?? null }
+        : {}),
+    };
+    const { data, error } = await supabase
+      .from('pt_email_templates')
+      .upsert(row, { onConflict: 'workflow_key' })
+      .select('*')
+      .single();
+    setSaving(false);
+    if (error) {
+      setStatus(error.message);
+      return false;
+    }
+    const saved = data as TemplateRow;
+    setTemplateRows((current) => ({ ...current, [selectedKey]: saved }));
+    setStatus(nextStatus === 'draft' ? 'Draft saved.' : 'Published design saved.');
+    return true;
+  };
+
+  const makeLiveTemplate = async () => {
     if (workflow.status !== 'live-editable') return;
     if (!html.includes('{{ .ConfirmationURL }}')) {
       setStatus('The live invite email must include {{ .ConfirmationURL }} in a button link.');
@@ -489,7 +749,12 @@ export default function PTEmailsView({
       },
     });
     setSaving(false);
-    setStatus(error ? error.message : 'Live invite email template saved.');
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+    await saveDraft('live');
+    setStatus('Live invite email template saved.');
   };
 
   const copyHtml = async () => {
@@ -498,8 +763,17 @@ export default function PTEmailsView({
     window.setTimeout(() => setCopied(false), 1400);
   };
 
+  const appendTokenToFirstHeading = (token: string) => {
+    const heading = design.blocks.find((block) => block.type === 'heading');
+    if (!heading) {
+      patchDesign({ blocks: [{ id: blockId('heading'), type: 'heading', content: `${token}, ` }, ...design.blocks] });
+      return;
+    }
+    patchBlock(heading.id, { content: `${token} ${heading.content}`.trim() });
+  };
+
   return (
-    <div className="max-w-7xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <div className="max-w-[96rem] px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="mb-1 text-[0.6rem] font-medium uppercase tracking-[0.2em] text-black/35">PT</p>
@@ -516,17 +790,26 @@ export default function PTEmailsView({
           </button>
           <button
             type="button"
-            onClick={() => void saveLiveTemplate()}
+            onClick={() => void saveDraft('draft')}
+            disabled={saving}
+            className="inline-flex items-center justify-center gap-2 border border-black/15 px-4 py-2.5 text-sm transition-colors hover:border-black/35 disabled:pointer-events-none disabled:opacity-35"
+          >
+            <Save className="h-4 w-4" />
+            Save draft
+          </button>
+          <button
+            type="button"
+            onClick={() => void makeLiveTemplate()}
             disabled={saving || workflow.status !== 'live-editable'}
             className="inline-flex items-center justify-center gap-2 border border-black bg-black px-4 py-2.5 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:pointer-events-none disabled:opacity-35"
           >
-            <Save className="h-4 w-4" />
-            {saving ? 'Saving...' : 'Save live template'}
+            <Send className="h-4 w-4" />
+            {saving ? 'Saving...' : 'Make live'}
           </button>
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[18rem_minmax(0,1fr)_24rem]">
+      <div className="grid gap-5 xl:grid-cols-[18rem_minmax(42rem,1fr)_24rem]">
         <aside className="border border-black/10 bg-white">
           <div className="border-b border-black/8 px-4 py-4">
             <h2 className="text-[0.6rem] font-medium uppercase tracking-[0.2em] text-black/35">Live workflows</h2>
@@ -571,126 +854,118 @@ export default function PTEmailsView({
             </div>
             <h2 className="text-xl font-medium">{workflow.label}</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-black/45">{workflow.note}</p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="border border-black/10 px-2 py-1 text-[0.6rem] uppercase tracking-[0.16em] text-black/35">
+                {selectedTemplateRow?.status === 'live' ? 'Published' : 'Draft'}
+              </span>
+              {selectedTemplateRow?.updated_at && (
+                <span className="text-xs text-black/35">
+                  Saved {new Date(selectedTemplateRow.updated_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
             {status && <p className="mt-3 text-xs text-black/45">{status}</p>}
           </div>
 
-          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_13rem]">
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Subject</label>
-                <input
-                  value={design.subject}
-                  onChange={(event) => patchDesign({ subject: event.target.value })}
-                  className="w-full border border-black/15 px-3 py-3 text-sm outline-none focus:border-black/40"
-                />
+          <div className="space-y-5 p-5">
+            <section className="border border-black/10 bg-black/[0.015] p-4">
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Personalisation</h3>
+                  <p className="mt-1 text-xs text-black/40">Use these in subject, preview, heading, text, or buttons. They render per recipient at send time.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => appendTokenToFirstHeading('{{ .Data.full_name }}')}
+                  className="inline-flex items-center justify-center gap-2 border border-black/15 px-3 py-2 text-sm transition-colors hover:border-black/35"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add name to heading
+                </button>
               </div>
-              <div>
-                <label className="mb-1.5 block text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Preview line</label>
-                <input
-                  value={design.preview}
-                  onChange={(event) => patchDesign({ preview: event.target.value })}
-                  className="w-full border border-black/15 px-3 py-3 text-sm outline-none focus:border-black/40"
-                />
-              </div>
-
-              <div className="space-y-3">
-                {design.blocks.map((block, index) => (
-                  <div key={block.id} className="border border-black/10 bg-black/[0.015] p-3">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <span className="text-[0.6rem] font-medium uppercase tracking-[0.16em] text-black/35">{block.type}</span>
-                      <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => moveBlock(block.id, -1)} disabled={index === 0} className="p-1.5 text-black/35 hover:text-black disabled:opacity-20">
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </button>
-                        <button type="button" onClick={() => moveBlock(block.id, 1)} disabled={index === design.blocks.length - 1} className="p-1.5 text-black/35 hover:text-black disabled:opacity-20">
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </button>
-                        <button type="button" onClick={() => removeBlock(block.id)} className="p-1.5 text-black/35 hover:text-red-600">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {block.type === 'image' ? (
-                      <div className="grid gap-2">
-                        <input
-                          value={block.url ?? ''}
-                          onChange={(event) => patchBlock(block.id, { url: event.target.value })}
-                          placeholder="Photo or GIF URL"
-                          className="w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
-                        />
-                        <input
-                          value={block.alt ?? ''}
-                          onChange={(event) => patchBlock(block.id, { alt: event.target.value })}
-                          placeholder="Alt text"
-                          className="w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
-                        />
-                        <input
-                          value={block.content}
-                          onChange={(event) => patchBlock(block.id, { content: event.target.value })}
-                          placeholder="Optional caption"
-                          className="w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
-                        />
-                      </div>
-                    ) : block.type === 'button' ? (
-                      <div className="grid gap-2">
-                        <input
-                          value={block.content}
-                          onChange={(event) => patchBlock(block.id, { content: event.target.value })}
-                          placeholder="Button label"
-                          className="w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
-                        />
-                        <input
-                          value={block.url ?? ''}
-                          onChange={(event) => patchBlock(block.id, { url: event.target.value })}
-                          placeholder="{{ .ConfirmationURL }}"
-                          className="w-full border border-black/15 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-black/40"
-                        />
-                      </div>
-                    ) : block.type === 'divider' || block.type === 'spacer' ? (
-                      <p className="text-xs text-black/35">{block.type === 'divider' ? 'Divider line' : 'Whitespace block'}</p>
-                    ) : (
-                      <textarea
-                        value={block.content}
-                        onChange={(event) => patchBlock(block.id, { content: event.target.value })}
-                        rows={block.type === 'heading' ? 2 : 4}
-                        className="w-full resize-y border border-black/15 bg-white px-3 py-2.5 text-sm leading-relaxed outline-none focus:border-black/40"
-                      />
-                    )}
-                  </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {PERSONALIZATION_TOKENS.map((token) => (
+                  <button
+                    key={token.value}
+                    type="button"
+                    onClick={() => void navigator.clipboard.writeText(token.value)}
+                    className="border border-black/10 bg-white px-3 py-3 text-left transition-colors hover:border-black/35"
+                  >
+                    <span className="block text-sm font-medium">{token.label}</span>
+                    <span className="mt-1 block truncate font-mono text-[0.68rem] text-black/35">{token.value}</span>
+                  </button>
                 ))}
               </div>
+            </section>
+
+            <section className="border border-black/10 bg-white p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Add block</h3>
+                <button
+                  type="button"
+                  onClick={() => patchDesign(cloneDesign(workflow.defaultDesign))}
+                  className="inline-flex items-center gap-2 text-xs text-black/35 transition-colors hover:text-black"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Reset workflow
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {[
+                  ['heading', 'Heading'],
+                  ['text', 'Text'],
+                  ['button', 'Button'],
+                  ['image', 'Photo / GIF'],
+                  ['divider', 'Divider'],
+                  ['spacer', 'Spacer'],
+                ].map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => addBlock(type as EmailBlockType)}
+                    className="flex min-h-20 items-center justify-between border border-black/10 px-3 py-3 text-left text-sm transition-colors hover:border-black/35"
+                  >
+                    <span>{label}</span>
+                    {type === 'image' ? <ImageIcon className="h-4 w-4 text-black/35" /> : <Plus className="h-4 w-4 text-black/35" />}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <div>
+              <label className="mb-1.5 block text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Subject</label>
+              <input
+                value={design.subject}
+                onChange={(event) => patchDesign({ subject: event.target.value })}
+                className="w-full border border-black/15 px-3 py-3 text-sm outline-none focus:border-black/40"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Preview line</label>
+              <input
+                value={design.preview}
+                onChange={(event) => patchDesign({ preview: event.target.value })}
+                className="w-full border border-black/15 px-3 py-3 text-sm outline-none focus:border-black/40"
+              />
             </div>
 
-            <aside className="space-y-2">
-              <h3 className="mb-2 text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Add block</h3>
-              {[
-                ['heading', 'Heading'],
-                ['text', 'Text'],
-                ['button', 'Button'],
-                ['image', 'Photo / GIF'],
-                ['divider', 'Divider'],
-                ['spacer', 'Spacer'],
-              ].map(([type, label]) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => addBlock(type as EmailBlockType)}
-                  className="flex w-full items-center justify-between border border-black/10 px-3 py-2.5 text-left text-sm transition-colors hover:border-black/35"
-                >
-                  <span>{label}</span>
-                  {type === 'image' ? <ImageIcon className="h-4 w-4 text-black/35" /> : <Plus className="h-4 w-4 text-black/35" />}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => patchDesign(cloneDesign(workflow.defaultDesign))}
-                className="mt-4 flex w-full items-center justify-center gap-2 border border-black/15 px-3 py-2.5 text-sm transition-colors hover:border-black/35"
-              >
-                <Sparkles className="h-4 w-4" />
-                Reset workflow
-              </button>
-            </aside>
+            <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+              <div className="space-y-3">
+                {design.blocks.map((block, index) => (
+                  <SortableBlock
+                    key={block.id}
+                    block={block}
+                    index={index}
+                    total={design.blocks.length}
+                    onPatch={(patch) => patchBlock(block.id, patch)}
+                    onMove={(direction) => moveBlock(block.id, direction)}
+                    onRemove={() => removeBlock(block.id)}
+                    onUpload={(file) => void uploadImage(block.id, file)}
+                  />
+                ))}
+              </div>
+            </DndContext>
+            {uploadingBlockId && <p className="text-xs text-black/40">Uploading image...</p>}
           </div>
         </main>
 
@@ -702,15 +977,15 @@ export default function PTEmailsView({
             </div>
             <div className="mx-auto max-w-[330px] border border-black/10 bg-white shadow-sm">
               <div className="border-b border-black/8 px-4 py-3">
-                <p className="truncate text-sm font-medium">{design.subject}</p>
-                <p className="mt-0.5 truncate text-xs text-black/35">{design.preview}</p>
+                <p className="truncate text-sm font-medium">{previewTokenValue(design.subject)}</p>
+                <p className="mt-0.5 truncate text-xs text-black/35">{previewTokenValue(design.preview)}</p>
               </div>
               <div className="space-y-3 px-5 py-5">
                 {design.blocks.map((block) => {
-                  if (block.type === 'eyebrow') return <p key={block.id} className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">{block.content}</p>;
-                  if (block.type === 'heading') return <h3 key={block.id} className="text-2xl font-light leading-tight">{block.content}</h3>;
-                  if (block.type === 'text') return <p key={block.id} className="whitespace-pre-wrap text-sm leading-relaxed text-black/65">{block.content}</p>;
-                  if (block.type === 'button') return <span key={block.id} className="inline-block bg-black px-4 py-2.5 text-sm text-white">{block.content || 'Open link'}</span>;
+                  if (block.type === 'eyebrow') return <p key={block.id} className="text-[0.58rem] uppercase tracking-[0.18em] text-black/35">{previewTokenValue(block.content)}</p>;
+                  if (block.type === 'heading') return <h3 key={block.id} className="text-2xl font-light leading-tight">{previewTokenValue(block.content)}</h3>;
+                  if (block.type === 'text') return <p key={block.id} className="whitespace-pre-wrap text-sm leading-relaxed text-black/65">{previewTokenValue(block.content)}</p>;
+                  if (block.type === 'button') return <span key={block.id} className="inline-block bg-black px-4 py-2.5 text-sm text-white">{previewTokenValue(block.content || 'Open link')}</span>;
                   if (block.type === 'image') {
                     return block.url ? (
                       <figure key={block.id}>
