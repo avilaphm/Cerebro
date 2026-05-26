@@ -123,6 +123,28 @@ async function functionErrorMessage(error: unknown, fallback: string): Promise<s
   return fnError.message ?? fallback;
 }
 
+function getMuscleTag(name: string, libEx?: PTExercise): string | null {
+  const combined = [
+    name,
+    ...(libEx?.muscles ?? []),
+    ...(libEx?.primary_muscles ?? []),
+    ...(libEx?.tags ?? []),
+  ].join(' ').toLowerCase();
+
+  const isSingleLeg =
+    /single.?leg|bulgarian|split squat|lunge|step.?up|pistol|curtsy|rear foot elevated|skater squat/i.test(combined) ||
+    (libEx?.tags?.some((t) => /single.?leg|unilateral/i.test(t)) ?? false);
+
+  const isLower = /squat|deadlift|lunge|leg press|leg curl|leg extension|romanian|rdl|glute|hip thrust|hip hinge|hamstring|quad|calf|calv|step.?up|good morning|hip abduct|hip adduct|tibialis|box jump|broad jump/i.test(combined);
+  const isUpper = /bench|chest press|row|pull.?up|chin.?up|lat pulldown|pull.?down|chest|shoulder|delt|tricep|bicep|curl|fly|flye|dip|push.?up|overhead press|incline|decline|face pull|cable cross|pec|lat /i.test(combined);
+  const isCore = /plank|crunch|sit.?up|oblique|pallof|anti.?rotat|dead bug|bird dog|hollow|v.?up|toe touch|ab /i.test(combined);
+
+  if (isLower) return isSingleLeg ? 'lower sl' : 'lower bi';
+  if (isUpper) return 'upper bi';
+  if (isCore) return 'core';
+  return null;
+}
+
 export default function PTProgrammeWizard({ clients, exercises }: { clients: PTClient[]; exercises: PTExercise[] }) {
   const supabase = createClient();
   const router = useRouter();
@@ -494,6 +516,11 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const patchDay = (pi: number, di: number, patch: Partial<PTProgrammeDay>) => update((p) => {
     p.phases[pi].days[di] = { ...p.phases[pi].days[di], ...patch }; return p;
   });
+
+  const deleteDay = (pi: number, di: number) => {
+    update((p) => { p.phases[pi].days.splice(di, 1); return p; });
+    if (activeDay === di) setActiveDay(null);
+  };
 
   const moveExerciseToDay = (fromDay: number, exId: string, toDay: number, beforeExId?: string) => {
     update((p) => {
@@ -981,6 +1008,24 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                   {phase.title} {boardView ? '— drag exercises between days' : '— select a day to edit'}
                 </p>
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="flex items-center border border-black/10 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => { const n = Math.max(parseInt(phase.weeks, 10) || 1, 1); if (n > 1) patchPhase(activePhaseTab, { weeks: String(n - 1) }); }}
+                      disabled={(parseInt(phase.weeks, 10) || 1) <= 1}
+                      className="px-2 py-1.5 text-black/40 hover:text-black hover:bg-black/[0.04] transition-colors disabled:opacity-25"
+                    >
+                      −
+                    </button>
+                    <span className="px-2 text-black/55 tabular-nums">{phase.weeks}w</span>
+                    <button
+                      type="button"
+                      onClick={() => { const n = Math.max(parseInt(phase.weeks, 10) || 0, 0); patchPhase(activePhaseTab, { weeks: String(n + 1) }); }}
+                      className="px-2 py-1.5 text-black/40 hover:text-black hover:bg-black/[0.04] transition-colors"
+                    >
+                      +
+                    </button>
+                  </div>
                   {phase.days.length > 0 && (
                     <button
                       type="button"
@@ -1017,7 +1062,10 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                             <p className="text-xs font-medium leading-tight">{day.title || `Day ${di + 1}`}</p>
                             {day.focus && <p className="mt-0.5 truncate text-[0.62rem] text-black/35">{day.focus}</p>}
                           </div>
-                          <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="shrink-0 text-[0.6rem] text-black/35 hover:text-black">edit</button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="text-[0.6rem] text-black/35 hover:text-black">edit</button>
+                            <button type="button" onClick={() => deleteDay(activePhaseTab, di)} className="text-[0.65rem] text-black/25 hover:text-red-500 transition-colors" title="Delete day">×</button>
+                          </div>
                         </div>
                         <div className="flex flex-1 flex-col gap-1.5">
                           {day.exercises.map((ex) => {
@@ -1086,16 +1134,33 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                     </div>
                                   ) : (
                                     <>
-                                      <p
-                                        className="font-medium leading-tight cursor-text hover:text-black/60"
-                                        onMouseDown={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          setBoardEditExId(ex.id);
-                                        }}
-                                      >
-                                        {ex.name}
-                                      </p>
+                                      <div className="flex items-start gap-1.5 leading-tight">
+                                        <p
+                                          className="font-medium cursor-text hover:text-black/60"
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setBoardEditExId(ex.id);
+                                          }}
+                                        >
+                                          {ex.name}
+                                        </p>
+                                        {(() => {
+                                          const libEx = ex.exercise_id ? exercises.find((e) => e.id === ex.exercise_id) : undefined;
+                                          const tag = getMuscleTag(ex.name, libEx);
+                                          if (!tag) return null;
+                                          const cls = tag.startsWith('lower')
+                                            ? 'border-emerald-200 text-emerald-700'
+                                            : tag.startsWith('upper')
+                                            ? 'border-sky-200 text-sky-700'
+                                            : 'border-amber-200 text-amber-700';
+                                          return (
+                                            <span className={`mt-px shrink-0 border px-1 text-[0.48rem] uppercase tracking-wider leading-[1.8] ${cls}`}>
+                                              {tag}
+                                            </span>
+                                          );
+                                        })()}
+                                      </div>
                                       <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
                                     </>
                                   )}
@@ -1115,16 +1180,23 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                 <div className="space-y-3">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {phase.days.map((day, di) => (
-                      <button
+                      <div
                         key={day.id}
-                        type="button"
+                        className="relative group border border-black/10 p-5 text-left hover:border-black/30 hover:shadow-sm transition-all cursor-pointer"
                         onClick={() => setActiveDay(di)}
-                        className="border border-black/10 p-5 text-left hover:border-black/30 hover:shadow-sm transition-all"
                       >
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); deleteDay(activePhaseTab, di); }}
+                          className="absolute right-2 top-2 p-1 text-black/20 opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all text-base leading-none"
+                          title="Delete day"
+                        >
+                          ×
+                        </button>
                         <p className="font-medium text-sm">{day.title || `Day ${di + 1}`}</p>
                         <p className="text-xs text-black/40 mt-0.5">{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}</p>
                         {day.focus && <p className="text-xs text-black/30 mt-1 truncate">{day.focus}</p>}
-                      </button>
+                      </div>
                     ))}
                     <button
                       type="button"
