@@ -566,6 +566,8 @@ export default function PTEmailsView({
   const [saving, setSaving] = useState(false);
   const [uploadingBlockId, setUploadingBlockId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
   const workflow = WORKFLOWS.find((item) => item.key === selectedKey) ?? WORKFLOWS[0];
   const design = designs[selectedKey];
   const selectedTemplateRow = templateRows[selectedKey];
@@ -733,28 +735,39 @@ export default function PTEmailsView({
   };
 
   const makeLiveTemplate = async () => {
-    if (workflow.status !== 'live-editable') return;
-    if (!html.includes('{{ .ConfirmationURL }}')) {
-      setStatus('The live invite email must include {{ .ConfirmationURL }} in a button link.');
-      return;
-    }
-    setSaving(true);
-    setStatus('Saving live invite template...');
-    const { error } = await supabase.functions.invoke('manage-email-template', {
-      body: {
-        action: 'update',
-        template: 'invite',
-        subject: design.subject,
-        html,
-      },
-    });
-    setSaving(false);
-    if (error) {
-      setStatus(error.message);
-      return;
+    if (selectedKey === 'client_setup_invite') {
+      if (!html.includes('{{ .ConfirmationURL }}')) {
+        setStatus('The live invite email must include {{ .ConfirmationURL }} in a button link.');
+        return;
+      }
+      setSaving(true);
+      setStatus('Saving live invite template...');
+      const { error } = await supabase.functions.invoke('manage-email-template', {
+        body: { action: 'update', template: 'invite', subject: design.subject, html },
+      });
+      setSaving(false);
+      if (error) {
+        setStatus(error.message);
+        return;
+      }
     }
     await saveDraft('live');
-    setStatus('Live invite email template saved.');
+    setStatus(selectedKey === 'client_setup_invite' ? 'Live invite email template saved.' : 'Email saved as live.');
+  };
+
+  const sendTest = async () => {
+    if (!testEmail.trim()) return;
+    setSendingTest(true);
+    setStatus(`Sending test to ${testEmail}...`);
+    const { error } = await supabase.functions.invoke('send-test-email', {
+      body: { to: testEmail.trim(), subject: design.subject, html },
+    });
+    setSendingTest(false);
+    if (error) {
+      setStatus(`Test send failed: ${error.message}`);
+      return;
+    }
+    setStatus(`Test sent to ${testEmail}.`);
   };
 
   const copyHtml = async () => {
@@ -779,33 +792,53 @@ export default function PTEmailsView({
           <p className="mb-1 text-[0.6rem] font-medium uppercase tracking-[0.2em] text-black/35">PT</p>
           <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Email workflow editor</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void copyHtml()}
-            className="inline-flex items-center justify-center gap-2 border border-black/15 px-4 py-2.5 text-sm transition-colors hover:border-black/35"
-          >
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            Copy HTML
-          </button>
-          <button
-            type="button"
-            onClick={() => void saveDraft('draft')}
-            disabled={saving}
-            className="inline-flex items-center justify-center gap-2 border border-black/15 px-4 py-2.5 text-sm transition-colors hover:border-black/35 disabled:pointer-events-none disabled:opacity-35"
-          >
-            <Save className="h-4 w-4" />
-            Save draft
-          </button>
-          <button
-            type="button"
-            onClick={() => void makeLiveTemplate()}
-            disabled={saving || workflow.status !== 'live-editable'}
-            className="inline-flex items-center justify-center gap-2 border border-black bg-black px-4 py-2.5 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:pointer-events-none disabled:opacity-35"
-          >
-            <Send className="h-4 w-4" />
-            {saving ? 'Saving...' : 'Make live'}
-          </button>
+        <div className="flex flex-col gap-2 lg:items-end">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void copyHtml()}
+              className="inline-flex items-center justify-center gap-2 border border-black/15 px-4 py-2.5 text-sm transition-colors hover:border-black/35"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              Copy HTML
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveDraft('draft')}
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-2 border border-black/15 px-4 py-2.5 text-sm transition-colors hover:border-black/35 disabled:pointer-events-none disabled:opacity-35"
+            >
+              <Save className="h-4 w-4" />
+              Save draft
+            </button>
+            <button
+              type="button"
+              onClick={() => void makeLiveTemplate()}
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-2 border border-black bg-black px-4 py-2.5 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:pointer-events-none disabled:opacity-35"
+            >
+              <Send className="h-4 w-4" />
+              {saving ? 'Saving...' : 'Make live'}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder="Send test to email..."
+              className="w-52 border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+            />
+            <button
+              type="button"
+              onClick={() => void sendTest()}
+              disabled={sendingTest || !testEmail.trim()}
+              className="inline-flex items-center justify-center gap-2 border border-black/15 px-4 py-2 text-sm transition-colors hover:border-black/35 disabled:pointer-events-none disabled:opacity-35"
+            >
+              <Mail className="h-4 w-4" />
+              {sendingTest ? 'Sending...' : 'Send test'}
+            </button>
+          </div>
         </div>
       </div>
 
