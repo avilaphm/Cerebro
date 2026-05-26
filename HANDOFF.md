@@ -1,14 +1,47 @@
 # Handoff
 
 ## Last updated
-2026-05-26 12:45 AEST by Codex - Built PT email workflow editor with live invite-template saving.
+2026-05-26 by Claude Sonnet 4.6 - Built pedroavila.coach coach landing page.
 
 ## Last code fix commit
-Pending commit - PT email workflow editor
+b1c1d59
 
 ## What just happened (read first)
 
-### PT email workflow editor + live invite template bridge (2026-05-26, LATEST)
+### pedroavila.coach coach landing page (2026-05-26, LATEST)
+
+Built a full personal brand landing page at `/coach` inside the cerebro-site Next.js app.
+
+**Route:** `cerebroai.au/coach` internally, routed from `pedroavila.coach` via host-based rewrite in `next.config.ts`.
+
+**Sections (in order):**
+- `CoachNav` - sticky transparent→white nav, "Book assessment - $10" CTA
+- `CoachHero` - 3-beat scroll-reveal (300vh sticky container): beat 1 = intro text, beat 2 = big Fraunces headline, beat 3 = two-column final layout with photo placeholder + CTA
+- `CoachProblem` - "What's actually going on" - full PDF copy, two-column FadeIn
+- `CoachBio` - Pedro bio with 2 photo placeholders and full bio copy
+- `CoachVideos` - 4 dark video thumbnail placeholders (2x2 grid)
+- `CoachTestimonials` - horizontal scroll-snap carousel with 8 LinkedIn screenshot image placeholders + 5 quotes with text from PDF, prev/next arrows
+- `CoachBetweenSessions` - "The system" section with app screenshot placeholder
+- `CoachProcess` - 3-step numbered process, giant decorative numbers in Fraunces
+- `CoachChat` - dark bg email capture CTA at `#start` anchor (chat placeholder for later)
+- `CoachFooter` - Pedro Avila Coaching footer with location + Instagram
+
+**To make pedroavila.coach live:**
+1. In Squarespace DNS → delete the 4 A records pointing to Squarespace IPs
+2. Add A record: Name=`@`, Data=`76.76.21.21` (Vercel)
+3. Change CNAME `www` → `cname.vercel-dns.com` (was `ext-sq.squarespace.com`)
+4. In Vercel dashboard → add `pedroavila.coach` as custom domain for the cerebro-site project
+
+**What Pedro needs to upload later:**
+- 8 LinkedIn screenshot images (replace placeholders in testimonials carousel)
+- 4 client video files (replace placeholder cards in CoachVideos)
+- 2+ photos of Pedro (replace placeholders in CoachBio + CoachHero beat 3)
+- App screenshot (replace placeholder in CoachBetweenSessions)
+- Wire up the AI chat (CoachChat section has the placeholder `#start` anchor and email form)
+
+**Verification:** `npm run build` passes, `/coach` built as static page (○).
+
+### PT email workflow editor + live invite template bridge (2026-05-26)
 
 Pedro wanted to see all email workflows already in place, click an outgoing email workflow, edit the email, add photos/GIFs, and specifically design the first email new PT clients receive with the password setup/login link.
 
