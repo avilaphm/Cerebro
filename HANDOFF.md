@@ -1,14 +1,35 @@
 # Handoff
 
 ## Last updated
-2026-05-26 12:15 AEST by Codex - Built PT dashboard email creation page.
+2026-05-26 by Claude Sonnet 4.6 - Board view inline exercise edit + delete in step 3 wizard.
 
 ## Last code fix commit
-Pending commit - PT dashboard email creation page
+b560c34
 
 ## What just happened (read first)
 
-### PT dashboard email creation page (2026-05-26, LATEST)
+### Board view inline exercise edit + delete (2026-05-26, LATEST)
+
+In step 3 of the new programme wizard, clicking an exercise name in board view now opens an inline editor:
+- The exercise name becomes an editable input field (auto-focused).
+- Typing 2+ characters shows a library autocomplete dropdown (same `exercise-autocomplete no-glass` pattern as PTDayEditor).
+- Selecting from the dropdown updates `name`, `exercise_id`, `video_url`, and `cues`.
+- A ✕ button deletes the exercise and repairs `section_start` markers on adjacent exercises.
+- Dragging is disabled on the card while it is in edit mode.
+- Blurring the input (with 150ms delay, same as PTDayEditor) closes editing without dropdown conflict.
+
+Files changed:
+- `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`
+  - Added `PTProgrammeExercise` to type imports.
+  - Added `boardEditExId` state.
+  - Added `getBoardMatches()`, `patchBoardExercise()`, `deleteBoardExercise()` helpers.
+  - Board card rendering now branches on `isEditing` to show input+dropdown+delete or read-only name.
+
+Verification:
+- `npx tsc --noEmit` - no errors in PTProgrammeWizard.tsx (one pre-existing error in emails/page.tsx unrelated).
+- `npm run build` passes.
+
+### PT dashboard email creation page (2026-05-26)
 
 Pedro wanted the existing PT dashboard Email menu item to open a real email creation page.
 
