@@ -1,12 +1,35 @@
 # Handoff
 
 ## Last updated
-2026-05-25 17:00 AEST by Codex - Shipped skill-driven Foundation exercise selection guardrails.
+2026-05-26 12:15 AEST by Codex - Built PT dashboard email creation page.
 
 ## Last code fix commit
-Pending commit - Foundation exercise selection guardrails
+Pending commit - PT dashboard email creation page
 
 ## What just happened (read first)
+
+### PT dashboard email creation page (2026-05-26, LATEST)
+
+Pedro wanted the existing PT dashboard Email menu item to open a real email creation page.
+
+Changes shipped:
+- `app/dashboard/pt/emails/page.tsx`
+  - Replaced the placeholder with a server-loaded page that fetches active PT clients and recent PT notification log rows.
+  - Normalizes Supabase joined `pt_clients` data before passing it to the client component.
+- `app/dashboard/pt/emails/PTEmailsView.tsx`
+  - Added a client-side composer for weekly reset, session follow-up, nutrition check, accountability, and custom emails.
+  - Lets Pedro select a client, review client context, add specific notes, choose tone, edit subject/body, copy the email, or open a prefilled `mailto:` draft.
+  - Shows recent automatic PT email sends from `pt_notification_log`.
+
+Verification:
+- `npm run build` passes.
+- `npx eslint app/dashboard/pt/emails/page.tsx app/dashboard/pt/emails/PTEmailsView.tsx` passes.
+- `npm run lint` still fails on existing unrelated repo-wide lint issues in older files such as `app/client/ClientPortal.tsx`, `app/client/MessageBubble.tsx`, `app/client/NutritionChatModal.tsx`, and several Supabase functions.
+- Playwright verified `/dashboard/pt/emails` on the existing local dev server at `http://localhost:3001/dashboard/pt/emails`; desktop rendered with real client data and mobile `390px` viewport had no horizontal overflow.
+
+Notes:
+- Existing unrelated dirty file left untouched:
+  - `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`
 
 ### Foundation programme exercise selection guardrails (2026-05-25, LATEST)
 
