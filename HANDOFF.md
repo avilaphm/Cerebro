@@ -1,12 +1,56 @@
 # Handoff
 
 ## Last updated
-2026-05-26 by Claude Sonnet 4.6 - Board view inline exercise edit + delete in step 3 wizard.
+2026-05-26 12:45 AEST by Codex - Built PT email workflow editor with live invite-template saving.
 
 ## Last code fix commit
-b560c34
+Pending commit - PT email workflow editor
 
 ## What just happened (read first)
+
+### PT email workflow editor + live invite template bridge (2026-05-26, LATEST)
+
+Pedro wanted to see all email workflows already in place, click an outgoing email workflow, edit the email, add photos/GIFs, and specifically design the first email new PT clients receive with the password setup/login link.
+
+Changes shipped:
+- `app/dashboard/pt/emails/PTEmailsView.tsx`
+  - Reworked the Email page from a single composer into a workflow/template editor.
+  - Left rail lists the detected live workflows:
+    - New client password setup
+    - Returning client login link
+    - Password reset
+    - Booking confirmation
+    - Booking cancelled
+    - Session-credit alert
+    - Coach booking notice
+    - Weekly PT summary
+    - Lead chat welcome
+    - Lead proposal email
+  - The new-client password setup workflow is marked `Live`; the other currently code-owned workflows are visible/editable in the editor UI but not yet wired to persist live templates.
+  - Added block-based email editing: eyebrow, heading, text, button, photo/GIF URL, divider, spacer.
+  - Added professional HTML preview and generated email HTML copy.
+  - Added validation so the live invite email keeps `{{ .ConfirmationURL }}` in the button/link.
+- `app/dashboard/pt/emails/page.tsx`
+  - Simplified server data load to recent notification log rows only.
+- `supabase/functions/manage-email-template/index.ts`
+  - New authenticated Edge Function for loading/saving the hosted Supabase Auth invite template through the Supabase Management API.
+  - Uses Pedro/admin auth checks and `CEREBRO_SUPABASE_ACCESS_TOKEN` Edge secret.
+
+Deployment:
+- Set Edge Function secret `CEREBRO_SUPABASE_ACCESS_TOKEN` from local `.env.local`.
+- Deployed `manage-email-template` to Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npm run build` passes.
+- `npx eslint app/dashboard/pt/emails/page.tsx app/dashboard/pt/emails/PTEmailsView.tsx supabase/functions/manage-email-template/index.ts` passes.
+- Playwright verified `/dashboard/pt/emails` on `http://localhost:3001/dashboard/pt/emails`.
+- The page successfully loads the live Supabase invite subject `Your Pedro Avila Coaching programme`.
+- Adding a Photo/GIF block exposes URL, alt text, and caption fields.
+- Mobile `390px` viewport has no horizontal overflow.
+
+Notes:
+- Supabase docs confirm hosted Auth templates can be updated with the Management API using `mailer_subjects_invite` and `mailer_templates_invite_content`.
+- Next step for full Klaviyo-style workflow control is moving code-owned Resend emails (`manage-pt-booking`, `weekly-pt-summary`, `chat`, `generate-proposal`) to read templates from a shared template table/function instead of hardcoded text.
 
 ### Board view inline exercise edit + delete (2026-05-26, LATEST)
 

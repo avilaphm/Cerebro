@@ -1,5 +1,4 @@
 import { createClient } from '@/utils/supabase/server';
-import type { PTClient } from '@/utils/pt/types';
 import PTEmailsView, { type PTEmailNotification } from './PTEmailsView';
 
 interface RawNotification {
@@ -28,22 +27,14 @@ function normalizeNotification(row: RawNotification): PTEmailNotification {
 export default async function PTEmailsPage() {
   const supabase = await createClient();
 
-  const [clientRes, notificationRes] = await Promise.all([
-    supabase
-      .from('pt_clients')
-      .select('*')
-      .neq('status', 'archived')
-      .order('name'),
-    supabase
-      .from('pt_notification_log')
-      .select('id, created_at, client_id, notification_type, recipient_email, subject, pt_clients(name)')
-      .order('created_at', { ascending: false })
-      .limit(12),
-  ]);
+  const notificationRes = await supabase
+    .from('pt_notification_log')
+    .select('id, created_at, client_id, notification_type, recipient_email, subject, pt_clients(name)')
+    .order('created_at', { ascending: false })
+    .limit(12);
 
   return (
     <PTEmailsView
-      clients={(clientRes.data ?? []) as PTClient[]}
       recentNotifications={((notificationRes.data ?? []) as RawNotification[]).map(normalizeNotification)}
     />
   );
