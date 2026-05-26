@@ -52,6 +52,8 @@ export default function PTProgrammeTemplateEditView({
   const [editingPhase, setEditingPhase] = useState<number | null>(null);
   const [activePhaseTab, setActivePhaseTab] = useState(0);
   const [activeDay, setActiveDay] = useState<number | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
@@ -91,6 +93,27 @@ export default function PTProgrammeTemplateEditView({
   const patchDay = (pi: number, di: number, patch: Partial<PTProgrammeDay>) => update((p) => {
     p.phases[pi].days[di] = { ...p.phases[pi].days[di], ...patch }; return p;
   });
+
+  const toggleSelectMode = () => {
+    setSelectMode((v) => { if (v) setSelectedDays(new Set()); return !v; });
+  };
+
+  const toggleDaySelection = (di: number) => {
+    setSelectedDays((cur) => {
+      const next = new Set(cur);
+      if (next.has(di)) next.delete(di); else next.add(di);
+      return next;
+    });
+  };
+
+  const deleteSelectedDays = () => {
+    const hadActive = activeDay !== null && selectedDays.has(activeDay);
+    const indices = Array.from(selectedDays).sort((a, b) => b - a);
+    update((p) => { indices.forEach((di) => { p.phases[activePhaseTab].days.splice(di, 1); }); return p; });
+    setSelectedDays(new Set());
+    setSelectMode(false);
+    if (hadActive) setActiveDay(null);
+  };
 
   const startDictationForPhase = (phaseIdx: number) => {
     const SR = getSR();
@@ -321,13 +344,35 @@ export default function PTProgrammeTemplateEditView({
 
       {/* Workouts */}
       <div>
-        <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Workouts</p>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Workouts</p>
+          {phase && phase.days.length > 0 && (
+            <div className="flex items-center gap-2">
+              {selectedDays.size > 0 && (
+                <button
+                  type="button"
+                  onClick={deleteSelectedDays}
+                  className="border border-red-300 bg-red-50 px-3 py-1.5 text-xs text-red-600 transition-colors hover:bg-red-100"
+                >
+                  Delete {selectedDays.size} day{selectedDays.size !== 1 ? 's' : ''}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={toggleSelectMode}
+                className={`border px-3 py-1.5 text-xs transition-colors ${selectMode ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/35'}`}
+              >
+                {selectMode ? 'Cancel' : 'Select'}
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
           {programme.phases.map((ph, i) => (
             <button
               key={ph.id}
               type="button"
-              onClick={() => { setActivePhaseTab(i); setActiveDay(null); }}
+              onClick={() => { setActivePhaseTab(i); setActiveDay(null); setSelectedDays(new Set()); setSelectMode(false); }}
               className={`shrink-0 px-4 py-2 text-xs border transition-colors ${
                 activePhaseTab === i ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/30'
               }`}
@@ -345,24 +390,36 @@ export default function PTProgrammeTemplateEditView({
               </p>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {phase.days.map((day, di) => (
-                  <button
+                  <div
                     key={day.id}
-                    type="button"
-                    onClick={() => setActiveDay(di)}
-                    className="border border-black/10 p-5 text-left hover:border-black/30 hover:shadow-sm transition-all"
+                    onClick={() => selectMode ? toggleDaySelection(di) : setActiveDay(di)}
+                    className={`relative flex cursor-pointer gap-3 border p-5 text-left transition-all ${
+                      selectedDays.has(di)
+                        ? 'border-black bg-black/[0.03]'
+                        : 'border-black/10 hover:border-black/30 hover:shadow-sm'
+                    }`}
                   >
-                    <p className="font-medium text-sm">{day.title || `Day ${di + 1}`}</p>
-                    <p className="text-xs text-black/40 mt-0.5">{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}</p>
-                    {day.focus && <p className="text-xs text-black/30 mt-1 truncate">{day.focus}</p>}
-                  </button>
+                    {selectMode && (
+                      <div className={`mt-0.5 h-4 w-4 shrink-0 border-2 flex items-center justify-center transition-colors ${selectedDays.has(di) ? 'border-black bg-black' : 'border-black/25'}`}>
+                        {selectedDays.has(di) && <span className="text-white text-[0.5rem] leading-none">✓</span>}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm">{day.title || `Day ${di + 1}`}</p>
+                      <p className="text-xs text-black/40 mt-0.5">{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}</p>
+                      {day.focus && <p className="text-xs text-black/30 mt-1 truncate">{day.focus}</p>}
+                    </div>
+                  </div>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => { addDay(activePhaseTab); setActiveDay(phase.days.length); }}
-                  className="border border-black/10 border-dashed p-5 text-center text-sm text-black/30 hover:border-black/25 hover:text-black/50 transition-colors"
-                >
-                  + Add day
-                </button>
+                {!selectMode && (
+                  <button
+                    type="button"
+                    onClick={() => { addDay(activePhaseTab); setActiveDay(phase.days.length); }}
+                    className="border border-black/10 border-dashed p-5 text-center text-sm text-black/30 hover:border-black/25 hover:text-black/50 transition-colors"
+                  >
+                    + Add day
+                  </button>
+                )}
               </div>
             </div>
           ) : (
