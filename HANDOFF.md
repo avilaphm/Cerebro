@@ -1,7 +1,7 @@
 # Handoff
 
 ## Last updated
-2026-05-26 by Codex - Fixed programme board exercise edit and current-workout PDF upload.
+2026-05-26 by Claude - Multi-select day deletion on all programme edit pages (commit 9c0b948).
 
 ## Last code fix commit
 see `git log -1`
