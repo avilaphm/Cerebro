@@ -576,56 +576,44 @@ export default function PTEmailsView({
   useEffect(() => {
     let mounted = true;
 
-    const loadInviteTemplate = async () => {
-      const { data, error } = await supabase.functions.invoke<InviteTemplateResponse>('manage-email-template', {
-        body: { action: 'get', template: 'invite' },
-      });
-      if (!mounted) return;
-      if (error) {
-        setStatus(`Live invite template could not be loaded: ${error.message}`);
-        return;
-      }
-      setDesigns((current) => ({
-        ...current,
-        client_setup_invite: designFromInviteHtml(data?.subject, data?.html),
-      }));
-    };
-
-    void loadInviteTemplate();
-    return () => {
-      mounted = false;
-    };
-  }, [supabase]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadDrafts = async () => {
-      const { data, error } = await supabase
+    const loadAll = async () => {
+      const { data: drafts, error: draftsError } = await supabase
         .from('pt_email_templates')
         .select('*');
 
       if (!mounted) return;
-      if (error) {
-        setStatus((current) => current || `Saved drafts could not be loaded: ${error.message}`);
+      if (draftsError) {
+        setStatus(`Saved designs could not be loaded: ${draftsError.message}`);
         return;
       }
 
-      const rows = (data ?? []) as TemplateRow[];
+      const rows = (drafts ?? []) as TemplateRow[];
       setTemplateRows(Object.fromEntries(rows.map((row) => [row.workflow_key, row])));
       setDesigns((current) => {
         const next = { ...current };
-        rows.forEach((row) => {
-          next[row.workflow_key] = row.design;
-        });
+        rows.forEach((row) => { next[row.workflow_key] = row.design; });
         return next;
       });
+
+      const hasSavedInvite = rows.some((row) => row.workflow_key === 'client_setup_invite');
+      if (!hasSavedInvite) {
+        const { data, error } = await supabase.functions.invoke<InviteTemplateResponse>('manage-email-template', {
+          body: { action: 'get', template: 'invite' },
+        });
+        if (!mounted) return;
+        if (error) {
+          setStatus(`Live invite template could not be loaded: ${error.message}`);
+          return;
+        }
+        setDesigns((current) => ({
+          ...current,
+          client_setup_invite: designFromInviteHtml(data?.subject, data?.html),
+        }));
+      }
     };
 
-    void loadDrafts();
-    return () => {
-      mounted = false;
-    };
+    void loadAll();
+    return () => { mounted = false; };
   }, [supabase]);
 
   const patchDesign = (patch: Partial<EmailDesign>) => {
