@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-05-27 by Claude - Muscle type tags on board view exercise cards in programme edit page (commit 8ad8ab3).
+2026-05-27 by Claude - Inline exercise edit + muscle tags on board view in programme edit page (commit a05f3a6).
 
 ## Last code fix commit
-8ad8ab3
+a05f3a6
 
 ## What just happened (read first)
 
