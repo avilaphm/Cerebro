@@ -950,7 +950,6 @@ export default function PTProgrammeEditView({
                                         onKeyDown={(e) => {
                                           if (e.key === 'Escape' || e.key === 'Enter') setBoardEditExId(null);
                                         }}
-                                        onBlur={() => setTimeout(() => setBoardEditExId((cur) => cur === ex.id ? null : cur), 150)}
                                         placeholder="Exercise name"
                                         className="w-full border border-black/20 bg-white px-1.5 py-0.5 text-[0.7rem] outline-none focus:border-black/40"
                                       />
