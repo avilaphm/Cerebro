@@ -78,6 +78,28 @@ function extractRecText(rec: Record<string, unknown>): string {
   return Object.values(rec).filter((v) => typeof v === 'string').join('\n\n');
 }
 
+function getMuscleTag(name: string, libEx?: PTExercise): string | null {
+  const combined = [
+    name,
+    ...(libEx?.muscles ?? []),
+    ...(libEx?.primary_muscles ?? []),
+    ...(libEx?.tags ?? []),
+  ].join(' ').toLowerCase();
+
+  const isSingleLeg =
+    /single.?leg|bulgarian|split squat|lunge|step.?up|pistol|curtsy|rear foot elevated|skater squat/i.test(combined) ||
+    (libEx?.tags?.some((t) => /single.?leg|unilateral/i.test(t)) ?? false);
+
+  const isLower = /squat|deadlift|lunge|leg press|leg curl|leg extension|romanian|rdl|glute|hip thrust|hip hinge|hamstring|quad|calf|calv|step.?up|good morning|hip abduct|hip adduct|tibialis|box jump|broad jump/i.test(combined);
+  const isUpper = /bench|chest press|row|pull.?up|chin.?up|lat pulldown|pull.?down|chest|shoulder|delt|tricep|bicep|curl|fly|flye|dip|push.?up|overhead press|incline|decline|face pull|cable cross|pec|lat /i.test(combined);
+  const isCore = /plank|crunch|sit.?up|oblique|pallof|anti.?rotat|dead bug|bird dog|hollow|v.?up|toe touch|ab /i.test(combined);
+
+  if (isLower) return isSingleLeg ? 'lower sl' : 'lower bi';
+  if (isUpper) return 'upper bi';
+  if (isCore) return 'core';
+  return null;
+}
+
 function draftReviewSummary(draft: ProgrammingAgentDraft, fallback: string) {
   const failures = Array.isArray(draft.validation_summary?.hard_rule_failures)
     ? draft.validation_summary.hard_rule_failures.length
@@ -883,7 +905,24 @@ export default function PTProgrammeEditView({
                             onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di, ex.id); setDragEx(null); setDragOverDay(null); }}
                             className={`cursor-grab rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${dragEx?.exId === ex.id ? 'opacity-40' : 'border-black/10 hover:border-black/25'}`}
                           >
-                            <p className="font-medium leading-tight">{ex.name}</p>
+                            <div className="flex items-start gap-1.5 leading-tight">
+                              <p className="font-medium">{ex.name}</p>
+                              {(() => {
+                                const libEx = ex.exercise_id ? exercises.find((e) => e.id === ex.exercise_id) : undefined;
+                                const tag = getMuscleTag(ex.name, libEx);
+                                if (!tag) return null;
+                                const cls = tag.startsWith('lower')
+                                  ? 'border-emerald-200 text-emerald-700'
+                                  : tag.startsWith('upper')
+                                  ? 'border-sky-200 text-sky-700'
+                                  : 'border-amber-200 text-amber-700';
+                                return (
+                                  <span className={`mt-px shrink-0 border px-1 text-[0.48rem] uppercase tracking-wider leading-[1.8] ${cls}`}>
+                                    {tag}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
                           </div>
                         </div>
