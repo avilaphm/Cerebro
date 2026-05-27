@@ -1,12 +1,27 @@
 # Handoff
 
 ## Last updated
-2026-05-26 by Claude - Multi-select day deletion on all programme edit pages (commit 9c0b948).
+2026-05-27 by Claude - Muscle type tags on board view exercise cards in programme edit page (commit 8ad8ab3).
 
 ## Last code fix commit
-see `git log -1`
+8ad8ab3
 
 ## What just happened (read first)
+
+### Muscle type tags on programme edit board view (2026-05-27, LATEST)
+
+Pedro noticed the programme editing page (`/dashboard/pt/programmes/[id]/edit`) board view was missing the muscle type badges (lower sl / lower bi / upper bi / core) already present on the Step 3 board view in the new programme creation wizard.
+
+Changes shipped:
+- `app/dashboard/pt/programmes/[id]/edit/PTProgrammeEditView.tsx`
+  - Added `getMuscleTag()` helper (exact copy from wizard) above the existing `draftReviewSummary` function.
+  - Board view exercise cards now render the same coloured pill badges (green = lower, blue = upper, amber = core) next to the exercise name, inferred from exercise name + library muscles/tags.
+  - No schema changes, no new props. The view already receives the `exercises: PTExercise[]` library array.
+
+Verification:
+- `npx tsc --noEmit`: no errors in PTProgrammeEditView.tsx.
+- `npm run build`: passes clean.
+
 
 ### Programme builder board edit + current-workout PDF upload fix (2026-05-26, LATEST)
 
