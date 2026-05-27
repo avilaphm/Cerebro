@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase } from '@/utils/pt/programme';
 import type {
-  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramAssignment,
+  PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise, PTProgramAssignment,
 } from '@/utils/pt/types';
 import PTDayEditor from '../../PTDayEditor';
 import CurrentWorkoutImportModal from '../../CurrentWorkoutImportModal';
@@ -151,6 +151,7 @@ export default function PTProgrammeEditView({
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
   const [dragEx, setDragEx] = useState<{ dayIndex: number; exId: string } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
+  const [boardEditExId, setBoardEditExId] = useState<string | null>(null);
   const [currentWorkoutImportOpen, setCurrentWorkoutImportOpen] = useState(false);
   const [currentWorkoutImportStatus, setCurrentWorkoutImportStatus] = useState('');
   const highlightedPhase = Number.parseInt(highlight?.phase ?? '', 10);
@@ -302,6 +303,35 @@ export default function PTProgrammeEditView({
   const patchDay = (pi: number, di: number, patch: Partial<PTProgrammeDay>) => update((p) => {
     p.phases[pi].days[di] = { ...p.phases[pi].days[di], ...patch }; return p;
   });
+
+  const getBoardMatches = (name: string) =>
+    name.length >= 2 ? exercises.filter((e) => e.name.toLowerCase().includes(name.toLowerCase())).slice(0, 6) : [];
+
+  const patchBoardExercise = (pi: number, di: number, exId: string, patch: Partial<PTProgrammeExercise>) =>
+    update((p) => {
+      const day = p.phases[pi].days[di];
+      day.exercises = day.exercises.map((ex) => ex.id === exId ? { ...ex, ...patch } : ex);
+      return p;
+    });
+
+  const deleteBoardExercise = (pi: number, di: number, exId: string) =>
+    update((p) => {
+      const exs = p.phases[pi].days[di].exercises;
+      let current = '';
+      const resolved = exs.map((ex) => {
+        if (ex.section_start !== undefined) current = ex.section_start || '';
+        return { ex, section: current };
+      });
+      const filtered = resolved.filter(({ ex }) => ex.id !== exId);
+      let prevSection: string | null = null;
+      const rebuilt = filtered.map(({ ex, section }) => {
+        const firstInSection = section !== prevSection;
+        prevSection = section;
+        return { ...ex, section_start: firstInSection && section ? section : undefined };
+      });
+      p.phases[pi].days[di] = { ...p.phases[pi].days[di], exercises: rebuilt };
+      return p;
+    });
 
   const toggleSelectMode = () => {
     setSelectMode((v) => { if (v) setSelectedDays(new Set()); return !v; });
@@ -894,39 +924,107 @@ export default function PTProgrammeEditView({
                       <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="shrink-0 text-[0.6rem] text-black/35 hover:text-black">edit</button>
                     </div>
                     <div className="flex flex-1 flex-col gap-1.5">
-                      {day.exercises.map((ex) => (
-                        <div key={ex.id}>
-                          {ex.section_start && <p className="px-1 pb-0.5 pt-1 text-[0.55rem] uppercase tracking-wider text-black/30">{ex.section_start}</p>}
-                          <div
-                            draggable
-                            onDragStart={(e) => { setDragEx({ dayIndex: di, exId: ex.id }); e.dataTransfer.effectAllowed = 'move'; }}
-                            onDragEnd={() => { setDragEx(null); setDragOverDay(null); }}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di, ex.id); setDragEx(null); setDragOverDay(null); }}
-                            className={`cursor-grab rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${dragEx?.exId === ex.id ? 'opacity-40' : 'border-black/10 hover:border-black/25'}`}
-                          >
-                            <div className="flex items-start gap-1.5 leading-tight">
-                              <p className="font-medium">{ex.name}</p>
-                              {(() => {
-                                const libEx = ex.exercise_id ? exercises.find((e) => e.id === ex.exercise_id) : undefined;
-                                const tag = getMuscleTag(ex.name, libEx);
-                                if (!tag) return null;
-                                const cls = tag.startsWith('lower')
-                                  ? 'border-emerald-200 text-emerald-700'
-                                  : tag.startsWith('upper')
-                                  ? 'border-sky-200 text-sky-700'
-                                  : 'border-amber-200 text-amber-700';
-                                return (
-                                  <span className={`mt-px shrink-0 border px-1 text-[0.48rem] uppercase tracking-wider leading-[1.8] ${cls}`}>
-                                    {tag}
-                                  </span>
-                                );
-                              })()}
+                      {day.exercises.map((ex) => {
+                        const isEditing = boardEditExId === ex.id;
+                        const boardMatches = isEditing ? getBoardMatches(ex.name) : [];
+                        return (
+                          <div key={ex.id}>
+                            {ex.section_start && <p className="px-1 pb-0.5 pt-1 text-[0.55rem] uppercase tracking-wider text-black/30">{ex.section_start}</p>}
+                            <div
+                              draggable={!isEditing}
+                              onDragStart={isEditing ? undefined : (e) => { setDragEx({ dayIndex: di, exId: ex.id }); e.dataTransfer.effectAllowed = 'move'; }}
+                              onDragEnd={isEditing ? undefined : () => { setDragEx(null); setDragOverDay(null); }}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di, ex.id); setDragEx(null); setDragOverDay(null); }}
+                              className={`relative rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${isEditing ? 'border-black/30' : dragEx?.exId === ex.id ? 'cursor-grab opacity-40 border-black/10' : 'cursor-grab border-black/10 hover:border-black/25'}`}
+                            >
+                              {isEditing ? (
+                                <div onMouseDown={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center gap-1">
+                                    <div className="relative flex-1">
+                                      <input
+                                        autoFocus
+                                        draggable={false}
+                                        value={ex.name}
+                                        onChange={(e) => patchBoardExercise(activePhaseTab, di, ex.id, { name: e.target.value, exercise_id: null, video_url: null })}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Escape' || e.key === 'Enter') setBoardEditExId(null);
+                                        }}
+                                        onBlur={() => setTimeout(() => setBoardEditExId((cur) => cur === ex.id ? null : cur), 150)}
+                                        placeholder="Exercise name"
+                                        className="w-full border border-black/20 bg-white px-1.5 py-0.5 text-[0.7rem] outline-none focus:border-black/40"
+                                      />
+                                      {boardMatches.length > 0 && (
+                                        <div className="exercise-autocomplete no-glass absolute left-0 top-full z-30 w-48 border border-black/15 shadow-md max-h-44 overflow-y-auto">
+                                          {boardMatches.map((libEx) => (
+                                            <button
+                                              key={libEx.id}
+                                              type="button"
+                                              onMouseDown={() => {
+                                                patchBoardExercise(activePhaseTab, di, ex.id, {
+                                                  exercise_id: libEx.id,
+                                                  name: libEx.name,
+                                                  video_url: libEx.video_url,
+                                                  cues: libEx.cues.slice(0, 4),
+                                                });
+                                                setBoardEditExId(null);
+                                              }}
+                                              className="w-full text-left px-2 py-1.5 text-[0.7rem] hover:bg-black/5 flex items-baseline gap-1.5"
+                                            >
+                                              <span>{libEx.name}</span>
+                                              {libEx.muscles.length > 0 && <span className="text-[0.6rem] text-black/30">{libEx.muscles.slice(0, 2).join(', ')}</span>}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); deleteBoardExercise(activePhaseTab, di, ex.id); setBoardEditExId(null); }}
+                                      className="shrink-0 text-black/30 hover:text-red-500 leading-none px-0.5"
+                                      title="Delete exercise"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                  <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-start gap-1.5 leading-tight">
+                                    <p
+                                      className="font-medium cursor-text hover:text-black/60"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setBoardEditExId(ex.id);
+                                      }}
+                                    >
+                                      {ex.name}
+                                    </p>
+                                    {(() => {
+                                      const libEx = ex.exercise_id ? exercises.find((e) => e.id === ex.exercise_id) : undefined;
+                                      const tag = getMuscleTag(ex.name, libEx);
+                                      if (!tag) return null;
+                                      const cls = tag.startsWith('lower')
+                                        ? 'border-emerald-200 text-emerald-700'
+                                        : tag.startsWith('upper')
+                                        ? 'border-sky-200 text-sky-700'
+                                        : 'border-amber-200 text-amber-700';
+                                      return (
+                                        <span className={`mt-px shrink-0 border px-1 text-[0.48rem] uppercase tracking-wider leading-[1.8] ${cls}`}>
+                                          {tag}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
+                                  <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
+                                </>
+                              )}
                             </div>
-                            <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                       {day.exercises.length === 0 && (
                         <p className="px-1 py-4 text-center text-[0.62rem] text-black/25">Drop here</p>
                       )}
