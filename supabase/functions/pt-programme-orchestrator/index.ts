@@ -16,7 +16,9 @@ function json(data: unknown, status = 200) {
 const STEP_NAMES = [
   'CLIENT_ANALYSIS',
   'MOVEMENT_ANALYSIS',
+  'EXERCISE_INTELLIGENCE',
   'METHODOLOGY_PLAN',
+  'PROGRAMME_CROSS_CHECK',
   'VALIDATION',
 ] as const;
 
@@ -153,24 +155,44 @@ async function runPipeline(ctx: {
       intake_text: body.intake_text,
     }, 95_000);
     await recordStep(2, STEP_NAMES[1], { client_id: body.client_id }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);
-    // Movement analysis failure is non-fatal: we fall back to empty mind map so the pipeline continues.
-    const muscleMindMap = step2.ok ? (step2.output.muscle_mind_map as Record<string, unknown>) : {};
+    if (!step2.ok) { await fail(`Movement analysis failed: ${step2.error}`); return; }
+    const muscleMindMap = step2.output.muscle_mind_map as Record<string, unknown>;
+    const primaryIssues = Array.isArray(muscleMindMap.primary_issues) ? muscleMindMap.primary_issues : [];
+    if (primaryIssues.length === 0) {
+      await fail('Movement analysis returned no primary issues or muscle mind map.');
+      return;
+    }
+    await persistMovementMindMap(admin, body.client_id, muscleMindMap);
 
-    // Exercise intelligence removed from pipeline: the AbortController timeout cannot reliably
-    // cancel an outgoing edge-function fetch in Deno (Promise.race only races headers, not body).
-    // Synthesis falls back to its own deterministic exercise selection without it.
-    const exerciseMasterList: Array<Record<string, unknown>> = [];
-    const staplesByPhase: Record<string, unknown> | undefined = undefined;
-
-    // STEP 3: Methodology Plan
+    // STEP 3: Exercise Intelligence (per-muscle pool, difficulty, double-duty tags, staples)
     await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[2] }).eq('id', runId);
+    const step3 = await callAgent('exercise-intelligence-agent', {
+      client_id: body.client_id,
+      muscle_mind_map: muscleMindMap,
+    }, 95_000);
+    await recordStep(3, STEP_NAMES[2], { client_id: body.client_id, muscle_mind_map: muscleMindMap }, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
+    if (!step3.ok) { await fail(`Exercise intelligence failed: ${step3.error}`); return; }
+    let exerciseMasterList = Array.isArray(step3.output.exercise_master_list)
+      ? step3.output.exercise_master_list as Array<Record<string, unknown>>
+      : [];
+    if (exerciseMasterList.length === 0) {
+      await fail('Exercise intelligence returned an empty exercise master list.');
+      return;
+    }
+    exerciseMasterList = await ensureExerciseCardsForMasterList(admin, exerciseMasterList);
+    const staplesByPhase = step3.output.staples_by_phase as Record<string, unknown> | undefined;
+    await persistExerciseIntelligence(admin, body.client_id, { ...step3.output, exercise_master_list: exerciseMasterList });
+    await persistProgrammeStaples(admin, body.client_id, runId, staplesByPhase);
+
+    // STEP 4: Methodology Plan
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[3] }).eq('id', runId);
     const step4 = await callAgent('methodology-plan-agent', {
       client_analysis: clientAnalysis,
       phase_weeks: body.phase_weeks,
       days_per_week: body.days_per_week ?? 3,
       run_id: runId,
     });
-    await recordStep(3, STEP_NAMES[2], { phase_weeks: body.phase_weeks }, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
+    await recordStep(4, STEP_NAMES[3], { phase_weeks: body.phase_weeks }, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
     if (!step4.ok) { await fail(`Methodology planning failed: ${step4.error}`); return; }
     const methodologyPlan = step4.output.methodology_plan as Record<string, unknown>;
 
@@ -237,7 +259,7 @@ async function runPipeline(ctx: {
             })),
           }],
         };
-        const stepOrder = 4 + i;
+        const stepOrder = 5 + i;
         await recordStep(stepOrder, commandName, { phase_index: i }, { ok: true, phase }, 'succeeded');
         phases.push(phase);
         if (i === 0) {
@@ -257,7 +279,7 @@ async function runPipeline(ctx: {
         exercise_master_list: exerciseMasterList,
       });
 
-      const stepOrder = 4 + i;
+      const stepOrder = 5 + i;
       await recordStep(
         stepOrder,
         commandName,
@@ -280,13 +302,24 @@ async function runPipeline(ctx: {
     }
 
     const programme = { phases };
-    const missingExercises = Array.from(new Set(allMissing));
+    const exerciseIntelligenceMissing = Array.isArray(step3.output.missing_exercises) ? step3.output.missing_exercises as string[] : [];
+    const missingExercises = Array.from(new Set([...allMissing, ...exerciseIntelligenceMissing]));
+
+    // Programme B/modifier pass: re-check the programme against the client brain-derived
+    // movement map and exercise intelligence before validation. This keeps the generated
+    // structure as Programme A and records the client-specific adjustments still needed.
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[4] }).eq('id', runId);
+    const crossCheck = buildProgrammeCrossCheck(programme, clientAnalysis, muscleMindMap, exerciseMasterList);
+    await recordStep(5 + methodologyPhases.length, STEP_NAMES[4], {
+      client_id: body.client_id,
+      programme_a_phase_count: phases.length,
+    }, crossCheck, 'succeeded');
 
     // Final validation step
-    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[3] }).eq('id', runId);
+    await admin.from('pt_program_generation_runs').update({ current_command: STEP_NAMES[5] }).eq('id', runId);
     const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
     const validationStep = await callAgent('programme-validation-agent', { programme, emphasis });
-    await recordStep(4 + methodologyPhases.length, STEP_NAMES[3], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
+    await recordStep(6 + methodologyPhases.length, STEP_NAMES[5], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
     if (!validationStep.ok) { await fail(`Validation failed: ${validationStep.error}`); return; }
     const validation = validationStep.output as { passed: boolean; hard_failures: string[]; findings: string[] };
 
@@ -300,14 +333,16 @@ async function runPipeline(ctx: {
         muscle_mind_map: muscleMindMap,
         exercise_master_list: exerciseMasterList,
         staples_by_phase: staplesByPhase ?? null,
+        programme_cross_check: crossCheck,
       },
       validation_summary: {
         name: programmeName,
         goal: programmeGoal,
         passed: validation.passed,
         hard_failures: validation.hard_failures,
-        findings: validation.findings,
+        findings: [...validation.findings, ...crossCheck.findings],
         missing_exercises: missingExercises,
+        modifications_applied: crossCheck.modifications_applied,
       },
       completed_at: new Date().toISOString(),
     }).eq('id', runId);
@@ -341,4 +376,251 @@ function synthesisCommandName(phase: Record<string, unknown>, index: number): st
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
   return `PROGRAMME_SYNTHESIS_${slug || `PHASE_${index + 1}`}`;
+}
+
+async function persistExerciseIntelligence(
+  admin: ReturnType<typeof createClient>,
+  clientId: string,
+  exerciseIntelligence: Record<string, unknown>,
+) {
+  const { data } = await admin
+    .from('pt_client_exercise_doc')
+    .select('progression_strategy')
+    .eq('client_id', clientId)
+    .maybeSingle();
+  const current = typeof data?.progression_strategy === 'object' && data.progression_strategy !== null && !Array.isArray(data.progression_strategy)
+    ? data.progression_strategy as Record<string, unknown>
+    : {};
+  await admin.from('pt_client_exercise_doc').upsert({
+    client_id: clientId,
+    progression_strategy: {
+      ...current,
+      exercise_intelligence: exerciseIntelligence,
+      updated_by: 'pt-programme-orchestrator',
+      updated_at: new Date().toISOString(),
+    },
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'client_id' });
+}
+
+async function persistMovementMindMap(
+  admin: ReturnType<typeof createClient>,
+  clientId: string,
+  muscleMindMap: Record<string, unknown>,
+) {
+  const { error } = await admin.from('pt_client_exercise_doc').upsert({
+    client_id: clientId,
+    movement_assessment_summary: muscleMindMap,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'client_id' });
+  if (error) throw new Error(`Failed to persist movement mind map: ${error.message}`);
+}
+
+async function ensureExerciseCardsForMasterList(
+  admin: ReturnType<typeof createClient>,
+  masterList: Array<Record<string, unknown>>,
+): Promise<Array<Record<string, unknown>>> {
+  const rows = masterList.filter((exercise) => typeof exercise.exercise_id !== 'string' && text(exercise.name, ''));
+  if (rows.length === 0) return masterList;
+
+  const names = Array.from(new Set(rows.map((exercise) => text(exercise.name, '')).filter(Boolean)));
+  const { data: existing } = await admin
+    .from('pt_exercises')
+    .select('id, name')
+    .in('name', names);
+  const byName = new Map((existing ?? []).map((row: { id: string; name: string }) => [row.name.toLowerCase(), row.id]));
+
+  const inserts = rows
+    .filter((exercise) => !byName.has(text(exercise.name, '').toLowerCase()))
+    .map((exercise) => {
+      const primary = asTextArray(exercise.primary_muscles);
+      const secondary = asTextArray(exercise.secondary_muscles);
+      const problems = asTextArray(exercise.problems_solved);
+      const treatments = asTextArray(exercise.treatment_types);
+      return {
+        name: text(exercise.name, ''),
+        muscles: Array.from(new Set([...primary, ...secondary])),
+        primary_muscles: primary,
+        secondary_muscles: secondary,
+        purpose: problems.join('; ') || null,
+        equipment: null,
+        video_url: null,
+        cues: [],
+        setup_cues: [],
+        tags: Array.from(new Set([
+          'ai-generated',
+          'needs-video',
+          ...treatments,
+          ...(exercise.double_duty === true ? ['double-duty'] : []),
+        ])),
+        conditions: problems,
+        source: 'ai',
+      };
+    });
+
+  if (inserts.length > 0) {
+    const { data: created, error } = await admin
+      .from('pt_exercises')
+      .upsert(inserts, { onConflict: 'name' })
+      .select('id, name');
+    if (!error) {
+      (created ?? []).forEach((row: { id: string; name: string }) => byName.set(row.name.toLowerCase(), row.id));
+    }
+  }
+
+  return masterList.map((exercise) => {
+    if (typeof exercise.exercise_id === 'string') return exercise;
+    const id = byName.get(text(exercise.name, '').toLowerCase()) ?? null;
+    return { ...exercise, exercise_id: id };
+  });
+}
+
+async function persistProgrammeStaples(
+  admin: ReturnType<typeof createClient>,
+  clientId: string,
+  runId: string,
+  staplesByPhase: Record<string, unknown> | undefined,
+) {
+  if (!staplesByPhase) return;
+  const rows: Array<{
+    client_id: string;
+    generation_run_id: string;
+    phase_type: string;
+    exercise_name: string;
+    reason: string | null;
+    muscles: string[];
+    source: 'standard' | 'exercise_intelligence';
+  }> = [];
+
+  const addNames = (phaseType: string, value: unknown, source: 'standard' | 'exercise_intelligence' = 'exercise_intelligence') => {
+    asTextArray(value).forEach((exerciseName) => rows.push({
+      client_id: clientId,
+      generation_run_id: runId,
+      phase_type: phaseType,
+      exercise_name: exerciseName,
+      reason: null,
+      muscles: [],
+      source,
+    }));
+  };
+
+  const foundation = isRecord(staplesByPhase.foundation) ? staplesByPhase.foundation : {};
+  addNames('foundation_weeks_1_4', foundation.weeks_1_4, 'standard');
+  addNames('foundation_weeks_5_7', foundation.weeks_5_7, 'standard');
+  addNames('hypertrophy', staplesByPhase.hypertrophy, 'standard');
+  addNames('strength', staplesByPhase.strength, 'standard');
+
+  const additions = Array.isArray(staplesByPhase.client_specific_additions) ? staplesByPhase.client_specific_additions : [];
+  additions.forEach((item) => {
+    if (!isRecord(item)) return;
+    const exerciseName = text(item.exercise, '');
+    if (!exerciseName) return;
+    const phases = asTextArray(item.phases);
+    const targetPhases = phases.length > 0 ? phases : ['client_specific'];
+    targetPhases.forEach((phaseType) => rows.push({
+      client_id: clientId,
+      generation_run_id: runId,
+      phase_type: phaseType,
+      exercise_name: exerciseName,
+      reason: text(item.reason, '') || null,
+      muscles: [],
+      source: 'exercise_intelligence',
+    }));
+  });
+
+  const deduped = Array.from(rows.reduce((map, row) => {
+    const key = `${row.client_id}::${row.phase_type}::${row.exercise_name.toLowerCase()}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, row);
+      return map;
+    }
+    map.set(key, {
+      ...existing,
+      reason: existing.reason ?? row.reason,
+      muscles: Array.from(new Set([...existing.muscles, ...row.muscles])),
+      source: existing.source === 'exercise_intelligence' || row.source === 'exercise_intelligence'
+        ? 'exercise_intelligence'
+        : 'standard',
+    });
+    return map;
+  }, new Map<string, typeof rows[number]>()).values());
+
+  if (deduped.length === 0) return;
+  const { error } = await admin
+    .from('pt_programme_staples')
+    .upsert(deduped.map((row) => ({ ...row, updated_at: new Date().toISOString() })), {
+      onConflict: 'client_id,phase_type,exercise_name',
+    });
+  if (error) throw new Error(`Failed to persist programme staples: ${error.message}`);
+}
+
+function buildProgrammeCrossCheck(
+  programme: { phases: Record<string, unknown>[] },
+  clientAnalysis: Record<string, unknown>,
+  muscleMindMap: Record<string, unknown>,
+  exerciseMasterList: Array<Record<string, unknown>>,
+): { programme_b_modifiers: string[]; modifications_applied: string[]; findings: string[] } {
+  const programmeText = JSON.stringify(programme).toLowerCase();
+  const modifiers: string[] = [];
+  const findings: string[] = [];
+  const applied: string[] = [];
+
+  const primaryIssues = Array.isArray(muscleMindMap.primary_issues) ? muscleMindMap.primary_issues : [];
+  for (const issue of primaryIssues) {
+    if (!isRecord(issue)) continue;
+    const issueName = text(issue.issue, 'movement issue');
+    const muscles = Array.isArray(issue.muscles) ? issue.muscles : [];
+    for (const muscle of muscles) {
+      if (!isRecord(muscle)) continue;
+      const muscleName = text(muscle.name, '');
+      if (!muscleName) continue;
+      const treatment = text(muscle.treatment, '');
+      const priority = text(muscle.priority, 'medium');
+      const matchingExercises = exerciseMasterList
+        .filter((exercise) => JSON.stringify(exercise).toLowerCase().includes(muscleName.toLowerCase()))
+        .map((exercise) => text(exercise.name, ''))
+        .filter(Boolean);
+      const hasProgrammeCoverage = matchingExercises.some((name) => programmeText.includes(name.toLowerCase()));
+      const modifier = `${priority} priority ${muscleName}: ${issueName}${treatment ? ` - ${treatment}` : ''}`;
+      modifiers.push(modifier);
+      if (hasProgrammeCoverage) {
+        applied.push(`Programme includes exercise coverage for ${muscleName}.`);
+      } else {
+        findings.push(`Cross-check: ${muscleName} appears in the mind map but no direct exercise-intelligence match was found in the draft.`);
+      }
+    }
+  }
+
+  const flags = isRecord(muscleMindMap.programme_flags) ? muscleMindMap.programme_flags : {};
+  if (flags.avoid_overhead_pressing_initially === true && /bb shoulder press|overhead press|shoulder press/.test(programmeText)) {
+    findings.push('Cross-check: mind map flags cautious overhead loading; review shoulder press exposure before publishing.');
+  }
+  if (flags.prioritise_posterior_chain === true && !/hip thrust|glute bridge|rdl|deadlift|hamstring curl|back extension/.test(programmeText)) {
+    findings.push('Cross-check: posterior-chain priority is flagged but draft has weak posterior-chain coverage.');
+  }
+  const emphasis = isRecord(clientAnalysis.emphasis) ? clientAnalysis.emphasis : {};
+  if (emphasis.needs_mobility_block === true && !/mobility|stretch|car|adductor|thoracic|hip/.test(programmeText)) {
+    findings.push('Cross-check: client needs mobility work but draft has limited visible mobility coverage.');
+  }
+
+  return {
+    programme_b_modifiers: Array.from(new Set(modifiers)),
+    modifications_applied: Array.from(new Set(applied)),
+    findings: Array.from(new Set(findings)),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function text(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function asTextArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
 }

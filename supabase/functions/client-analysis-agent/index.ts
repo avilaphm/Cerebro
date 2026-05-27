@@ -96,19 +96,34 @@ Deno.serve(async (req) => {
       intakeText: body.intake_text,
     });
 
-    const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
-    const claudeCtrl = new AbortController();
-    const claudeTimer = setTimeout(() => claudeCtrl.abort(), 60_000);
-    let text: string;
+    let analysis: Record<string, unknown> | null = null;
     try {
-      const msg = await anthropic.messages.create(
-        { model: 'claude-sonnet-4-6', max_tokens: 4096, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
-        { signal: claudeCtrl.signal },
-      );
-      text = (msg.content[0] as { text: string }).text;
-    } finally { clearTimeout(claudeTimer); }
-    const analysis = parseJson(text);
-    if (!analysis) return json({ error: 'Analysis did not return valid JSON' }, 502);
+      const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
+      const claudeCtrl = new AbortController();
+      const claudeTimer = setTimeout(() => claudeCtrl.abort(), 60_000);
+      let text: string;
+      try {
+        const msg = await anthropic.messages.create(
+          { model: 'claude-sonnet-4-6', max_tokens: 4096, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
+          { signal: claudeCtrl.signal },
+        );
+        text = (msg.content[0] as { text: string }).text;
+      } finally { clearTimeout(claudeTimer); }
+      analysis = parseJson(text);
+    } catch (modelError) {
+      console.warn('client-analysis-agent model fallback:', modelError);
+    }
+    if (!analysis) {
+      analysis = buildFallbackClientAnalysis({
+        client: clientRes.data,
+        master: masterRes.data,
+        nutrition: nutritionRes.data,
+        exercise: exerciseRes.data,
+        lifestyle: lifestyleRes.data,
+        documents: documentsRes.data ?? [],
+        intakeText: body.intake_text,
+      });
+    }
 
     return json({ ok: true, analysis });
   } catch (error) {
@@ -187,4 +202,74 @@ function parseJson(text: string): Record<string, unknown> | null {
   if (a !== -1 && b > a) { v = tryParse(t.slice(a, b + 1)); if (v) return v; }
   if (a !== -1) { v = tryParse(closeTruncatedJson(t.slice(a))); if (v) return v; }
   return null;
+}
+
+function buildFallbackClientAnalysis(ctx: {
+  client: Record<string, unknown>;
+  master: Record<string, unknown> | null;
+  nutrition: Record<string, unknown> | null;
+  exercise: Record<string, unknown> | null;
+  lifestyle: Record<string, unknown> | null;
+  documents: Array<{ document_type: string; title: string; content_text: string | null }>;
+  intakeText?: string;
+}): Record<string, unknown> {
+  const raw = [
+    JSON.stringify(ctx.client),
+    JSON.stringify(ctx.master ?? {}),
+    JSON.stringify(ctx.exercise ?? {}),
+    JSON.stringify(ctx.lifestyle ?? {}),
+    ctx.intakeText ?? '',
+    ...ctx.documents.map((doc) => doc.content_text ?? ''),
+  ].join('\n').toLowerCase();
+  const injuries = keywordList(raw, ['shoulder', 'knee', 'back', 'hip', 'ankle', 'neck', 'wrist', 'elbow']);
+  const mobility = keywordList(raw, ['tight', 'mobility', 'stiff', 'range of motion', 'rotation', 'flexor', 'adductor', 'hamstring', 'thoracic']);
+  const equipment = keywordList(raw, ['gym', 'dumbbell', 'barbell', 'kettlebell', 'cable', 'machine', 'band', 'bodyweight', 'home']);
+  const goals = typeof ctx.client.goals === 'string' ? ctx.client.goals : '';
+  const needsCardio = /fat loss|conditioning|cardio|fitness|body composition|weight loss/.test(raw);
+  const needsMobility = mobility.length > 0 || /desk|sedentary|stiff|pain/.test(raw);
+  return {
+    goals: {
+      primary: goals || 'Build strength, movement quality, and consistency',
+      secondary: [],
+      emotional_drivers: '',
+      timeline: '',
+    },
+    constraints: {
+      injuries,
+      asymmetries: keywordList(raw, ['left', 'right', 'asymmetry', 'imbalance', 'weak glute']),
+      mobility_restrictions: mobility,
+      equipment,
+      schedule: stringValue(ctx.client.regular_training_slot, ''),
+    },
+    preferences: {
+      exercise_likes: [],
+      exercise_dislikes: Array.isArray(ctx.exercise?.disliked_exercises) ? ctx.exercise?.disliked_exercises : [],
+      training_history: stringValue(ctx.exercise?.strong_movements, ''),
+    },
+    emphasis: {
+      priority: needsCardio ? 'fat_loss' : needsMobility ? 'mobility' : 'strength',
+      needs_cardio_block: needsCardio,
+      needs_mobility_block: needsMobility,
+      compound_readiness: injuries.length > 0 || mobility.length > 2 ? 'medium' : 'high',
+    },
+    key_findings: [
+      goals ? `Goal: ${goals}` : 'Goal not clearly specified.',
+      injuries.length > 0 ? `Relevant areas: ${injuries.join(', ')}.` : 'No acute injury history found in fallback scan.',
+      needsMobility ? 'Mobility restrictions should shape Foundation exercise selection.' : 'Foundation can prioritise strength skill acquisition.',
+    ],
+    cited_sources: ctx.documents.slice(0, 5).map((doc) => ({
+      doc_type: doc.document_type,
+      excerpt: (doc.content_text ?? doc.title ?? '').slice(0, 90),
+    })),
+    fallback_used: true,
+  };
+}
+
+function keywordList(raw: string, keywords: string[]): string[] {
+  return keywords.filter((keyword) => raw.includes(keyword));
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  if (Array.isArray(value)) return value.filter((item) => typeof item === 'string').join(', ');
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }

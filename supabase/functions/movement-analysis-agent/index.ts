@@ -105,26 +105,39 @@ Deno.serve(async (req) => {
     }
     parts.push('Output the muscle_mind_map JSON now. JSON only, no prose, no code fences.');
 
-    const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     const userMessage = parts.join('\n\n---\n\n');
-    const claudeCtrl = new AbortController();
-    const claudeTimer = setTimeout(() => claudeCtrl.abort(), 85_000);
-    let text: string;
+    let parsed: Record<string, unknown> | null = null;
     try {
-      const msg = await anthropic.messages.create(
-        { model: 'claude-sonnet-4-6', max_tokens: 3000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
-        { signal: claudeCtrl.signal },
-      );
-      text = (msg.content[0] as { text: string }).text;
-    } finally { clearTimeout(claudeTimer); }
-    const parsed = parseJson(text);
-    if (!parsed) return json({ error: 'Movement analysis did not return valid JSON' }, 502);
+      const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
+      const claudeCtrl = new AbortController();
+      const claudeTimer = setTimeout(() => claudeCtrl.abort(), 85_000);
+      let text: string;
+      try {
+        const msg = await anthropic.messages.create(
+          { model: 'claude-sonnet-4-6', max_tokens: 3000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
+          { signal: claudeCtrl.signal },
+        );
+        text = (msg.content[0] as { text: string }).text;
+      } finally { clearTimeout(claudeTimer); }
+      parsed = parseJson(text);
+    } catch (modelError) {
+      console.warn('movement-analysis-agent model fallback:', modelError);
+    }
 
-    const mindMap = (parsed.muscle_mind_map ?? parsed) as Record<string, unknown>;
+    const mindMap = ((parsed?.muscle_mind_map ?? parsed) as Record<string, unknown> | null) ??
+      buildFallbackMindMap({
+        clientId: body.client_id,
+        client: clientRes.data,
+        exerciseDoc: exerciseDocRes.data,
+        brain: brainRes.data,
+        clientAnalysis: body.client_analysis,
+        documents: documentsRes.data ?? [],
+        intakeText: body.intake_text,
+      });
 
     // Persist the mind map so future sessions can access it without re-running analysis.
     await admin.from('pt_client_exercise_doc').update({
-      movement_assessment_summary: JSON.stringify(mindMap),
+      movement_assessment_summary: mindMap,
     }).eq('client_id', body.client_id);
 
     return json({ ok: true, muscle_mind_map: mindMap });
@@ -177,4 +190,119 @@ function parseJson(text: string): Record<string, unknown> | null {
   if (a !== -1 && b > a) { v = tryParse(t.slice(a, b + 1)); if (v) return v; }
   if (a !== -1) { v = tryParse(closeTruncatedJson(t.slice(a))); if (v) return v; }
   return null;
+}
+
+function buildFallbackMindMap(ctx: {
+  clientId: string;
+  client: Record<string, unknown>;
+  exerciseDoc: Record<string, unknown> | null;
+  brain: Record<string, unknown> | null;
+  clientAnalysis?: Record<string, unknown>;
+  documents: Array<{ document_type: string; title: string; content_text: string | null }>;
+  intakeText?: string;
+}): Record<string, unknown> {
+  const raw = [
+    JSON.stringify(ctx.client),
+    JSON.stringify(ctx.exerciseDoc ?? {}),
+    JSON.stringify(ctx.brain ?? {}),
+    JSON.stringify(ctx.clientAnalysis ?? {}),
+    ctx.intakeText ?? '',
+    ...ctx.documents.map((doc) => doc.content_text ?? ''),
+  ].join('\n').toLowerCase();
+
+  const issues: Array<Record<string, unknown>> = [];
+
+  if (hasAny(raw, ['hip', 'glute', 'adductor', 'hamstring', 'lower back', 'low back', 'lumbar', 'pelvis', 'squat', 'hinge'])) {
+    issues.push({
+      issue: 'Hip and posterior-chain control',
+      symptom_location: hasAny(raw, ['lower back', 'low back', 'lumbar']) ? 'lower back and hips' : 'hips and lower body',
+      root_cause: 'Likely weak glutes and trunk control with protective tightness through hip flexors, hamstrings, or adductors.',
+      muscles: [
+        muscle('Glutes', ['glute max', 'glute med'], 'weak', 'Strengthen through hip extension, abduction, unilateral loading, and full-range lower-body patterns.', 'high'),
+        muscle('Hip flexors', ['iliopsoas', 'rectus femoris'], 'tight', 'Strengthen and lengthen through controlled split-stance work, mobility, and full-range hip extension.', 'high'),
+        muscle('Hamstrings', ['biceps femoris', 'semitendinosus', 'semimembranosus'], 'tight', 'Load through hinges and single-leg hinges while restoring length under control.', 'medium'),
+        muscle('Adductors', ['adductor magnus', 'adductor longus'], 'tight', 'Mobilise and strengthen with lateral and split-stance patterns.', 'medium'),
+        muscle('Core', ['transverse abdominis', 'obliques'], 'weak', 'Build anti-extension, anti-rotation, and bracing capacity before heavier compounds.', 'high'),
+      ],
+    });
+  }
+
+  if (hasAny(raw, ['shoulder', 'overhead', 'rotator', 'scap', 'neck', 'thoracic', 'lat', 'press'])) {
+    issues.push({
+      issue: 'Shoulder and scapular control',
+      symptom_location: 'shoulders, thoracic spine, and upper body pressing',
+      root_cause: 'Likely reduced scapular stability and thoracic mobility, with overhead work needing a slower entry point.',
+      muscles: [
+        muscle('Rotator cuff', ['supraspinatus', 'infraspinatus', 'teres minor', 'subscapularis'], 'weak', 'Strengthen with controlled external rotation, carries, and stable pressing progressions.', 'high'),
+        muscle('Scapular stabilisers', ['serratus anterior', 'lower traps', 'rhomboids'], 'weak', 'Strengthen upward rotation, retraction, and protraction control.', 'high'),
+        muscle('Thoracic extensors', ['thoracic erectors'], 'tight', 'Mobilise extension and rotation before demanding overhead ranges.', 'medium'),
+        muscle('Lats', ['latissimus dorsi'], 'tight', 'Restore shoulder flexion range while strengthening pulling patterns.', 'medium'),
+      ],
+    });
+  }
+
+  if (hasAny(raw, ['knee', 'patella', 'acl', 'meniscus', 'lunge', 'step up'])) {
+    issues.push({
+      issue: 'Knee tracking and lower-body load tolerance',
+      symptom_location: 'knees and single-leg patterns',
+      root_cause: 'Likely glute and quad capacity gap affecting knee tracking and load tolerance.',
+      muscles: [
+        muscle('Quadriceps', ['vastus medialis', 'vastus lateralis', 'rectus femoris'], 'weak', 'Strengthen with squat, split squat, step-up, and controlled knee-dominant patterns.', 'high'),
+        muscle('Glutes', ['glute max', 'glute med'], 'weak', 'Improve hip control to support knee alignment.', 'high'),
+        muscle('Calves', ['gastrocnemius', 'soleus'], 'weak', 'Build ankle stiffness and lower-leg capacity for gait and lower-body training.', 'medium'),
+      ],
+    });
+  }
+
+  if (issues.length === 0) {
+    issues.push({
+      issue: 'General strength foundation',
+      symptom_location: 'whole body',
+      root_cause: 'No specific movement screen findings were available, so the safe starting point is general strength, trunk control, and mobility readiness.',
+      muscles: [
+        muscle('Glutes', ['glute max', 'glute med'], 'weak', 'Strengthen with squats, hinges, bridges, lunges, and unilateral progressions.', 'high'),
+        muscle('Core', ['transverse abdominis', 'obliques'], 'weak', 'Build bracing, anti-rotation, and anti-extension capacity.', 'high'),
+        muscle('Thoracic spine', ['thoracic extensors'], 'tight', 'Maintain mobility for pressing, pulling, and squat mechanics.', 'medium'),
+      ],
+    });
+  }
+
+  const needsMobility = hasAny(raw, ['tight', 'stiff', 'mobility', 'range of motion', 'pain', 'injury', 'restriction']);
+  const needsCardio = hasAny(raw, ['fat loss', 'weight loss', 'conditioning', 'cardio', 'body composition']);
+  const avoidOverhead = hasAny(raw, ['shoulder', 'overhead', 'impingement', 'rotator']);
+  const posterior = hasAny(raw, ['glute', 'hamstring', 'hip', 'lower back', 'low back', 'deadlift', 'hinge']);
+  const injuryCount = ['shoulder', 'knee', 'back', 'hip', 'ankle', 'neck'].filter((keyword) => raw.includes(keyword)).length;
+
+  return {
+    client_id: ctx.clientId,
+    primary_issues: issues,
+    secondary_findings: [
+      needsMobility ? 'Mobility work should sit inside the warm-up and accessory slots.' : 'No major mobility restriction found in fallback scan.',
+      'Fallback mind map used because model analysis was unavailable.',
+    ],
+    overall_level: hasAny(raw, ['advanced', '3 years', 'barbell', 'powerlifting', 'olympic']) ? 'advanced' : hasAny(raw, ['beginner', 'new to training', 'not trained']) ? 'beginner' : 'intermediate',
+    compound_readiness: injuryCount > 1 || avoidOverhead ? 'medium' : 'high',
+    severity: injuryCount > 2 ? 'severe' : injuryCount > 0 || needsMobility ? 'moderate' : 'mild',
+    programme_flags: {
+      avoid_overhead_pressing_initially: avoidOverhead,
+      prioritise_posterior_chain: posterior,
+      needs_mobility_block: needsMobility,
+      needs_cardio_block: needsCardio,
+    },
+    fallback_used: true,
+  };
+}
+
+function muscle(
+  name: string,
+  specificMuscles: string[],
+  status: 'weak' | 'tight',
+  treatment: string,
+  priority: 'high' | 'medium' | 'low',
+): Record<string, unknown> {
+  return { name, specific_muscles: specificMuscles, status, treatment, priority };
+}
+
+function hasAny(raw: string, keywords: string[]): boolean {
+  return keywords.some((keyword) => raw.includes(keyword));
 }

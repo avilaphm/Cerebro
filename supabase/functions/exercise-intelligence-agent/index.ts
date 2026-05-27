@@ -16,7 +16,7 @@ function json(data: unknown, status = 200) {
 
 const SYSTEM_PROMPT = `You are the Exercise Intelligence AI inside Pedro Avila's Cerebro coaching system.
 
-You receive a muscle mind map (from physiotherapy-grade movement analysis). For EACH muscle in primary_issues, you generate a list of 10 exercises that directly address that muscle's specific issue and treatment type. Then you tag exercises that appear across multiple muscles as double-duty, and build the staples document.
+You receive a muscle mind map (from physiotherapy-grade movement analysis). For EACH muscle in primary_issues, you generate a list of 6 exercises that directly address that muscle's specific issue and treatment type. Then you tag exercises that appear across multiple muscles as double-duty, and build the staples document.
 
 DIFFICULTY SCALE (mandatory for every exercise):
 5 = Expert only: snatch, clean and jerk, toes to bar, handstands, pistol squat
@@ -93,6 +93,8 @@ Deno.serve(async (req) => {
     return json({ error: 'Unauthorized' }, 401);
   }
 
+  let fallbackMindMap: Record<string, unknown> = {};
+  let fallbackLibrary: CompactExercise[] = [];
   try {
     const body = await req.json() as {
       client_id: string;
@@ -100,9 +102,10 @@ Deno.serve(async (req) => {
     };
     if (!body.client_id || !body.muscle_mind_map) {
       return json({ error: 'client_id and muscle_mind_map required' }, 400);
-    }
+        }
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    fallbackMindMap = body.muscle_mind_map;
 
     const { data: rawExercises, error: exError } = await admin
       .from('pt_exercises')
@@ -118,6 +121,7 @@ Deno.serve(async (req) => {
       equipment: e.equipment,
     }));
     const focusedLibrary = focusExerciseLibrary(compactLibrary, body.muscle_mind_map);
+    fallbackLibrary = focusedLibrary;
 
     const userMessage = [
       `MUSCLE MIND MAP:\n${JSON.stringify(body.muscle_mind_map, null, 2)}`,
@@ -127,33 +131,38 @@ Deno.serve(async (req) => {
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
 
-    // Race the Claude call against a 60s internal timeout so we never hang the orchestrator.
-    const CLAUDE_TIMEOUT_MS = 60_000;
-    const abortCtrl = new AbortController();
-    const claudeTimeout = setTimeout(() => abortCtrl.abort(), CLAUDE_TIMEOUT_MS);
-    let text: string;
-    try {
-      const msg = await anthropic.messages.create(
+    // Keep this well below the orchestrator fetch timeout. If the model is slow,
+    // quota-limited, or stalls, deterministic exercise intelligence still gives
+    // the builder a personalised pool from the muscle mind map.
+    const CLAUDE_TIMEOUT_MS = 20_000;
+    const modelCall = anthropic.messages.create(
         {
           model: 'claude-sonnet-4-6',
-          max_tokens: 2500,
+          max_tokens: 4500,
           system: SYSTEM_PROMPT,
           messages: [{ role: 'user', content: userMessage }],
-        },
-        { signal: abortCtrl.signal },
-      );
-      text = (msg.content[0] as { text: string }).text;
-    } finally {
-      clearTimeout(claudeTimeout);
+        }
+      )
+      .then((msg) => (msg.content[0] as { text: string }).text)
+      .catch((modelError) => {
+        console.warn('exercise-intelligence-agent model fallback:', modelError);
+        return null;
+      });
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), CLAUDE_TIMEOUT_MS));
+    const text = await Promise.race([modelCall, timeout]);
+    if (!text) {
+      return json({ ok: true, ...buildFallbackExerciseIntelligence(body.muscle_mind_map, focusedLibrary) });
     }
 
     const parsed = parseJson(text);
-    if (!parsed) return json({ error: 'Exercise intelligence did not return valid JSON' }, 502);
+    if (!parsed) {
+      return json({ ok: true, ...buildFallbackExerciseIntelligence(body.muscle_mind_map, focusedLibrary) });
+    }
 
     return json({ ok: true, ...parsed });
   } catch (error) {
     console.error('exercise-intelligence-agent error:', error);
-    return json({ error: error instanceof Error ? error.message : 'Exercise intelligence failed' }, 500);
+    return json({ ok: true, ...buildFallbackExerciseIntelligence(fallbackMindMap, fallbackLibrary) });
   }
 });
 
@@ -223,10 +232,144 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function parseJson(text: string): Record<string, unknown> | null {
-  try { return JSON.parse(text); } catch { /* noop */ }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (fenced) { try { return JSON.parse(fenced[1]); } catch { /* noop */ } }
-  const a = text.indexOf('{'), b = text.lastIndexOf('}');
-  if (a !== -1 && b > a) { try { return JSON.parse(text.slice(a, b + 1)); } catch { /* noop */ } }
+  const t = text.trim();
+  try { return JSON.parse(t); } catch { /* noop */ }
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenced) { try { return JSON.parse(fenced[1].trim()); } catch { /* noop */ } }
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a !== -1 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch { /* noop */ } }
+  if (a !== -1) { try { return JSON.parse(closeTruncatedJson(t.slice(a))); } catch { /* noop */ } }
   return null;
+}
+
+function closeTruncatedJson(s: string): string {
+  let inStr = false, esc = false;
+  const stack: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+  let out = s;
+  if (inStr) out += '"';
+  out = out.replace(/\s+$/, '').replace(/,\s*$/, '');
+  out = out.replace(/,?\s*"[^"]*"\s*:\s*$/, '').replace(/,\s*$/, '');
+  for (let i = stack.length - 1; i >= 0; i--) out += stack[i];
+  return out;
+}
+
+function buildFallbackExerciseIntelligence(mindMap: Record<string, unknown>, library: CompactExercise[]): Record<string, unknown> {
+  const primaryIssues = Array.isArray(mindMap.primary_issues) ? mindMap.primary_issues : [];
+  const exercises = new Map<string, Record<string, unknown>>();
+  const compoundReadiness = stringValue(mindMap.compound_readiness, 'low') as 'low' | 'medium' | 'high';
+  const overallLevel = stringValue(mindMap.overall_level, 'beginner') as 'beginner' | 'intermediate' | 'advanced';
+
+  for (const issue of primaryIssues) {
+    if (!isRecord(issue)) continue;
+    const issueName = stringValue(issue.issue, 'movement issue');
+    const muscles = Array.isArray(issue.muscles) ? issue.muscles : [];
+    for (const muscle of muscles) {
+      if (!isRecord(muscle)) continue;
+      const muscleName = stringValue(muscle.name, '');
+      if (!muscleName) continue;
+      const status = stringValue(muscle.status, 'weak');
+      const treatmentTypes = status === 'tight'
+        ? ['strengthen', 'full_ROM', 'flexibility', 'mobility']
+        : ['strengthen'];
+      const picks = pickExercisesForMuscle(library, muscleName).slice(0, 6);
+      for (const pick of picks) {
+        const key = pick.name.toLowerCase();
+        const existing = exercises.get(key);
+        const primary = existing ? asStringList(existing.primary_muscles) : [];
+        const problems = existing ? asStringList(existing.problems_solved) : [];
+        const treatments = existing ? asStringList(existing.treatment_types) : [];
+        exercises.set(key, {
+          name: pick.name,
+          exercise_id: pick.id,
+          difficulty: difficultyForExercise(pick.name),
+          primary_muscles: Array.from(new Set([...primary, muscleName])),
+          secondary_muscles: pick.muscles.filter((name) => name.toLowerCase() !== muscleName.toLowerCase()).slice(0, 4),
+          double_duty: Boolean(existing),
+          double_duty_note: existing ? `This exercise recruits ${Array.from(new Set([...primary, muscleName])).join(', ')} across multiple client findings.` : null,
+          problems_solved: Array.from(new Set([...problems, issueName])),
+          treatment_types: Array.from(new Set([...treatments, ...treatmentTypes])),
+        });
+      }
+    }
+  }
+
+  const list = Array.from(exercises.values());
+  return {
+    exercise_master_list: list,
+    staples_by_phase: {
+      foundation: {
+        weeks_1_4: ['Goblet Squat', 'DB RDL', 'DB Bench Press', 'Half Kneeling Shoulder Press', 'Lat Pull-Down', 'Half Kneeling Adductor Slides'],
+        weeks_5_7: ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up', 'Half Kneeling Adductor Slides'],
+      },
+      hypertrophy: ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up', 'Deficit Reverse Lunge', 'Hip Thrust', 'Single Leg Hip Thrust'],
+      strength: ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up', 'Deficit Reverse Lunge', 'Hip Thrust', 'Single Leg Hip Thrust'],
+      client_specific_additions: list.slice(0, 6).map((exercise) => ({
+        exercise: exercise.name,
+        reason: `Selected from the client's muscle mind map for ${asStringList(exercise.primary_muscles).join(', ')}.`,
+        phases: ['foundation', 'hypertrophy', 'strength'],
+      })),
+    },
+    missing_exercises: [],
+    starting_difficulty_target: compoundReadiness === 'low' ? '2-3' : '3-4',
+    compound_readiness: compoundReadiness,
+    overall_level: overallLevel,
+    fallback_used: true,
+  };
+}
+
+function pickExercisesForMuscle(library: CompactExercise[], muscleName: string): CompactExercise[] {
+  const terms = new Set<string>();
+  addWords(terms, muscleName);
+  const lowered = muscleName.toLowerCase();
+  if (/glute|hip/.test(lowered)) ['hip thrust', 'glute bridge', 'rdl', 'lunge', 'split squat', 'step up'].forEach((term) => terms.add(term));
+  if (/hamstring|posterior/.test(lowered)) ['rdl', 'deadlift', 'hamstring curl', 'hip thrust', 'back extension'].forEach((term) => terms.add(term));
+  if (/quad|knee/.test(lowered)) ['squat', 'leg press', 'knee extension', 'lunge', 'step up'].forEach((term) => terms.add(term));
+  if (/core|oblique|lumbar|ql/.test(lowered)) ['pallof', 'plank', 'dead bug', 'cable crunch', 'back extension'].forEach((term) => terms.add(term));
+  if (/shoulder|rotator|scap|trap|serratus/.test(lowered)) ['row', 'face pull', 'shoulder press', 'external rotation', 'wall slide'].forEach((term) => terms.add(term));
+  if (/lat|back|thoracic/.test(lowered)) ['row', 'pulldown', 'pull up', 'thoracic', 'face pull'].forEach((term) => terms.add(term));
+  if (/adductor/.test(lowered)) ['adductor', 'cossack', 'lunge', 'split', 'copenhagen'].forEach((term) => terms.add(term));
+
+  const scored = library.map((exercise, index) => {
+    const haystack = `${exercise.name} ${exercise.muscles.join(' ')} ${exercise.equipment ?? ''}`.toLowerCase();
+    let score = 0;
+    for (const term of terms) {
+      if (term.length >= 3 && haystack.includes(term.toLowerCase())) score += term.length > 5 ? 2 : 1;
+    }
+    return { exercise, index, score };
+  });
+  return scored
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((item) => item.exercise);
+}
+
+function difficultyForExercise(name: string): 1 | 2 | 3 | 4 | 5 {
+  const n = name.toLowerCase();
+  if (/snatch|clean|jerk|toes.*bar|handstand|pistol/.test(n)) return 5;
+  if (/barbell|bb |back squat|deadlift|bench press|overhead press|pull[- ]?up|chin[- ]?up/.test(n)) return 4;
+  if (/bulgarian|single.*leg|deficit|hip thrust|cable.*single|split squat/.test(n)) return 3;
+  if (/goblet|dumbbell|db |kettlebell|kb |half kneeling|machine|seated|cable/.test(n)) return 2;
+  return 1;
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
 }

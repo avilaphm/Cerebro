@@ -67,12 +67,14 @@ const PIPELINE_STEPS = [
   'Starting pipeline…',
   'Analysing client…',
   'Analysing movement assessment…',
+  'Building exercise intelligence…',
   'Planning methodology (knowledge base RAG)…',
   'Synthesising Foundation (1/5)…',
   'Synthesising 1RM Test (2/5)…',
   'Synthesising Hypertrophy (3/5)…',
   'Synthesising Strength (4/5)…',
   'Synthesising 1RM Retest (5/5)…',
+  'Cross-checking against client brain…',
   'Validating…',
 ];
 
@@ -198,7 +200,20 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     setProgramme((cur) => fn(structuredClone(cur)));
 
   useEffect(() => {
-    const draftKey = new URLSearchParams(window.location.search).get('draftKey');
+    const params = new URLSearchParams(window.location.search);
+    const prefillKey = params.get('prefillKey');
+    if (prefillKey) {
+      const rawPrefill = sessionStorage.getItem(prefillKey);
+      if (rawPrefill) {
+        try {
+          const prefill = JSON.parse(rawPrefill) as { client_id?: string; instructions?: string };
+          if (typeof prefill.client_id === 'string') setClientId(prefill.client_id);
+          if (typeof prefill.instructions === 'string' && prefill.instructions.trim()) setBrainDump(prefill.instructions.trim());
+        } catch { /* noop */ }
+      }
+    }
+
+    const draftKey = params.get('draftKey');
     if (!draftKey) return;
 
     const raw = sessionStorage.getItem(draftKey);
@@ -360,12 +375,14 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       switch (cmd) {
         case 'CLIENT_ANALYSIS': return 'Analysing client…';
         case 'MOVEMENT_ANALYSIS': return 'Analysing movement assessment…';
+        case 'EXERCISE_INTELLIGENCE': return 'Building exercise intelligence…';
         case 'METHODOLOGY_PLAN': return 'Planning methodology (knowledge base RAG)…';
         case 'PROGRAMME_SYNTHESIS_FOUNDATION': return 'Synthesising Foundation (1/5)…';
         case 'PROGRAMME_SYNTHESIS_1RM_TEST': return 'Synthesising 1RM Test (2/5)…';
         case 'PROGRAMME_SYNTHESIS_HYPERTROPHY': return 'Synthesising Hypertrophy (3/5)…';
         case 'PROGRAMME_SYNTHESIS_STRENGTH': return 'Synthesising Strength (4/5)…';
         case 'PROGRAMME_SYNTHESIS_1RM_RETEST': return 'Synthesising 1RM Retest (5/5)…';
+        case 'PROGRAMME_CROSS_CHECK': return 'Cross-checking against client brain…';
         case 'VALIDATION': return 'Validating…';
         default:
           if (cmd?.startsWith('PROGRAMME_SYNTHESIS_')) return 'Synthesising phase…';
@@ -606,7 +623,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         goal: progGoal.trim() || null,
         duration_weeks: countProgrammeWeeks(programme),
         phase_count: programme.phases.length,
-        status: 'active',
+        status: 'draft',
         programme,
         generation_run_id: generationRunId,
         coach_review_status: 'approved',
@@ -1324,7 +1341,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               disabled={saving || !progName.trim()}
               className="flex-1 border border-black bg-black text-white py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
             >
-              {saving ? 'Creating…' : `Create programme${selectedClient ? ` for ${selectedClient.name}` : ''}`}
+              {saving ? 'Creating…' : `Create draft${selectedClient ? ` for ${selectedClient.name}` : ''}`}
             </button>
           </div>
         </div>

@@ -500,7 +500,7 @@ export default function PTClientDetail({
       goal: template.goal,
       duration_weeks: template.duration_weeks,
       phase_count: template.phase_count,
-      status: 'active',
+      status: 'draft',
       programme: template.programme,
       generation_run_id: template.generation_run_id ?? null,
       coach_review_status: 'approved',
@@ -1448,8 +1448,19 @@ export default function PTClientDetail({
   const runProgrammingAgent = async (mode: 'new_programme' | 'revise_programme') => {
     if (mode === 'revise_programme' && !activeAssignment) return;
 
+    if (mode === 'new_programme') {
+      const draftKey = `pt-programme-prefill:${client.id}:${Date.now()}`;
+      sessionStorage.setItem(draftKey, JSON.stringify({
+        client_id: client.id,
+        instructions: agentInstructions.trim(),
+        created_at: new Date().toISOString(),
+      }));
+      router.push(`/dashboard/pt/programmes/new?prefillKey=${encodeURIComponent(draftKey)}`);
+      return;
+    }
+
     setAgentBusy(mode);
-    setAgentStatus(mode === 'new_programme' ? 'Drafting programme...' : 'Drafting revision...');
+    setAgentStatus('Drafting revision...');
 
     const { data, error } = await supabase.functions.invoke<ProgrammingAgentResponse>('pt-programming-agent', {
       body: {
@@ -1466,13 +1477,11 @@ export default function PTClientDetail({
       return;
     }
 
-    const draftKey = `pt-programming-agent:${mode}:${mode === 'revise_programme' ? activeAssignment?.id : client.id}:${Date.now()}`;
+    const draftKey = `pt-programming-agent:${mode}:${activeAssignment?.id}:${Date.now()}`;
     sessionStorage.setItem(draftKey, JSON.stringify({ ...data, created_at: new Date().toISOString() }));
 
     const params = new URLSearchParams({ draftKey });
-    if (mode === 'new_programme') {
-      router.push(`/dashboard/pt/programmes/new?${params.toString()}`);
-    } else if (activeAssignment) {
+    if (activeAssignment) {
       router.push(`/dashboard/pt/programmes/${activeAssignment.id}/edit?${params.toString()}`);
     }
   };
@@ -2114,7 +2123,7 @@ export default function PTClientDetail({
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programming Agent</h2>
         <div className="border border-black/10 bg-[#fbfbf8] px-6 py-5">
           <p className="text-sm text-black/55">
-            Drafts from this client's document, notes, feedback, training logs, current programme, and exercise library. Nothing is saved until you review and press Create or Save.
+            New programmes open in the full programme creator so intake, movement analysis, exercise intelligence, and review all run in order. Revisions draft from this client's existing programme and history.
           </p>
           <textarea
             value={agentInstructions}
@@ -2154,7 +2163,7 @@ export default function PTClientDetail({
                 ? 'Drafting...'
                 : activeAssignment
                   ? 'Draft revision'
-                  : 'Draft programme'}
+                  : 'Open programme creator'}
             </button>
           </div>
           {agentStatus && <p className="mt-3 text-xs text-black/45">{agentStatus}</p>}

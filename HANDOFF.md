@@ -1,12 +1,61 @@
 # Handoff
 
 ## Last updated
-2026-05-27 by Claude - Inline exercise edit + muscle tags on board view in programme edit page (commit a05f3a6).
+2026-05-27 by Codex - Programme creator intelligence chain fix, draft publish gate, staples persistence (pending commit).
 
 ## Last code fix commit
-a05f3a6
+pending
 
 ## What just happened (read first)
+
+### Programme creator intelligence chain + publish gate (2026-05-27, LATEST)
+
+Pedro asked to fix the PT programme creator because the intelligence skill was not firing and generated programmes were generic.
+
+Changes shipped:
+- `supabase/functions/pt-programme-orchestrator/index.ts`
+  - Added explicit `EXERCISE_INTELLIGENCE` and `PROGRAMME_CROSS_CHECK` steps.
+  - Movement analysis is now required; empty/no mind map fails the run instead of silently continuing generic.
+  - Orchestrator now calls `exercise-intelligence-agent`, persists the exercise master list into `pt_client_exercise_doc.progression_strategy.exercise_intelligence`, creates missing `pt_exercises` cards with `video_url = null`, persists staples into `pt_programme_staples`, writes the movement mind map as a JSON object, and stores cross-check findings in `coaching_reasoning.programme_cross_check`.
+  - Staples are deduped before upsert so duplicate phase/exercise rows do not crash the run.
+- `supabase/functions/movement-analysis-agent/index.ts`
+  - Stores `movement_assessment_summary` as an object, not `JSON.stringify(...)`.
+  - Added deterministic fallback mind map if the model is unavailable.
+- `supabase/functions/exercise-intelligence-agent/index.ts`
+  - Generates 6 exercises per muscle.
+  - Added robust JSON parsing plus deterministic fallback from the muscle mind map and exercise library.
+  - Model wait is capped at 20s so Anthropic quota/slow calls do not break the orchestrator.
+- `supabase/functions/client-analysis-agent/index.ts`
+  - Added deterministic fallback if Anthropic is quota-limited.
+- `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`
+  - Added progress labels for exercise intelligence and cross-check.
+  - Supports prefill from client detail via `sessionStorage`.
+  - New generated assignments are saved as `draft`, not visible to clients.
+- `app/dashboard/pt/clients/[id]/PTClientDetail.tsx`
+  - New programme action now opens the full programme creator instead of the old `pt-programming-agent` path.
+  - Manual template assignment defaults to `draft`.
+- `app/dashboard/pt/programmes/[id]/edit/PTProgrammeEditView.tsx`
+  - Added explicit save vs publish actions.
+  - Publishing pauses other active assignments for that client and marks the current assignment `active`.
+- DB migrations:
+  - `20260527090000_pt_programme_publish_gate.sql`: client RLS only allows active+approved programmes; adds `pt_programme_staples`.
+  - `20260527093000_normalize_movement_summary_json.sql`: converts old JSON-string movement summaries to JSON objects.
+  - `20260527094000_index_programme_staples_generation_run.sql`: indexes new staples FK.
+
+Deployment / verification:
+- Applied all migrations to Supabase project `otcnrkfvgyvwolironoz`.
+- Deployed Edge Functions: `pt-programme-orchestrator`, `client-analysis-agent`, `movement-analysis-agent`, `exercise-intelligence-agent`.
+- Production smoke run `7f43a916-459f-4045-a399-3b8d0e510ffa` completed with status `needs_review`.
+- All 11 steps succeeded: client analysis, movement analysis, exercise intelligence, methodology, foundation, 1RM test, hypertrophy, strength, 1RM retest, cross-check, validation.
+- Run saved 55 exercise intelligence entries, 44 staple records across 5 phase buckets, cross-check exists, missing exercises `[]`.
+- `pt_client_exercise_doc.movement_assessment_summary` is now JSON object; `progression_strategy.exercise_intelligence` exists.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes locally and on Vercel.
+- Production deployed and aliased to `https://cerebroai.au` via Vercel deployment `dpl_3d8ZdqyTaTFL8N8JYKH9YFqMr1Xz`.
+
+Notes:
+- The final orchestration smoke was direct to the Edge Function, so it does not create a UI assignment. The wizard still creates the draft assignment when Pedro saves from the app.
+- Supabase advisors after schema work still show pre-existing project-wide warnings (`pg_net` in public, leaked password protection disabled, older unindexed FKs/RLS perf issues). The new table's FK index warning was fixed.
 
 ### Muscle type tags on programme edit board view (2026-05-27, LATEST)
 

@@ -136,6 +136,7 @@ export default function PTProgrammeEditView({
   const [programme, setProgramme] = useState<PTProgramme>(initial.programme);
   const [progName, setProgName] = useState(initial.name);
   const [progGoal, setProgGoal] = useState(initial.goal ?? '');
+  const [assignmentStatus, setAssignmentStatus] = useState(initial.status);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -387,9 +388,18 @@ export default function PTProgrammeEditView({
     }
   };
 
-  const save = async () => {
+  const save = async (nextStatus: PTProgramAssignment['status'] = assignmentStatus) => {
     setSaving(true);
-    setStatus('Saving…');
+    const publishing = nextStatus === 'active' && assignmentStatus !== 'active';
+    setStatus(publishing ? 'Publishing…' : 'Saving…');
+    if (publishing) {
+      await supabase
+        .from('pt_program_assignments')
+        .update({ status: 'paused' })
+        .eq('client_id', initial.client_id)
+        .eq('status', 'active')
+        .neq('id', initial.id);
+    }
     const { error } = await supabase
       .from('pt_program_assignments')
       .update({
@@ -397,6 +407,7 @@ export default function PTProgrammeEditView({
         goal: progGoal.trim() || null,
         duration_weeks: countProgrammeWeeks(programme),
         phase_count: programme.phases.length,
+        status: nextStatus,
         programme,
         generation_run_id: generationRunId,
         coach_review_status: 'approved',
@@ -427,7 +438,8 @@ export default function PTProgrammeEditView({
       if (highlight?.note) {
         await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', highlight.note);
       }
-      setStatus('Saved.');
+      setAssignmentStatus(nextStatus);
+      setStatus(publishing ? 'Published to client.' : 'Saved.');
       setTimeout(() => router.push(`/dashboard/pt/clients/${initial.client_id}`), 800);
     }
   };
@@ -519,14 +531,25 @@ export default function PTProgrammeEditView({
           />
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          {status && <span className="text-xs text-black/40">{status}</span>}
+          <span className="text-xs text-black/40">
+            {status || (assignmentStatus === 'active' ? 'Visible to client' : 'Not visible to client')}
+          </span>
           <button
             onClick={() => void save()}
             disabled={saving || !progName.trim()}
-            className="border border-black bg-black px-5 py-3 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30 sm:py-2.5"
+            className="border border-black/20 px-5 py-3 text-sm text-black transition-colors hover:border-black disabled:opacity-30 sm:py-2.5"
           >
             {saving ? 'Saving…' : 'Save changes'}
           </button>
+          {assignmentStatus !== 'active' && (
+            <button
+              onClick={() => void save('active')}
+              disabled={saving || !progName.trim()}
+              className="border border-black bg-black px-5 py-3 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30 sm:py-2.5"
+            >
+              Publish to client
+            </button>
+          )}
         </div>
       </div>
 
