@@ -14,13 +14,16 @@ interface SpeechRecognitionEventLike extends Event {
   results: ArrayLike<SpeechRecognitionResultLike>;
   resultIndex: number;
 }
+interface SpeechRecognitionErrorEventLike extends Event {
+  error: string;
+}
 interface SpeechRecognitionLike {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
   onresult: ((e: SpeechRecognitionEventLike) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((e: SpeechRecognitionErrorEventLike) => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
@@ -56,12 +59,14 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
   const [error, setError] = useState<string | null>(null);
   const [loggedCount, setLoggedCount] = useState<number | null>(null);
 
+  const [interimText, setInterimText] = useState('');
+
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const interimRef = useRef('');
+  const recordingIntentRef = useRef(false); // true while user wants to record; survives iOS restarts
   const finalTextRef = useRef('');
-  const sessionFinalRef = useRef(''); // finals accumulated in the current recording session
+  const sessionFinalRef = useRef('');
 
   // Lock background scroll
   useEffect(() => {
@@ -72,7 +77,10 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
     return () => { scrollEl.style.overflowY = prev; };
   }, []);
 
-  useEffect(() => () => { recognitionRef.current?.abort(); }, []);
+  useEffect(() => () => {
+    recordingIntentRef.current = false;
+    recognitionRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (!logging) { setProgress(0); return; }
@@ -86,58 +94,93 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
 
   const startVoice = () => {
     const SpeechRecog = getSpeechRecognition();
-    if (!SpeechRecog) return;
+    if (!SpeechRecog) {
+      setError('Voice input is not supported in this browser. Please type your food instead.');
+      return;
+    }
 
-    const rec = new SpeechRecog();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = 'en-AU';
+    // iOS Safari-safe pattern: continuous:false + auto-restart until user stops.
+    // continuous:true hangs on iOS — onend never fires, freezing the whole screen.
+    const spawnInstance = () => {
+      if (!recordingIntentRef.current) return;
 
-    rec.onresult = (e: SpeechRecognitionEventLike) => {
-      let final = '';
-      let interim = '';
-      for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) final += r[0].transcript;
-        else interim += r[0].transcript;
+      const rec = new SpeechRecog();
+      rec.continuous = false;
+      rec.interimResults = true;
+      rec.lang = 'en-AU';
+
+      rec.onresult = (e: SpeechRecognitionEventLike) => {
+        let final = '';
+        let interim = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (r.isFinal) final += r[0].transcript;
+          else interim += r[0].transcript;
+        }
+        if (final) {
+          const committed = [finalTextRef.current, final].filter((s) => s.trim()).join(' ').trim();
+          finalTextRef.current = committed;
+          sessionFinalRef.current = (sessionFinalRef.current + ' ' + final).trim();
+          setText(committed);
+        }
+        setInterimText(interim);
+      };
+
+      rec.onend = () => {
+        recognitionRef.current = null;
+        setInterimText('');
+        if (recordingIntentRef.current) {
+          // Restart immediately to keep listening (iOS ends after each utterance)
+          setTimeout(spawnInstance, 80);
+        } else {
+          setRecording(false);
+        }
+      };
+
+      rec.onerror = (e: SpeechRecognitionErrorEventLike) => {
+        recognitionRef.current = null;
+        setInterimText('');
+        if (e.error === 'not-allowed') {
+          setError('Microphone access denied. Allow microphone access in your browser settings and try again.');
+          recordingIntentRef.current = false;
+          setRecording(false);
+        } else if (e.error === 'no-speech' || e.error === 'aborted') {
+          // Normal on mobile — restart silently
+          if (recordingIntentRef.current) setTimeout(spawnInstance, 80);
+          else setRecording(false);
+        } else {
+          // Network or other transient error — restart once
+          if (recordingIntentRef.current) setTimeout(spawnInstance, 200);
+          else setRecording(false);
+        }
+      };
+
+      try {
+        rec.start();
+        recognitionRef.current = rec;
+      } catch {
+        // Recognition already started or unavailable — back off and retry
+        if (recordingIntentRef.current) setTimeout(spawnInstance, 300);
+        else setRecording(false);
       }
-      sessionFinalRef.current = final;
-      interimRef.current = interim;
-      const base = finalTextRef.current;
-      const parts = [base, final, interim].filter((s) => s.trim());
-      setText(parts.join(' '));
     };
 
-    rec.onend = () => {
-      setRecording(false);
-      // Commit base text + all finals from this session (drop trailing interim)
-      const base = finalTextRef.current;
-      const committed = [base, sessionFinalRef.current].filter((s) => s.trim()).join(' ').trim();
-      finalTextRef.current = committed;
-      setText(committed);
-      interimRef.current = '';
-      sessionFinalRef.current = '';
-    };
-
-    rec.onerror = () => {
-      setRecording(false);
-      // Keep whatever finals were captured before the error
-      const base = finalTextRef.current;
-      const committed = [base, sessionFinalRef.current].filter((s) => s.trim()).join(' ').trim();
-      finalTextRef.current = committed;
-      setText(committed);
-      interimRef.current = '';
-      sessionFinalRef.current = '';
-    };
-
-    rec.start();
-    recognitionRef.current = rec;
+    recordingIntentRef.current = true;
     finalTextRef.current = text;
     sessionFinalRef.current = '';
     setRecording(true);
+    setError(null);
+    spawnInstance();
   };
 
-  const stopVoice = () => { recognitionRef.current?.stop(); };
+  const stopVoice = () => {
+    recordingIntentRef.current = false;
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    sessionFinalRef.current = '';
+    setInterimText('');
+    setRecording(false);
+  };
 
   const compressImage = (file: File, maxDim = 1024, quality = 0.82): Promise<{ base64: string; mimeType: string }> =>
     new Promise((resolve, reject) => {
@@ -304,8 +347,8 @@ export default function NutritionChatModal({ clientId, onClose, onLogged }: Prop
               <div className={`rounded-[1.2rem] bg-white px-4 py-3 shadow-sm ${recording ? 'border border-red-200' : ''}`}>
                 <p className="text-sm leading-relaxed text-black">
                   {text}
-                  {recording && interimRef.current && (
-                    <span className="text-black/35"> {interimRef.current}</span>
+                  {recording && interimText && (
+                    <span className="text-black/35"> {interimText}</span>
                   )}
                 </p>
                 {recording && (
