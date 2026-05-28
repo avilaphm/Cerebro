@@ -1,12 +1,30 @@
 # Handoff
 
 ## Last updated
-2026-05-27 by Codex - Programme creator intelligence chain fix, draft publish gate, staples persistence (pending commit).
+2026-05-28 by Claude - Session credit fix: Finish Session now deducts from session pack even without a booking.
 
 ## Last code fix commit
-pending
+b6a032b
 
 ## What just happened (read first)
+
+### Session credit deduction without booking (2026-05-28, LATEST)
+
+Pedro tracked 3 PT sessions (Jenny, Joseph, Stephen) using Finish Session but sessions_remaining was not decremented because none of those clients had a linked booking appointment.
+
+Root cause: `handleFinishSession` in `PTSessionsView.tsx` only deducted sessions via the `manage-pt-booking` 'complete' action, which requires a linked `pt_booking_appointments` row. When Pedro tracks sessions without the booking system, `selectedClientNextAppt` is null and the deduction was silently skipped.
+
+Fix: Added an `else` branch in `handleFinishSession` that runs when there is no linked appointment:
+- Decrements `sessions_remaining` on `pt_clients` directly
+- Inserts a `pt_session_ledger` entry (`entry_type: 'session_completed'`, `quantity: -1`) so the ledger stays accurate
+- Removed the "No linked appointment - session count unchanged" note from the UI (it was correct but now it's no longer true)
+
+Files changed: `app/dashboard/pt/pt-sessions/PTSessionsView.tsx`
+Commit: `b6a032b`
+Build: passes clean.
+
+Note: Pedro needs to manually fix the 3 sessions from today (Jenny, Joseph, Stephen). Decrement each client's `sessions_remaining` by 1 in Supabase or from the client card, since the system did not do it automatically at the time.
+
 
 ### Programme creator intelligence chain + publish gate (2026-05-27, LATEST)
 
