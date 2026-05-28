@@ -530,9 +530,10 @@ export default function PTSessionsView({
       }
     }
 
-    // Deduct session — use 'complete' action (same as PTBookingsView)
+    // Deduct session credit
     const linkedAppt = selectedClientNextAppt;
     if (linkedAppt) {
+      // Booking-linked session: use manage-pt-booking to complete the appointment and deduct
       const { data: apptData, error: apptError } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
         body: { action: 'complete', appointment_id: linkedAppt.id },
       });
@@ -541,6 +542,22 @@ export default function PTSessionsView({
         setSaving(false);
         return;
       }
+    } else {
+      // No booking — deduct directly from the client's session pack
+      const currentBalance = selectedClient.sessions_remaining ?? 0;
+      const nextBalance = Math.max(0, currentBalance - 1);
+      await supabase
+        .from('pt_clients')
+        .update({ sessions_remaining: nextBalance, updated_at: new Date().toISOString() })
+        .eq('id', selectedClient.id);
+      await supabase.from('pt_session_ledger').insert({
+        client_id: selectedClient.id,
+        appointment_id: null,
+        entry_type: 'session_completed',
+        quantity: -1,
+        balance_after: nextBalance,
+        notes: `Session tracked: ${day.title}`,
+      });
     }
 
     // Reset and scroll to top
@@ -743,11 +760,6 @@ export default function PTSessionsView({
           >
             {saving ? 'Saving...' : 'Finish Session'}
           </button>
-          {!selectedClientNextAppt && (
-            <p className="mt-2 text-center text-xs text-black/35">
-              No linked appointment — session count unchanged.
-            </p>
-          )}
         </div>
 
         {/* Exercise swap modal */}
