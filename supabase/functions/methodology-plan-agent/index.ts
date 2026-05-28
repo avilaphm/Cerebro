@@ -132,6 +132,58 @@ function scaleMesoBased(mesos: MesoBlock[][], target: number): WeekBlock[] {
   return blocks;
 }
 
+// Deterministic MethodologyPlan built from the already-scaled week blocks. Matches the
+// OUTPUT FORMAT below so the synthesis agent and orchestrator read it identically to a
+// model-produced plan. Used only when the model returns unparseable JSON / errors out.
+const BIG5_LIFTS = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'];
+
+function buildFallbackMethodologyPlan(
+  blocks: { foundation: WeekBlock[]; hypertrophy: WeekBlock[]; strength: WeekBlock[] },
+  daysPerWeek: DaysPerWeek,
+  phaseWeeks: { foundation: number; hypertrophy: number; strength: number },
+  clientAnalysis: Record<string, unknown>,
+): Record<string, unknown> {
+  const emphasis = (clientAnalysis?.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
+  const cardio = emphasis.needs_cardio_block ? 18 : null;
+  const mobility = emphasis.needs_mobility_block ? 12 : null;
+  const note = 'Deterministic fallback plan (model output was unavailable): Helms M&S Pyramid mesocycle scheme with Pedro\'s Foundation onramp.';
+
+  const substitutionRule = {
+    from_week: Math.max(1, phaseWeeks.foundation - 1),
+    swaps: [
+      { from_pattern: 'goblet squat', to: 'BB Squat' },
+      { from_pattern: 'kb deadlift|db deadlift|dumbbell deadlift|kettlebell deadlift', to: 'BB Deadlift' },
+      { from_pattern: 'db bench|dumbbell bench', to: 'BB Bench Press' },
+      { from_pattern: 'lat pull[- ]?down', to: 'Pull-up' },
+      { from_pattern: 'db shoulder press|dumbbell shoulder press', to: 'BB Shoulder Press' },
+    ],
+  };
+
+  return {
+    phases: [
+      {
+        type: 'foundation', weeks: phaseWeeks.foundation, days_per_week: 3, week_blocks: blocks.foundation,
+        substitution_rule: substitutionRule, warmup_count: 4, main_count: 6, superset_count: 3,
+        cardio_block_minutes: cardio, mobility_block_minutes: mobility, coaching_notes: note,
+      },
+      { type: '1rm_test', weeks: 1, sets_per_lift: '5', lifts: BIG5_LIFTS, coaching_notes: 'Test the Big 5 to set percentage-based loading.' },
+      {
+        type: 'hypertrophy', weeks: phaseWeeks.hypertrophy, days_per_week: daysPerWeek, week_blocks: blocks.hypertrophy,
+        must_include_big5: true, other_exercises_after_big5: true, warmup_count: 4, main_count: 6, superset_count: 3,
+        cardio_block_minutes: cardio, mobility_block_minutes: mobility, coaching_notes: note,
+      },
+      {
+        type: 'strength', weeks: phaseWeeks.strength, days_per_week: daysPerWeek, week_blocks: blocks.strength,
+        must_include_big5: true, other_exercises_after_big5: true, warmup_count: 4, main_count: 6, superset_count: 3,
+        cardio_block_minutes: cardio, mobility_block_minutes: mobility, coaching_notes: note,
+      },
+      { type: '1rm_retest', weeks: 1, sets_per_lift: '5', lifts: BIG5_LIFTS, coaching_notes: 'Re-test the Big 5 to measure strength gains.' },
+    ],
+    cited_documents: [],
+    fallback_used: true,
+  };
+}
+
 const SYSTEM_PROMPT = `You are the Methodology Plan AI inside Pedro Avila's Cerebro programming system.
 You receive: (1) a Client Analysis JSON describing the client; (2) the chosen number of weeks per phase;
 (3) retrieved excerpts from Cerebro's 19-document knowledge base (Helms pyramids, ACSM, Precision Nutrition,
@@ -259,16 +311,25 @@ Deno.serve(async (req) => {
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     const claudeCtrl = new AbortController();
     const claudeTimer = setTimeout(() => claudeCtrl.abort(), 60_000);
-    let text: string;
+    let parsedPlan: Record<string, unknown> | null = null;
     try {
       const msg = await anthropic.messages.create(
         { model: 'claude-sonnet-4-6', max_tokens: 4096, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userMessage }] },
         { signal: claudeCtrl.signal },
       );
-      text = (msg.content[0] as { text: string }).text;
+      parsedPlan = parseJson((msg.content[0] as { text: string }).text);
+    } catch (modelError) {
+      console.warn('methodology-plan-agent model fallback:', modelError);
     } finally { clearTimeout(claudeTimer); }
-    const plan = parseJson(text);
-    if (!plan) return json({ error: 'Methodology plan did not return valid JSON', raw: text }, 502);
+
+    // Deterministic fallback so a bad-JSON / quota / timeout blip never hard-fails the run.
+    // The week_blocks were already scaled deterministically above, so the fallback reuses them.
+    const plan = parsedPlan ?? buildFallbackMethodologyPlan(
+      { foundation: foundationBlocks, hypertrophy: hypertrophyBlocks, strength: strengthBlocks },
+      daysPerWeek,
+      body.phase_weeks,
+      body.client_analysis,
+    );
 
     return json({ ok: true, methodology_plan: plan, cited_documents: Array.from(referenced) });
   } catch (error) {
