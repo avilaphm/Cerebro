@@ -249,8 +249,8 @@ body::before {
 
 .liquid-dashboard .bg-black *,
 .client-liquid .bg-black *,
-.liquid-dashboard [class*="bg-black"] .text-white,
-.client-liquid [class*="bg-black"] .text-white {
+.liquid-dashboard .bg-black .text-white,
+.client-liquid .bg-black .text-white {
   color: inherit !important;
 }
 
