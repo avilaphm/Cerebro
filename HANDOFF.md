@@ -1,12 +1,36 @@
 # Handoff
 
 ## Last updated
-2026-05-28 by Claude - Session credit fix: Finish Session now deducts from session pack even without a booking.
+2026-05-28 by Claude - Programme generation timeout fixed (orchestrator split into self-chaining stages).
 
 ## Last code fix commit
-b6a032b
+15febd6
 
 ## What just happened (read first)
+
+### Programme generation timeout fixed: orchestrator self-chaining stages (2026-05-28, LATEST)
+
+Pedro tried to generate a programme for Ruby Thomas and it failed with "Pipeline timed out. The server may still be running."
+
+Root cause (confirmed via edge logs, not guessed): Supabase edge workers, including `EdgeRuntime.waitUntil` background tasks, are force-killed at a ~150s wall-clock limit. The orchestrator booted at 07:25:20 and was shut down at exactly 07:27:50 (150s), right after 1RM Test. Hypertrophy/strength/validation never ran, and the run zombied in `running` forever. The whole pipeline (4 sequential Claude agent calls ~146s + synthesis + validation) does not fit in one 150s worker. It only succeeded on prior days when Anthropic latency happened to be low.
+
+Fix (`supabase/functions/pt-programme-orchestrator/index.ts`, deployed):
+- Split `runPipeline` into 3 stages that each chain to the next via a self-invocation, so every stage gets a fresh ~150s budget:
+  1. `analyze_client_movement`: client-analysis -> movement-analysis
+  2. `exercise_methodology`: exercise-intelligence -> methodology-plan
+  3. `synthesize`: per-phase synthesis -> cross-check -> validation -> finalize
+- Inter-stage state stashed under `coaching_reasoning._scratch`, dropped cleanly at finalize.
+- Resume/self-invoke calls require `CEREBRO_INTERNAL_SECRET` (orchestrator is verify_jwt=false). The wizard's initial call path is unchanged, so no client/wizard change needed.
+- Per-agent `callAgent` timeouts tightened (75-80s) so a slow agent fails fast instead of letting a stage approach the wall-clock limit.
+- IMPORTANT: every sub-agent call, input, and order is identical. The skill chain is unchanged. Only the orchestrator control flow is split.
+
+Verification:
+- Deployed via `supabase functions deploy pt-programme-orchestrator --use-api`.
+- Smoke-tested on the exact failing client (Ruby Thomas, af85a4c8) by invoking the orchestrator directly (does NOT create a client-visible assignment). Run 1da4b557 reached `needs_review` at ~150s total across 3 fresh workers. All 11 steps succeeded including the previously-fatal HYPERTROPHY and STRENGTH. 5 phases, validation passed, 0 hard failures, `_scratch` dropped at finalize.
+- Marked the original zombied run 5d06e78d as `failed` so it no longer lingers.
+
+Note: Pedro can now regenerate Ruby's programme from the wizard normally. The smoke-test run 1da4b557 is a valid `needs_review` draft but is not wired to the wizard session (direct invocation), so it will not auto-open.
+
 
 ### Session credit deduction without booking (2026-05-28, LATEST)
 
