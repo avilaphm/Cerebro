@@ -1,12 +1,30 @@
 # Handoff
 
 ## Last updated
-2026-05-28 by Claude - Programme generation timeout fixed (orchestrator split into self-chaining stages).
+2026-05-28 by Claude - Deploy drift fixed (all PT agents reconciled), methodology agent hardened, + 2 new resilience skills.
 
 ## Last code fix commit
-15febd6
+edfe4d3
 
 ## What just happened (read first)
+
+### Deploy drift + JSON resilience + pipeline-health skills (2026-05-28, LATEST)
+
+After the wall-clock fix, a generation for Anna Long failed with "Movement analysis failed: Movement analysis did not return valid JSON". Root cause was NOT a new code bug - it was **deploy drift**: every pipeline agent's *deployed* build was older than its *committed local* source. The movement agent in production was the 2026-05-25 version that 502s on bad JSON; the JSON-repair + deterministic fallback added on 2026-05-27 (commit 5a5e117) was committed but never actually deployed (the handoff claimed it was). So a "fixed" bug was still live in production.
+
+Fixes shipped:
+- Redeployed ALL drifted pipeline agents so production == committed local: movement-analysis-agent, client-analysis-agent, exercise-intelligence-agent, methodology-plan-agent, programme-synthesis-agent, programme-validation-agent (orchestrator was already current).
+- Hardened `methodology-plan-agent` (commit edfe4d3): it now falls back to a deterministic MethodologyPlan (built from the already-scaled Helms week blocks) on model error / unparseable JSON, instead of returning a hard 502. Matches the fallback pattern already in client-analysis / movement / exercise-intelligence.
+- Verified: re-ran Anna Long twice (3-day and 4-day splits) - both reached `needs_review` end to end, all steps succeeded. Ruby also reached needs_review earlier. The reconcile broke nothing.
+
+New skills (in ~/.claude/skills/, validated):
+- `pt-pipeline-deploy-verify` (NEW): `scripts/drift_check.sh <cerebro-site-path> [check|fix]` compares each pipeline function's deployed `updated_at` (Supabase Management API) against its git commit time (UTC epoch, 15-min tolerance to avoid deploy-then-commit false positives), reports a drift table, and redeploys stale ones with `--use-api`. Run it after editing any agent and before claiming a fix is live. Confirmed: all 9 functions currently report in-sync.
+- `pt-run-patcher` (EXTENDED into the "generation doctor"): added a Step 0 failure-classification table (deploy drift / bad JSON / wall-clock zombie / agent error -> remedy), refreshed the stale "Known causes" and "Pipeline step reference" sections to the current 3-stage self-chaining orchestrator. It now points to `pt-pipeline-deploy-verify` as the first check for the bad-JSON / inconsistent-failure class.
+
+How the two skills work together: `pt-pipeline-deploy-verify` PREVENTS the drift class (keeps prod == committed source); `pt-run-patcher` DIAGNOSES a failed/stuck run and clears it. When a generation fails: classify with pt-run-patcher -> if drift suspected, run pt-pipeline-deploy-verify -> retry.
+
+Note: edge function source files are NOT auto-deployed on git push. After editing any `supabase/functions/*` file, run `pt-pipeline-deploy-verify` (or `supabase functions deploy <slug> --use-api`) or the fix will not reach production.
+
 
 ### Programme generation timeout fixed: orchestrator self-chaining stages (2026-05-28, LATEST)
 
