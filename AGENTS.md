@@ -60,6 +60,19 @@ utils/leads/tags.ts           - Full tag system: TAG constants, STAGE1_QUARTERS,
 
 ---
 
+## Frontend design - ALWAYS use the Impeccable skill
+
+Any time you build, redesign, review, or polish UI on this site - and **especially anything under `app/coach/` (the pedroavila.coach personal brand site)** - use the **`impeccable`** skill. It is Pedro's chosen design system layer: it gives the agent a real design vocabulary (`/impeccable polish`, `/impeccable audit`, `/impeccable critique`, `/impeccable colorize`, `/impeccable typeset`, `/impeccable animate`, etc.) and a deterministic anti-pattern detector, so generated UI is craft-quality instead of generic AI slop (Inter + purple gradient + nested cards + gray-on-color).
+
+Why this is a rule, not a suggestion: Pedro asked that Impeccable be invoked whenever we work on the website. Default frontend output drifts to sameness; Impeccable is how he keeps pedroavila.coach distinctive and on-brand.
+
+How to apply:
+- Before finishing any UI change on the coach site (or any landing/marketing page), run an Impeccable pass (`/impeccable audit <surface>` then `/impeccable polish <surface>`), respecting existing CSS tokens / brand colors.
+- Reach for the relevant Impeccable sub-command when the task names a design concern (typography, color, spacing, motion, hierarchy, anti-patterns).
+- The skill auto-triggers on frontend/design work, but treat it as required here, not optional.
+
+---
+
 ## Active Plan
 No active plan file, saved phase list, or stored todo list is currently maintained. Treat new work as a clean slate and use Pedro's current brief.
 
