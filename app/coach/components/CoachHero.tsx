@@ -82,15 +82,15 @@ export default function CoachHero() {
                 : 'opacity-0 translate-y-4 pointer-events-none'
             }`}
           >
-            <div className="flex flex-col md:flex-row gap-12 md:gap-20 items-start">
+            <div className="flex flex-col md:flex-row gap-7 md:gap-20 items-start">
               <div className="flex-1">
                 <h1
-                  className="font-display font-light tracking-[-0.02em] leading-[1.05] text-black mb-6"
+                  className="font-display font-light tracking-[-0.02em] leading-[1.05] text-black mb-5 md:mb-6"
                   style={{ fontSize: 'clamp(2rem, 4.5vw, 4.2rem)' }}
                 >
                   Your body stopped keeping up with your mind. I help it catch back up.
                 </h1>
-                <p className="text-sm font-light text-black/60 leading-relaxed max-w-md mb-8">
+                <p className="text-sm font-light text-black/60 leading-relaxed max-w-md mb-6 md:mb-8">
                   Out of pain, moving freely, back to the things you stopped doing.
                 </p>
                 <a
@@ -101,7 +101,10 @@ export default function CoachHero() {
                 </a>
               </div>
 
-              <div className="w-full md:w-[340px] flex-shrink-0">
+              {/* Hero photo: desktop only. On mobile the scroll-hero is one fixed
+                  viewport, so a tall portrait would push the CTA off-screen; the
+                  first photo on mobile is the bio portrait immediately below. */}
+              <div className="hidden md:block md:w-[340px] flex-shrink-0">
                 <img
                   src="/coach/pedro-hero.jpg"
                   alt="Pedro Avila training with kettlebells on the Auckland waterfront"
