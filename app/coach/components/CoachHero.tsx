@@ -102,11 +102,13 @@ export default function CoachHero() {
               </div>
 
               <div className="w-full md:w-[340px] flex-shrink-0">
-                <div className="aspect-[3/4] bg-black/5 border border-black/10 flex items-center justify-center">
-                  <span className="text-[0.65rem] font-medium tracking-[0.15em] uppercase text-black/30">
-                    [ Photo of Pedro ]
-                  </span>
-                </div>
+                <img
+                  src="/coach/pedro-hero.jpg"
+                  alt="Pedro Avila training with kettlebells on the Auckland waterfront"
+                  width={1001}
+                  height={1500}
+                  className="w-full aspect-[3/4] object-cover object-top"
+                />
               </div>
             </div>
           </div>

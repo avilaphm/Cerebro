@@ -9,16 +9,20 @@ export default function CoachBio() {
           <div className="w-full md:w-[280px] flex-shrink-0">
             <FadeIn>
               <div className="flex flex-col gap-3">
-                <div className="aspect-[3/4] bg-black/5 border border-black/10 flex items-center justify-center">
-                  <span className="text-[0.65rem] font-medium tracking-[0.15em] uppercase text-black/30">
-                    [ Photo of Pedro ]
-                  </span>
-                </div>
-                <div className="aspect-[3/4] bg-black/5 border border-black/10 flex items-center justify-center">
-                  <span className="text-[0.65rem] font-medium tracking-[0.15em] uppercase text-black/30">
-                    [ Pedro training ]
-                  </span>
-                </div>
+                <img
+                  src="/coach/pedro-portrait.jpg"
+                  alt="Portrait of Pedro Avila"
+                  width={1800}
+                  height={1200}
+                  className="w-full aspect-[3/4] object-cover object-center"
+                />
+                <img
+                  src="/coach/pedro-training.jpg"
+                  alt="Pedro Avila coaching a client through a loaded squat"
+                  width={1400}
+                  height={1400}
+                  className="w-full aspect-[3/4] object-cover object-center"
+                />
               </div>
             </FadeIn>
           </div>
