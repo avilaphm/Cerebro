@@ -1,12 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-05-28 by Claude - Deploy drift fixed (all PT agents reconciled), methodology agent hardened, + 2 new resilience skills.
+2026-05-29 by Claude - pedroavila.coach redesign: real photos/video/testimonials wired in via Impeccable + taste-skill.
 
 ## Last code fix commit
-edfe4d3
+c7ab670
 
 ## What just happened (read first)
+
+### pedroavila.coach real assets + design pass (2026-05-29, LATEST)
+
+Pedro installed two anti-slop frontend skills (`impeccable` and `design-taste-frontend`, both global in ~/.claude/skills) and asked to improve the /coach site using them, wiring in assets from `Design/PedroAvila.Coach Design/` (Google Drive). Note: those Drive files use a narrow no-break space (U+202F) in screenshot names - access via globs, not literal names.
+
+Shipped (commit c7ab670):
+- Staged + optimized assets (sips) into `cerebro-site/public/coach/`: pedro-hero.jpg, pedro-portrait.jpg, pedro-training.jpg, powder.jpg, client-soma.mp4.
+- `CoachHero` beat 3: real kettlebell/Auckland-skyline photo (was placeholder).
+- `CoachBio`: premium black-bg portrait + purple studio training shot (was 2 placeholders).
+- `CoachVideos`: single featured real client video (replaced 4 empty boxes; only 1 video provided).
+- `CoachTestimonials`: rewrote as editorial quote cards with the real LinkedIn recommendations (Karin Upton Baker/Hermes, Stephen Layfield, Benjamin Chong/Right Click Capital, Phil Sharp/Morgan Stanley, Jenny Macdonald) + a LinkedIn verification tag. Removed the empty screenshot placeholders.
+- `page.tsx`: added a full-bleed cinematic powder-shot break between BetweenSessions and Process.
+
+Design approach: read as premium/luxury-minimal personal brand → redesign-preserve (kept the black/white editorial identity, added real photography + restrained polish). Verified in browser (desktop + 390px mobile), no console errors, no overflow, build passes.
+
+Still placeholder (no asset provided): `CoachBetweenSessions` app-screenshot slot (9/16). 
+
+TODO / recommendation: `client-soma.mp4` is 31MB committed to git. For production, move it to Supabase Storage or Vercel Blob and reference by URL to avoid repo bloat. Extra brand photo `pedro-intense` (dramatic blue/red close-up) is available in the Drive design folder if another accent is wanted.
+
 
 ### Deploy drift + JSON resilience + pipeline-health skills (2026-05-28, LATEST)
 
