@@ -1672,6 +1672,7 @@ export default function PTClientDetail({
       )}
 
       <WeeklyClientProgress
+        clientId={client.id}
         nutritionLogs={nutritionLogs}
         workoutLogs={workoutLogs}
         weeklySetLogs={weeklySetLogs}

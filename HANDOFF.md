@@ -1,12 +1,39 @@
 # Handoff
 
 ## Last updated
-2026-06-02 by Codex - Added all-client weekly nutrition and workout tracking widget to PT Overview.
+2026-06-02 by Codex - Added coach editing for daily nutrition targets across all PT clients.
 
 ## Last code fix commit
-this commit - Add PT overview client tracking widget
+this commit - Add PT client nutrition target editor
 
 ## What just happened (read first)
+
+### PT client daily nutrition target editor (2026-06-02, LATEST)
+
+Pedro wanted coach-side calorie and protein editing for every PT client, with automatic carbohydrate and fat recalculation.
+
+Shipped:
+- Added an expandable `Edit daily nutrition targets` coach control inside the generic `/dashboard/pt/clients/[id]#weekly-progress` nutrition panel.
+- The editor is available for every client because it sits in the shared client-detail component.
+- Editing calories automatically rebalances protein, carbohydrates, fat, and fibre.
+- Editing protein keeps calories fixed and rebalances carbohydrates and fat. Fibre remains aligned to the calorie target.
+- The preview shows calories, protein, carbohydrates, fat, fibre, and the calorie total after gram rounding before Save.
+- The macro calculator preserves the client's existing carbohydrate/fat energy split as closely as possible, while enforcing the existing generator ranges: calories `1200-5000`, protein `60-300g`, carbohydrates `100-650g`, fat `50-180g`, and fibre `20-70g`.
+- Unsupported target combinations show an error and disable Save.
+- Saving updates the shared `pt_client_nutrition_doc.daily_targets` JSON object and refreshes the coach detail route. The same source is used by PT Overview, the client nutrition tab, the client macro widget, and nutrition logging context.
+- No migration was needed. Existing admin RLS permits the authenticated coach update.
+
+Stephen verification examples:
+- `2390 -> 2200 kcal` previews `131g protein / 275g carbs / 64g fat / 31g fibre`, totalling exactly `2200 kcal`.
+- `142g -> 150g protein` keeps `2390 kcal` and previews `290g carbs / 70g fat / 33g fibre`, totalling exactly `2390 kcal`.
+- A rollback-only database update check returned Stephen's existing live values unchanged.
+- All `11` current PT clients have a nutrition document and daily targets available for editing.
+
+Verification:
+- Targeted ESLint passes for the new calculator, editor, and updated weekly panel.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Interactive browser QA could not run because no in-app browser backend was connected in this Codex session.
 
 ### PT Overview all-client weekly tracking widget (2026-06-02, LATEST)
 

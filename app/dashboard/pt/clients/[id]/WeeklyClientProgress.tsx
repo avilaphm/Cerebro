@@ -1,3 +1,9 @@
+'use client';
+
+import { useState } from 'react';
+import type { NutritionTargets } from '@/utils/pt/nutritionTargets';
+import NutritionTargetEditor from './NutritionTargetEditor';
+
 interface FoodItem {
   name: string;
   quantity: string;
@@ -38,17 +44,13 @@ export interface WeeklySetLog {
   created_at: string;
 }
 
-interface DailyTargets {
-  protein_g?: number;
-  calories?: number;
-}
-
 interface Props {
+  clientId: string;
   nutritionLogs: WeeklyNutritionLog[];
   workoutLogs: WeeklyWorkoutLog[];
   weeklySetLogs: WeeklySetLog[];
   priorSetLogs: WeeklySetLog[];
-  dailyTargets: DailyTargets | null;
+  dailyTargets: Partial<NutritionTargets> | null;
 }
 
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
@@ -121,18 +123,21 @@ function Chevron() {
 }
 
 export default function WeeklyClientProgress({
+  clientId,
   nutritionLogs,
   workoutLogs,
   weeklySetLogs,
   priorSetLogs,
   dailyTargets,
 }: Props) {
+  const [effectiveDailyTargets, setEffectiveDailyTargets] = useState(dailyTargets);
+
   const today = sydneyDateKey(new Date());
   const dayKeys = Array.from({ length: 7 }, (_, index) => addDateKeyDays(today, index - 6));
   const firstDay = dayKeys[0];
   const dayKeySet = new Set(dayKeys);
-  const proteinTarget = dailyTargets?.protein_g ?? null;
-  const calorieTarget = dailyTargets?.calories ?? null;
+  const proteinTarget = effectiveDailyTargets?.protein_g ?? null;
+  const calorieTarget = effectiveDailyTargets?.calories ?? null;
 
   const visibleNutritionLogs = nutritionLogs.filter((log) => dayKeySet.has(sydneyDateKey(log.logged_at)));
   const visibleWorkoutLogs = workoutLogs.filter((log) => dayKeySet.has(sydneyDateKey(log.completed_at)));
@@ -230,6 +235,12 @@ export default function WeeklyClientProgress({
               <p className="text-xs text-black/40">{averageCalories} kcal</p>
             </div>
           </div>
+
+          <NutritionTargetEditor
+            clientId={clientId}
+            initialTargets={effectiveDailyTargets}
+            onSaved={setEffectiveDailyTargets}
+          />
 
           <div className="mt-4 divide-y divide-black/8 border-y border-black/8">
             {dailyNutrition.map((day) => (
