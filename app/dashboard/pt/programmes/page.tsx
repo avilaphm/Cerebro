@@ -10,7 +10,7 @@ export default async function PTProgrammesPage() {
     supabase.from('pt_program_templates').select('*').order('updated_at', { ascending: false }),
     supabase
       .from('pt_program_assignments')
-      .select('id, name, goal, status, programme, updated_at, pt_clients(name, email), pt_workout_logs(phase_index, day_index, week_number, block_index)')
+      .select('id, template_id, name, goal, status, programme, updated_at, pt_clients(name, email), pt_workout_logs(phase_index, day_index, week_number, block_index)')
       .order('updated_at', { ascending: false }),
     supabase
       .from('pt_program_generation_runs')
@@ -34,6 +34,7 @@ export default async function PTProgrammesPage() {
     const currentPhaseIndex = getCurrentProgrammePhaseIndex(programme, a.pt_workout_logs ?? []);
     return {
       id: a.id,
+      template_id: a.template_id ?? null,
       name: a.name,
       goal: a.goal ?? null,
       status: a.status,

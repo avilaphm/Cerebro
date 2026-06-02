@@ -17,6 +17,7 @@ interface Template {
 
 interface Assignment {
   id: string;
+  template_id: string | null;
   name: string;
   goal: string | null;
   status: string;
@@ -82,6 +83,7 @@ export default function PTProgrammesView({
 
   const [templateDeleteState, setTemplateDeleteState] = useState<Record<string, DeleteState>>({});
   const [assignmentDeleteState, setAssignmentDeleteState] = useState<Record<string, DeleteState>>({});
+  const [expandedTemplates, setExpandedTemplates] = useState<Record<string, boolean>>({});
   const [localTemplates, setLocalTemplates] = useState(templates);
   const [localAssignments, setLocalAssignments] = useState(assignments);
 
@@ -212,81 +214,9 @@ export default function PTProgrammesView({
         </section>
       )}
 
-      {localTemplates.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Templates</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
-            {localTemplates.map((t) => {
-              const ds = templateDeleteState[t.id] ?? 'idle';
-              return (
-                <div key={t.id} className={`relative border transition-colors ${ds === 'confirm' ? 'border-red-200 bg-red-50/30' : 'border-black/10 hover:border-black/20'}`}>
-                  {ds !== 'confirm' && ds !== 'deleting' && (
-                    <Link href={`/dashboard/pt/programmes/template/${t.id}`} className="block p-5">
-                      <p className="font-medium text-sm pr-6">{t.name}</p>
-                      {t.goal && <p className="text-xs text-black/40 mt-0.5">{t.goal}</p>}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {t.programme.phases.map((ph) => (
-                          <span key={ph.id} className="text-[0.6rem] uppercase tracking-[0.1em] border border-black/10 px-2 py-0.5 text-black/50">
-                            {ph.title} · {ph.weeks}w
-                          </span>
-                        ))}
-                      </div>
-                      <p className="text-xs text-black/30 mt-3">{t.duration_weeks} weeks · {t.phase_count} phases</p>
-                    </Link>
-                  )}
-
-                  {ds === 'confirm' && (
-                    <div className="p-5">
-                      <p className="font-medium text-sm pr-6">{t.name}</p>
-                      {t.goal && <p className="text-xs text-black/40 mt-0.5">{t.goal}</p>}
-                      <div className="mt-4 border-t border-red-200 pt-4">
-                        <p className="text-xs font-medium text-red-700 mb-3">Delete this template?</p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => void deleteTemplate(t.id)}
-                            className="flex-1 border border-red-500 bg-red-500 text-white px-3 py-2 text-xs hover:bg-red-600 transition-colors"
-                          >
-                            Yes, delete
-                          </button>
-                          <button
-                            onClick={() => cancelTemplateDelete(t.id)}
-                            className="flex-1 border border-black/20 px-3 py-2 text-xs hover:border-black/40 transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {ds === 'deleting' && (
-                    <div className="p-5">
-                      <p className="font-medium text-sm text-black/40">{t.name}</p>
-                      <p className="text-xs text-black/30 mt-2">Deleting...</p>
-                    </div>
-                  )}
-
-                  {ds === 'idle' && (
-                    <button
-                      onClick={() => void deleteTemplate(t.id)}
-                      className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center text-black/20 hover:text-red-500 transition-colors"
-                      aria-label="Delete template"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M2 10L10 2M2 2l8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {localAssignments.length > 0 && (
-        <section>
-          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Client assignments</h2>
+        <section className="mb-10">
+          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Client programmes</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
             {localAssignments.map((a) => {
               const cl = a.pt_clients;
@@ -341,6 +271,112 @@ export default function PTProgrammesView({
                         <path d="M2 10L10 2M2 2l8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                       </svg>
                     </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {localTemplates.length > 0 && (
+        <section>
+          <h2 className="mb-4 text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Programme templates</h2>
+          <div className="divide-y divide-black/8 border-y border-black/10">
+            {localTemplates.map((t) => {
+              const ds = templateDeleteState[t.id] ?? 'idle';
+              const expanded = expandedTemplates[t.id] ?? false;
+              const assignedClients = localAssignments.filter((assignment) =>
+                assignment.template_id === t.id && assignment.status !== 'archived'
+              );
+              return (
+                <div key={t.id} className={ds === 'confirm' ? 'bg-red-50/30' : ''}>
+                  {ds !== 'deleting' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedTemplates((prev) => ({ ...prev, [t.id]: !expanded }))}
+                        className="flex w-full items-center justify-between gap-4 px-3 py-5 text-left transition-colors hover:bg-black/[0.025] sm:px-4 sm:py-6"
+                        aria-expanded={expanded}
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-base font-semibold leading-snug text-black sm:text-lg">{t.name}</span>
+                          <span className="mt-1 block text-xs text-black/40">
+                            {assignedClients.length} assigned client{assignedClients.length !== 1 ? 's' : ''}
+                          </span>
+                        </span>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          className={`shrink-0 text-black/35 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                          aria-hidden="true"
+                        >
+                          <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+
+                      {expanded && (
+                        <div className="px-3 pb-5 sm:px-4 sm:pb-6">
+                          {t.goal && <p className="max-w-3xl text-sm leading-relaxed text-black/55">{t.goal}</p>}
+                          <div className="mt-4 border-t border-black/8 pt-4">
+                            <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Assigned clients</p>
+                            {assignedClients.length > 0 ? (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {assignedClients.map((assignment) => (
+                                  <span key={assignment.id} className="inline-flex items-center gap-1.5 rounded-full border border-black/10 px-2.5 py-1 text-xs text-black/60">
+                                    {assignment.pt_clients?.name ?? 'Unassigned client'}
+                                    <span className="text-[0.55rem] uppercase tracking-[0.08em] text-black/35">{assignment.status}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-xs text-black/35">No clients currently assigned.</p>
+                            )}
+                          </div>
+
+                          {ds === 'confirm' ? (
+                            <div className="mt-4 border-t border-red-200 pt-4">
+                              <p className="mb-3 text-xs font-medium text-red-700">Delete this template?</p>
+                              <div className="flex flex-col gap-2 sm:flex-row">
+                                <button
+                                  onClick={() => void deleteTemplate(t.id)}
+                                  className="border border-red-500 bg-red-500 px-4 py-2 text-xs text-white transition-colors hover:bg-red-600"
+                                >
+                                  Yes, delete
+                                </button>
+                                <button
+                                  onClick={() => cancelTemplateDelete(t.id)}
+                                  className="border border-black/20 px-4 py-2 text-xs transition-colors hover:border-black/40"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-5 flex flex-wrap gap-4">
+                              <Link href={`/dashboard/pt/programmes/template/${t.id}`} className="text-xs font-medium text-black underline underline-offset-4">
+                                Open template
+                              </Link>
+                              <button
+                                onClick={() => void deleteTemplate(t.id)}
+                                className="text-xs text-red-500 underline underline-offset-4 transition-colors hover:text-red-700"
+                              >
+                                Delete template
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {ds === 'deleting' && (
+                    <div className="px-3 py-5 sm:px-4 sm:py-6">
+                      <p className="text-base font-semibold text-black/40 sm:text-lg">{t.name}</p>
+                      <p className="mt-1 text-xs text-black/30">Deleting...</p>
+                    </div>
                   )}
                 </div>
               );

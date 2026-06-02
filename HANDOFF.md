@@ -1,12 +1,33 @@
 # Handoff
 
 ## Last updated
-2026-06-02 by Codex - PT programme assignment cards simplified around client, programme status, and current phase.
+2026-06-02 by Codex - PT programmes page reordered around client programmes with compact template accordions.
 
 ## Last code fix commit
-this commit - Simplify PT programme assignment cards
+this commit - Reorder PT programmes and collapse templates
 
 ## What just happened (read first)
+
+### PT programmes page hierarchy and template accordions (2026-06-02, LATEST)
+
+Pedro clarified that new client programmes are the primary workflow and templates are secondary.
+
+Shipped:
+- Renamed `Client assignments` to `Client programmes`.
+- Moved client programme cards above the templates section.
+- Renamed the lower section to `Programme templates`.
+- Replaced the template card grid with a compact accordion list.
+- Increased template title size and row padding so template names scan cleanly.
+- Removed the full phase-chip list from templates.
+- Each collapsed template row shows the number of assigned clients.
+- Expanding a template shows the assigned client names and each assignment status, plus secondary open/delete actions.
+- The programmes query now includes `template_id` so assigned-client lists are derived from live assignment data and stay correct after local deletes.
+
+Verification:
+- Targeted ESLint passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Interactive browser QA could not run because no in-app browser backend was connected in this Codex session.
 
 ### PT programme assignment card hierarchy (2026-06-02, LATEST)
 
@@ -2225,7 +2246,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-this commit - Simplify PT programme assignment cards
+this commit - Reorder PT programmes and collapse templates
 
 ## Current state
 
