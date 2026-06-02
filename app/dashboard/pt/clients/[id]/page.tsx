@@ -18,6 +18,7 @@ import type {
 } from '@/utils/pt/types';
 import { safeProgramme } from '@/utils/pt/programme';
 import PTClientDetail from './PTClientDetail';
+import type { WeeklyNutritionLog, WeeklySetLog, WeeklyWorkoutLog } from './WeeklyClientProgress';
 
 interface PTNote {
   id: string;
@@ -38,8 +39,11 @@ interface PTEvent {
 export default async function PTClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
+  // Fetch an extra day so the Sydney calendar can trim the exact seven-day window.
+  // eslint-disable-next-line react-hooks/purity
+  const recentQueryStart = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes, nutritionLogsRes, workoutLogsRes, weeklySetLogsRes, priorSetLogsRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -131,6 +135,33 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .order('week_start', { ascending: false })
       .limit(4),
+    supabase
+      .from('pt_nutrition_logs')
+      .select('id, logged_at, meal_type, meal_description, food_items, protein_g, carbs_g, fat_g, fibre_g, calories, input_type')
+      .eq('client_id', id)
+      .gte('logged_at', recentQueryStart)
+      .order('logged_at', { ascending: false }),
+    supabase
+      .from('pt_workout_logs')
+      .select('id, completed_at, workout_title, notes, phase_index, day_index')
+      .eq('client_id', id)
+      .gte('completed_at', recentQueryStart)
+      .order('completed_at', { ascending: false }),
+    supabase
+      .from('pt_set_logs')
+      .select('id, workout_log_id, exercise_name, set_number, reps, weight, notes, created_at')
+      .eq('client_id', id)
+      .gte('created_at', recentQueryStart)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('pt_set_logs')
+      .select('exercise_name, reps, weight, created_at')
+      .eq('client_id', id)
+      .lt('created_at', recentQueryStart)
+      .not('weight', 'is', null)
+      .not('reps', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5000),
   ]);
 
   if (clientRes.error || !clientRes.data) notFound();
@@ -165,6 +196,10 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
     training_summary: string | null;
     flags: unknown;
   }>;
+  const nutritionLogs = (nutritionLogsRes.data ?? []) as WeeklyNutritionLog[];
+  const workoutLogs = (workoutLogsRes.data ?? []) as WeeklyWorkoutLog[];
+  const weeklySetLogs = (weeklySetLogsRes.data ?? []) as WeeklySetLog[];
+  const priorSetLogs = (priorSetLogsRes.data ?? []) as WeeklySetLog[];
 
   return (
     <PTClientDetail
@@ -185,6 +220,10 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       nutritionDoc={nutritionDoc}
       phaseNutrition={phaseNutrition}
       brainReports={brainReports}
+      nutritionLogs={nutritionLogs}
+      workoutLogs={workoutLogs}
+      weeklySetLogs={weeklySetLogs}
+      priorSetLogs={priorSetLogs}
     />
   );
 }

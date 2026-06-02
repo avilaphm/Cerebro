@@ -1,12 +1,38 @@
 # Handoff
 
 ## Last updated
-2026-06-02 by Codex - PT programmes page reordered around client programmes with compact template accordions.
+2026-06-02 by Codex - Added coach-facing weekly nutrition and training progress to PT client detail.
 
 ## Last code fix commit
-this commit - Reorder PT programmes and collapse templates
+this commit - Add PT client weekly progress view
 
 ## What just happened (read first)
+
+### PT client weekly nutrition and training progress (2026-06-02, LATEST)
+
+Pedro needed a coach-facing view of Stephen Layfield's recent nutrition adherence and workout progress on the PT client detail page.
+
+Shipped:
+- Added a `Weekly progress` module to `/dashboard/pt/clients/[id]` before the existing Coaching section.
+- Nutrition shows the last seven Sydney calendar days, tracked-day count, protein target hits, calorie-range hits (`+/- 10%`), daily averages, and the configured daily targets.
+- Each nutrition day expands to show tracked meals, input type, meal description, estimated macros, calories, and food-item detail.
+- Training shows completed workouts, set count, and estimated exercise PBs from the last seven days.
+- Each workout expands to show its exercises and logged weight/reps for each set.
+- PB detection compares each recent weighted exercise's best estimated Epley 1RM against the client's prior weighted-set history. First-ever exercise logs are not labelled as PBs.
+- Recent reads are bounded to eight days so the UI can trim the exact Sydney seven-day range. Historical weighted-set reads are capped at the latest 5,000 rows for PB baselines.
+- No migration was needed. The module reads the existing `pt_nutrition_logs`, `pt_workout_logs`, `pt_set_logs`, and `pt_client_nutrition_doc` data.
+
+Stephen live-data verification:
+- `39` recent nutrition entries.
+- `2` completed workouts.
+- `44` recent sets.
+- Daily targets are available: `142g` protein and `2390 kcal`.
+
+Verification:
+- Targeted ESLint passes for the new component and updated server page.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Interactive browser QA could not run because no in-app browser backend was connected in this Codex session.
 
 ### PT programmes page hierarchy and template accordions (2026-06-02, LATEST)
 

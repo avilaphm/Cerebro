@@ -32,6 +32,11 @@ import type {
   PTWeeklyPlanSlotStatus,
   PTWeeklyCheckin,
 } from '@/utils/pt/types';
+import WeeklyClientProgress, {
+  type WeeklyNutritionLog,
+  type WeeklySetLog,
+  type WeeklyWorkoutLog,
+} from './WeeklyClientProgress';
 
 const STATUS_OPTIONS: PTClient['status'][] = ['invited', 'active', 'paused', 'archived'];
 const STATUS_COLORS: Record<PTClient['status'], string> = {
@@ -141,6 +146,10 @@ interface Props {
   oneRmTests?: PT1RMTest[];
   nutritionDoc?: PTClientNutritionDoc | null;
   phaseNutrition?: PTPhaseNutrition[];
+  nutritionLogs?: WeeklyNutritionLog[];
+  workoutLogs?: WeeklyWorkoutLog[];
+  weeklySetLogs?: WeeklySetLog[];
+  priorSetLogs?: WeeklySetLog[];
   brainReports?: Array<{
     id: string;
     week_start: string;
@@ -370,6 +379,10 @@ export default function PTClientDetail({
   oneRmTests: initialOneRmTests = [],
   nutritionDoc = null,
   phaseNutrition = [],
+  nutritionLogs = [],
+  workoutLogs = [],
+  weeklySetLogs = [],
+  priorSetLogs = [],
   brainReports = [],
 }: Props) {
   const supabase = createClient();
@@ -1657,6 +1670,14 @@ export default function PTClientDetail({
           </button>
         </div>
       )}
+
+      <WeeklyClientProgress
+        nutritionLogs={nutritionLogs}
+        workoutLogs={workoutLogs}
+        weeklySetLogs={weeklySetLogs}
+        priorSetLogs={priorSetLogs}
+        dailyTargets={dailyTargets}
+      />
 
       <div className="border-t border-black/8 pt-6 mb-8">
         <div className="mb-4 flex items-center justify-between gap-3">
