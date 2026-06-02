@@ -1,12 +1,30 @@
 # Handoff
 
 ## Last updated
-2026-05-29 by Claude - pedroavila.coach redesign: real photos/video/testimonials wired in via Impeccable + taste-skill.
+2026-06-02 by Codex - PT programme assignment cards simplified around client, programme status, and current phase.
 
 ## Last code fix commit
-c7ab670
+this commit - Simplify PT programme assignment cards
 
 ## What just happened (read first)
+
+### PT programme assignment card hierarchy (2026-06-02, LATEST)
+
+Pedro asked to simplify the client-assignment cards on `/dashboard/pt/programmes`.
+
+Shipped:
+- Client name is now the primary bold heading at the top of each assignment card.
+- Programme title sits directly below the client name.
+- Assignment status sits directly below the programme title.
+- The full list of programme phase chips has been removed from assignment cards.
+- Each card now shows one `Current phase` label derived from the assignment workout logs using the same week-block progression rules as the workout flow.
+- Delete-confirmation cards preserve the same hierarchy so the layout does not jump when delete is pressed.
+
+Verification:
+- Targeted ESLint passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Local browser visual QA could not run because no in-app browser backend was connected in this Codex session.
 
 ### pedroavila.coach real assets + design pass (2026-05-29, LATEST)
 
@@ -2207,7 +2225,7 @@ Previous task: Booking session rules overhaul (commit 0bd4e22):
 - DB migration adds 'no_show' to `pt_session_ledger` entry_type check constraint
 
 ## Last commit
-this commit - Add PT programme review agent breakdown
+this commit - Simplify PT programme assignment cards
 
 ## Current state
 

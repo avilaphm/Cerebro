@@ -12,6 +12,39 @@ export const DEFAULT_PROGRAMME_PHASES: Omit<PTProgrammePhase, 'id'>[] = [
   { title: 'Re-testing 1 RM', focus: 'Strength reassessment', weeks: '1', progression: '', days: [] },
 ];
 
+export interface ProgrammeProgressWorkoutLog {
+  phase_index: number;
+  day_index: number;
+  week_number: number;
+  block_index: number | null;
+}
+
+export function getCurrentProgrammePhaseIndex(programme: PTProgramme, logs: ProgrammeProgressWorkoutLog[]): number {
+  if (programme.phases.length === 0) return -1;
+
+  const firstIncompletePhase = programme.phases.findIndex((phase, phaseIndex) => {
+    if (!phase.week_blocks || phase.week_blocks.length === 0) return false;
+
+    return phase.week_blocks.some((_, blockIndex) => {
+      const required = requiredWorkoutsForBlock(phase.week_blocks, blockIndex, phase.days.length);
+      const completed = new Set(
+        logs
+          .filter((log) => log.phase_index === phaseIndex && log.block_index === blockIndex)
+          .map((log) => `${log.week_number}-${log.day_index}`),
+      );
+
+      return completed.size < required;
+    });
+  });
+
+  if (firstIncompletePhase >= 0) return firstIncompletePhase;
+
+  const latestLoggedPhase = logs.reduce((latest, log) => Math.max(latest, log.phase_index), -1);
+  return latestLoggedPhase >= 0
+    ? Math.min(latestLoggedPhase, programme.phases.length - 1)
+    : 0;
+}
+
 export function sortExercisesBySectionOrder(exercises: PTProgrammeExercise[]): PTProgrammeExercise[] {
   type Group = { name: string | null; items: PTProgrammeExercise[] };
   const groups: Group[] = [];

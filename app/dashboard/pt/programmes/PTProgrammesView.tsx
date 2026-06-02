@@ -21,6 +21,7 @@ interface Assignment {
   goal: string | null;
   status: string;
   programme: PTProgramme;
+  current_phase_title: string;
   pt_clients: { name: string; email: string } | null;
 }
 
@@ -46,6 +47,26 @@ function draftExpiryLabel(createdAt: string): string | null {
 }
 
 type DeleteState = 'idle' | 'confirm' | 'deleting';
+
+function AssignmentCardSummary({ assignment }: { assignment: Assignment }) {
+  return (
+    <>
+      <p className="pr-6 text-base font-semibold leading-tight text-black">
+        {assignment.pt_clients?.name ?? 'Unassigned client'}
+      </p>
+      <p className="mt-2 text-sm leading-snug text-black/65">{assignment.name}</p>
+      <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[0.6rem] uppercase tracking-[0.1em] ${
+        assignment.status === 'active' ? 'border-green-300 bg-green-50 text-green-700' : 'border-black/10 text-black/40'
+      }`}>
+        {assignment.status}
+      </span>
+      <div className="mt-4 border-t border-black/8 pt-3">
+        <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Current phase</p>
+        <p className="mt-1 text-xs font-medium text-black/65">{assignment.current_phase_title}</p>
+      </div>
+    </>
+  );
+}
 
 export default function PTProgrammesView({
   templates,
@@ -274,32 +295,13 @@ export default function PTProgrammesView({
                 <div key={a.id} className={`relative border transition-colors ${ds === 'confirm' ? 'border-red-200 bg-red-50/30' : 'border-black/10 hover:border-black/20'}`}>
                   {ds !== 'confirm' && ds !== 'deleting' && (
                     <Link href={`/dashboard/pt/programmes/${a.id}/edit`} className="block p-5">
-                      <div className="flex items-start justify-between mb-2 pr-6">
-                        <p className="font-medium text-sm">{a.name}</p>
-                        <span className={`shrink-0 text-[0.6rem] uppercase tracking-[0.1em] px-2 py-0.5 border rounded-full ${
-                          a.status === 'active' ? 'border-green-300 bg-green-50 text-green-700' : 'border-black/10 text-black/40'
-                        }`}>{a.status}</span>
-                      </div>
-                      {cl && <p className="text-xs text-black/40">{cl.name}</p>}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {a.programme.phases.map((ph) => (
-                          <span key={ph.id} className="text-[0.6rem] uppercase tracking-[0.1em] border border-black/10 px-2 py-0.5 text-black/50">
-                            {ph.title} · {ph.weeks}w
-                          </span>
-                        ))}
-                      </div>
+                      <AssignmentCardSummary assignment={a} />
                     </Link>
                   )}
 
                   {ds === 'confirm' && (
                     <div className="p-5">
-                      <div className="flex items-start justify-between mb-1">
-                        <p className="font-medium text-sm">{a.name}</p>
-                        <span className={`shrink-0 text-[0.6rem] uppercase tracking-[0.1em] px-2 py-0.5 border rounded-full ${
-                          a.status === 'active' ? 'border-green-300 bg-green-50 text-green-700' : 'border-black/10 text-black/40'
-                        }`}>{a.status}</span>
-                      </div>
-                      {cl && <p className="text-xs text-black/40">{cl.name}</p>}
+                      <AssignmentCardSummary assignment={a} />
                       <div className="mt-4 border-t border-red-200 pt-4">
                         <p className="text-xs font-medium text-red-700 mb-1">Delete this programme?</p>
                         <p className="text-[0.65rem] text-red-500/70 mb-3">Workout logs and set data will also be removed.</p>
@@ -323,8 +325,8 @@ export default function PTProgrammesView({
 
                   {ds === 'deleting' && (
                     <div className="p-5">
-                      <p className="font-medium text-sm text-black/40">{a.name}</p>
-                      {cl && <p className="text-xs text-black/30">{cl.name}</p>}
+                      <p className="text-base font-semibold leading-tight text-black/40">{cl?.name ?? 'Unassigned client'}</p>
+                      <p className="mt-2 text-sm text-black/30">{a.name}</p>
                       <p className="text-xs text-black/30 mt-2">Deleting...</p>
                     </div>
                   )}
