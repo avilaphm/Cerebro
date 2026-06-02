@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import type { PTClient, PTClientMetric, PTWeeklyCheckin, PTWeeklyPlan } from '@/utils/pt/types';
+import ClientWeeklyOverview, {
+  type OverviewNutritionDoc,
+  type OverviewNutritionLog,
+  type OverviewWorkoutLog,
+} from './ClientWeeklyOverview';
 interface PTEvent {
   id: string;
   client_id: string;
@@ -40,11 +45,15 @@ function weekStartInputValue(date = new Date()) {
 export default async function PTOverviewPage() {
   const supabase = await createClient();
 
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const currentWeekStart = weekStartInputValue();
+  // Keep every overview query on the same server-render snapshot.
+  // eslint-disable-next-line react-hooks/purity
+  const now = Date.now();
+  const fourteenDaysAgo = new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const trackingQueryStart = new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString();
+  const currentWeekStart = weekStartInputValue(new Date(now));
 
-  const [clientRes, assignmentRes, workoutRes, eventRes, unreadRes, checkinRes, planRes, coachingTaskRes, metricRes] = await Promise.all([
+  const [clientRes, assignmentRes, workoutRes, eventRes, unreadRes, checkinRes, planRes, coachingTaskRes, metricRes, trackingNutritionRes, nutritionDocRes, trackingWorkoutRes] = await Promise.all([
     supabase.from('pt_clients').select('*').order('created_at', { ascending: false }),
     supabase.from('pt_program_assignments').select('client_id, status').eq('status', 'active'),
     supabase
@@ -82,6 +91,18 @@ export default async function PTOverviewPage() {
       .select('*')
       .order('measured_at', { ascending: false })
       .order('created_at', { ascending: false }),
+    supabase
+      .from('pt_nutrition_logs')
+      .select('client_id, logged_at, protein_g, calories')
+      .gte('logged_at', trackingQueryStart),
+    supabase
+      .from('pt_client_nutrition_doc')
+      .select('client_id, daily_targets'),
+    supabase
+      .from('pt_workout_logs')
+      .select('client_id, workout_title, completed_at')
+      .gte('completed_at', trackingQueryStart)
+      .order('completed_at', { ascending: false }),
   ]);
 
   const clients = (clientRes.data ?? []) as PTClient[];
@@ -107,6 +128,9 @@ export default async function PTOverviewPage() {
   const currentPlans = (planRes.data ?? []) as PTWeeklyPlan[];
   const openCoachingTasks = coachingTaskRes.count ?? 0;
   const metrics = (metricRes.data ?? []) as PTClientMetric[];
+  const trackingNutritionLogs = (trackingNutritionRes.data ?? []) as OverviewNutritionLog[];
+  const nutritionDocs = (nutritionDocRes.data ?? []) as OverviewNutritionDoc[];
+  const trackingWorkoutLogs = (trackingWorkoutRes.data ?? []) as OverviewWorkoutLog[];
 
   const activeAssignedClientIds = new Set(activeAssignments.map((a) => a.client_id));
   const needsProgramming = clients.filter((c) => !activeAssignedClientIds.has(c.id));
@@ -198,6 +222,13 @@ export default async function PTOverviewPage() {
           </div>
         </section>
       )}
+
+      <ClientWeeklyOverview
+        clients={clients}
+        nutritionLogs={trackingNutritionLogs}
+        nutritionDocs={nutritionDocs}
+        workoutLogs={trackingWorkoutLogs}
+      />
 
       <section className="mb-12">
         <div className="mb-5 flex items-end justify-between gap-3">

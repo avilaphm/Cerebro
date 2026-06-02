@@ -1,12 +1,37 @@
 # Handoff
 
 ## Last updated
-2026-06-02 by Codex - Added coach-facing weekly nutrition and training progress to PT client detail.
+2026-06-02 by Codex - Added all-client weekly nutrition and workout tracking widget to PT Overview.
 
 ## Last code fix commit
-this commit - Add PT client weekly progress view
+this commit - Add PT overview client tracking widget
 
 ## What just happened (read first)
+
+### PT Overview all-client weekly tracking widget (2026-06-02, LATEST)
+
+Pedro wanted the client detail weekly review to be available across the roster and a one-screen overview for checking every client.
+
+Shipped:
+- Added a `Weekly client overview` widget to `/dashboard/pt/overview` above Coaching operations.
+- The widget renders every PT client in one responsive roster, including clients with no recent logs.
+- The first column links each client name directly to `/dashboard/pt/clients/[id]#weekly-progress`.
+- The nutrition column shows tracked days out of seven, protein-target hit days, and calorie-range hit days. Missing targets are labelled explicitly.
+- The workout column shows workout count and the latest workout title/date within the seven-day window.
+- The roster uses the same Sydney calendar-day model as the detail page and fetches one extra day so the UI can trim the exact visible range.
+- Tablet and mobile widths use stacked per-client rows. The three-column comparison layout starts at large desktop widths.
+- Added the `#weekly-progress` anchor to the generic detail module, so the drilldown works for every client.
+- No migration was needed. The Overview widget reads existing nutrition docs, nutrition logs, and workout logs.
+
+Live-data verification:
+- All `11` client records appear in the aggregate read.
+- The roster includes no-log, nutrition-only, training-only, and mixed-activity client states.
+
+Verification:
+- Targeted ESLint passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Interactive browser QA could not run because no in-app browser backend was connected in this Codex session.
 
 ### PT client weekly nutrition and training progress (2026-06-02, LATEST)
 

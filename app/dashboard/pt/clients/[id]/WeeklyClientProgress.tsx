@@ -195,7 +195,7 @@ export default function WeeklyClientProgress({
     : 0;
 
   return (
-    <section className="mb-8 border-t border-black/8 pt-6">
+    <section id="weekly-progress" className="mb-8 scroll-mt-6 border-t border-black/8 pt-6">
       <div className="mb-4">
         <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Weekly progress</p>
         <p className="mt-1 text-xs text-black/40">{formatDay(firstDay)} - {formatDay(today)}</p>
