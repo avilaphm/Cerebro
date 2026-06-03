@@ -1,12 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-06-02 by Codex - Added coach editing for daily nutrition targets across all PT clients.
+2026-06-03 by Claude - Reworked client-side booking calendar (Tue/Wed/Thu 3-day view, 6am-7pm, scrollable week).
 
 ## Last code fix commit
-this commit - Add PT client nutrition target editor
+this commit - Rework client booking calendar display
 
 ## What just happened (read first)
+
+### Client booking calendar display rework (2026-06-03, LATEST)
+
+Pedro is only available Tuesday and Thursday. He wanted the client-side booking calendar (`app/client/ClientPortal.tsx`, the "Book Pedro" card in the Workout/booking screen) to make that obvious across all three toggles and to span the full working day.
+
+Shipped:
+- Extended the day grid to 6am-7pm: `BOOKING_CALENDAR_END_HOUR` 14 -> 19. Affects 3-day and week views (month is unaffected).
+- 3-day toggle now always shows **Tuesday, Wednesday, Thursday** of the booking week (`threeDayDays` = Sun+2/+3/+4). Wednesday renders blank because Pedro has no availability that day; Tue/Thu show slots. Slots remain fully data-driven from `pt_booking_availability` (day_of_week).
+- 3-day and week toggles both step a full week at a time (`moveCalendar` now always `addDays(±7)`); navigating forward shows the next week's Tue/Thu. Removed the now-unused `advanceWeekday` helper.
+- Calendar rail (`renderCalendarRail`) now fits inside the card: `max-h-[65vh] overflow-y-auto` with a `sticky top-0` day-header so it scrolls vertically to 7pm while the weekday labels stay pinned. Week view keeps horizontal scroll on narrow screens.
+- Added `pb-24` bottom padding to the booking screen container so the page end has breathing room.
+- Month toggle unchanged: 4-week Mon-Fri grid, only Tue/Thu carry slots.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- ESLint on the file shows only pre-existing warnings/errors (lines 5, 277, 506, 562) unrelated to this change.
+- No interactive browser QA run this session.
+
 
 ### PT client daily nutrition target editor (2026-06-02, LATEST)
 

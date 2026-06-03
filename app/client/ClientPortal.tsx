@@ -139,7 +139,7 @@ interface NutritionOnboardingDraft {
 type ClientScreen = 'overview' | 'nutrition' | 'workout' | 'booking' | 'settings';
 type BookingCalendarView = '3days' | 'week' | 'month';
 const BOOKING_CALENDAR_START_HOUR = 6;
-const BOOKING_CALENDAR_END_HOUR = 14;
+const BOOKING_CALENDAR_END_HOUR = 19;
 const BOOKING_HOUR_HEIGHT = 72;
 const BOOKING_GRID_TOP_PAD = 44;
 
@@ -317,13 +317,6 @@ function getNextWeekday(from: Date): Date {
   const d = new Date(from);
   d.setDate(d.getDate() + 1);
   while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-  return d;
-}
-
-function advanceWeekday(date: Date, direction: -1 | 1): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + direction);
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + direction);
   return d;
 }
 
@@ -979,15 +972,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     return Array.from({ length: 5 }, (_, i) => addDays(monday, i));
   }, [bookingDate]);
 
-  // Next 3 weekdays starting from bookingDate
+  // Tuesday, Wednesday, Thursday of the booking week
   const threeDayDays = useMemo(() => {
-    const days: Date[] = [];
-    const cursor = new Date(bookingDate);
-    while (days.length < 3) {
-      if (cursor.getDay() !== 0 && cursor.getDay() !== 6) days.push(new Date(cursor));
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    return days;
+    const sunday = startOfWeek(bookingDate);
+    return [addDays(sunday, 2), addDays(sunday, 3), addDays(sunday, 4)];
   }, [bookingDate]);
   const bookingById = useMemo(() => {
     const map = new Map<string, PTBookingAppointment>();
@@ -2950,11 +2938,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         setBookingMonth((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
         return;
       }
-      if (bookingView === 'week') {
-        setBookingDate((current) => addDays(current, direction * 7));
-        return;
-      }
-      setBookingDate((current) => advanceWeekday(current, direction));
+      // Both week and 3-day views step a whole week at a time
+      setBookingDate((current) => addDays(current, direction * 7));
     };
 
     const renderCalendarSlot = (slot: PTBookableSlot, compact = false) => {
@@ -2993,7 +2978,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const renderCalendarRail = (days: Date[], scrollable = true) => {
       const body = (
         <div className={scrollable ? 'min-w-[44rem]' : undefined}>
-          <div className="grid border-b border-black/10" style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}>
+          <div className="sticky top-0 z-20 grid border-b border-black/10 bg-[#fbfbf8]" style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(0, 1fr))` }}>
             <div className="bg-[#fbfbf8]" />
             {days.map((day) => {
               const isToday = calendarDateKey(day) === todayInputValue();
@@ -3043,7 +3028,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         </div>
       );
       return (
-        <div className={`mt-5 border border-black/10 bg-white ${scrollable ? 'overflow-x-auto' : ''}`}>
+        <div className={`mt-5 max-h-[65vh] overflow-y-auto border border-black/10 bg-white ${scrollable ? 'overflow-x-auto' : ''}`}>
           {body}
         </div>
       );
@@ -3071,7 +3056,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     };
 
     return (
-      <div className="mx-auto max-w-5xl space-y-4 md:space-y-6">
+      <div className="mx-auto max-w-5xl space-y-4 pb-24 md:space-y-6">
         <section className="border border-black/10 bg-white p-5 md:p-6">
           <div className="grid gap-3 sm:grid-cols-[1.2fr_0.8fr]">
             <div>
