@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import type { PTClient, PTClientMetric, PTWeeklyCheckin, PTWeeklyPlan } from '@/utils/pt/types';
@@ -29,6 +30,25 @@ function formatEvent(e: PTEvent): string {
     default:
       return `${name}: ${e.event_type.replace(/_/g, ' ')}`;
   }
+}
+
+function StatTile({ label, value, alert, href }: { label: string; value: number; alert?: boolean; href?: string }) {
+  const inner = (
+    <>
+      <p className={`text-[2rem] font-light leading-none tabular-nums ${alert ? 'text-amber-700' : 'text-black'}`}>{value}</p>
+      <p className={`mt-3 text-[0.65rem] uppercase tracking-[0.14em] ${alert ? 'text-amber-700' : 'text-black/45'}`}>{label}</p>
+    </>
+  );
+  const cls = `block border p-6 sm:p-7 transition-colors ${alert ? 'border-amber-300 bg-amber-50' : 'border-black/10 hover:border-black/25'}`;
+  return href ? <Link href={href} className={cls}>{inner}</Link> : <div className={cls}>{inner}</div>;
+}
+
+function SectionHeading({ children, tone = 'default' }: { children: ReactNode; tone?: 'default' | 'alert' }) {
+  return (
+    <h2 className={`mb-4 text-sm font-semibold tracking-tight ${tone === 'alert' ? 'text-amber-700' : 'text-black/80'}`}>
+      {children}
+    </h2>
+  );
 }
 
 function weekStartInputValue(date = new Date()) {
@@ -173,11 +193,13 @@ export default async function PTOverviewPage() {
   });
 
   return (
-    <div className="max-w-5xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-      <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">Dashboard</p>
-      <h1 className="mb-8 font-display text-3xl font-light tracking-[-0.02em] sm:mb-10">Overview</h1>
+    <div className="max-w-5xl px-6 py-8 sm:px-8 sm:py-10 lg:px-10 lg:py-12">
+      <header className="mb-10 sm:mb-12">
+        <h1 className="font-display text-4xl font-light tracking-[-0.02em] sm:text-[2.75rem]">Overview</h1>
+        <p className="mt-2 text-sm text-black/45">Your coaching roster at a glance.</p>
+      </header>
 
-      <div className="mb-10 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 xl:gap-4 xl:mb-12">
+      <div className="mb-12 grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
         {[
           { label: 'Clients', value: clients.length },
           { label: 'Active programmes', value: activeAssignments.length },
@@ -185,29 +207,19 @@ export default async function PTOverviewPage() {
           { label: 'Needs attention', value: needsAttention.length, alert: needsAttention.length > 0 },
           { label: 'Unread messages', value: unreadMessages, alert: unreadMessages > 0, href: '/dashboard/pt/messages' },
         ].map((s) => (
-          s.href ? (
-            <Link key={s.label} href={s.href} className={`border p-5 transition-colors hover:border-black/30 sm:p-6 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
-              <p className={`text-3xl font-light ${s.alert ? 'text-amber-700' : ''}`}>{s.value}</p>
-              <p className={`text-xs mt-2 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
-            </Link>
-          ) : (
-            <div key={s.label} className={`border p-5 sm:p-6 ${s.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10'}`}>
-              <p className={`text-3xl font-light ${s.alert ? 'text-amber-700' : ''}`}>{s.value}</p>
-              <p className={`text-xs mt-2 uppercase tracking-[0.12em] ${s.alert ? 'text-amber-600' : 'text-black/40'}`}>{s.label}</p>
-            </div>
-          )
+          <StatTile key={s.label} label={s.label} value={s.value} alert={s.alert} href={s.href} />
         ))}
       </div>
 
       {unreadNotifications.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-3">New messages</h2>
-          <div className="space-y-2">
+        <section className="mb-12">
+          <SectionHeading>New messages</SectionHeading>
+          <div className="space-y-2.5">
             {unreadNotifications.map((n) => (
               <Link
                 key={n.client_id}
                 href={`/dashboard/pt/messages?client=${n.client_id}`}
-                className="flex items-center gap-4 border border-black/10 bg-white px-4 py-3.5 transition-colors hover:border-black/30"
+                className="flex items-center gap-4 border border-black/10 bg-white px-5 py-4 transition-colors hover:border-black/30"
               >
                 <div className="w-1.5 h-1.5 rounded-full bg-black shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -230,14 +242,12 @@ export default async function PTOverviewPage() {
         workoutLogs={trackingWorkoutLogs}
       />
 
-      <section className="mb-12">
-        <div className="mb-5 flex items-end justify-between gap-3">
-          <div>
-            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Coaching operations</p>
-            <h2 className="mt-1 text-lg font-medium">Week of {new Date(`${currentWeekStart}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</h2>
-          </div>
+      <section className="mb-14">
+        <div className="mb-5 flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold tracking-tight text-black/80">Coaching operations</h2>
+          <span className="text-xs text-black/45">Week of {new Date(`${currentWeekStart}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</span>
         </div>
-        <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 xl:gap-4">
+        <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
           {[
             { label: 'Resets waiting', value: waitingCheckins.length, alert: waitingCheckins.length > 0 },
             { label: 'Plans not published', value: plansNotPublished.length, alert: plansNotPublished.length > 0 },
@@ -245,25 +255,22 @@ export default async function PTOverviewPage() {
             { label: 'Open loops', value: openCoachingTasks, alert: openCoachingTasks > 0 },
             { label: 'Metrics due', value: metricsDue.length, alert: metricsDue.length > 0 },
           ].map((item) => (
-            <div key={item.label} className={`border p-5 sm:p-6 ${item.alert ? 'border-amber-300 bg-amber-50' : 'border-black/10 bg-white'}`}>
-              <p className={`text-2xl font-light ${item.alert ? 'text-amber-700' : 'text-black'}`}>{item.value}</p>
-              <p className={`mt-2 text-[0.6rem] uppercase tracking-[0.12em] ${item.alert ? 'text-amber-700' : 'text-black/35'}`}>{item.label}</p>
-            </div>
+            <StatTile key={item.label} label={item.label} value={item.value} alert={item.alert} />
           ))}
         </div>
 
         {(waitingCheckins.length > 0 || plansNotPublished.length > 0) && (
-          <div className="mt-6 grid gap-6 lg:grid-cols-2 lg:gap-8">
+          <div className="mt-8 grid gap-8 lg:grid-cols-2 lg:gap-10">
             {waitingCheckins.length > 0 && (
               <div>
-                <h3 className="mb-3 text-[0.6rem] uppercase tracking-[0.18em] text-amber-600">Reset review</h3>
-                <div className="space-y-2">
+                <h3 className="mb-3.5 text-xs font-semibold tracking-tight text-amber-700">Reset review</h3>
+                <div className="space-y-2.5">
                   {waitingCheckins.slice(0, 5).map((checkin) => {
                     const client = clients.find((c) => c.id === checkin.client_id);
                     return (
-                      <Link key={checkin.id} href={`/dashboard/pt/clients/${checkin.client_id}`} className="block border border-amber-200 bg-amber-50/60 px-4 py-3.5 transition-colors hover:border-amber-400">
+                      <Link key={checkin.id} href={`/dashboard/pt/clients/${checkin.client_id}`} className="block border border-amber-200 bg-amber-50/60 px-5 py-4 transition-colors hover:border-amber-400">
                         <p className="text-sm font-medium">{client?.name ?? 'Client'}</p>
-                        <p className="mt-1 line-clamp-1 text-xs text-black/45">{checkin.client_focus || checkin.availability || 'Weekly reset submitted.'}</p>
+                        <p className="mt-1 line-clamp-1 text-xs text-black/50">{checkin.client_focus || checkin.availability || 'Weekly reset submitted.'}</p>
                       </Link>
                     );
                   })}
@@ -272,15 +279,15 @@ export default async function PTOverviewPage() {
             )}
             {plansNotPublished.length > 0 && (
               <div>
-                <h3 className="mb-3 text-[0.6rem] uppercase tracking-[0.18em] text-black/40">Planning queue</h3>
-                <div className="space-y-2">
+                <h3 className="mb-3.5 text-xs font-semibold tracking-tight text-black/55">Planning queue</h3>
+                <div className="space-y-2.5">
                   {plansNotPublished.slice(0, 5).map((client) => (
-                    <Link key={client.id} href={`/dashboard/pt/clients/${client.id}`} className="flex flex-col gap-2 border border-black/8 px-4 py-3.5 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between">
+                    <Link key={client.id} href={`/dashboard/pt/clients/${client.id}`} className="flex flex-col gap-2 border border-black/10 px-5 py-4 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-medium">{client.name}</p>
-                        <p className="text-xs text-black/40">{draftPlanClientIds.has(client.id) ? 'Draft waiting to publish' : 'No plan created'}</p>
+                        <p className="text-xs text-black/45">{draftPlanClientIds.has(client.id) ? 'Draft waiting to publish' : 'No plan created'}</p>
                       </div>
-                      <span className="text-xs text-black/35">Plan</span>
+                      <span className="text-xs font-medium text-black/55">Plan →</span>
                     </Link>
                   ))}
                 </div>
@@ -290,28 +297,28 @@ export default async function PTOverviewPage() {
         )}
       </section>
 
-      <div className="mb-10 grid gap-8 lg:grid-cols-2 lg:gap-10">
+      <div className="mb-14 grid gap-10 lg:grid-cols-2 lg:gap-12">
         {needsAttention.length > 0 && (
           <section>
-            <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-amber-600 mb-4">Needs attention — 14 days no workout</h2>
-            <div className="space-y-2">
+            <SectionHeading tone="alert">Needs attention · 14 days no workout</SectionHeading>
+            <div className="space-y-2.5">
               {needsAttention.map((c) => {
                 const lastWorkout = recentWorkouts.find((w) => w.client_id === c.id);
                 return (
                   <Link
                     key={c.id}
                     href={`/dashboard/pt/clients/${c.id}`}
-                    className="flex flex-col gap-2 border border-amber-200 bg-amber-50/50 px-4 py-4 transition-colors hover:border-amber-400 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-2 border border-amber-200 bg-amber-50/50 px-5 py-4 transition-colors hover:border-amber-400 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <p className="text-sm font-medium">{c.name}</p>
-                      <p className="text-xs text-black/40">
+                      <p className="text-xs text-black/45">
                         {lastWorkout
-                          ? `Last: ${new Date(lastWorkout.completed_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} — ${lastWorkout.workout_title}`
+                          ? `Last: ${new Date(lastWorkout.completed_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} · ${lastWorkout.workout_title}`
                           : 'No workouts logged'}
                       </p>
                     </div>
-                    <span className="text-xs text-amber-600 shrink-0">Check in</span>
+                    <span className="shrink-0 text-xs font-medium text-amber-700">Check in →</span>
                   </Link>
                 );
               })}
@@ -320,23 +327,23 @@ export default async function PTOverviewPage() {
         )}
 
         <section>
-          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-4">Recent workouts</h2>
+          <SectionHeading>Recent workouts</SectionHeading>
           {latestWorkoutPerClient.length === 0 ? (
-            <p className="text-sm text-black/30">No workouts logged yet.</p>
+            <p className="text-sm text-black/40">No workouts logged yet.</p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {latestWorkoutPerClient.map((w) => {
                 const clientData = w.pt_clients as unknown as { name: string } | null;
                 const date = new Date(w.completed_at).toLocaleDateString('en-AU', {
                   day: 'numeric', month: 'short',
                 });
                 return (
-                  <div key={w.client_id} className="flex flex-col gap-2 border border-black/8 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div key={w.client_id} className="flex flex-col gap-2 border border-black/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-medium">{clientData?.name ?? 'Unknown'}</p>
-                      <p className="text-xs text-black/40">{w.workout_title}</p>
+                      <p className="text-xs text-black/45">{w.workout_title}</p>
                     </div>
-                    <p className="text-xs text-black/30 shrink-0">{date}</p>
+                    <p className="shrink-0 text-xs text-black/40">{date}</p>
                   </div>
                 );
               })}
@@ -346,19 +353,19 @@ export default async function PTOverviewPage() {
 
         {sessionLow.length > 0 && (
           <section>
-            <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-4">Sessions running low</h2>
-            <div className="space-y-2">
+            <SectionHeading>Sessions running low</SectionHeading>
+            <div className="space-y-2.5">
               {sessionLow.map((c) => (
                 <Link
                   key={c.id}
                   href={`/dashboard/pt/clients/${c.id}`}
-                  className="flex flex-col gap-2 border border-black/8 px-4 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-2 border border-black/8 px-5 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-medium">{c.name}</p>
-                    <p className="text-xs text-black/40">{c.email}</p>
+                    <p className="text-xs text-black/45">{c.email}</p>
                   </div>
-                  <span className={`text-sm font-medium shrink-0 ${c.sessions_remaining === 0 ? 'text-red-500' : 'text-amber-600'}`}>
+                  <span className={`shrink-0 text-sm font-semibold ${c.sessions_remaining === 0 ? 'text-red-600' : 'text-amber-700'}`}>
                     {c.sessions_remaining} left
                   </span>
                 </Link>
@@ -369,19 +376,19 @@ export default async function PTOverviewPage() {
 
         {needsProgramming.length > 0 && (
           <section>
-            <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-4">Needs programming</h2>
-            <div className="space-y-2">
+            <SectionHeading>Needs programming</SectionHeading>
+            <div className="space-y-2.5">
               {needsProgramming.map((c) => (
                 <Link
                   key={c.id}
                   href={`/dashboard/pt/clients/${c.id}`}
-                  className="flex flex-col gap-2 border border-black/8 px-4 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-2 border border-black/8 px-5 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-medium">{c.name}</p>
-                    <p className="text-xs text-black/40">{c.email}</p>
+                    <p className="text-xs text-black/45">{c.email}</p>
                   </div>
-                  <span className="text-xs border border-black/15 px-3 py-1 text-black/40 shrink-0">
+                  <span className="shrink-0 rounded-md border border-black/20 px-3 py-1.5 text-xs font-medium text-black/70">
                     Assign
                   </span>
                 </Link>
@@ -391,20 +398,20 @@ export default async function PTOverviewPage() {
         )}
       </div>
 
-      <section className="pb-8">
-        <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-4">Recent activity</h2>
+      <section className="pb-10">
+        <SectionHeading>Recent activity</SectionHeading>
         {events.length === 0 ? (
-          <p className="text-sm text-black/30">No activity yet.</p>
+          <p className="text-sm text-black/40">No activity yet.</p>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {events.map((e) => {
               const date = new Date(e.created_at).toLocaleDateString('en-AU', {
                 day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
               });
               return (
-                <div key={e.id} className="flex flex-col gap-1 border-b border-black/5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div key={e.id} className="flex flex-col gap-1 border-b border-black/[0.07] py-3.5 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-sm text-black/70">{formatEvent(e)}</p>
-                  <p className="shrink-0 text-xs text-black/30 sm:ml-4">{date}</p>
+                  <p className="shrink-0 text-xs text-black/40 sm:ml-4">{date}</p>
                 </div>
               );
             })}

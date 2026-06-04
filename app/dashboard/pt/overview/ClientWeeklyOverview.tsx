@@ -123,37 +123,36 @@ export default function ClientWeeklyOverview({ clients, nutritionLogs, nutrition
   const trainingClients = rows.filter((row) => row.workouts.length > 0).length;
 
   return (
-    <section className="mb-12 border border-black/10 bg-white">
-      <div className="flex flex-col gap-3 border-b border-black/8 px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-5">
+    <section className="mb-14 border border-black/10 bg-white">
+      <div className="flex flex-col gap-4 border-b border-black/[0.08] px-6 py-6 sm:flex-row sm:items-end sm:justify-between sm:px-8">
         <div>
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Client tracking</p>
-          <h2 className="mt-1 text-lg font-medium">Weekly client overview</h2>
-          <p className="mt-1 text-xs text-black/40">Open a client for meal, workout, set, and PB detail.</p>
+          <h2 className="text-lg font-semibold tracking-tight">Weekly client overview</h2>
+          <p className="mt-1.5 text-xs text-black/45">Open a client for meal, workout, set, and PB detail.</p>
         </div>
         <div className="text-left sm:text-right">
-          <p className="text-xs font-medium text-black/65">{formatDay(firstDay)} - {formatDay(today)}</p>
-          <p className="mt-1 text-[0.62rem] uppercase tracking-[0.12em] text-black/35">
-            {nutritionTrackingClients}/{rows.length} tracking nutrition / {trainingClients}/{rows.length} trained
+          <p className="text-xs font-semibold text-black/70">{formatDay(firstDay)} – {formatDay(today)}</p>
+          <p className="mt-1.5 text-[0.7rem] text-black/45">
+            {nutritionTrackingClients}/{rows.length} tracking nutrition · {trainingClients}/{rows.length} trained
           </p>
         </div>
       </div>
 
-      <div className="hidden grid-cols-[minmax(170px,0.9fr)_minmax(320px,1.45fr)_minmax(210px,0.85fr)] gap-4 border-b border-black/8 bg-[#fbfbf8] px-5 py-2.5 text-[0.58rem] uppercase tracking-[0.16em] text-black/35 lg:grid">
+      <div className="hidden grid-cols-[minmax(170px,0.9fr)_minmax(320px,1.45fr)_minmax(210px,0.85fr)] gap-4 border-b border-black/[0.08] px-8 py-3 text-[0.62rem] uppercase tracking-[0.16em] text-black/40 lg:grid">
         <p>Client</p>
         <p>Nutrition tracking</p>
         <p>Workout tracking</p>
       </div>
 
       {rows.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-black/35">No clients available.</p>
+        <p className="px-8 py-10 text-sm text-black/40">No clients available.</p>
       ) : (
-        <div className="divide-y divide-black/8">
+        <div className="divide-y divide-black/[0.07]">
           {rows.map((row) => {
             const lastWorkout = row.workouts[0];
             return (
               <div
                 key={row.client.id}
-                className="grid gap-4 px-4 py-4 transition-colors hover:bg-[#fbfbf8] lg:grid-cols-[minmax(170px,0.9fr)_minmax(320px,1.45fr)_minmax(210px,0.85fr)] lg:px-5"
+                className="grid gap-4 px-6 py-5 transition-colors hover:bg-black/[0.02] lg:grid-cols-[minmax(170px,0.9fr)_minmax(320px,1.45fr)_minmax(210px,0.85fr)] lg:px-8"
               >
                 <div className="min-w-0">
                   <Link
@@ -162,23 +161,23 @@ export default function ClientWeeklyOverview({ clients, nutritionLogs, nutrition
                   >
                     {row.client.name}
                   </Link>
-                  <p className="mt-1 truncate text-xs text-black/35">{row.client.email}</p>
-                  <span className={`mt-2 inline-block border px-2 py-0.5 text-[0.55rem] uppercase tracking-[0.12em] ${STATUS_CLASSES[row.client.status]}`}>
+                  <p className="mt-1 truncate text-xs text-black/40">{row.client.email}</p>
+                  <span className={`mt-2.5 inline-block rounded-md border px-2 py-0.5 text-[0.55rem] uppercase tracking-[0.12em] ${STATUS_CLASSES[row.client.status]}`}>
                     {row.client.status}
                   </span>
                 </div>
 
                 <div className="min-w-0">
-                  <p className="mb-2 text-[0.56rem] uppercase tracking-[0.14em] text-black/35 lg:hidden">Nutrition tracking</p>
+                  <p className="mb-2 text-[0.56rem] uppercase tracking-[0.14em] text-black/40 lg:hidden">Nutrition tracking</p>
                   {row.trackedDays > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className="border border-black/10 bg-[#fbfbf8] px-2 py-1 text-xs text-black/60">
+                    <div className="flex flex-wrap gap-2">
+                      <span className="liquid-chip border px-2.5 py-1 text-xs text-black/65">
                         {row.trackedDays}/7 days tracked
                       </span>
-                      <span className="border border-black/10 bg-[#fbfbf8] px-2 py-1 text-xs text-black/60">
+                      <span className="liquid-chip border px-2.5 py-1 text-xs text-black/65">
                         Protein {row.proteinTarget !== null ? `${row.proteinHitDays}/${row.trackedDays} hit` : 'no target'}
                       </span>
-                      <span className="border border-black/10 bg-[#fbfbf8] px-2 py-1 text-xs text-black/60">
+                      <span className="liquid-chip border px-2.5 py-1 text-xs text-black/65">
                         Calories {row.calorieTarget !== null ? `${row.calorieHitDays}/${row.trackedDays} in range` : 'no target'}
                       </span>
                     </div>
@@ -188,14 +187,14 @@ export default function ClientWeeklyOverview({ clients, nutritionLogs, nutrition
                 </div>
 
                 <div className="min-w-0">
-                  <p className="mb-2 text-[0.56rem] uppercase tracking-[0.14em] text-black/35 lg:hidden">Workout tracking</p>
+                  <p className="mb-2 text-[0.56rem] uppercase tracking-[0.14em] text-black/40 lg:hidden">Workout tracking</p>
                   {lastWorkout ? (
                     <>
-                      <p className="text-sm font-medium text-black/70">
+                      <p className="text-sm font-medium text-black/75">
                         {row.workouts.length} workout{row.workouts.length !== 1 ? 's' : ''}
                       </p>
-                      <p className="mt-1 text-xs leading-relaxed text-black/40">
-                        Last: {formatDay(sydneyDateKey(lastWorkout.completed_at))} / {lastWorkout.workout_title}
+                      <p className="mt-1 text-xs leading-relaxed text-black/45">
+                        Last: {formatDay(sydneyDateKey(lastWorkout.completed_at))} · {lastWorkout.workout_title}
                       </p>
                     </>
                   ) : (

@@ -1,14 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-06-03 by Claude - Reworked client-side booking calendar (Tue/Wed/Thu 3-day view, 6am-7pm, scrollable week).
+2026-06-04 by Claude - Impeccable design pass on PT Overview (glass refinement, spacing, hierarchy). Flagship pass; pattern not yet rolled to other pages.
 
 ## Last code fix commit
-this commit - Rework client booking calendar display
+this commit - Premium polish pass on PT Overview
 
 ## What just happened (read first)
 
-### Client booking calendar display rework (2026-06-03, LATEST)
+### PT Overview premium design pass (2026-06-04, LATEST)
+
+Pedro asked for a full UI/UX review of the Cerebro dashboard (especially PT Overview) to make it feel premium: padding, breathing room, button text contrast, cards that look good. Ran the `impeccable` skill (audit-first). Audit score was 10/20 (Acceptable). Chosen approach: **refine the glass system (low risk), PT Overview first**. Pedro reviews before rolling the pattern wider.
+
+Root cause found: the `.liquid-dashboard` glass layer in `globals.css` keys off Tailwind class *fragments* (`[class*="bg-white"]`, `[class*="bg-[#fbfbf8]"]`, `[class*="border-black/8"]`) and can't distinguish a page card from a tiny inline pill. So small badges were getting full 20px-radius glass panels + 50px drop shadows ("boxes not looking good").
+
+Shipped (3 files):
+- `globals.css`: softened panel shadow (`--liquid-shadow` -> `0 10px 30px -20px rgba(0,0,0,0.28)`), panel radius 20px -> 16px, added a `.liquid-chip` opt-out class (no glass/shadow/blur, 9px radius, subtle bg) for inline lozenges.
+- `overview/ClientWeeklyOverview.tsx`: nutrition pills now use `.liquid-chip`; inner divider strips switched to arbitrary-value borders (`border-black/[0.08]`) to dodge the glass selectors; header/row padding bumped (`px-6/8 py-5/6`); cleaner heading hierarchy; status badge kept semantic colors with `rounded-md`.
+- `overview/page.tsx`: removed the per-section tiny uppercase eyebrows (11 -> 0; AI-grammar tell), added reusable `StatTile` + `SectionHeading` so both stat grids are identical and headings are consistent legible `text-sm font-semibold`; bumped container/card/section padding; raised faint label contrast; replaced em dashes with `·`; "Assign"/"Plan"/"Check in" labels made legible.
+
+Verification:
+- `npx tsc --noEmit` passes (exit 0).
+- No live browser QA: the dashboard is admin-auth-gated, so a logged-in session is needed to screenshot. Pedro to eyeball the running app.
+
+Next if Pedro approves: roll the same pattern (liquid-chip for inline pills, StatTile/SectionHeading consistency, padding scale) across the other PT pages (clients, programmes, messages, exercises) and the client portal (`app/client/ClientPortal.tsx`).
+
+### Client booking calendar display rework (2026-06-03)
 
 Pedro is only available Tuesday and Thursday. He wanted the client-side booking calendar (`app/client/ClientPortal.tsx`, the "Book Pedro" card in the Workout/booking screen) to make that obvious across all three toggles and to span the full working day.
 
