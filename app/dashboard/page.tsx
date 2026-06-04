@@ -60,12 +60,12 @@ export default async function DashboardPage() {
         {cards.map((card) => (
           <div
             key={card.label}
-            className="border border-black/10 rounded-xl p-6"
+            className="cb-card border border-black/10 rounded-xl p-7"
           >
-            <p className="text-3xl font-display font-light text-black mb-1">
+            <p className="text-[1.75rem] font-display font-light leading-none text-black">
               {card.value}
             </p>
-            <p className="text-xs text-black/40 tracking-wide">{card.label}</p>
+            <p className="mt-3 text-xs text-black/45 tracking-wide">{card.label}</p>
           </div>
         ))}
       </div>
@@ -74,9 +74,9 @@ export default async function DashboardPage() {
 
       <WebsiteStats />
 
-      <div className="border border-black/10 rounded-xl p-6 max-w-sm">
-        <p className="text-sm font-medium text-black mb-1">Quick actions</p>
-        <div className="mt-3 space-y-2">
+      <div className="cb-card border border-black/10 rounded-xl p-7 max-w-sm">
+        <p className="text-sm font-semibold text-black mb-1">Quick actions</p>
+        <div className="mt-4 space-y-2.5">
           <a
             href="/dashboard/blog/new"
             className="block text-sm text-black/60 hover:text-black transition-colors"

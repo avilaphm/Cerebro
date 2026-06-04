@@ -25,7 +25,7 @@ interface PlatformCardProps {
 
 function PlatformCard({ name, connected, loading, metrics, comingSoon }: PlatformCardProps) {
   return (
-    <div className="border border-black/10 rounded-xl p-5">
+    <div className="cb-card border border-black/10 rounded-xl p-6">
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs font-medium tracking-[0.12em] uppercase text-black">{name}</p>
         {comingSoon ? (

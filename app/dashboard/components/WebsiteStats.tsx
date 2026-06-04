@@ -97,31 +97,31 @@ export default async function WebsiteStats() {
       </div>
 
       {/* Summary stats */}
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
         {[
           { label: 'Visitors', value: totalVisitors },
           { label: 'Avg time', value: avgDuration !== null ? fmtDuration(avgDuration) : '—' },
           { label: 'Chats started', value: chatStarted },
           { label: 'Emails captured', value: emailSubmitted },
         ].map((s) => (
-          <div key={s.label} className="border border-black/10 bg-white p-4">
-            <p className="text-2xl font-light">{s.value}</p>
-            <p className="mt-1 text-[0.6rem] uppercase tracking-[0.12em] text-black/35">{s.label}</p>
+          <div key={s.label} className="cb-card border border-black/10 bg-white p-6">
+            <p className="text-[1.75rem] font-light leading-none">{s.value}</p>
+            <p className="mt-3 text-[0.65rem] uppercase tracking-[0.14em] text-black/45">{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* Per-source breakdown */}
       {sorted.length > 0 ? (
-        <div className="mb-4 border border-black/10 bg-white divide-y divide-black/5">
-          <div className="grid grid-cols-4 gap-2 px-4 py-2">
-            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30">Source</p>
-            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30 text-right">Visitors</p>
-            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30 text-right">Chats</p>
-            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30 text-right">Emails</p>
+        <div className="cb-card mb-4 border border-black/10 bg-white divide-y divide-black/[0.06]">
+          <div className="grid grid-cols-4 gap-2 px-6 py-3.5">
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/40">Source</p>
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/40 text-right">Visitors</p>
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/40 text-right">Chats</p>
+            <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/40 text-right">Emails</p>
           </div>
           {sorted.map(({ src, visitors, chats, emails }) => (
-            <div key={src} className="grid grid-cols-4 gap-2 px-4 py-3 items-center">
+            <div key={src} className="grid grid-cols-4 gap-2 px-6 py-4 items-center">
               <p className="text-sm font-medium truncate">{label(src)}</p>
               <p className="text-sm text-right">{visitors}</p>
               <p className="text-sm text-right">{chats || '—'}</p>
@@ -130,7 +130,7 @@ export default async function WebsiteStats() {
           ))}
         </div>
       ) : (
-        <p className="mb-4 text-sm text-black/30 border border-black/8 px-4 py-3">
+        <p className="cb-card mb-4 text-sm text-black/45 border border-black/8 px-6 py-5">
           No visitors tracked yet. Data will appear here once people visit the site.
         </p>
       )}

@@ -39,7 +39,7 @@ function StatTile({ label, value, alert, href }: { label: string; value: number;
       <p className={`mt-3 text-[0.65rem] uppercase tracking-[0.14em] ${alert ? 'text-amber-700' : 'text-black/45'}`}>{label}</p>
     </>
   );
-  const cls = `block border p-6 sm:p-7 transition-colors ${alert ? 'border-amber-300 bg-amber-50' : 'border-black/10 hover:border-black/25'}`;
+  const cls = `cb-card block border p-7 transition-colors ${alert ? 'border-amber-300 bg-amber-50' : 'border-black/10 hover:border-black/25'}`;
   return href ? <Link href={href} className={cls}>{inner}</Link> : <div className={cls}>{inner}</div>;
 }
 
@@ -219,7 +219,7 @@ export default async function PTOverviewPage() {
               <Link
                 key={n.client_id}
                 href={`/dashboard/pt/messages?client=${n.client_id}`}
-                className="flex items-center gap-4 border border-black/10 bg-white px-5 py-4 transition-colors hover:border-black/30"
+                className="cb-card flex items-center gap-4 border border-black/10 bg-white px-6 py-5 transition-colors hover:border-black/30"
               >
                 <div className="w-1.5 h-1.5 rounded-full bg-black shrink-0" />
                 <div className="flex-1 min-w-0">
@@ -268,7 +268,7 @@ export default async function PTOverviewPage() {
                   {waitingCheckins.slice(0, 5).map((checkin) => {
                     const client = clients.find((c) => c.id === checkin.client_id);
                     return (
-                      <Link key={checkin.id} href={`/dashboard/pt/clients/${checkin.client_id}`} className="block border border-amber-200 bg-amber-50/60 px-5 py-4 transition-colors hover:border-amber-400">
+                      <Link key={checkin.id} href={`/dashboard/pt/clients/${checkin.client_id}`} className="cb-card block border border-amber-200 bg-amber-50/60 px-6 py-5 transition-colors hover:border-amber-400">
                         <p className="text-sm font-medium">{client?.name ?? 'Client'}</p>
                         <p className="mt-1 line-clamp-1 text-xs text-black/50">{checkin.client_focus || checkin.availability || 'Weekly reset submitted.'}</p>
                       </Link>
@@ -282,7 +282,7 @@ export default async function PTOverviewPage() {
                 <h3 className="mb-3.5 text-xs font-semibold tracking-tight text-black/55">Planning queue</h3>
                 <div className="space-y-2.5">
                   {plansNotPublished.slice(0, 5).map((client) => (
-                    <Link key={client.id} href={`/dashboard/pt/clients/${client.id}`} className="flex flex-col gap-2 border border-black/10 px-5 py-4 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between">
+                    <Link key={client.id} href={`/dashboard/pt/clients/${client.id}`} className="cb-card flex flex-col gap-2 border border-black/10 px-6 py-5 transition-colors hover:border-black/25 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm font-medium">{client.name}</p>
                         <p className="text-xs text-black/45">{draftPlanClientIds.has(client.id) ? 'Draft waiting to publish' : 'No plan created'}</p>
@@ -308,7 +308,7 @@ export default async function PTOverviewPage() {
                   <Link
                     key={c.id}
                     href={`/dashboard/pt/clients/${c.id}`}
-                    className="flex flex-col gap-2 border border-amber-200 bg-amber-50/50 px-5 py-4 transition-colors hover:border-amber-400 sm:flex-row sm:items-center sm:justify-between"
+                    className="cb-card flex flex-col gap-2 border border-amber-200 bg-amber-50/50 px-6 py-5 transition-colors hover:border-amber-400 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
                       <p className="text-sm font-medium">{c.name}</p>
@@ -338,7 +338,7 @@ export default async function PTOverviewPage() {
                   day: 'numeric', month: 'short',
                 });
                 return (
-                  <div key={w.client_id} className="flex flex-col gap-2 border border-black/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div key={w.client_id} className="cb-card flex flex-col gap-2 border border-black/8 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm font-medium">{clientData?.name ?? 'Unknown'}</p>
                       <p className="text-xs text-black/45">{w.workout_title}</p>
@@ -359,7 +359,7 @@ export default async function PTOverviewPage() {
                 <Link
                   key={c.id}
                   href={`/dashboard/pt/clients/${c.id}`}
-                  className="flex flex-col gap-2 border border-black/8 px-5 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
+                  className="cb-card flex flex-col gap-2 border border-black/8 px-6 py-5 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-medium">{c.name}</p>
@@ -382,13 +382,13 @@ export default async function PTOverviewPage() {
                 <Link
                   key={c.id}
                   href={`/dashboard/pt/clients/${c.id}`}
-                  className="flex flex-col gap-2 border border-black/8 px-5 py-4 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
+                  className="cb-card flex flex-col gap-2 border border-black/8 px-6 py-5 transition-colors hover:border-black/20 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="text-sm font-medium">{c.name}</p>
                     <p className="text-xs text-black/45">{c.email}</p>
                   </div>
-                  <span className="shrink-0 rounded-md border border-black/20 px-3 py-1.5 text-xs font-medium text-black/70">
+                  <span className="liquid-chip shrink-0 border px-3 py-1.5 text-xs font-medium text-black/70">
                     Assign
                   </span>
                 </Link>

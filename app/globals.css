@@ -142,6 +142,20 @@ body::before {
   min-height: 0 !important;
 }
 
+/* Dashboard card geometry. One consistent radius + elevation for every stat
+   tile and list card, regardless of div-vs-anchor or neutral-vs-alert. The
+   substring panel rules only round neutral (bg-white / border-black) cards, so
+   amber alert cards were rendering as sharp rectangles (divs) or full pills
+   (anchors, via the generic `a { border-radius: 999px }`). .cb-card forces the
+   correct geometry with !important so both cases land on 16px. It deliberately
+   does NOT set a background, so an alert card keeps its amber fill. */
+.liquid-dashboard main .cb-card,
+.client-liquid .cb-card {
+  border-radius: 16px !important;
+  box-shadow: var(--liquid-shadow), inset 0 1px 0 var(--liquid-highlight) !important;
+  min-height: 0 !important;
+}
+
 .liquid-dashboard button,
 .liquid-dashboard a,
 .client-liquid button,
