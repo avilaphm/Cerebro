@@ -1,12 +1,25 @@
 # Handoff
 
 ## Last updated
-2026-06-04 by Claude - Impeccable design pass: PT Overview polish + alert-card geometry fix (.cb-card) across PT overview AND main Cerebro dashboard.
+2026-06-04 by Claude - Design pass: two GLOBAL globals.css fixes (no auto-glass on bare sections; amber-card 16px radius) that lift every dashboard page, + PTProgrammes title typo.
 
 ## Last code fix commit
-this commit - Fix alert-card geometry and tighten padding across dashboards
+this commit - Fix amber-card radius globally + PTProgrammes title typo
 
 ## What just happened (read first)
+
+### Build-wide glass fixes via globals.css (2026-06-04, LATEST)
+
+After the overview pass, Pedro asked to apply the premium treatment across the whole build. Rather than blind-edit ~14 view files (the dashboard is admin-auth-gated and the claude-in-chrome extension was not connected, so no visual verification was possible), the two remaining systemic bugs were fixed GLOBALLY in `globals.css` so every page benefits at once:
+1. **Bare `<section>`/`<article>` no longer auto-glass** (admin dashboard). They were becoming padding-less panels with headings flush to the edge and nested card-in-card. Now only `.liquid-panel` or real card classes become panels. Grouping sections go transparent; headings sit naturally. `.client-liquid section`/`article` left intact (client portal not audited yet).
+2. **Amber/alert CARDS now get 16px radius + elevation** (matching neutral cards). The neutral panel rule only rounded bg-white/border-black cards and the `a { border-radius: 999px }` rule pilled anchor cards, so amber tiles rendered as sharp rectangles or stadiums. Rule excludes small amber pills via `:not([class*="py-1"]):not([class*="rounded-full"]):not(.liquid-chip)`.
+Plus: PTProgrammesView h1 typo "PTProgrammes" -> "Programmes".
+
+Helpers available for any future per-page work: `.cb-card` (force card geometry on a tile/list card), `.liquid-chip` (opt small pills out of glass). See [[project_cerebro_glass_system]] in memory.
+
+Still TODO (needs visual verification, ideally with the Chrome extension connected): per-page leaf-card padding bumps and converting per-section `text-[0.6rem] uppercase tracking-[0.2em]` eyebrows to the cleaner `text-sm font-semibold` SectionHeading style (done on overview, Pedro liked it; 17 files still use the old eyebrow). Lower priority, higher blind-risk, so left for a verified pass.
+
+### PT Overview premium design pass (2026-06-04)
 
 ### PT Overview premium design pass (2026-06-04, LATEST)
 
