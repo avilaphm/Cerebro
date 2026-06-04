@@ -105,9 +105,12 @@ body::before {
     var(--liquid-bg);
 }
 
+/* NOTE: bare <section> / <article> are deliberately NOT auto-glassed.
+   They are semantic grouping wrappers (a heading plus their own cards), so
+   glassing them produced padding-less panels with headings flush to the edge
+   and nested card-in-card. Only elements that explicitly opt in (.liquid-panel)
+   or carry a real card class (border-black/10, bg-white, ...) become panels. */
 .liquid-panel,
-.liquid-dashboard section,
-.liquid-dashboard article,
 .liquid-dashboard main [class*="border-black/10"],
 .liquid-dashboard main [class*="border-black/8"],
 .liquid-dashboard main [class*="bg-white"],
