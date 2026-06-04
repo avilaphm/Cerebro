@@ -939,7 +939,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     map.forEach((items) => items.sort((a, b) => a.start_at.localeCompare(b.start_at)));
     return map;
   }, [enrichedBookableSlots]);
-  // Mon-Fri only month days
+  // Mon-Fri only month days. Every row must start on Monday so each date sits
+  // under its real weekday column header. For the current month we begin at the
+  // Monday of today's week (earlier days in that week render faded via isPast);
+  // otherwise the Monday of the month's first week. Filling cells without this
+  // Monday anchor shifts every date one column right (e.g. a Tuesday under WED).
   const calendarDays = useMemo(() => {
     const year = bookingMonth.getFullYear();
     const month = bookingMonth.getMonth();
@@ -947,11 +951,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const last = new Date(year, month + 1, 0);
     const today = new Date();
     const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
-    const startDay = isCurrentMonth ? new Date(today.getFullYear(), today.getMonth(), today.getDate()) : new Date(first);
-    if (!isCurrentMonth) {
-      const dow = startDay.getDay();
-      startDay.setDate(startDay.getDate() - (dow === 0 ? 6 : dow - 1));
-    }
+    const startAnchor = isCurrentMonth
+      ? new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      : new Date(first);
+    const startDay = new Date(startAnchor);
+    const startDow = startDay.getDay();
+    startDay.setDate(startDay.getDate() - (startDow === 0 ? 6 : startDow - 1));
     const endDay = new Date(last);
     const endDow = endDay.getDay();
     endDay.setDate(endDay.getDate() + (endDow === 0 ? 5 : endDow <= 5 ? 5 - endDow : 6));
@@ -959,7 +964,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const current = new Date(startDay);
     while (current <= endDay) {
       const d = current.getDay();
-      if (d >= 1 && d <= 5 && (!isCurrentMonth || current >= startDay)) days.push(new Date(current));
+      if (d >= 1 && d <= 5) days.push(new Date(current));
       current.setDate(current.getDate() + 1);
     }
     return days;
