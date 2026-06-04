@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-06-04 by Claude - Impeccable design pass on PT Overview (glass refinement, spacing, hierarchy). Flagship pass; pattern not yet rolled to other pages.
+2026-06-04 by Claude - Impeccable design pass: PT Overview polish + alert-card geometry fix (.cb-card) across PT overview AND main Cerebro dashboard.
 
 ## Last code fix commit
-this commit - Premium polish pass on PT Overview
+this commit - Fix alert-card geometry and tighten padding across dashboards
 
 ## What just happened (read first)
 
@@ -19,11 +19,16 @@ Shipped (3 files):
 - `overview/ClientWeeklyOverview.tsx`: nutrition pills now use `.liquid-chip`; inner divider strips switched to arbitrary-value borders (`border-black/[0.08]`) to dodge the glass selectors; header/row padding bumped (`px-6/8 py-5/6`); cleaner heading hierarchy; status badge kept semantic colors with `rounded-md`.
 - `overview/page.tsx`: removed the per-section tiny uppercase eyebrows (11 -> 0; AI-grammar tell), added reusable `StatTile` + `SectionHeading` so both stat grids are identical and headings are consistent legible `text-sm font-semibold`; bumped container/card/section padding; raised faint label contrast; replaced em dashes with `·`; "Assign"/"Plan"/"Check in" labels made legible.
 
-Verification:
-- `npx tsc --noEmit` passes (exit 0).
-- No live browser QA: the dashboard is admin-auth-gated, so a logged-in session is needed to screenshot. Pedro to eyeball the running app.
+Follow-up commit (same day) after Pedro sent screenshots:
+- **Root bug:** amber alert tiles rendered as sharp rectangles (divs, radius 0) or full ellipses/stadiums (anchors, via the generic `.liquid-dashboard a { border-radius: 999px }`), because the glass panel radius only rounds neutral (bg-white/border-black) cards. This is the "yellow ones are ugly".
+- **Fix:** added `.cb-card` in `globals.css` (forces `border-radius: 16px !important` + consistent elevation, no background so amber fill survives, beats the anchor pill rule). Applied `.cb-card` to every stat tile and list card in `overview/page.tsx` AND the main dashboard surfaces (`dashboard/page.tsx`, `components/WebsiteStats.tsx`, `components/SocialChannels.tsx`).
+- **Padding:** stat tiles -> p-7, list rows -> px-6 py-5, website-stats cards p-4 -> p-6, social cards p-5 -> p-6, empty state px-4 py-3 -> px-6 py-5.
 
-Next if Pedro approves: roll the same pattern (liquid-chip for inline pills, StatTile/SectionHeading consistency, padding scale) across the other PT pages (clients, programmes, messages, exercises) and the client portal (`app/client/ClientPortal.tsx`).
+Verification:
+- `npx tsc --noEmit` passes (exit 0) on both commits.
+- No live browser QA: dashboard is admin-auth-gated and the claude-in-chrome extension was not connected this session. Pedro to eyeball the running app after Vercel deploy.
+
+Next if Pedro approves: roll the same pattern (cb-card geometry, liquid-chip for inline pills, StatTile/SectionHeading consistency, padding scale) across the other PT pages (clients, programmes, messages, exercises) and the client portal (`app/client/ClientPortal.tsx`).
 
 ### Client booking calendar display rework (2026-06-03)
 
