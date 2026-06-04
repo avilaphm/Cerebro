@@ -159,6 +159,17 @@ body::before {
   min-height: 0 !important;
 }
 
+/* Amber / alert CARDS get the same 16px card geometry as neutral cards. The
+   neutral panel rule only rounds bg-white/border-black cards, and the generic
+   `a { border-radius: 999px }` pills anchor cards, so amber cards otherwise
+   render as sharp rectangles (divs) or stadiums (anchors). Small amber pills
+   are excluded by their py-1 / py-1.5 sizing and rounded-full, and by .liquid-chip. */
+.liquid-dashboard main [class*="bg-amber-50"]:not([class*="py-1"]):not([class*="rounded-full"]):not(.liquid-chip),
+.liquid-dashboard main [class*="border-amber-3"]:not([class*="py-1"]):not([class*="rounded-full"]):not(.liquid-chip) {
+  border-radius: 16px !important;
+  box-shadow: var(--liquid-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+}
+
 .liquid-dashboard button,
 .liquid-dashboard a,
 .client-liquid button,

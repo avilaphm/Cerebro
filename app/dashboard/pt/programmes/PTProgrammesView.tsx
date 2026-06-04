@@ -146,7 +146,7 @@ export default function PTProgrammesView({
       <div className="mb-8 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
-          <h1 className="font-display text-3xl font-light tracking-[-0.02em]">PTProgrammes</h1>
+          <h1 className="font-display text-3xl font-light tracking-[-0.02em]">Programmes</h1>
         </div>
         <Link
           href="/dashboard/pt/programmes/new"
