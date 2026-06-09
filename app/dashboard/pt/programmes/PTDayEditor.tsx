@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, sortExercisesBySectionOrder } from '@/utils/pt/programme';
+import { MOVEMENT_PATTERNS, patternChipClass, patternFromTags } from '@/utils/pt/patterns';
 import type {
   PTExercise,
   PTProgrammeExercise,
@@ -99,6 +100,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
   const [showSectionPicker, setShowSectionPicker] = useState(false);
   const [showVideoFor, setShowVideoFor] = useState<Set<string>>(new Set());
   const [autocompleteFor, setAutocompleteFor] = useState<string | null>(null);
+  const [patternPickerFor, setPatternPickerFor] = useState<string | null>(null);
   const [customSection, setCustomSection] = useState('');
 
   const blocks = weekBlocks && weekBlocks.length > 0 ? calcWeekRanges(weekBlocks) : [];
@@ -209,6 +211,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     }
 
     const updated = [...exercises];
+    const autoPattern = patternFromTags(libEx.tags);
     updated[idx] = {
       ...updated[idx],
       exercise_id: libEx.id,
@@ -219,9 +222,17 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
       video_url: libEx.video_url,
       cues: libEx.cues.slice(0, 4),
       notes: libEx.purpose ?? updated[idx].notes,
+      // Auto-fill the movement pattern from the library, but never clobber a
+      // pattern Pedro already set by hand.
+      pattern: updated[idx].pattern ?? autoPattern,
     };
     onChange(updated);
     setAutocompleteFor(null);
+  };
+
+  const setPattern = (idx: number, pattern: string | null) => {
+    patch(idx, { pattern });
+    setPatternPickerFor(null);
   };
 
   const toggleVideo = (id: string) =>
@@ -376,6 +387,49 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
               )}
 
               <button type="button" onClick={() => remove(idx)} className="text-black/20 hover:text-red-500 transition-colors text-sm">×</button>
+            </div>
+
+            {/* Movement pattern chip + picker */}
+            <div className="relative flex items-center gap-2 px-2 pb-2">
+              <button
+                type="button"
+                onClick={() => setPatternPickerFor((cur) => (cur === ex.id ? null : ex.id))}
+                onMouseDown={(e) => e.stopPropagation()}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.62rem] font-medium ring-1 ring-inset transition-colors ${
+                  ex.pattern ? patternChipClass(ex.pattern) : 'bg-transparent text-black/30 ring-black/10 hover:text-black/55 hover:ring-black/25'
+                }`}
+              >
+                {ex.pattern ?? '+ pattern'}
+                <span className="text-[0.55rem] opacity-60">▾</span>
+              </button>
+              {ex.pattern && (
+                <button
+                  type="button"
+                  onClick={() => setPattern(idx, null)}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="text-[0.6rem] text-black/25 hover:text-red-400 transition-colors"
+                  title="Clear pattern"
+                >
+                  clear
+                </button>
+              )}
+              {patternPickerFor === ex.id && (
+                <div className="no-glass absolute left-2 top-full z-30 mt-1 max-h-56 w-52 overflow-y-auto border border-black/15 bg-white shadow-md">
+                  {MOVEMENT_PATTERNS.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onMouseDown={() => setPattern(idx, p)}
+                      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-black/5 ${
+                        ex.pattern === p ? 'font-semibold' : ''
+                      }`}
+                    >
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-inset ${patternChipClass(p)}`} />
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* YouTube URL */}

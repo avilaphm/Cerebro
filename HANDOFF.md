@@ -1,12 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-06-09 by Codex - Imported 641 missing exercises from Cerebro Knowledge/exercise-library.md.
+2026-06-09 by Claude - Added movement-pattern tags (Upper Pull/Push, Hinge, Legs Anterior/Posterior, Core, etc.) to the programme editor, auto-filled from the library.
 
 ## Last code fix commit
-this commit - Document exercise-library import
+this commit - Add movement-pattern tag to programme exercises
 
 ## What just happened (read first)
+
+### Movement-pattern tags in the programme editor (2026-06-09, LATEST)
+
+Pedro wanted to extend the old "upper/lower body" notion into a proper per-exercise movement-pattern tag, shown as a coloured chip in the programme editor when creating/altering/editing any programme, auto-filled from the exercise library and editable.
+
+Canonical taxonomy lives in `utils/pt/patterns.ts` (`MOVEMENT_PATTERNS`): Upper Pull, Upper Pull (Single Arm), Upper Push, Upper Push (Single Arm), Hinge, Hinge (Single Leg), Legs Anterior, Legs Anterior (Single Leg), Legs Posterior, Legs Posterior (Single Leg), Core, Core (Anti-Rotation), Carry, Mobility, Full Body / Power. Pedro's words: `squat` slug → **Legs Anterior**, `hinge` slug → **Hinge**. **Legs Posterior** has no dedicated library slug yet (only the unused `posterior chain` maps to it), so it's available for manual assignment.
+
+Shipped:
+- `utils/pt/patterns.ts` (NEW): canonical list, chip colour map (`patternChipClass`), and `patternFromTags()` mapping library slug tags (`upper-push`, `squat`, `hinge-single-leg`, …) → display labels. Single-arm/leg variants win over their bilateral parent.
+- `utils/pt/types.ts`: `PTProgrammeExercise` gained `pattern?: string | null`.
+- `utils/pt/programme.ts`: `safeExercise` now preserves `pattern` (so it survives load/save); `exerciseFromLibrary` auto-fills it via `patternFromTags`.
+- `app/dashboard/pt/programmes/PTDayEditor.tsx`: per-exercise coloured chip + dropdown picker under each row. `selectFromLibrary` auto-fills the pattern (without clobbering a hand-set one). Shared by the new wizard, programme edit, and template edit, so all three get it.
+
+Storage: pattern lives in the programme JSON, no DB migration. The library already stores pattern slugs in `pt_exercises.tags`, so zero re-tagging.
+
+Verification: `npx tsc --noEmit` and `npm run build` both pass (exit 0). No live visual QA (dashboard is admin-gated). NOT yet shown read-only in the coach PT-session logger or client workout view; offered to Pedro as a follow-up.
+
 
 ### Exercise library Markdown import (2026-06-09, LATEST)
 

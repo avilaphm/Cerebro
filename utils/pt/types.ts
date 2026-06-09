@@ -67,6 +67,7 @@ export interface PTProgrammeExercise {
   cues: string[];
   superset_id?: string | null;
   section_start?: string;
+  pattern?: string | null;
   week_overrides?: PTProgrammeExerciseBlockOverride[];
 }
 

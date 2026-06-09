@@ -1,4 +1,5 @@
 import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammePhase, PTProgrammeWeekBlock, PTProgrammeExerciseBlockOverride, PTProgrammeDay } from './types';
+import { patternFromTags } from './patterns';
 
 export const emptyProgramme: PTProgramme = { phases: [] };
 
@@ -248,6 +249,7 @@ export function exerciseFromLibrary(exercise: PTExercise): PTProgrammeExercise {
     notes: exercise.purpose ?? '',
     video_url: exercise.video_url,
     cues: exercise.cues.slice(0, 4),
+    pattern: patternFromTags(exercise.tags),
   };
 }
 
@@ -265,6 +267,7 @@ function safeExercise(value: unknown, index: number): PTProgrammeExercise {
     cues: Array.isArray(e.cues) ? e.cues.map((cue) => String(cue)).slice(0, 4) : [],
     superset_id: typeof e.superset_id === 'string' ? e.superset_id : null,
     section_start: typeof e.section_start === 'string' && e.section_start ? e.section_start : undefined,
+    pattern: typeof e.pattern === 'string' && e.pattern ? e.pattern : null,
     week_overrides: safeBlockOverrides(e.week_overrides),
   };
 }
