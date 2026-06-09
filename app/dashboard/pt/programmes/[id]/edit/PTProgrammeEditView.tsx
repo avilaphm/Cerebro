@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase } from '@/utils/pt/programme';
+import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase, startsNewBand } from '@/utils/pt/programme';
+import { patternChipClass } from '@/utils/pt/patterns';
 import type {
   PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise, PTProgramAssignment,
 } from '@/utils/pt/types';
@@ -947,11 +948,13 @@ export default function PTProgrammeEditView({
                       <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="shrink-0 text-[0.6rem] text-black/35 hover:text-black">edit</button>
                     </div>
                     <div className="flex flex-1 flex-col gap-1.5">
-                      {day.exercises.map((ex) => {
+                      {day.exercises.map((ex, exIdx) => {
                         const isEditing = boardEditExId === ex.id;
                         const boardMatches = isEditing ? getBoardMatches(ex.name) : [];
+                        const dividerBefore = startsNewBand(day.exercises[exIdx - 1], ex);
                         return (
                           <div key={ex.id}>
+                            {dividerBefore && <div className="my-1 border-t border-dashed border-black/15" />}
                             {ex.section_start && <p className="px-1 pb-0.5 pt-1 text-[0.55rem] uppercase tracking-wider text-black/30">{ex.section_start}</p>}
                             <div
                               draggable={!isEditing}
@@ -1025,6 +1028,13 @@ export default function PTProgrammeEditView({
                                       {ex.name}
                                     </p>
                                     {(() => {
+                                      if (ex.pattern) {
+                                        return (
+                                          <span className={`mt-px shrink-0 rounded-full px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] ring-1 ring-inset ${patternChipClass(ex.pattern)}`}>
+                                            {ex.pattern}
+                                          </span>
+                                        );
+                                      }
                                       const libEx = ex.exercise_id ? exercises.find((e) => e.id === ex.exercise_id) : undefined;
                                       const tag = getMuscleTag(ex.name, libEx);
                                       if (!tag) return null;

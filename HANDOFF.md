@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
-2026-06-09 by Claude - Added movement-pattern tags (Upper Pull/Push, Hinge, Legs Anterior/Posterior, Core, etc.) to the programme editor, auto-filled from the library.
+2026-06-09 by Claude - Board view: faded divider lines between sections/supersets + the new pattern chip, for superset-to-superset comparison across days.
 
 ## Last code fix commit
-this commit - Add movement-pattern tag to programme exercises
+this commit - Board view divider lines + pattern chip
 
 ## What just happened (read first)
+
+### Board-view divider lines + pattern chip (2026-06-09, LATEST)
+
+Pedro wanted the Board view (compare days side by side) to draw faded lines dividing the workout into bands (warm-up block, then each superset) so he can scan superset-to-superset across the day columns, using the new pattern tags.
+
+Shipped:
+- `utils/pt/programme.ts`: new `startsNewBand(prev, curr)` helper. A band boundary (faded divider before the exercise) occurs when the exercise starts a new section (`section_start`) OR its superset group differs from the previous exercise (covers superset-to-superset and superset-to-standalone). Consecutive standalone exercises stay in one band.
+- Board view in BOTH `app/dashboard/pt/programmes/[id]/edit/PTProgrammeEditView.tsx` and `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`: render `<div className="my-1 border-t border-dashed border-black/15" />` at band boundaries, and show the new `ex.pattern` chip (coloured via `patternChipClass`) in place of the old `getMuscleTag` heuristic, falling back to `getMuscleTag` when no pattern is set.
+- Template editor has no board view (list-only), so unaffected.
+
+Note: dividers are per-column at band boundaries; cross-day alignment is approximate (depends on Pedro structuring days in parallel). True row-locked alignment would require a shared grid that would fight drag-and-drop, so not done.
+
+Verification: `npx tsc --noEmit` and `npm run build` pass (exit 0). No live visual QA (admin-gated).
+
 
 ### Movement-pattern tags in the programme editor (2026-06-09, LATEST)
 

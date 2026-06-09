@@ -46,6 +46,19 @@ export function getCurrentProgrammePhaseIndex(programme: PTProgramme, logs: Prog
     : 0;
 }
 
+// Board-view divider logic: a faded line is drawn before an exercise when it
+// starts a new "band" — a new section (warm-up, workout, …) or a new superset
+// group (incl. moving between a superset and a standalone exercise). Lets Pedro
+// compare superset-to-superset across day columns at a glance.
+export function startsNewBand(
+  prev: PTProgrammeExercise | undefined,
+  curr: PTProgrammeExercise,
+): boolean {
+  if (!prev) return false;
+  if (curr.section_start) return true;
+  return (prev.superset_id ?? null) !== (curr.superset_id ?? null);
+}
+
 export function sortExercisesBySectionOrder(exercises: PTProgrammeExercise[]): PTProgrammeExercise[] {
   type Group = { name: string | null; items: PTProgrammeExercise[] };
   const groups: Group[] = [];
