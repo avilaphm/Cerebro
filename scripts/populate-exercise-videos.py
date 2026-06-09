@@ -5,11 +5,51 @@ Uses yt-dlp (no API quota) + curl for Supabase HTTP calls.
 """
 
 import json
+import re
 import subprocess
 import sys
 import time
 
 SUPABASE_URL = "https://otcnrkfvgyvwolironoz.supabase.co"
+
+FALLBACK_SEARCH_QUERIES = {
+    "Back Extension Machine SIDEWAYS (QL / oblique - Pedro specialty)": [
+        "sideways back extension oblique exercise",
+        "side bend back extension machine exercise",
+    ],
+    "Back Squat (tempo 3-2-2-0)": ["barbell back squat exercise tutorial"],
+    "Barbell Heel-Elevated Squat (ankle limitation option - Pedro)": [
+        "barbell heel elevated squat exercise tutorial",
+        "heels elevated barbell squat exercise",
+    ],
+    "Barbell RDL (tempo 3-2-2-0)": ["barbell Romanian deadlift exercise tutorial"],
+    "Barbell Reverse Lunge (Pedro staple)": ["barbell reverse lunge exercise tutorial"],
+    "Barbell Tempo Squat (3-2-2-0 ramp-up)": ["barbell tempo squat exercise tutorial"],
+    "Bodyweight Cossack Squat (assisted to unassisted - Pedro)": [
+        "bodyweight cossack squat exercise tutorial",
+        "assisted cossack squat exercise",
+    ],
+    "Goblet Squat (Phase 1 beginner staple - Pedro)": ["goblet squat exercise tutorial"],
+    "Half-Kneeling Adductor Slide (exhale at end range - Pedro)": [
+        "half kneeling adductor slide exercise",
+        "adductor slide exercise tutorial",
+    ],
+    "Jefferson Curl (hold 5s, exhale to relax - Pedro)": ["jefferson curl exercise tutorial"],
+    "Kettlebell Cossack Squat (progress assisted to loaded - Pedro)": [
+        "kettlebell cossack squat exercise tutorial"
+    ],
+    "Single-Arm Lat Pulldown (seated, lean to working side, stretch the lat - Pedro's cue)": [
+        "single arm lat pulldown exercise tutorial",
+        "single arm cable lat pulldown exercise",
+    ],
+    "Single-Leg Cable RDL (hip strength individually - Pedro)": [
+        "single leg cable Romanian deadlift exercise tutorial",
+        "single leg cable RDL exercise",
+    ],
+    "Standing Calf Raise (bilateral, full ROM, squeeze top & bottom - Pedro)": [
+        "standing calf raise exercise tutorial"
+    ],
+}
 
 
 def curl_get(path, service_key):
@@ -39,10 +79,16 @@ def curl_patch(path, data, service_key):
 
 
 def search_youtube(exercise_name):
+    base_name = re.sub(r"\([^)]*\)", "", exercise_name).strip()
+    expanded_name = re.sub(r"\bRDL\b", "Romanian deadlift", base_name, flags=re.IGNORECASE)
     queries = [
         f"{exercise_name} exercise short form",
         f"{exercise_name} exercise tutorial",
+        f"{base_name} exercise tutorial",
+        f"{expanded_name} exercise tutorial",
+        *FALLBACK_SEARCH_QUERIES.get(exercise_name, []),
     ]
+    queries = list(dict.fromkeys(query for query in queries if query.strip()))
     for query in queries:
         try:
             result = subprocess.run(

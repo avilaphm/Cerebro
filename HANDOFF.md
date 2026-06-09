@@ -1,12 +1,30 @@
 # Handoff
 
 ## Last updated
-2026-06-09 by Claude - Board view: faded divider lines between sections/supersets + the new pattern chip, for superset-to-superset comparison across days.
+2026-06-09 by Claude - PT exercise library video URLs populated for all previously missing rows.
 
 ## Last code fix commit
-this commit - Board view divider lines + pattern chip
+this commit - Exercise video population fallback search
 
 ## What just happened (read first)
+
+### PT exercise library video population (2026-06-09, LATEST)
+
+Pedro asked to add YouTube videos to all exercise cards missing videos after the Markdown exercise-library import.
+
+Shipped:
+- Ran `scripts/populate-exercise-videos.py` against live Supabase with the service role key.
+- First pass populated `623/637` missing `video_url` rows using `yt-dlp` YouTube search.
+- Added reusable fallback search logic in `scripts/populate-exercise-videos.py`:
+  - strips parenthetical cues like tempo/Pedro notes for generic exercise searches;
+  - expands `RDL` to `Romanian deadlift`;
+  - includes curated fallback queries for the 14 exact rows that failed the first pass.
+- Second pass populated the remaining `14/14` rows.
+
+Verification:
+- Supabase count check now returns `missing_video_count = 0` for `public.pt_exercises where video_url is null`.
+- `python3 -m py_compile scripts/populate-exercise-videos.py` passes.
+- Note: videos are best-effort YouTube matches intended to fill cards quickly. Pedro can still replace individual videos manually where he wants his own preferred demonstrations.
 
 ### Board-view divider lines + pattern chip (2026-06-09, LATEST)
 
