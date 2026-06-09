@@ -1888,6 +1888,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       progress: PhaseProgress | null,
       fallbackWeekCount: number,
     ) => {
+      const isReachedPhase = isActivePhase || isDonePhase;
       const visibleBlocks = blocks.length > 0
         ? blocks
         : Array.from(
@@ -1897,13 +1898,21 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       if (visibleBlocks.length === 0) return null;
 
       return (
-        <div className="relative mt-4 overflow-hidden rounded-[1.4rem] border border-black/8 bg-[#fcfcfa] px-3 py-4 sm:px-4">
+        <div
+          className={`relative mt-4 overflow-hidden rounded-[1.4rem] border px-3 py-4 transition-colors sm:px-4 ${
+            isReachedPhase
+              ? 'border-black/8 bg-[#fcfcfa]'
+              : 'border-black/[0.04] bg-white/25 opacity-[0.42]'
+          }`}
+        >
           <div className="relative pl-8">
-            <div className="absolute bottom-1 left-[0.72rem] top-1 w-px bg-black/8" />
-            <div
-              className="absolute left-[0.72rem] top-1 w-px bg-[rgb(46,213,115)] transition-all duration-700"
-              style={{ height: `${Math.max(12, Math.min(100, ((progress?.blockIndex ?? -1) + 1) / visibleBlocks.length * 100))}%` }}
-            />
+            <div className={`absolute bottom-1 left-[0.72rem] top-1 w-px ${isReachedPhase ? 'bg-black/8' : 'bg-black/[0.04]'}`} />
+            {isReachedPhase && (
+              <div
+                className="absolute left-[0.72rem] top-1 w-px bg-[rgb(46,213,115)] transition-all duration-700"
+                style={{ height: `${Math.max(12, Math.min(100, ((progress?.blockIndex ?? -1) + 1) / visibleBlocks.length * 100))}%` }}
+              />
+            )}
 
             <div className="space-y-1.5">
               {visibleBlocks.map((block, index) => {
@@ -1920,7 +1929,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                           ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
                           : isBlockActive
                             ? 'border-black bg-white shadow-[0_0_0_3px_rgba(0,0,0,0.05)]'
-                            : 'border-black/18 bg-white'
+                            : isReachedPhase
+                              ? 'border-black/18 bg-white'
+                              : 'border-black/[0.08] bg-white/35'
                       }`}
                     >
                       {isBlockDone && <Check className="absolute inset-0 m-auto h-2 w-2 text-white" />}
@@ -1928,14 +1939,26 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
                     <div className="min-w-0 pl-4 translate-y-px">
                       <div className="flex items-center gap-2">
-                        <p className="text-[0.72rem] font-medium leading-none text-black">{weekLabel}</p>
+                        <p className={`text-[0.72rem] font-medium leading-none ${isReachedPhase ? 'text-black' : 'text-black/45'}`}>{weekLabel}</p>
                         {weekSets && (
-                          <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${isBlockDone ? 'text-[rgb(46,213,115)]' : 'text-black/30'}`}>
+                          <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${
+                            isBlockDone
+                              ? 'text-[rgb(46,213,115)]'
+                              : isReachedPhase
+                                ? 'text-black/30'
+                                : 'text-black/38'
+                          }`}>
                             ({weekSets} sets)
                           </span>
                         )}
                         {weekPct && (
-                          <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${isBlockDone ? 'text-[rgb(46,213,115)]' : 'text-black/30'}`}>
+                          <span className={`text-[0.48rem] uppercase tracking-[0.14em] ${
+                            isBlockDone
+                              ? 'text-[rgb(46,213,115)]'
+                              : isReachedPhase
+                                ? 'text-black/30'
+                                : 'text-black/38'
+                          }`}>
                             ({weekPct})
                           </span>
                         )}

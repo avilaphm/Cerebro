@@ -1,12 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-06-04 by Claude - Design pass: two GLOBAL globals.css fixes (no auto-glass on bare sections; amber-card 16px radius) that lift every dashboard page, + PTProgrammes title typo.
+2026-06-09 by Codex - Client workout journey future phase cards now stay greyed out until reached.
 
 ## Last code fix commit
-this commit - Fix amber-card radius globally + PTProgrammes title typo
+this commit - Grey unreached client journey week cards
 
 ## What just happened (read first)
+
+### Client workout journey unreached-card opacity (2026-06-09, LATEST)
+
+Pedro wanted the client-side Workout > Your Journey view to make only the current/reached step visually active. Before this, the future phase titles were muted, but the nested week cards for 1RM Testing, Phase 2 Hypertrophy, and Phase 3 Strength still rendered like active white cards.
+
+Shipped:
+- `app/client/ClientPortal.tsx`
+  - `renderWeekRail()` now derives `isReachedPhase` from active/done state.
+  - Current or completed phases keep the full white card, normal week text, milestone dots, and green progress fill.
+  - Unreached phases now dim the whole week rail (`opacity-[0.42]`), mute the card border/line/dots, and hide the green fill.
+  - Future week/set/% labels are visually greyed out with the card, so they match the muted phase title state until the client reaches that step.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Browser QA on `http://localhost:3000/client`: expanded Workout > Your Journey for the logged-in local client. Phase 1 Foundation stays fully visible; 1RM Testing, Phase 2, Phase 3, and Retest rails render dimmed. Computed check confirmed active rail opacity `1`, unreached rail opacity `0.42`.
+- Targeted `npx eslint app/client/ClientPortal.tsx` still fails on pre-existing file errors at lines 562 and 746 (`react-hooks/set-state-in-effect`) plus existing unused warnings; no new lint class was introduced by this patch.
 
 ### Build-wide glass fixes via globals.css (2026-06-04, LATEST)
 
