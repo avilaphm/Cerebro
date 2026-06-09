@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
-2026-06-09 by Claude - PT exercise library video URLs populated for all previously missing rows.
+2026-06-09 by Claude - Added Board view to the template editor (previously only in the client editor + new-programme wizard).
 
 ## Last code fix commit
-this commit - Exercise video population fallback search
+this commit - Board view in template editor
 
 ## What just happened (read first)
+
+### Board view added to the template editor (2026-06-09, LATEST)
+
+Pedro was editing a TEMPLATE (`/dashboard/pt/programmes/template/[id]/edit`) and couldn't find Board view. It never existed there; Board view was only in the client-programme editor (`/programmes/[id]/edit`) and the new-programme wizard (`/programmes/new`). Pedro confirmed he wants it in the template editor too. (Supersedes the earlier "Template editor has no board view" note below.)
+
+Shipped in `app/dashboard/pt/programmes/template/[id]/edit/PTProgrammeTemplateEditView.tsx`:
+- New state: `boardView`, `dragEx`, `dragOverDay`, `boardEditExId`.
+- Handlers ported from the client editor: `moveExerciseToDay` (shared `moveExerciseBetweenProgrammeDays`), `getBoardMatches`, `patchBoardExercise`, `deleteBoardExercise`.
+- "Board view" toggle next to "Select" in the Workouts header (shown when the phase has days).
+- Board branch (`boardView ? board : currentDay === null ? list : day-editor`): side-by-side day columns, drag exercises between days, faded section/superset dividers via `startsNewBand`, inline rename / library-match / delete, and the new `ex.pattern` chip via `patternChipClass`. Page widens to `max-w-7xl` in board mode.
+
+Known duplication: the board JSX now lives in THREE files. A future cleanup could extract a shared `<ProgrammeBoard>`, but they differ slightly (select checkboxes, delete-day button, day.focus subtitle), so left inline to avoid risking the two working screens.
+
+Verification: `npx tsc --noEmit` and `npm run build` pass (exit 0). No live visual QA (admin-gated).
 
 ### PT exercise library video population (2026-06-09, LATEST)
 
