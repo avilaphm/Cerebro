@@ -1,12 +1,46 @@
 # Handoff
 
 ## Last updated
-2026-06-09 by Codex - Client workout journey future phase cards now stay greyed out until reached.
+2026-06-09 by Codex - Imported 641 missing exercises from Cerebro Knowledge/exercise-library.md.
 
 ## Last code fix commit
-this commit - Grey unreached client journey week cards
+this commit - Document exercise-library import
 
 ## What just happened (read first)
+
+### Exercise library Markdown import (2026-06-09, LATEST)
+
+Pedro added `Cerebro Knowledge/exercise-library.md` and asked to cross-reference it with the live exercise library, then create cards for missing exercises with videos left for manual upload.
+
+Source document:
+- `../Cerebro Knowledge/exercise-library.md`
+- UTF-8 Markdown, 48,483 bytes.
+- Parsed exactly 682 unique exercise rows from the `- Name | tag [equipment]` format.
+
+Import process:
+- Followed the PT exercise import chain.
+- Dedupe compared against live `public.pt_exercises` using normalized names:
+  - case-insensitive
+  - punctuation/hyphen/space variants treated as equivalent
+  - `Dumbbell`/`DB`, `Barbell`/`BB`, `Kettlebell`/`KB` aliases treated as equivalent
+- Existing live library count before import: 704.
+- Existing matches from the document: 41.
+- New rows inserted: 641.
+- Final live library count: 1,345.
+
+Inserted row shape:
+- `video_url = null` for all 641 new rows so Pedro can add videos manually.
+- `tags` include `exercise-library-import` and `needs-video`.
+- `source = 'ai'`.
+- `purpose` stores the document pattern tag.
+- `equipment` was inferred from the exercise name first, then the bracketed document equipment, because the document had a few obvious bracket mismatches such as Dumbbell/Kettlebell movements marked `[Barbell]`.
+- `cues`, `setup_cues`, `conditions`, `progression_ids`, and `regression_ids` are empty arrays.
+- `primary_muscles`, `secondary_muscles`, and `muscles` were generated deterministically from the pattern tag and exercise name.
+
+Verification:
+- Aggregate check: `total_exercises = 1345`, `imported_from_document = 641`, `imported_with_null_video = 641`, `imported_needs_video = 641`.
+- Normalized re-check against all 682 source names returned `remaining_missing = 0`.
+- Spot-checked imported rows show clean display names (`- Pedro`, `+ t-spine` instead of Markdown escapes) and null `video_url`.
 
 ### Client workout journey unreached-card opacity (2026-06-09, LATEST)
 
