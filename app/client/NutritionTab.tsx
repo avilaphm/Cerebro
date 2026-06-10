@@ -701,7 +701,7 @@ export default function NutritionTab({ clientId }: Props) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* Macro overview */}
       <div className="mx-auto max-w-5xl border border-black/10 bg-white p-5">
         <div className="flex items-center justify-between mb-4">
@@ -743,30 +743,30 @@ export default function NutritionTab({ clientId }: Props) {
       </div>
 
       {phaseNutrition.length > 0 && (
-        <div className="mx-auto max-w-5xl border border-black/10 bg-white p-5">
+        <div className="order-last mx-auto w-full max-w-5xl border border-black/10 bg-white">
         <button
           type="button"
           onClick={() => setNutritionJourneyExpanded((value) => !value)}
-          className="w-full text-left transition-colors hover:bg-[#fcfcfa]"
+          className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-[#fcfcfa]"
         >
-          <div>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Nutrition journey</p>
-                <p className="mt-1 text-sm font-medium leading-relaxed text-black/75">
-                  {nutritionJourneyGoal}
-                  {nutritionJourneyWeeks > 0 ? ` · ${nutritionJourneyWeeks} week plan` : ''}
-                </p>
-              </div>
-              <ChevronDown
-                className={`h-4 w-4 shrink-0 text-black/25 transition-transform ${nutritionJourneyExpanded ? 'rotate-180' : ''}`}
-              />
-            </div>
+          <div className="min-w-0">
+            <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">
+              Nutrition journey{nutritionJourneyWeeks > 0 ? ` · ${nutritionJourneyWeeks} week plan` : ''}
+            </p>
+            <p className="mt-1 line-clamp-1 text-sm font-medium leading-relaxed text-black/60">
+              {nutritionJourneyGoal}
+            </p>
           </div>
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-black/25 transition-transform ${nutritionJourneyExpanded ? 'rotate-180' : ''}`}
+          />
         </button>
 
         {nutritionJourneyExpanded && (
-          <div className="border border-t-0 border-black/10 bg-white px-5 pb-5 pt-1">
+          <div className="border-t border-black/10 px-5 pb-5 pt-4">
+            {nutritionJourneyGoal && (
+              <p className="mb-4 text-sm leading-relaxed text-black/70">{nutritionJourneyGoal}</p>
+            )}
             <div className="relative">
               <div className="absolute bottom-3 left-[0.6rem] top-3 w-px bg-black/8" />
               <div className="space-y-1">

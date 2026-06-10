@@ -1,12 +1,23 @@
 # Handoff
 
 ## Last updated
-2026-06-10 by Claude - Client workout logger now has a compact default view with classic toggle fallback.
+2026-06-10 by Claude - Client Nutrition Journey is now a collapsed one-liner moved to the end of the nutrition screen.
 
 ## Last code fix commit
-this commit - Compact client workout logger
+this commit - Collapse + relocate client Nutrition Journey
 
 ## What just happened (read first)
+
+### Client Nutrition Journey collapsed + moved to end (2026-06-10, LATEST)
+
+Olga's nutrition screen showed the full nutrition-strategy essay expanded near the top, filling the viewport. The block was already a collapsible toggle (`nutritionJourneyExpanded` defaults false) but the collapsed "one-liner" rendered the entire `client_summary` with no truncation, and it sat right after "Track your food".
+
+Fix in `app/client/NutritionTab.tsx`:
+- Collapsed state is now a true one-liner: `line-clamp-1` on the summary preview, with the week count moved into the eyebrow ("Nutrition journey · N week plan").
+- Moved it to the END of the nutrition screen: root container changed `space-y-4` -> `flex flex-col gap-4` and the journey block given `order-last` (visually last without relocating the large JSX; modals are fixed overlays so unaffected).
+- Expanded panel now shows the full summary text (so she can read it) above the phase timeline; cleaned the panel border/padding.
+
+Verification: `npx tsc --noEmit` and `npm run build` pass (exit 0). No live visual QA (client portal is auth-gated).
 
 ### Compact client workout logger (2026-06-10, LATEST)
 
