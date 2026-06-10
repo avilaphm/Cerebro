@@ -81,21 +81,28 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
   const [metricSaving, setMetricSaving] = useState(false);
   const [metricMsg, setMetricMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Email notifications
+  const [wrapUpEmail, setWrapUpEmail] = useState(true);
+  const [wrapUpSaving, setWrapUpSaving] = useState(false);
+  const [wrapUpMsg, setWrapUpMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   const profileMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pwMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const metricMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapUpMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (profileMsgTimer.current) clearTimeout(profileMsgTimer.current);
     if (pwMsgTimer.current) clearTimeout(pwMsgTimer.current);
     if (metricMsgTimer.current) clearTimeout(metricMsgTimer.current);
+    if (wrapUpMsgTimer.current) clearTimeout(wrapUpMsgTimer.current);
   }, []);
 
   useEffect(() => {
     void (async () => {
       const [clientRes, metricRes] = await Promise.all([
         supabase.from('pt_clients')
-          .select('name, last_name, phone, gender, date_of_birth')
+          .select('name, last_name, phone, gender, date_of_birth, receive_weekly_wrap_up_email')
           .eq('id', clientId).single(),
         supabase.from('pt_client_metrics')
           .select('id, measured_at, weight_kg, waist_cm, body_fat_pct, muscle_mass_kg')
@@ -104,7 +111,7 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
           .limit(1),
       ]);
       if (clientRes.data) {
-        const d = clientRes.data as { name: string | null; last_name: string | null; phone: string | null; gender: string | null; date_of_birth: string | null };
+        const d = clientRes.data as { name: string | null; last_name: string | null; phone: string | null; gender: string | null; date_of_birth: string | null; receive_weekly_wrap_up_email: boolean | null };
         setProfile({
           name: d.name ?? '',
           last_name: d.last_name ?? '',
@@ -112,6 +119,7 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
           gender: d.gender ?? '',
           date_of_birth: d.date_of_birth ?? '',
         });
+        setWrapUpEmail(d.receive_weekly_wrap_up_email ?? true);
       }
       const metrics = (metricRes.data ?? []) as LatestMetric[];
       setLatestMetric(metrics[0] ?? null);
@@ -233,6 +241,24 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
 
     setMetricSaving(false);
     flashMsg(setMetricMsg, metricMsgTimer, { ok: true, text: 'Metrics saved.' });
+  };
+
+  const saveWrapUpPref = async (next: boolean) => {
+    if (wrapUpSaving) return;
+    const prev = wrapUpEmail;
+    setWrapUpEmail(next);
+    setWrapUpSaving(true);
+    const { error } = await supabase
+      .from('pt_clients')
+      .update({ receive_weekly_wrap_up_email: next, updated_at: new Date().toISOString() })
+      .eq('id', clientId);
+    setWrapUpSaving(false);
+    if (error) {
+      setWrapUpEmail(prev);
+      flashMsg(setWrapUpMsg, wrapUpMsgTimer, { ok: false, text: error.message });
+    } else {
+      flashMsg(setWrapUpMsg, wrapUpMsgTimer, { ok: true, text: next ? 'Weekly wrap-up emails are on.' : 'Weekly wrap-up emails are off.' });
+    }
   };
 
   const inputCls = 'w-full border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35 transition-colors';
@@ -364,6 +390,30 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
               </div>
             )}
           </div>
+        )}
+      </section>
+
+      {/* Email notifications */}
+      <section className="border border-black/10 bg-white p-5">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Email notifications</p>
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Weekly wrap-up</p>
+            <p className="mt-0.5 text-xs text-black/45">Your training &amp; nutrition recap, every Sunday morning.</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={wrapUpEmail}
+            disabled={wrapUpSaving}
+            onClick={() => void saveWrapUpPref(!wrapUpEmail)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${wrapUpEmail ? 'bg-black' : 'bg-black/15'}`}
+          >
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${wrapUpEmail ? 'left-[1.375rem]' : 'left-0.5'}`} />
+          </button>
+        </div>
+        {wrapUpMsg && (
+          <p className={`mt-3 text-xs ${wrapUpMsg.ok ? 'text-green-600' : 'text-red-500'}`}>{wrapUpMsg.text}</p>
         )}
       </section>
 

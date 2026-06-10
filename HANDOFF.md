@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
-2026-06-10 by Codex - Added manual programme phase cursor controls and 1RM-to-Hypertrophy advance.
+2026-06-10 by Claude - Built the weekly wrap-up email feature (Spotify-Wrapped style): tags, AI recap, Sunday cron, client opt-out toggle. DEPLOYED.
 
 ## Last code fix commit
-this commit - Add programme phase cursor controls
+this commit - Weekly wrap-up email feature
 
 ## What just happened (read first)
+
+### Weekly wrap-up email feature (2026-06-10, LATEST)
+
+New Spotify-Wrapped-style weekly email to clients (Sunday ~8am Sydney) recapping workouts, nutrition, PBs, with a short AI recap. Pedro designs it once in the email builder using {{week.*}} tags; the same template applies to every client, each tag resolved per-recipient at send time.
+
+Shipped + DEPLOYED to Supabase project otcnrkfvgyvwolironoz:
+- Migration `20260610000000_weekly_wrapup.sql` (applied): `pt_client_weekly_wrapup` table (PK client_id+week_start, RLS mirrors brain-reports), `pt_clients.receive_weekly_wrap_up_email` bool default true, and pg_cron job `pt-weekly-wrapup` `0 22 * * 6` (Sat 22:00 UTC = Sun ~8am Sydney) calling the edge function with the cron bearer.
+- Edge function `send-weekly-wrapup` (deployed, verify_jwt false; custom auth: cron token OR Pedro/admin JWT). Modes: scheduled (loop opted-in clients, dedup via pt_notification_log metadata.week_start, send HTML via Resend, log) and preview ({client_id} -> renders with that client's real week + AI recap, sends [PREVIEW] to Pedro). Metrics: volume, top exercise, biggest lift, PBs (Epley vs pt_client_1rm_results baselines), nutrition adherence vs pt_client_nutrition_doc.daily_targets, consistency streak, energy. AI recap via claude-haiku-4-5-20251001. Requires a status='live' `weekly_wrap_up` template before it sends (else safe no-op).
+- `PTEmailsView.tsx`: new `weekly_wrap_up` workflow + starter design; WRAP_UP_TOKENS tag palette (click to copy) + WRAP_UP_PREVIEW_SAMPLES; previewTokenValue resolves {{week.*}} samples; "Preview with a client's real week -> Send preview to me" control (client dropdown + invoke preview mode).
+- `app/client/SettingsTab.tsx`: "Email notifications" section with a wrap-up on/off toggle (direct pt_clients update via the existing client_update_own_profile RLS policy; default on).
+
+NEXT (Pedro): in PT dashboard -> Emails -> "Weekly client wrap-up", design the email with the {{week.*}} tags, use "Send preview to me" to check it with a real client, then "Make live" to start the Sunday sends. Tag syntax {{week.xxx}}; full list in WRAP_UP_TOKENS / the send-weekly-wrapup metrics. A `pt-wrapup-tag` skill is being created to wire any future new tag end-to-end.
+
+Verification: tsc + build green; migration applied; function deployed; scheduled invoke returned the safe "no live template" guard (week_start 2026-06-08); cron job active. Per-client data path validates when Pedro previews with a live template.
 
 ### Manual client programme phase movement (2026-06-10, LATEST)
 

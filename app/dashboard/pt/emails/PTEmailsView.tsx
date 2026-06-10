@@ -37,6 +37,7 @@ type WorkflowKey =
   | 'sessions_left'
   | 'coach_booking_notification'
   | 'weekly_pt_summary'
+  | 'weekly_wrap_up'
   | 'lead_chat_welcome'
   | 'lead_proposal';
 
@@ -98,6 +99,51 @@ const PERSONALIZATION_TOKENS = [
   { label: 'Client email', value: '{{ .Email }}' },
   { label: 'Setup link', value: '{{ .ConfirmationURL }}' },
 ];
+
+// Weekly wrap-up merge tags. Authored once; resolved per client at send time by
+// the send-weekly-wrapup edge function (data) + an AI recap. Keep in sync with
+// the metrics built there. See the pt-wrapup-tag skill.
+const WRAP_UP_TOKENS = [
+  { label: 'First name', value: '{{week.client_first_name}}' },
+  { label: 'Week range', value: '{{week.range_label}}' },
+  { label: 'Sessions (X of Y)', value: '{{week.workouts_ratio}}' },
+  { label: 'Workouts done', value: '{{week.workouts_completed}}' },
+  { label: 'Total volume (kg)', value: '{{week.total_volume_kg}}' },
+  { label: 'Top exercise', value: '{{week.top_exercise}}' },
+  { label: 'Biggest lift', value: '{{week.biggest_lift}}' },
+  { label: 'New PBs count', value: '{{week.new_pbs_count}}' },
+  { label: 'New PBs list', value: '{{week.new_pbs_list}}' },
+  { label: 'Protein days hit', value: '{{week.protein_days_hit}}' },
+  { label: 'Calorie days hit', value: '{{week.calorie_days_hit}}' },
+  { label: 'Protein adherence', value: '{{week.protein_adherence_pct}}' },
+  { label: 'Consistency streak', value: '{{week.consistency_streak}}' },
+  { label: 'Energy (avg)', value: '{{week.energy_avg}}' },
+  { label: 'Energy trend', value: '{{week.energy_trend}}' },
+  { label: 'AI · headline', value: '{{week.recap_headline}}' },
+  { label: 'AI · recap', value: '{{week.recap_paragraph}}' },
+  { label: 'AI · nudge', value: '{{week.coach_nudge}}' },
+];
+
+const WRAP_UP_PREVIEW_SAMPLES: Record<string, string> = {
+  '{{week.client_first_name}}': 'Olga',
+  '{{week.range_label}}': '2–8 Jun',
+  '{{week.workouts_ratio}}': '4 of 5',
+  '{{week.workouts_completed}}': '4',
+  '{{week.total_volume_kg}}': '18,420',
+  '{{week.top_exercise}}': 'Back Squat',
+  '{{week.biggest_lift}}': 'Back Squat 120kg',
+  '{{week.new_pbs_count}}': '2',
+  '{{week.new_pbs_list}}': 'Bench 82.5kg, Squat 120kg',
+  '{{week.protein_days_hit}}': '6',
+  '{{week.calorie_days_hit}}': '5',
+  '{{week.protein_adherence_pct}}': '96%',
+  '{{week.consistency_streak}}': '5',
+  '{{week.energy_avg}}': '4',
+  '{{week.energy_trend}}': 'strong',
+  '{{week.recap_headline}}': 'Your strongest week yet.',
+  '{{week.recap_paragraph}}': 'You showed up four times and moved serious weight — the squat PB is the headline. Protein was dialled in almost every day and your energy held strong.',
+  '{{week.coach_nudge}}': 'Chase that fifth session next week and the PBs keep coming.',
+};
 
 const CLIENT_SETUP_DEFAULT: EmailDesign = {
   subject: 'Your Pedro Avila Coaching programme',
@@ -254,6 +300,28 @@ const WORKFLOWS: WorkflowDefinition[] = [
     },
   },
   {
+    key: 'weekly_wrap_up',
+    label: 'Weekly client wrap-up',
+    owner: 'PT Ops',
+    trigger: 'Sent automatically every Sunday morning',
+    destination: 'Client',
+    status: 'live-editable',
+    note: 'Sent every Sunday to clients who keep it on in Settings. Drop {{week.*}} tags anywhere — each is filled per client from their past-week data plus an AI recap. Design it once and it applies to everyone. Click "Make live" to start sending.',
+    defaultDesign: {
+      subject: 'Your week, wrapped',
+      preview: 'Your training & nutrition recap, {{week.client_first_name}}.',
+      blocks: [
+        { id: 'wrap-eyebrow', type: 'eyebrow', content: 'YOUR WEEK · {{week.range_label}}' },
+        { id: 'wrap-heading', type: 'heading', content: '{{week.recap_headline}}' },
+        { id: 'wrap-stats', type: 'text', content: '{{week.workouts_ratio}} sessions · {{week.total_volume_kg}} kg moved\nTop movement: {{week.top_exercise}}\nBiggest lift: {{week.biggest_lift}}\nNew PBs: {{week.new_pbs_list}}' },
+        { id: 'wrap-nutrition', type: 'text', content: 'Protein on target {{week.protein_days_hit}}/7 days · {{week.consistency_streak}}-day streak' },
+        { id: 'wrap-recap', type: 'text', content: '{{week.recap_paragraph}}' },
+        { id: 'wrap-nudge', type: 'text', content: '{{week.coach_nudge}}' },
+        { id: 'wrap-signoff', type: 'text', content: 'See you this week,\nPedro' },
+      ],
+    },
+  },
+  {
     key: 'lead_chat_welcome',
     label: 'Lead chat welcome',
     owner: 'Lead Engine',
@@ -322,10 +390,15 @@ function textToHtml(value: string) {
 }
 
 function previewTokenValue(value: string) {
-  return value
+  let out = value
     .replaceAll('{{ .Data.full_name }}', 'Raquel')
     .replaceAll('{{ .Email }}', 'client@email.com')
     .replaceAll('{{ .ConfirmationURL }}', '#');
+  for (const [token, sample] of Object.entries(WRAP_UP_PREVIEW_SAMPLES)) {
+    out = out.split(token).join(sample);
+  }
+  // Any wrap-up tag without a sample renders blank in preview (matches send-time behaviour).
+  return out.replace(/\{\{\s*week\.[a-zA-Z_]+\s*\}\}/g, '');
 }
 
 function renderEmailHtml(design: EmailDesign) {
@@ -568,7 +641,11 @@ export default function PTEmailsView({
   const [copied, setCopied] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [sendingTest, setSendingTest] = useState(false);
+  const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
+  const [previewClientId, setPreviewClientId] = useState('');
+  const [previewing, setPreviewing] = useState(false);
   const workflow = WORKFLOWS.find((item) => item.key === selectedKey) ?? WORKFLOWS[0];
+  const isWrapUp = selectedKey === 'weekly_wrap_up';
   const design = designs[selectedKey];
   const selectedTemplateRow = templateRows[selectedKey];
   const html = useMemo(() => renderEmailHtml(design), [design]);
@@ -615,6 +692,31 @@ export default function PTEmailsView({
     void loadAll();
     return () => { mounted = false; };
   }, [supabase]);
+
+  useEffect(() => {
+    void (async () => {
+      const { data } = await supabase
+        .from('pt_clients')
+        .select('id, name')
+        .neq('status', 'archived')
+        .order('name');
+      if (data) setClients(data as Array<{ id: string; name: string }>);
+    })();
+  }, [supabase]);
+
+  const sendWrapPreview = async () => {
+    if (!previewClientId) { setStatus('Pick a client to preview with.'); return; }
+    setPreviewing(true);
+    setStatus('Generating wrap-up preview from real client data...');
+    const { data, error } = await supabase.functions.invoke('send-weekly-wrapup', {
+      body: { mode: 'preview', client_id: previewClientId },
+    });
+    setPreviewing(false);
+    if (error) { setStatus(`Preview failed: ${error.message}`); return; }
+    const res = data as { sent?: boolean; to?: string; error?: string } | null;
+    if (res?.error) { setStatus(`Preview failed: ${res.error}`); return; }
+    setStatus(res?.sent ? `Wrap-up preview sent to ${res.to ?? 'your inbox'}.` : 'Preview generated but the email did not send.');
+  };
 
   const patchDesign = (patch: Partial<EmailDesign>) => {
     setDesigns((current) => ({
@@ -889,35 +991,80 @@ export default function PTEmailsView({
           </div>
 
           <div className="space-y-5 p-5">
-            <section className="border border-black/10 bg-black/[0.015] p-4">
-              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Personalisation</h3>
-                  <p className="mt-1 text-xs text-black/40">Use these in subject, preview, heading, text, or buttons. They render per recipient at send time.</p>
+            {isWrapUp ? (
+              <section className="border border-black/10 bg-black/[0.015] p-4">
+                <div className="mb-4">
+                  <h3 className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Weekly wrap-up tags</h3>
+                  <p className="mt-1 text-xs text-black/40">Click a tag to copy it, then paste it into any block. Each one is filled per client at send time — set it once, it works for everyone.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => appendTokenToFirstHeading('{{ .Data.full_name }}')}
-                  className="inline-flex items-center justify-center gap-2 border border-black/15 px-3 py-2 text-sm transition-colors hover:border-black/35"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add name to heading
-                </button>
-              </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {PERSONALIZATION_TOKENS.map((token) => (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {WRAP_UP_TOKENS.map((token) => (
+                    <button
+                      key={token.value}
+                      type="button"
+                      onClick={() => { void navigator.clipboard.writeText(token.value); setStatus(`Copied ${token.value} — paste it into a block.`); }}
+                      className="border border-black/10 bg-white px-3 py-2.5 text-left transition-colors hover:border-black/35"
+                    >
+                      <span className="block text-sm font-medium">{token.label}</span>
+                      <span className="mt-0.5 block truncate font-mono text-[0.66rem] text-black/35">{token.value}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-4 border-t border-black/8 pt-4">
+                  <p className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Preview with a client&apos;s real week</p>
+                  <p className="mt-1 text-xs text-black/40">Sends this design, filled with a real client&apos;s last-week data + AI recap, to your own inbox.</p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <select
+                      value={previewClientId}
+                      onChange={(e) => setPreviewClientId(e.target.value)}
+                      className="min-w-0 flex-1 border border-black/15 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
+                    >
+                      <option value="">Choose a client…</option>
+                      {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void sendWrapPreview()}
+                      disabled={previewing || !previewClientId}
+                      className="inline-flex items-center justify-center gap-2 border border-black/15 px-4 py-2 text-sm transition-colors hover:border-black/35 disabled:pointer-events-none disabled:opacity-35"
+                    >
+                      <Mail className="h-4 w-4" />
+                      {previewing ? 'Sending...' : 'Send preview to me'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="border border-black/10 bg-black/[0.015] p-4">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-[0.6rem] font-medium uppercase tracking-[0.18em] text-black/35">Personalisation</h3>
+                    <p className="mt-1 text-xs text-black/40">Use these in subject, preview, heading, text, or buttons. They render per recipient at send time.</p>
+                  </div>
                   <button
-                    key={token.value}
                     type="button"
-                    onClick={() => void navigator.clipboard.writeText(token.value)}
-                    className="border border-black/10 bg-white px-3 py-3 text-left transition-colors hover:border-black/35"
+                    onClick={() => appendTokenToFirstHeading('{{ .Data.full_name }}')}
+                    className="inline-flex items-center justify-center gap-2 border border-black/15 px-3 py-2 text-sm transition-colors hover:border-black/35"
                   >
-                    <span className="block text-sm font-medium">{token.label}</span>
-                    <span className="mt-1 block truncate font-mono text-[0.68rem] text-black/35">{token.value}</span>
+                    <Plus className="h-4 w-4" />
+                    Add name to heading
                   </button>
-                ))}
-              </div>
-            </section>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {PERSONALIZATION_TOKENS.map((token) => (
+                    <button
+                      key={token.value}
+                      type="button"
+                      onClick={() => void navigator.clipboard.writeText(token.value)}
+                      className="border border-black/10 bg-white px-3 py-3 text-left transition-colors hover:border-black/35"
+                    >
+                      <span className="block text-sm font-medium">{token.label}</span>
+                      <span className="mt-1 block truncate font-mono text-[0.68rem] text-black/35">{token.value}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="border border-black/10 bg-white p-4">
               <div className="mb-4 flex items-center justify-between">
