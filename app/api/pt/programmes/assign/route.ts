@@ -38,6 +38,9 @@ export async function POST(req: NextRequest) {
       generation_run_id: template.generation_run_id ?? null,
       coach_review_status: 'approved',
       validation_summary: template.validation_summary ?? {},
+      current_phase_index: 0,
+      current_block_index: 0,
+      current_week: 1,
     })
     .select('id')
     .single();

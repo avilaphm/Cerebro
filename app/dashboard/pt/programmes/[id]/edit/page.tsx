@@ -34,6 +34,9 @@ export default async function PTProgrammeEditPage({
   const assignment: PTProgramAssignment = {
     ...assignmentRes.data as PTProgramAssignment,
     programme: safeProgramme((assignmentRes.data as PTProgramAssignment).programme),
+    current_phase_index: typeof (assignmentRes.data as PTProgramAssignment).current_phase_index === 'number'
+      ? (assignmentRes.data as PTProgramAssignment).current_phase_index
+      : null,
     current_week: (assignmentRes.data as PTProgramAssignment).current_week ?? 1,
     current_block_index: (assignmentRes.data as PTProgramAssignment).current_block_index ?? 0,
   };

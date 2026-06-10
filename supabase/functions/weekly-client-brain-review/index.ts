@@ -169,7 +169,7 @@ async function buildSnapshot(
     admin.from('pt_weekly_checkins').select('*').eq('client_id', client.id).gte('week_start', weekStart).lte('week_start', weekEnd).order('week_start', { ascending: false }),
     admin.from('pt_messages').select('sender, content, created_at, context').eq('client_id', client.id).gte('created_at', startIso).lt('created_at', endIso).order('created_at', { ascending: false }).limit(30),
     admin.from('pt_client_metrics').select('*').eq('client_id', client.id).order('measured_at', { ascending: false }).limit(8),
-    admin.from('pt_program_assignments').select('id, name, goal, duration_weeks, programme, nutrition_sync').eq('client_id', client.id).eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    admin.from('pt_program_assignments').select('id, name, goal, duration_weeks, current_phase_index, current_week, current_block_index, programme, nutrition_sync').eq('client_id', client.id).eq('status', 'active').order('created_at', { ascending: false }).limit(1).maybeSingle(),
     admin.from('pt_client_nutrition_doc').select('daily_targets, adherence_metrics, phase_nutrition_strategy, pyramid_finalizer, recurring_gaps, recent_wins').eq('client_id', client.id).maybeSingle(),
     admin.from('pt_phase_nutrition').select('*').eq('client_id', client.id).eq('review_status', 'approved').order('phase_index', { ascending: true }),
   ]);

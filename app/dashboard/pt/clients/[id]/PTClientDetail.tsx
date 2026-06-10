@@ -114,6 +114,24 @@ interface PTNote {
 const ONE_RM_EXERCISES = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'] as const;
 type OneRMExercise = typeof ONE_RM_EXERCISES[number];
 
+function phaseLooksLikeTesting(title: string): boolean {
+  return /1\s*rm|test/i.test(title);
+}
+
+function findPostOneRmPhaseIndex(assignment: PTProgramAssignment | undefined): number | null {
+  if (!assignment) return null;
+  const phases = assignment.programme.phases;
+  const currentIndex = typeof assignment.current_phase_index === 'number'
+    ? assignment.current_phase_index
+    : phases.findIndex((phase) => phaseLooksLikeTesting(phase.title));
+  if (currentIndex < 0) return null;
+
+  const nextTrainingPhaseIndex = phases.findIndex((phase, phaseIndex) =>
+    phaseIndex > currentIndex && !phaseLooksLikeTesting(phase.title),
+  );
+  return nextTrainingPhaseIndex >= 0 ? nextTrainingPhaseIndex : null;
+}
+
 function epley1RM(weightKg: number, reps: number): number {
   if (reps === 1) return weightKg;
   return Math.round(weightKg * (1 + reps / 30) * 10) / 10;
@@ -435,6 +453,8 @@ export default function PTClientDetail({
   const [oneRmModalOpen, setOneRmModalOpen] = useState(false);
   const [oneRmSaving, setOneRmSaving] = useState(false);
   const [oneRmStatus, setOneRmStatus] = useState('');
+  const [oneRmAdvancePhaseIndex, setOneRmAdvancePhaseIndex] = useState<number | null>(null);
+  const [oneRmAdvanceBusy, setOneRmAdvanceBusy] = useState(false);
   const [oneRmInputs, setOneRmInputs] = useState<Record<OneRMExercise, { weight: string; reps: string }>>(
     () => Object.fromEntries(ONE_RM_EXERCISES.map((ex) => [ex, { weight: '', reps: '1' }])) as Record<OneRMExercise, { weight: string; reps: string }>,
   );
@@ -518,6 +538,9 @@ export default function PTClientDetail({
       generation_run_id: template.generation_run_id ?? null,
       coach_review_status: 'approved',
       validation_summary: template.validation_summary ?? {},
+      current_phase_index: 0,
+      current_block_index: 0,
+      current_week: 1,
     });
     await supabase.from('pt_events').insert({
       client_id: client.id,
@@ -566,7 +589,15 @@ export default function PTClientDetail({
       };
     });
 
-    const { error: resultErr } = await supabase.from('pt_client_1rm_results').insert(resultRows);
+    const { error: resultErr } = await supabase.from('pt_client_1rm_results').insert(resultRows.map((row) => ({
+      test_id: row.test_id,
+      client_id: row.client_id,
+      exercise_name: row.exercise_name,
+      load_kg: row.tested_weight_kg,
+      reps: row.tested_reps,
+      estimated_1rm_kg: row.estimated_1rm_kg,
+      notes: row.notes,
+    })));
     if (resultErr) {
       setOneRmStatus(`Error saving results: ${resultErr.message}`);
       setOneRmSaving(false);
@@ -615,10 +646,63 @@ export default function PTClientDetail({
 
     const newTest: PT1RMTest = { id: testRow.id, client_id: client.id, assignment_id: activeAssignment?.id ?? null, tested_at: new Date().toISOString().slice(0, 10), notes: null, created_at: new Date().toISOString(), results: resultRows.map((r, i) => ({ id: `temp-${i}`, test_id: testRow.id, client_id: client.id, exercise_name: r.exercise_name, tested_weight_kg: r.tested_weight_kg, tested_reps: r.tested_reps, estimated_1rm_kg: r.estimated_1rm_kg, notes: null, created_at: new Date().toISOString() })) };
     setOneRmTests((prev) => [newTest, ...prev]);
+    setOneRmAdvancePhaseIndex(findPostOneRmPhaseIndex(activeAssignment));
     setOneRmStatus('Saved.');
     setOneRmInputs(Object.fromEntries(ONE_RM_EXERCISES.map((ex) => [ex, { weight: '', reps: '1' }])) as Record<OneRMExercise, { weight: string; reps: string }>);
     setOneRmSaving(false);
-    setTimeout(() => { setOneRmModalOpen(false); setOneRmStatus(''); }, 1200);
+  };
+
+  const advanceAfterOneRm = async () => {
+    if (!activeAssignment || oneRmAdvancePhaseIndex === null) return;
+    const nextPhase = activeAssignment.programme.phases[oneRmAdvancePhaseIndex];
+    setOneRmAdvanceBusy(true);
+    setOneRmStatus(`Moving to ${nextPhase?.title ?? 'next phase'}...`);
+
+    const { error } = await supabase
+      .from('pt_program_assignments')
+      .update({
+        current_phase_index: oneRmAdvancePhaseIndex,
+        current_block_index: 0,
+        current_week: 1,
+      })
+      .eq('id', activeAssignment.id);
+
+    if (error) {
+      setOneRmStatus(`Could not move phase: ${error.message}`);
+      setOneRmAdvanceBusy(false);
+      return;
+    }
+
+    await supabase.from('pt_events').insert({
+      client_id: client.id,
+      assignment_id: activeAssignment.id,
+      event_type: 'programme_position_changed',
+      metadata: {
+        source: '1rm_results',
+        assignment_name: activeAssignment.name,
+        from: {
+          phase_index: activeAssignment.current_phase_index,
+          block_index: activeAssignment.current_block_index,
+          week: activeAssignment.current_week,
+        },
+        to: {
+          phase_index: oneRmAdvancePhaseIndex,
+          phase_title: nextPhase?.title ?? null,
+          block_index: 0,
+          week: 1,
+          weeks_left: nextPhase?.weeks ?? null,
+        },
+      },
+    });
+
+    setAssignmentList((prev) => prev.map((assignment) =>
+      assignment.id === activeAssignment.id
+        ? { ...assignment, current_phase_index: oneRmAdvancePhaseIndex, current_block_index: 0, current_week: 1 }
+        : assignment,
+    ));
+    setOneRmAdvancePhaseIndex(null);
+    setOneRmAdvanceBusy(false);
+    setOneRmStatus(`Moved to ${nextPhase?.title ?? 'next phase'}.`);
   };
 
   const recalculateLoads = async () => {
@@ -2284,6 +2368,18 @@ export default function PTClientDetail({
                   className="border border-black/20 px-4 py-2 text-xs hover:border-black/40 transition-colors disabled:opacity-40"
                 >
                   {recalcBusy ? 'Recalculating...' : 'Recalculate programme loads'}
+                </button>
+              )}
+              {activeAssignment && oneRmAdvancePhaseIndex !== null && (
+                <button
+                  type="button"
+                  onClick={() => void advanceAfterOneRm()}
+                  disabled={oneRmAdvanceBusy}
+                  className="border border-amber-500 bg-amber-50 px-4 py-2 text-xs text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-40"
+                >
+                  {oneRmAdvanceBusy
+                    ? 'Moving...'
+                    : `Move to ${activeAssignment.programme.phases[oneRmAdvancePhaseIndex]?.title ?? 'next phase'}`}
                 </button>
               )}
             </div>

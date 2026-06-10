@@ -195,6 +195,7 @@ export interface PTProgramAssignment {
   coach_review_status?: 'draft' | 'needs_review' | 'approved' | 'changes_requested';
   validation_summary?: Record<string, unknown>;
   nutrition_sync?: Record<string, unknown>;
+  current_phase_index?: number | null;
   current_week: number;
   current_block_index: number;
   pt_clients?: Pick<PTClient, 'name' | 'email'> | null;

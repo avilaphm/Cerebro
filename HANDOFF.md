@@ -1,12 +1,51 @@
 # Handoff
 
 ## Last updated
-2026-06-10 by Claude - Fixed nutrition screen shrinking: reverted the flex container, moved the Journey block physically instead of via order-last.
+2026-06-10 by Codex - Added manual programme phase cursor controls and 1RM-to-Hypertrophy advance.
 
 ## Last code fix commit
-this commit - Fix nutrition screen width regression
+this commit - Add programme phase cursor controls
 
 ## What just happened (read first)
+
+### Manual client programme phase movement (2026-06-10, LATEST)
+
+Pedro needed to move Analise forward to the 1RM testing phase before tomorrow's session, record 1RM numbers, then move her into Hypertrophy. Previously active phase was inferred from workout logs, and `current_week/current_block_index` did not include a phase cursor, so there was no reliable admin control to move a client forward/back.
+
+Shipped:
+- Added `current_phase_index` to live Supabase `public.pt_program_assignments` and local migration `supabase/migrations/20260610072245_programme_phase_cursor.sql`.
+  - `supabase db push --yes` was blocked by pre-existing remote migration-history drift: many remote migration versions are missing locally.
+  - Applied the additive DDL via Supabase MCP `apply_migration`; verified the live column exists and is nullable.
+- `utils/pt/programme.ts`: centralized progress helpers:
+  - `calcPhaseProgress`
+  - `resolveActivePhaseIndex`
+  - `getCursorForWeeksLeft`
+  - `getWeeksLeftFromCursor`
+  - `getCursorUpdateAfterWorkout`
+  - `phaseIsComplete`
+- Programme edit screen (`app/dashboard/pt/programmes/[id]/edit/PTProgrammeEditView.tsx`):
+  - New "Client position" panel above Phases.
+  - Pedro can pick active phase, set weeks left, move back/forward one phase, then save.
+  - Weeks-left only changes the assignment cursor; it does NOT shorten or rewrite the programme JSON.
+  - Cursor is only persisted for older assignments if Pedro touches the control, so ordinary saves do not accidentally pin legacy clients back to phase 1.
+  - Cursor changes write a `pt_events` row with `event_type = programme_position_changed`.
+- Client workout portal and coach PT-session logger now prefer `current_phase_index` when present, but fall back to log inference for older assignments without a manual cursor.
+- Workout completion now updates `current_phase_index/current_block_index/current_week`; one-day testing phases can advance naturally after being logged.
+- New programme assignments start at `current_phase_index = 0`, `current_block_index = 0`, `current_week = 1`.
+- 1RM results flow on client detail:
+  - Fixed existing schema mismatch: UI was inserting `tested_weight_kg/tested_reps`, but live `pt_client_1rm_results` stores `load_kg/reps`.
+  - Existing loaded results are normalized back into UI shape for display.
+  - After saving 1RM results, the modal offers an explicit "Move to Phase 2 - Hypertrophy" style action when a next non-test phase exists. It does not auto-advance.
+- Programme list and several Edge Function programme-context selects now include/use `current_phase_index`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Live DB column verified through `information_schema`.
+- Supabase advisors checked after DDL. Only pre-existing project-wide warnings appeared:
+  - security: `pg_net` extension in public, leaked password protection disabled.
+  - performance: existing unindexed FK / RLS / duplicate-index warnings; no issue specific to `current_phase_index`.
+- Browser smoke: local dev server started at `http://localhost:3000`; `/dashboard/pt/programmes` redirects to `/login` in the in-app browser, so visual QA remains auth-gated.
 
 ### Fix nutrition screen width regression (2026-06-10, LATEST)
 

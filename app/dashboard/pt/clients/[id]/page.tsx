@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
 import type {
+  PT1RMResult,
   PT1RMTest,
   PTClient,
   PTClientGoal,
@@ -174,6 +175,9 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const assignments = ((assignmentsRes.data ?? []) as PTProgramAssignment[]).map((a) => ({
     ...a,
     programme: safeProgramme(a.programme),
+    current_phase_index: typeof a.current_phase_index === 'number' ? a.current_phase_index : null,
+    current_week: a.current_week ?? 1,
+    current_block_index: a.current_block_index ?? 0,
   }));
   const events = (eventsRes.data ?? []) as PTEvent[];
   const notes = (notesRes.data ?? []) as PTNote[];
@@ -185,7 +189,19 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const coachingTasks = (tasksRes.data ?? []) as PTCoachingTask[];
   const reviews = (reviewsRes.data ?? []) as PTCoachingReview[];
   const checkinSessions = (checkinSessionsRes.data ?? []) as PTCheckinSession[];
-  const oneRmTests = (oneRmTestsRes.data ?? []) as PT1RMTest[];
+  const oneRmTests = ((oneRmTestsRes.data ?? []) as Array<PT1RMTest & {
+    results?: Array<PT1RMResult & { load_kg?: number | null; reps?: number | null }>;
+  }>).map((test) => ({
+    ...test,
+    results: (test.results ?? []).map((result) => {
+      const row = result as PT1RMResult & { load_kg?: number | null; reps?: number | null };
+      return {
+        ...row,
+        tested_weight_kg: row.tested_weight_kg ?? row.load_kg ?? null,
+        tested_reps: row.tested_reps ?? row.reps ?? null,
+      };
+    }),
+  })) as PT1RMTest[];
   const nutritionDoc = (nutritionDocRes.data ?? null) as PTClientNutritionDoc | null;
   const phaseNutrition = (phaseNutritionRes.data ?? []) as PTPhaseNutrition[];
   const brainReports = (brainReportsRes.data ?? []) as Array<{

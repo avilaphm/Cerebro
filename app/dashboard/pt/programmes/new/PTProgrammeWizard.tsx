@@ -609,6 +609,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         coach_review_status: 'approved',
         validation_summary: validationSummary,
         nutrition_sync: { phase_nutrition: phaseNutritionDraft },
+        current_phase_index: 0,
+        current_block_index: 0,
+        current_week: 1,
       }).select('id').single();
       if (!aErr && assignment) {
         if (phaseNutritionDraft.length > 0) {

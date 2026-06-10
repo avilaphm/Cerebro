@@ -20,30 +20,185 @@ export interface ProgrammeProgressWorkoutLog {
   block_index: number | null;
 }
 
-export function getCurrentProgrammePhaseIndex(programme: PTProgramme, logs: ProgrammeProgressWorkoutLog[]): number {
+export interface PhaseProgress {
+  blockIndex: number;
+  weekWithinBlock: number;
+  block: PTProgrammeWeekBlock | null;
+  allBlocksDone: boolean;
+}
+
+export interface ProgrammeCursor {
+  phaseIndex: number;
+  blockIndex: number;
+  week: number;
+}
+
+export function calcPhaseProgress(
+  logs: ProgrammeProgressWorkoutLog[],
+  phaseIndex: number,
+  weekBlocks: PTProgrammeWeekBlock[] | undefined,
+  daysInPhase: number,
+): PhaseProgress | null {
+  if (!weekBlocks || weekBlocks.length === 0) return null;
+
+  for (let blockIndex = 0; blockIndex < weekBlocks.length; blockIndex++) {
+    const block = weekBlocks[blockIndex];
+    const required = requiredWorkoutsForBlock(weekBlocks, blockIndex, daysInPhase);
+    const logsInBlock = logs.filter(
+      (log) => log.phase_index === phaseIndex && log.block_index === blockIndex,
+    );
+    const completed = new Set(logsInBlock.map((log) => `${log.week_number}-${log.day_index}`));
+
+    if (completed.size < required) {
+      const weekMap = new Map<number, Set<number>>();
+      logsInBlock.forEach((log) => {
+        if (!weekMap.has(log.week_number)) weekMap.set(log.week_number, new Set());
+        weekMap.get(log.week_number)!.add(log.day_index);
+      });
+
+      let currentWeek = 1;
+      for (let week = 1; week <= block.weeks; week++) {
+        if ((weekMap.get(week)?.size ?? 0) < daysInPhase) {
+          currentWeek = week;
+          break;
+        }
+      }
+
+      return { blockIndex, weekWithinBlock: currentWeek, block, allBlocksDone: false };
+    }
+  }
+
+  const lastBlock = weekBlocks[weekBlocks.length - 1];
+  return {
+    blockIndex: weekBlocks.length - 1,
+    weekWithinBlock: lastBlock.weeks,
+    block: lastBlock,
+    allBlocksDone: true,
+  };
+}
+
+export function getPhaseTotalWeeks(phase: PTProgrammePhase | undefined): number {
+  if (!phase) return 1;
+  const blockTotal = phase.week_blocks?.reduce((sum, block) => sum + block.weeks, 0) ?? 0;
+  if (blockTotal > 0) return blockTotal;
+  const parsed = parseInt(phase.weeks, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+export function getWeeksLeftFromCursor(
+  phase: PTProgrammePhase | undefined,
+  blockIndex: number | null | undefined,
+  week: number | null | undefined,
+): number {
+  const totalWeeks = getPhaseTotalWeeks(phase);
+  if (!phase?.week_blocks || phase.week_blocks.length === 0) {
+    const currentWeek = clampNumber(week ?? 1, 1, totalWeeks);
+    return totalWeeks - currentWeek + 1;
+  }
+
+  const safeBlockIndex = clampNumber(blockIndex ?? 0, 0, phase.week_blocks.length - 1);
+  const weeksBefore = phase.week_blocks
+    .slice(0, safeBlockIndex)
+    .reduce((sum, block) => sum + block.weeks, 0);
+  const blockWeeks = phase.week_blocks[safeBlockIndex]?.weeks ?? 1;
+  const weekWithinBlock = clampNumber(week ?? 1, 1, blockWeeks);
+  return totalWeeks - weeksBefore - weekWithinBlock + 1;
+}
+
+export function getCursorForWeeksLeft(
+  phase: PTProgrammePhase | undefined,
+  phaseIndex: number,
+  weeksLeftInput: number,
+): ProgrammeCursor {
+  const totalWeeks = getPhaseTotalWeeks(phase);
+  const weeksLeft = clampNumber(weeksLeftInput, 1, totalWeeks);
+  const elapsedWeeks = totalWeeks - weeksLeft;
+
+  if (!phase?.week_blocks || phase.week_blocks.length === 0) {
+    return { phaseIndex, blockIndex: 0, week: elapsedWeeks + 1 };
+  }
+
+  let weeksBefore = 0;
+  for (let blockIndex = 0; blockIndex < phase.week_blocks.length; blockIndex++) {
+    const block = phase.week_blocks[blockIndex];
+    if (elapsedWeeks < weeksBefore + block.weeks) {
+      return { phaseIndex, blockIndex, week: elapsedWeeks - weeksBefore + 1 };
+    }
+    weeksBefore += block.weeks;
+  }
+
+  const lastIndex = phase.week_blocks.length - 1;
+  return {
+    phaseIndex,
+    blockIndex: lastIndex,
+    week: phase.week_blocks[lastIndex]?.weeks ?? 1,
+  };
+}
+
+export function phaseIsComplete(
+  logs: ProgrammeProgressWorkoutLog[],
+  phaseIndex: number,
+  phase: PTProgrammePhase | undefined,
+): boolean {
+  if (!phase) return false;
+  const progress = calcPhaseProgress(logs, phaseIndex, phase.week_blocks, phase.days.length);
+  if (progress) return progress.allBlocksDone;
+  if (phase.days.length === 0) return false;
+  const completedDays = new Set(
+    logs
+      .filter((log) => log.phase_index === phaseIndex)
+      .map((log) => log.day_index),
+  );
+  return completedDays.size >= phase.days.length;
+}
+
+export function resolveActivePhaseIndex(
+  programme: PTProgramme,
+  logs: ProgrammeProgressWorkoutLog[],
+  manualPhaseIndex?: number | null,
+): number {
   if (programme.phases.length === 0) return -1;
+  if (
+    typeof manualPhaseIndex === 'number'
+    && Number.isInteger(manualPhaseIndex)
+    && manualPhaseIndex >= 0
+    && manualPhaseIndex < programme.phases.length
+  ) {
+    return manualPhaseIndex;
+  }
 
-  const firstIncompletePhase = programme.phases.findIndex((phase, phaseIndex) => {
-    if (!phase.week_blocks || phase.week_blocks.length === 0) return false;
+  const firstIncompletePhase = programme.phases.findIndex((phase, phaseIndex) =>
+    !phaseIsComplete(logs, phaseIndex, phase),
+  );
+  return firstIncompletePhase >= 0 ? firstIncompletePhase : programme.phases.length - 1;
+}
 
-    return phase.week_blocks.some((_, blockIndex) => {
-      const required = requiredWorkoutsForBlock(phase.week_blocks, blockIndex, phase.days.length);
-      const completed = new Set(
-        logs
-          .filter((log) => log.phase_index === phaseIndex && log.block_index === blockIndex)
-          .map((log) => `${log.week_number}-${log.day_index}`),
-      );
+export function getCurrentProgrammePhaseIndex(programme: PTProgramme, logs: ProgrammeProgressWorkoutLog[]): number {
+  return resolveActivePhaseIndex(programme, logs);
+}
 
-      return completed.size < required;
-    });
-  });
+export function getCursorUpdateAfterWorkout(
+  programme: PTProgramme,
+  logs: ProgrammeProgressWorkoutLog[],
+  phaseIndex: number,
+): ProgrammeCursor | null {
+  const phase = programme.phases[phaseIndex];
+  if (!phase) return null;
+  const progress = calcPhaseProgress(logs, phaseIndex, phase.week_blocks, phase.days.length);
 
-  if (firstIncompletePhase >= 0) return firstIncompletePhase;
+  if (progress && !progress.allBlocksDone) {
+    return { phaseIndex, blockIndex: progress.blockIndex, week: progress.weekWithinBlock };
+  }
 
-  const latestLoggedPhase = logs.reduce((latest, log) => Math.max(latest, log.phase_index), -1);
-  return latestLoggedPhase >= 0
-    ? Math.min(latestLoggedPhase, programme.phases.length - 1)
-    : 0;
+  if (phaseIsComplete(logs, phaseIndex, phase) && phaseIndex < programme.phases.length - 1) {
+    return { phaseIndex: phaseIndex + 1, blockIndex: 0, week: 1 };
+  }
+
+  if (progress) {
+    return { phaseIndex, blockIndex: progress.blockIndex, week: progress.weekWithinBlock };
+  }
+
+  return { phaseIndex, blockIndex: 0, week: 1 };
 }
 
 // Board-view divider logic: a faded line is drawn before an exercise when it
@@ -436,4 +591,9 @@ export function requiredWorkoutsForBlock(
 ): number {
   if (!weekBlocks || !weekBlocks[blockIndex]) return 0;
   return weekBlocks[blockIndex].weeks * daysInPhase;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(Math.floor(value), min), max);
 }

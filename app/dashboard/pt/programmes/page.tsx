@@ -1,6 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import type { PTProgramTemplate, PTProgramAssignment, PTProgramGenerationRun } from '@/utils/pt/types';
-import { getCurrentProgrammePhaseIndex, safeProgramme, type ProgrammeProgressWorkoutLog } from '@/utils/pt/programme';
+import { resolveActivePhaseIndex, safeProgramme, type ProgrammeProgressWorkoutLog } from '@/utils/pt/programme';
 import PTProgrammesView from './PTProgrammesView';
 
 export default async function PTProgrammesPage() {
@@ -10,7 +10,7 @@ export default async function PTProgrammesPage() {
     supabase.from('pt_program_templates').select('*').order('updated_at', { ascending: false }),
     supabase
       .from('pt_program_assignments')
-      .select('id, template_id, name, goal, status, programme, updated_at, pt_clients(name, email), pt_workout_logs(phase_index, day_index, week_number, block_index)')
+      .select('id, template_id, name, goal, status, programme, current_phase_index, updated_at, pt_clients(name, email), pt_workout_logs(phase_index, day_index, week_number, block_index)')
       .order('updated_at', { ascending: false }),
     supabase
       .from('pt_program_generation_runs')
@@ -31,7 +31,7 @@ export default async function PTProgrammesPage() {
 
   const assignments = ((assignmentsRes.data ?? []) as unknown as Array<PTProgramAssignment & { pt_workout_logs?: ProgrammeProgressWorkoutLog[] }>).map((a) => {
     const programme = safeProgramme(a.programme);
-    const currentPhaseIndex = getCurrentProgrammePhaseIndex(programme, a.pt_workout_logs ?? []);
+    const currentPhaseIndex = resolveActivePhaseIndex(programme, a.pt_workout_logs ?? [], a.current_phase_index);
     return {
       id: a.id,
       template_id: a.template_id ?? null,

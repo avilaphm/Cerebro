@@ -445,7 +445,7 @@ async function buildContext(
   const [assignmentsRes, notesRes, messagesRes, workoutsRes, setsRes, exercisesRes, knowledgeDocsRes] = await Promise.all([
     adminClient
       .from('pt_program_assignments')
-      .select('id, name, goal, duration_weeks, phase_count, status, programme, current_week, current_block_index, created_at')
+      .select('id, name, goal, duration_weeks, phase_count, status, programme, current_phase_index, current_week, current_block_index, created_at')
       .eq('client_id', clientId)
       .order('created_at', { ascending: false })
       .limit(5),

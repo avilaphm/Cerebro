@@ -5,7 +5,16 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Mic, Mic
 import { AnimatePresence, motion } from 'framer-motion';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
-import { safeProgramme, getExerciseBlockValues, getExerciseForBlock, requiredWorkoutsForBlock, CANONICAL_SECTION_ORDER } from '@/utils/pt/programme';
+import {
+  CANONICAL_SECTION_ORDER,
+  calcPhaseProgress,
+  getCursorUpdateAfterWorkout,
+  getExerciseBlockValues,
+  getExerciseForBlock,
+  resolveActivePhaseIndex,
+  safeProgramme,
+  type PhaseProgress,
+} from '@/utils/pt/programme';
 import { isPedroAdminEmail } from '@/utils/pt/access';
 import {
   ACTIVE_BOOKING_STATUSES,
@@ -97,13 +106,6 @@ interface WorkoutLog {
   is_quick_done: boolean;
 }
 
-interface PhaseProgress {
-  blockIndex: number;
-  weekWithinBlock: number;
-  block: PTProgrammeWeekBlock | null;
-  allBlocksDone: boolean;
-}
-
 interface SelectedWorkout {
   phaseIndex: number;
   dayIndex: number;
@@ -147,48 +149,6 @@ const BOOKING_CALENDAR_START_HOUR = 6;
 const BOOKING_CALENDAR_END_HOUR = 19;
 const BOOKING_HOUR_HEIGHT = 72;
 const BOOKING_GRID_TOP_PAD = 44;
-
-function calcPhaseProgress(
-  logs: WorkoutLog[],
-  phaseIndex: number,
-  weekBlocks: PTProgrammeWeekBlock[] | undefined,
-  daysInPhase: number,
-): PhaseProgress | null {
-  if (!weekBlocks || weekBlocks.length === 0) return null;
-
-  for (let bi = 0; bi < weekBlocks.length; bi++) {
-    const block = weekBlocks[bi];
-    const required = requiredWorkoutsForBlock(weekBlocks, bi, daysInPhase);
-    const logsInBlock = logs.filter(
-      (l) => l.phase_index === phaseIndex && l.block_index === bi,
-    );
-    const distinct = new Set(logsInBlock.map((l) => `${l.week_number}-${l.day_index}`));
-
-    if (distinct.size < required) {
-      const weekMap = new Map<number, Set<number>>();
-      logsInBlock.forEach((l) => {
-        if (!weekMap.has(l.week_number)) weekMap.set(l.week_number, new Set());
-        weekMap.get(l.week_number)!.add(l.day_index);
-      });
-      let currentWeek = 1;
-      for (let w = 1; w <= block.weeks; w++) {
-        if ((weekMap.get(w)?.size ?? 0) < daysInPhase) {
-          currentWeek = w;
-          break;
-        }
-      }
-      return { blockIndex: bi, weekWithinBlock: currentWeek, block, allBlocksDone: false };
-    }
-  }
-
-  const lastBlock = weekBlocks[weekBlocks.length - 1];
-  return {
-    blockIndex: weekBlocks.length - 1,
-    weekWithinBlock: lastBlock.weeks,
-    block: lastBlock,
-    allBlocksDone: true,
-  };
-}
 
 function parseSets(value: string) {
   const parsed = Number.parseInt(value, 10);
@@ -741,6 +701,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setAssignments(((assignmentRes.data ?? []) as PTProgramAssignment[]).map((row) => ({
       ...row,
       programme: safeProgramme(row.programme),
+      current_phase_index: typeof row.current_phase_index === 'number' ? row.current_phase_index : null,
       current_week: (row as PTProgramAssignment).current_week ?? 1,
       current_block_index: (row as PTProgramAssignment).current_block_index ?? 0,
     })));
@@ -802,10 +763,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const activePhaseIndex = useMemo(() => {
     if (!assignment) return 0;
-    const next = phaseProgress.findIndex((progress) => progress && !progress.allBlocksDone);
-    if (next >= 0) return next;
-    return 0;
-  }, [assignment, phaseProgress]);
+    return resolveActivePhaseIndex(assignment.programme, workoutLogs, assignment.current_phase_index);
+  }, [assignment, workoutLogs]);
   const needsNutritionOnboarding = Boolean(
     client &&
     !isPedro &&
@@ -1603,7 +1562,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         .eq('id', linkedPlanItem.id);
     }
 
-    if (progress && !progress.allBlocksDone && selectedPhase) {
+    if (selectedPhase) {
       const newLogs: WorkoutLog[] = [
         ...workoutLogs,
         {
@@ -1615,22 +1574,26 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           is_quick_done: false,
         },
       ];
-      const newProgress = calcPhaseProgress(
+      const cursor = getCursorUpdateAfterWorkout(
+        assignment.programme,
         newLogs,
         selectedWorkout.phaseIndex,
-        selectedPhase.week_blocks,
-        selectedPhase.days.length,
       );
 
       if (
-        newProgress &&
-        (newProgress.blockIndex !== progress.blockIndex || newProgress.weekWithinBlock !== progress.weekWithinBlock)
+        cursor &&
+        (
+          cursor.phaseIndex !== (assignment.current_phase_index ?? null) ||
+          cursor.blockIndex !== assignment.current_block_index ||
+          cursor.week !== assignment.current_week
+        )
       ) {
         await supabase
           .from('pt_program_assignments')
           .update({
-            current_block_index: newProgress.blockIndex,
-            current_week: newProgress.weekWithinBlock,
+            current_phase_index: cursor.phaseIndex,
+            current_block_index: cursor.blockIndex,
+            current_week: cursor.week,
           })
           .eq('id', assignment.id);
       }

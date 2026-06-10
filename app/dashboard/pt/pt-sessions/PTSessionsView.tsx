@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
-import { getExerciseBlockValues, getExerciseForBlock, requiredWorkoutsForBlock, safeProgramme } from '@/utils/pt/programme';
+import {
+  calcPhaseProgress,
+  getCursorUpdateAfterWorkout,
+  getExerciseBlockValues,
+  getExerciseForBlock,
+  resolveActivePhaseIndex,
+  safeProgramme,
+  type PhaseProgress,
+} from '@/utils/pt/programme';
 import { formatBookingDate, formatBookingTime, type PTBookingAppointment } from '@/utils/pt/bookings';
 import type {
   PTClient,
@@ -12,7 +20,6 @@ import type {
   PTProgrammeDay,
   PTProgrammeExercise,
   PTProgrammePhase,
-  PTProgrammeWeekBlock,
   PTSetLog,
 } from '@/utils/pt/types';
 
@@ -28,13 +35,6 @@ interface WorkoutLog {
   created_at: string;
 }
 
-interface PhaseProgress {
-  blockIndex: number;
-  weekWithinBlock: number;
-  block: PTProgrammeWeekBlock | null;
-  allBlocksDone: boolean;
-}
-
 interface WorkoutSectionView {
   id: string;
   title: string;
@@ -44,33 +44,6 @@ interface WorkoutSectionView {
 interface SelectedWorkout { phaseIndex: number; dayIndex: number; }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function calcPhaseProgress(
-  logs: WorkoutLog[], phaseIndex: number,
-  weekBlocks: PTProgrammeWeekBlock[] | undefined, daysInPhase: number,
-): PhaseProgress | null {
-  if (!weekBlocks || weekBlocks.length === 0) return null;
-  for (let bi = 0; bi < weekBlocks.length; bi++) {
-    const block = weekBlocks[bi];
-    const required = requiredWorkoutsForBlock(weekBlocks, bi, daysInPhase);
-    const logsInBlock = logs.filter((l) => l.phase_index === phaseIndex && l.block_index === bi);
-    const distinct = new Set(logsInBlock.map((l) => `${l.week_number}-${l.day_index}`));
-    if (distinct.size < required) {
-      const weekMap = new Map<number, Set<number>>();
-      logsInBlock.forEach((l) => {
-        if (!weekMap.has(l.week_number)) weekMap.set(l.week_number, new Set());
-        weekMap.get(l.week_number)!.add(l.day_index);
-      });
-      let currentWeek = 1;
-      for (let w = 1; w <= block.weeks; w++) {
-        if ((weekMap.get(w)?.size ?? 0) < daysInPhase) { currentWeek = w; break; }
-      }
-      return { blockIndex: bi, weekWithinBlock: currentWeek, block, allBlocksDone: false };
-    }
-  }
-  const last = weekBlocks[weekBlocks.length - 1];
-  return { blockIndex: weekBlocks.length - 1, weekWithinBlock: last.weeks, block: last, allBlocksDone: true };
-}
 
 function parseSets(value: string) {
   const n = parseInt(value, 10);
@@ -245,6 +218,7 @@ export default function PTSessionsView({
       setAssignment({
         ...raw,
         programme: safeProgramme(raw.programme),
+        current_phase_index: typeof raw.current_phase_index === 'number' ? raw.current_phase_index : null,
         current_week: raw.current_week ?? 1,
         current_block_index: raw.current_block_index ?? 0,
       } as PTProgramAssignment);
@@ -268,11 +242,8 @@ export default function PTSessionsView({
   // Active phase: first phase that's not complete, or last phase
   const activePhaseIndex = useMemo(() => {
     if (!assignment) return 0;
-    const next = phaseProgress.findIndex((p) => p && !p.allBlocksDone);
-    if (next >= 0) return next;
-    // All done — keep last
-    return assignment.programme.phases.length - 1;
-  }, [assignment, phaseProgress]);
+    return resolveActivePhaseIndex(assignment.programme, workoutLogs, assignment.current_phase_index);
+  }, [assignment, workoutLogs]);
 
   const lastSetsByExercise = useMemo(() => {
     const map = new Map<string, PTSetLog[]>();
@@ -514,20 +485,28 @@ export default function PTSessionsView({
       },
     });
 
-    // Update programme progression if block advanced
-    if (progress && !progress.allBlocksDone) {
-      const updatedLogs: WorkoutLog[] = [
-        ...workoutLogs,
-        { id: workoutId, phase_index: selectedWorkout.phaseIndex, day_index: selectedWorkout.dayIndex,
-          week_number: weekWithinBlock, block_index: blockIndex, is_quick_done: false, created_at: new Date().toISOString() },
-      ];
-      const newProgress = calcPhaseProgress(updatedLogs, selectedWorkout.phaseIndex, phase.week_blocks, phase.days.length);
-      if (newProgress && (newProgress.blockIndex !== progress.blockIndex || newProgress.weekWithinBlock !== progress.weekWithinBlock)) {
-        await supabase
-          .from('pt_program_assignments')
-          .update({ current_block_index: newProgress.blockIndex, current_week: newProgress.weekWithinBlock })
-          .eq('id', assignment.id);
-      }
+    const updatedLogs: WorkoutLog[] = [
+      ...workoutLogs,
+      { id: workoutId, phase_index: selectedWorkout.phaseIndex, day_index: selectedWorkout.dayIndex,
+        week_number: weekWithinBlock, block_index: blockIndex, is_quick_done: false, created_at: new Date().toISOString() },
+    ];
+    const cursor = getCursorUpdateAfterWorkout(assignment.programme, updatedLogs, selectedWorkout.phaseIndex);
+    if (
+      cursor &&
+      (
+        cursor.phaseIndex !== (assignment.current_phase_index ?? null) ||
+        cursor.blockIndex !== assignment.current_block_index ||
+        cursor.week !== assignment.current_week
+      )
+    ) {
+      await supabase
+        .from('pt_program_assignments')
+        .update({
+          current_phase_index: cursor.phaseIndex,
+          current_block_index: cursor.blockIndex,
+          current_week: cursor.week,
+        })
+        .eq('id', assignment.id);
     }
 
     // Deduct session credit

@@ -137,7 +137,7 @@ Deno.serve(async (req: Request) => {
         .order('created_at', { ascending: false }),
       adminClient
         .from('pt_program_assignments')
-        .select('id, name, goal, current_week, current_block_index, programme')
+        .select('id, name, goal, current_phase_index, current_week, current_block_index, programme')
         .eq('client_id', clientId)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
@@ -237,7 +237,7 @@ function normaliseItems(items: DraftItem[], weekStart: string, weekEnd: string, 
   ];
 }
 
-function summariseProgramme(assignment: { id: string; name: string; goal: string | null; current_week: number | null; current_block_index: number | null; programme: unknown }) {
+function summariseProgramme(assignment: { id: string; name: string; goal: string | null; current_phase_index: number | null; current_week: number | null; current_block_index: number | null; programme: unknown }) {
   const programme = assignment.programme as {
     phases?: Array<{
       title?: string;
@@ -250,6 +250,7 @@ function summariseProgramme(assignment: { id: string; name: string; goal: string
     id: assignment.id,
     name: assignment.name,
     goal: assignment.goal,
+    current_phase_index: assignment.current_phase_index,
     current_week: assignment.current_week,
     current_block_index: assignment.current_block_index,
     phases: (programme.phases ?? []).map((phase, phaseIndex) => ({

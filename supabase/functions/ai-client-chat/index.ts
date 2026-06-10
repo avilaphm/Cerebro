@@ -412,7 +412,7 @@ Deno.serve(async (req: Request) => {
         .limit(6),
       adminClient
         .from('pt_program_assignments')
-        .select('name, goal, current_week, current_block_index, programme')
+        .select('name, goal, current_phase_index, current_week, current_block_index, programme')
         .eq('client_id', body.client_id)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
@@ -455,8 +455,8 @@ Deno.serve(async (req: Request) => {
       } | null;
       const phases = prog?.phases ?? [];
       const phaseList = phases.map((p) => `${p.title} (${p.weeks}w)`).join(' -> ');
-      const currentBlock = activeAssignment.current_block_index ?? 0;
-      const phaseTitle = phases[currentBlock]?.title ?? 'Unknown phase';
+      const currentPhase = activeAssignment.current_phase_index ?? 0;
+      const phaseTitle = phases[currentPhase]?.title ?? 'Unknown phase';
       programmeSummary = `Programme: ${activeAssignment.name} | Goal: ${activeAssignment.goal ?? 'Not set'}\nCurrent phase: ${phaseTitle} (week ${activeAssignment.current_week ?? 1})\nProgramme structure: ${phaseList}`;
     }
 

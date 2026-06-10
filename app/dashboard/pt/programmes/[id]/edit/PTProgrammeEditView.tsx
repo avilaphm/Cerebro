@@ -4,7 +4,20 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, safeProgramme, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase, startsNewBand } from '@/utils/pt/programme';
+import {
+  appendDaysToFoundationPhase,
+  countProgrammeWeeks,
+  formatWeekBlocks,
+  getCursorForWeeksLeft,
+  getPhaseStartWeeks,
+  getPhaseTotalWeeks,
+  getWeeksLeftFromCursor,
+  makeId,
+  moveExerciseBetweenProgrammeDays,
+  parseWeekBlocks,
+  safeProgramme,
+  startsNewBand,
+} from '@/utils/pt/programme';
 import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise, PTProgramAssignment,
@@ -79,6 +92,12 @@ function extractRecText(rec: Record<string, unknown>): string {
   return Object.values(rec).filter((v) => typeof v === 'string').join('\n\n');
 }
 
+function clampIndex(value: number, length: number): number {
+  if (length <= 0) return 0;
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(Math.floor(value), 0), length - 1);
+}
+
 
 function draftReviewSummary(draft: ProgrammingAgentDraft, fallback: string) {
   const failures = Array.isArray(draft.validation_summary?.hard_rule_failures)
@@ -113,10 +132,19 @@ export default function PTProgrammeEditView({
   const router = useRouter();
 
   const client = initial.pt_clients as { name: string; email: string } | null;
+  const initialCursorPhaseIndex = clampIndex(initial.current_phase_index ?? 0, initial.programme.phases.length);
+  const initialCursorWeeksLeft = getWeeksLeftFromCursor(
+    initial.programme.phases[initialCursorPhaseIndex],
+    initial.current_block_index,
+    initial.current_week,
+  );
   const [programme, setProgramme] = useState<PTProgramme>(initial.programme);
   const [progName, setProgName] = useState(initial.name);
   const [progGoal, setProgGoal] = useState(initial.goal ?? '');
   const [assignmentStatus, setAssignmentStatus] = useState(initial.status);
+  const [cursorPhaseIndex, setCursorPhaseIndex] = useState(initialCursorPhaseIndex);
+  const [cursorWeeksLeft, setCursorWeeksLeft] = useState(initialCursorWeeksLeft);
+  const [cursorTouched, setCursorTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -393,6 +421,11 @@ export default function PTProgrammeEditView({
         generation_run_id: generationRunId,
         coach_review_status: 'approved',
         validation_summary: validationSummary,
+        ...(cursorChanged ? {
+          current_phase_index: cursor.phaseIndex,
+          current_block_index: cursor.blockIndex,
+          current_week: cursor.week,
+        } : {}),
       })
       .eq('id', initial.id);
     if (error) {
@@ -418,6 +451,29 @@ export default function PTProgrammeEditView({
       }
       if (highlight?.note) {
         await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', highlight.note);
+      }
+      if (cursorChanged) {
+        await supabase.from('pt_events').insert({
+          client_id: initial.client_id,
+          assignment_id: initial.id,
+          event_type: 'programme_position_changed',
+          metadata: {
+            source: 'programme_edit',
+            assignment_name: progName.trim(),
+            from: {
+              phase_index: initial.current_phase_index,
+              block_index: initial.current_block_index,
+              week: initial.current_week,
+            },
+            to: {
+              phase_index: cursor.phaseIndex,
+              phase_title: programme.phases[cursor.phaseIndex]?.title ?? null,
+              block_index: cursor.blockIndex,
+              week: cursor.week,
+              weeks_left: boundedCursorWeeksLeft,
+            },
+          },
+        });
       }
       setAssignmentStatus(nextStatus);
       setStatus(publishing ? 'Published to client.' : 'Saved.');
@@ -482,6 +538,31 @@ export default function PTProgrammeEditView({
     setApplyBusy(false);
     setNutritionApplyOpen(false);
     setStatus('Nutrition targets applied to client.');
+  };
+
+  const boundedCursorPhaseIndex = clampIndex(cursorPhaseIndex, programme.phases.length);
+  const cursorPhase = programme.phases[boundedCursorPhaseIndex] ?? null;
+  const cursorPhaseTotalWeeks = getPhaseTotalWeeks(cursorPhase ?? undefined);
+  const boundedCursorWeeksLeft = Math.min(Math.max(Math.floor(cursorWeeksLeft || 1), 1), cursorPhaseTotalWeeks);
+  const cursor = getCursorForWeeksLeft(cursorPhase ?? undefined, boundedCursorPhaseIndex, boundedCursorWeeksLeft);
+  const hasPersistedCursor = initial.current_phase_index !== null && initial.current_phase_index !== undefined;
+  const cursorChanged =
+    cursorTouched ||
+    (hasPersistedCursor && (
+      cursor.phaseIndex !== initial.current_phase_index ||
+      cursor.blockIndex !== initial.current_block_index ||
+      cursor.week !== initial.current_week
+    ));
+
+  const setCursorPhase = (phaseIndex: number) => {
+    const nextIndex = clampIndex(phaseIndex, programme.phases.length);
+    setCursorTouched(true);
+    setCursorPhaseIndex(nextIndex);
+    setCursorWeeksLeft(getPhaseTotalWeeks(programme.phases[nextIndex]));
+  };
+
+  const moveCursorPhase = (delta: number) => {
+    setCursorPhase(boundedCursorPhaseIndex + delta);
   };
 
   const phase = programme.phases[activePhaseTab] ?? null;
@@ -559,6 +640,74 @@ export default function PTProgrammeEditView({
         <div className="mb-6 border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-sm font-medium text-amber-800">Programming agent draft</p>
           <p className="mt-1 text-xs leading-relaxed text-black/55">{agentDraftSummary}</p>
+        </div>
+      )}
+
+      {programme.phases.length > 0 && (
+        <div className="mb-8 border border-black/10 bg-[#fbfbf8] px-5 py-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Client position</p>
+              <p className="mt-2 text-sm text-black/55">
+                {client?.name ?? 'Client'} is currently in{' '}
+                <span className="font-medium text-black">{cursorPhase?.title ?? `Phase ${boundedCursorPhaseIndex + 1}`}</span>
+                {' '}with <span className="font-medium text-black">{boundedCursorWeeksLeft}</span>{' '}
+                week{boundedCursorWeeksLeft === 1 ? '' : 's'} left.
+              </p>
+              <p className="mt-1 text-xs text-black/35">
+                This changes what the client sees as active. It does not shorten or rewrite the programme.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem] lg:min-w-[24rem]">
+              <div>
+                <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Active phase</label>
+                <select
+                  value={boundedCursorPhaseIndex}
+                  onChange={(e) => setCursorPhase(Number(e.target.value))}
+                  className="w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
+                >
+                  {programme.phases.map((ph, phaseIndex) => (
+                    <option key={ph.id} value={phaseIndex}>{ph.title || `Phase ${phaseIndex + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Weeks left</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={cursorPhaseTotalWeeks}
+                  value={boundedCursorWeeksLeft}
+                  onChange={(e) => {
+                    setCursorTouched(true);
+                    setCursorWeeksLeft(Number(e.target.value));
+                  }}
+                  className="w-full border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 sm:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => moveCursorPhase(-1)}
+                  disabled={boundedCursorPhaseIndex === 0}
+                  className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
+                >
+                  Back one phase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveCursorPhase(1)}
+                  disabled={boundedCursorPhaseIndex >= programme.phases.length - 1}
+                  className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
+                >
+                  Forward one phase
+                </button>
+                {cursorChanged && (
+                  <span className="self-center text-xs text-amber-700">Save changes to apply this position.</span>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
