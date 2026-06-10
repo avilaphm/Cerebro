@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Mic, MicOff, Minus, Play, Plus, Salad, Settings, Wrench } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
 import { safeProgramme, getExerciseBlockValues, getExerciseForBlock, requiredWorkoutsForBlock, CANONICAL_SECTION_ORDER } from '@/utils/pt/programme';
@@ -138,6 +139,10 @@ interface NutritionOnboardingDraft {
 
 type ClientScreen = 'overview' | 'nutrition' | 'workout' | 'booking' | 'settings';
 type BookingCalendarView = '3days' | 'week' | 'month';
+type WorkoutViewMode = 'compact' | 'classic';
+type CompactWorkoutPanel = 'video' | 'track' | 'cues';
+
+const WORKOUT_VIEW_MODE_STORAGE_KEY = 'cerebro-client-workout-view-mode';
 const BOOKING_CALENDAR_START_HOUR = 6;
 const BOOKING_CALENDAR_END_HOUR = 19;
 const BOOKING_HOUR_HEIGHT = 72;
@@ -436,6 +441,10 @@ function sectionNoteKey(phaseIndex: number, dayIndex: number, sectionId: string)
   return `${phaseIndex}-${dayIndex}-${sectionId}`;
 }
 
+function workoutFinalNoteKey(phaseIndex: number, dayIndex: number) {
+  return `${phaseIndex}-${dayIndex}-workout-final`;
+}
+
 function getWorkoutSections(
   day: PTProgrammeDay,
   phase: PTProgrammePhase,
@@ -577,6 +586,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [openCues, setOpenCues] = useState<Record<string, boolean>>({});
   const [openLastTime, setOpenLastTime] = useState<Record<string, boolean>>({});
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
+  const [workoutViewMode, setWorkoutViewMode] = useState<WorkoutViewMode>('compact');
+  const [compactPanels, setCompactPanels] = useState<Record<string, CompactWorkoutPanel | undefined>>({});
   const [activeWorkoutExerciseId, setActiveWorkoutExerciseId] = useState<string | null>(null);
   const [richExerciseMap, setRichExerciseMap] = useState<Record<string, PTExercise>>({});
   const [richExerciseByName, setRichExerciseByName] = useState<Record<string, PTExercise>>({});
@@ -590,6 +601,19 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [activeContext, setActiveContext] = useState<{
     phase_index: number; phase_title: string; day_index: number; day_title: string;
   } | null>(null);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const saved = window.localStorage.getItem(WORKOUT_VIEW_MODE_STORAGE_KEY);
+      if (saved === 'compact' || saved === 'classic') setWorkoutViewMode(saved);
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  const setPreferredWorkoutViewMode = (mode: WorkoutViewMode) => {
+    setWorkoutViewMode(mode);
+    window.localStorage.setItem(WORKOUT_VIEW_MODE_STORAGE_KEY, mode);
+  };
 
   const loadPortal = useCallback(async () => {
     setLoading(true);
@@ -1061,6 +1085,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
     setStatus('');
     setSelectedWorkout({ phaseIndex, dayIndex, started: false });
+    setCompactPanels({});
     setActiveContext({ phase_index: phaseIndex, phase_title: phase.title, day_index: dayIndex, day_title: day.title });
 
     const initialCounts: Record<string, number> = {};
@@ -1093,6 +1118,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
   const closeWorkout = () => {
     setSelectedWorkout(null);
+    setCompactPanels({});
     setStatus('');
   };
 
@@ -1485,13 +1511,16 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const weekWithinBlock = progress?.weekWithinBlock ?? 1;
     const sections = getWorkoutSections(selectedDay, selectedPhase, progress?.blockIndex ?? 0);
 
-    const notes = sections
-      .map((section) => {
-        const note = sectionNotes[sectionNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, section.id)]?.trim();
-        return note ? `${section.title}: ${note}` : null;
-      })
-      .filter((note): note is string => Boolean(note))
-      .join('\n\n') || null;
+    const finalNote = sectionNotes[workoutFinalNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex)]?.trim();
+    const notes = workoutViewMode === 'compact'
+      ? finalNote || null
+      : sections
+        .map((section) => {
+          const note = sectionNotes[sectionNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, section.id)]?.trim();
+          return note ? `${section.title}: ${note}` : null;
+        })
+        .filter((note): note is string => Boolean(note))
+        .join('\n\n') || null;
 
     const { data: workout, error: workoutError } = await supabase
       .from('pt_workout_logs')
@@ -2351,9 +2380,292 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       );
     };
 
+    const compactPanelKey = (section: WorkoutSectionView, exercise: PTProgrammeExercise) => `${section.id}-${exercise.id}`;
+    const setCompactPanel = (
+      key: string,
+      panel: CompactWorkoutPanel,
+      exercise: PTProgrammeExercise,
+      keepTrackKeys: string[] = [],
+    ) => {
+      setCompactPanels((current) => {
+        if (current[key] === panel) {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        }
+        const next: Record<string, CompactWorkoutPanel | undefined> = {};
+        if (panel === 'track' && exercise.superset_id) {
+          keepTrackKeys.forEach((keepKey) => {
+            if (current[keepKey] === 'track') next[keepKey] = 'track';
+          });
+        }
+        next[key] = panel;
+        return next;
+      });
+    };
+
+    const renderCompactExerciseCard = (
+      item: typeof exerciseScreens[number],
+      absoluteIndex: number,
+      localIndex: number,
+      sectionItems: typeof exerciseScreens,
+    ) => {
+      const { exercise, values, section } = item;
+      const count = setCounts[exercise.id] ?? parseSets(values.sets);
+      const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
+      const richEx = richExerciseMap[exercise.exercise_id ?? ''] ?? richExerciseByName[exercise.name.trim().toLowerCase()];
+      const videoId = getYouTubeId(richEx?.video_url ?? exercise.video_url);
+      const panelKey = compactPanelKey(section, exercise);
+      const activePanel = compactPanels[panelKey] ?? null;
+      const supersetKeys = exercise.superset_id
+        ? exerciseScreens
+          .filter((screen) => screen.exercise.superset_id === exercise.superset_id)
+          .map((screen) => compactPanelKey(screen.section, screen.exercise))
+        : [];
+      const prevInSection = sectionItems[localIndex - 1];
+      const nextInSection = sectionItems[localIndex + 1];
+      const linksPrev = Boolean(exercise.superset_id && prevInSection?.exercise.superset_id === exercise.superset_id);
+      const linksNext = Boolean(exercise.superset_id && nextInSection?.exercise.superset_id === exercise.superset_id);
+      const cues = (exercise.cues.length > 0
+        ? exercise.cues
+        : ['Move with control', 'Keep the target muscles loaded', 'Use a range you can own', 'Stop if pain changes your form']).slice(0, 4);
+      const setupCues = richEx?.setup_cues ?? [];
+
+      return (
+        <div key={exercise.id} className="grid grid-cols-[1.15rem_1fr] gap-2.5">
+          <div className="relative flex justify-center">
+            {exercise.superset_id && (
+              <>
+                {(linksPrev || linksNext) && (
+                  <span className={`absolute w-px bg-black/15 ${linksPrev ? 'top-0' : 'top-1/2'} ${linksNext ? 'bottom-0' : 'bottom-1/2'}`} />
+                )}
+                <span className="relative mt-6 h-2.5 w-2.5 rounded-full border border-black/20 bg-white shadow-sm" />
+              </>
+            )}
+          </div>
+
+          <div className="relative pb-1">
+            <AnimatePresence initial={false}>
+              {activePanel === 'video' && (
+                <motion.div
+                  key="video"
+                  initial={{ opacity: 0, y: 22, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: 'auto' }}
+                  exit={{ opacity: 0, y: 18, height: 0 }}
+                  transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                  className="mx-2 mb-[-0.65rem] overflow-hidden rounded-t-[1.5rem] border border-black/10 bg-black shadow-[0_16px_42px_rgba(0,0,0,0.18)]"
+                >
+                  <div className="relative aspect-video bg-black">
+                    {videoId ? (
+                      <iframe
+                        title={`${exercise.name} demo`}
+                        src={getYouTubeEmbedUrl(videoId, false)}
+                        className="absolute inset-0 h-full w-full"
+                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/55">
+                        No video added
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="relative z-10 rounded-[1.35rem] border border-white/75 bg-white/80 px-4 py-3.5 shadow-[0_14px_36px_-26px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-xl">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[0.62rem] uppercase tracking-[0.14em] text-black/35">
+                    {section.title} · {absoluteIndex + 1}/{exerciseScreens.length}
+                  </p>
+                  <h3 className="mt-1 text-[1.02rem] font-semibold leading-tight text-black">{exercise.name}</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-black/50">
+                    {values.sets || '?'} sets · {values.reps || '?'} reps{exercise.rest ? ` · ${exercise.rest}` : ''}
+                    {values.weight_pct ? ` · ${values.weight_pct} 1RM` : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCompactPanel(panelKey, 'video', exercise)}
+                  className={`shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+                    activePanel === 'video'
+                      ? 'border-black bg-black text-white'
+                      : 'border-black/10 bg-white/85 text-black hover:border-black/30'
+                  }`}
+                  aria-label={videoId ? `Show ${exercise.name} video` : `No video added for ${exercise.name}`}
+                >
+                  <Play className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCompactPanel(panelKey, 'track', exercise, supersetKeys)}
+                  className={`h-10 rounded-full border px-3 text-sm font-medium transition-colors ${
+                    activePanel === 'track'
+                      ? 'border-black bg-black text-white'
+                      : 'border-black/10 bg-white/80 text-black hover:border-black/25'
+                  }`}
+                >
+                  Track
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompactPanel(panelKey, 'cues', exercise)}
+                  className={`h-10 rounded-full border px-3 text-sm font-medium transition-colors ${
+                    activePanel === 'cues'
+                      ? 'border-black bg-black text-white'
+                      : 'border-black/10 bg-white/80 text-black hover:border-black/25'
+                  }`}
+                >
+                  Cues
+                </button>
+              </div>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {activePanel === 'track' && (
+                <motion.div
+                  key="track"
+                  initial={{ opacity: 0, y: -18, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: 'auto' }}
+                  exit={{ opacity: 0, y: -14, height: 0 }}
+                  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  className="mx-2 mt-[-0.65rem] overflow-hidden rounded-b-[1.5rem] border border-black/10 bg-white/68 px-3 pb-3 pt-5 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+                >
+                  {history.length > 0 && (
+                    <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
+                      {history.slice(0, Math.max(count, history.length)).map((log) => (
+                        <span key={`${log.id}-${log.set_number}`} className="liquid-chip shrink-0 border px-2.5 py-1 text-[0.68rem] text-black/65">
+                          Set {log.set_number}: {log.weight ?? '-'}kg x {log.reps ?? '-'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="space-y-2">
+                    {Array.from({ length: count }).map((_, setIndex) => {
+                      const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, setIndex);
+                      const draft = setDrafts[key] ?? { reps: '', weight: '' };
+                      const setIsLogged = draft.reps.trim().length > 0;
+                      const setSurface = setIsLogged ? 'border-black/15 bg-black/[0.06]' : 'border-black/10 bg-white/75';
+                      return (
+                        <div key={key} className="grid grid-cols-[3.5rem_1fr_1fr] gap-2">
+                          <div className={`flex h-12 items-center justify-center rounded-[1rem] border text-xs font-medium text-black ${setSurface}`}>
+                            Set {setIndex + 1}
+                          </div>
+                          <input
+                            value={draft.weight}
+                            onChange={(event) => updateSetDraft(key, { weight: event.target.value })}
+                            className={`h-12 min-w-0 rounded-[1rem] border px-3 text-base text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
+                            placeholder="Kg"
+                            inputMode="decimal"
+                          />
+                          <input
+                            value={draft.reps}
+                            onChange={(event) => updateSetDraft(key, { reps: event.target.value })}
+                            className={`h-12 min-w-0 rounded-[1rem] border px-3 text-base text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
+                            placeholder="Reps"
+                            inputMode="decimal"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExerciseCount(exercise.id, count - 1)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 text-black/45 hover:border-black/30 hover:text-black disabled:opacity-30"
+                      disabled={count <= 1}
+                      aria-label="Remove set"
+                    >
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addExerciseSet(exercise, count)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/80 text-black/45 hover:border-black/30 hover:text-black"
+                      aria-label="Add set"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {activePanel === 'cues' && (
+                <motion.div
+                  key="cues"
+                  initial={{ opacity: 0, y: -18, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: 'auto' }}
+                  exit={{ opacity: 0, y: -14, height: 0 }}
+                  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  className="mx-2 mt-[-0.65rem] overflow-hidden rounded-b-[1.5rem] border border-black/10 bg-white/68 px-4 pb-4 pt-5 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.42)] backdrop-blur-xl"
+                >
+                  {setupCues.length > 0 && (
+                    <div className="mb-3">
+                      <p className="mb-1.5 text-[0.62rem] uppercase tracking-[0.14em] text-black/35">Setup</p>
+                      <ol className="space-y-1.5">
+                        {setupCues.slice(0, 4).map((cue, idx) => (
+                          <li key={idx} className="flex gap-2 text-sm leading-relaxed text-black">
+                            <span className="mt-0.5 text-xs font-semibold text-black/45">{idx + 1}</span>
+                            <span>{cue}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  <p className="mb-1.5 text-[0.62rem] uppercase tracking-[0.14em] text-black/35">Verbal cues</p>
+                  <ul className="space-y-1.5">
+                    {cues.map((cue) => (
+                      <li key={cue} className="list-inside list-disc text-sm leading-relaxed text-black">
+                        {cue}
+                      </li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      );
+    };
+
+    const renderCompactSection = (section: WorkoutSectionView, label: string) => {
+      const sectionItems = exerciseScreens.filter((screen) => screen.section.id === section.id);
+      if (sectionItems.length === 0) return null;
+      return (
+        <div key={section.id} className="space-y-2.5">
+          <div className="flex items-end justify-between gap-3 px-1">
+            <div>
+              <p className="text-[0.62rem] uppercase tracking-[0.14em] text-black/35">{label}</p>
+              <h3 className="text-lg font-semibold text-black">{section.title}</h3>
+            </div>
+            <span className="liquid-chip shrink-0 border px-2.5 py-1 text-xs text-black/60">
+              {sectionItems.length} exercise{sectionItems.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="space-y-2.5">
+            {sectionItems.map((item, localIndex) => (
+              renderCompactExerciseCard(item, exerciseScreens.findIndex((screen) => screen.exercise.id === item.exercise.id), localIndex, sectionItems)
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    const warmupSections = sections.filter((section) => section.title.toLowerCase().includes('warm'));
+    const warmupSectionIds = new Set(warmupSections.map((section) => section.id));
+    const mainSections = sections.filter((section) => !warmupSectionIds.has(section.id));
+    const compactMainSections = warmupSections.length > 0 ? mainSections : sections;
+    const compactWorkoutNoteKey = workoutFinalNoteKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex);
+
     return (
-      <div className="mx-auto max-w-md pb-28 md:max-w-3xl">
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <div className={`mx-auto pb-28 ${workoutViewMode === 'compact' ? 'max-w-lg' : 'max-w-md md:max-w-3xl'}`}>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => {
@@ -2371,7 +2683,60 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         </div>
 
-        <div className="space-y-6 md:space-y-8">
+        <div className="mb-5 grid grid-cols-2 rounded-full border border-black/10 bg-white/60 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur">
+          {(['compact', 'classic'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setPreferredWorkoutViewMode(mode)}
+              className={`h-10 rounded-full text-sm font-medium capitalize transition-colors ${
+                workoutViewMode === mode
+                  ? 'bg-black text-white shadow-[0_8px_20px_-14px_rgba(0,0,0,0.55)]'
+                  : 'text-black/55 hover:text-black'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+
+        {workoutViewMode === 'compact' ? (
+          <div className="space-y-7">
+            {warmupSections.length > 0 && (
+              <div className="space-y-5">
+                {warmupSections.map((section) => renderCompactSection(section, 'Warm up'))}
+              </div>
+            )}
+
+            {warmupSections.length > 0 && mainSections.length > 0 && (
+              <div className="flex items-center gap-3 px-1">
+                <span className="h-px flex-1 bg-black/10" />
+                <span className="liquid-chip border px-3 py-1 text-[0.62rem] uppercase tracking-[0.14em] text-black/55">
+                  Workout
+                </span>
+                <span className="h-px flex-1 bg-black/10" />
+              </div>
+            )}
+
+            <div className="space-y-5">
+              {compactMainSections.map((section) => (
+                renderCompactSection(section, warmupSectionIds.has(section.id) ? 'Warm up' : 'Workout')
+              ))}
+            </div>
+
+            <div className="rounded-[1.5rem] border border-white/70 bg-white/70 p-4 shadow-[0_14px_36px_-26px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-xl">
+              <p className="text-[0.62rem] uppercase tracking-[0.14em] text-black/35">Workout notes</p>
+              <textarea
+                value={sectionNotes[compactWorkoutNoteKey] ?? ''}
+                onChange={(event) => setSectionNotes((current) => ({ ...current, [compactWorkoutNoteKey]: event.target.value }))}
+                rows={4}
+                className="mt-3 w-full resize-none rounded-[1.1rem] border border-black/10 bg-white/75 px-4 py-3 text-base text-black outline-none placeholder:text-black/35 focus:border-black/35"
+                placeholder="Anything Pedro should know from this session."
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6 md:space-y-8">
           {exerciseScreens.map(({ exercise, values, section }, screenIndex) => {
             const count = setCounts[exercise.id] ?? parseSets(values.sets);
             const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
@@ -2615,7 +2980,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               </section>
             );
           })}
-        </div>
+          </div>
+        )}
 
         <button
           type="button"

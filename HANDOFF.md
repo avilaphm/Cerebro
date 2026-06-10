@@ -1,12 +1,35 @@
 # Handoff
 
 ## Last updated
-2026-06-10 by Claude - Pattern chips now auto-derive from exercise NAME (name-first), so existing programmes show tags without re-tagging.
+2026-06-10 by Claude - Client workout logger now has a compact default view with classic toggle fallback.
 
 ## Last code fix commit
-this commit - Name-based pattern resolution for chips
+this commit - Compact client workout logger
 
 ## What just happened (read first)
+
+### Compact client workout logger (2026-06-10, LATEST)
+
+Pedro wanted the client-side workout logging screen to stop showing one huge exercise per viewport. The existing full-screen exercise logger remains available as `Classic`, but the new `Compact` mode is now the default.
+
+Shipped in `app/client/ClientPortal.tsx`:
+- Added `Compact / Classic` toggle at the top of the active workout logger. Compact is default, and the client’s last choice is remembered in `localStorage`.
+- Compact mode renders dense liquid-glass exercise cards so multiple exercises fit in the viewport.
+- Each card has:
+  - exercise name and target prescription;
+  - circular video button that opens an upward animated video panel;
+  - `Track` and `Cues` pill buttons that open downward animated panels.
+- Track panels reuse the existing set draft/save flow, previous-set display, and add/remove set controls.
+- Cue panels reuse rich library setup cues when available, then programme verbal cues, with existing defaults as fallback.
+- Supersets get a subtle connector line and use superset-aware panel behavior: Track can stay open on both exercises in the same superset while other panels close.
+- Compact mode separates warm-up from workout with a divider.
+- Compact mode uses one final workout note at the end, saved into the existing `pt_workout_logs.notes` and event metadata path. Classic mode keeps the previous per-section note cards unchanged.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Targeted `npx eslint app/client/ClientPortal.tsx` still fails only on pre-existing file issues (`react-hooks/set-state-in-effect` in nutrition progress/loading effects plus old unused warnings); the new localStorage effect was adjusted so it does not add a lint error.
+- Browser QA was blocked because the in-app browser redirected to `/client-login` and no local client test credentials were available in the repo. Dev server was started successfully at `http://localhost:3000`.
 
 ### Pattern chips auto-derive from name (2026-06-10, LATEST)
 
