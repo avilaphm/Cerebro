@@ -102,3 +102,45 @@ export function patternFromTags(tags: string[] | null | undefined): string | nul
   }
   return null;
 }
+
+// Best-effort movement pattern from the exercise NAME. Used because much of the
+// library carries free-form legacy tags (e.g. "lower body", "pulling") rather
+// than the clean pattern slugs, so the name is the more reliable signal.
+export function patternFromName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const n = name.toLowerCase();
+  const isSA = /(single[- ]?arm|one[- ]?arm|1[- ]?arm)/.test(n) || /\bsa\b/.test(n);
+  const isSL = /(single[- ]?leg|one[- ]?leg|1[- ]?leg|bulgarian|split[- ]?squat|step[- ]?up|pistol|skater|cossack|shrimp|staggered|b[- ]?stance)/.test(n);
+
+  if (/(stretch|mobility|cat[- ]?cow|\bcars\b|90\/?90|thoracic|airplane|opener|foam[- ]?roll|wall slide|dead[- ]?hang|breathing|clamshell|fire hydrant|activation march|hip switch)/.test(n)) return 'Mobility';
+  if (/(loaded carry|\bcarry\b|farmer|suitcase carry|waiter walk|overhead walk)/.test(n)) return 'Carry';
+  if (/(clean|snatch|\bjerk\b|thruster|burpee|\bpower\b)/.test(n)) return 'Full Body / Power';
+  if (/(plank|crunch|dead[- ]?bug|sit[- ]?up|hollow|pallof|wood[- ]?chop|russian twist|bird[- ]?dog|ab wheel|rollout|leg raise|knee raise|hanging|toes to bar|side bend|anti[- ]?rotation|oblique|\bcore\b)/.test(n)) return isSA ? 'Core (Anti-Rotation)' : 'Core';
+  if (/(deadlift|\brdl\b|romanian|good[- ]?morning|kettlebell swing|kb swing|\bswing\b|hip hinge|pull[- ]?through|hyperextension|back extension|45 extension)/.test(n)) return isSL ? 'Hinge (Single Leg)' : 'Hinge';
+  if (/(hip thrust|glute bridge|\bglute\b|ham(string)?[- ]?curl|leg curl|nordic|hip extension|kickback|frog pump|reverse hyper)/.test(n)) return isSL ? 'Legs Posterior (Single Leg)' : 'Legs Posterior';
+  if (/(squat|lunge|leg press|leg extension|hack|sissy|wall sit|goblet)/.test(n) || isSL) return isSL ? 'Legs Anterior (Single Leg)' : 'Legs Anterior';
+  if (/(row|pull[- ]?down|pulldown|pull[- ]?up|pullup|chin[- ]?up|\bpull\b|\blat\b|face pull|rear delt|reverse fly|\bcurl\b|shrug|pullover|chin)/.test(n)) return isSA ? 'Upper Pull (Single Arm)' : 'Upper Pull';
+  if (/(press|push[- ]?up|pushup|bench|\bfly\b|\bdip\b|tricep|push[- ]?down|overhead|lateral raise|front raise|\braise\b|shoulder|chest|skull[- ]?crusher|extension|\bohp\b)/.test(n)) return isSA ? 'Upper Push (Single Arm)' : 'Upper Push';
+  return null;
+}
+
+// Combined auto-derivation for a new exercise added from the library: prefer the
+// (reliable) name, fall back to slug tags.
+export function derivePattern(name: string | null | undefined, tags: string[] | null | undefined): string | null {
+  return patternFromName(name) ?? patternFromTags(tags);
+}
+
+type ResolvableExercise = { pattern?: string | null; exercise_id?: string | null; name?: string | null };
+
+// Resolve the pattern to DISPLAY for a programme exercise: a hand-set pattern
+// wins; otherwise derive from the name, then the linked library card's tags.
+export function resolvePattern(
+  ex: ResolvableExercise,
+  libById?: Map<string, { name?: string | null; tags?: string[] | null }>,
+): string | null {
+  if (ex.pattern) return ex.pattern;
+  const byName = patternFromName(ex.name);
+  if (byName) return byName;
+  const lib = ex.exercise_id && libById ? libById.get(ex.exercise_id) : undefined;
+  return patternFromName(lib?.name) ?? patternFromTags(lib?.tags);
+}

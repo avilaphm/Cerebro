@@ -1,5 +1,5 @@
 import type { PTExercise, PTProgramme, PTProgrammeExercise, PTProgrammePhase, PTProgrammeWeekBlock, PTProgrammeExerciseBlockOverride, PTProgrammeDay } from './types';
-import { patternFromTags } from './patterns';
+import { derivePattern } from './patterns';
 
 export const emptyProgramme: PTProgramme = { phases: [] };
 
@@ -262,7 +262,7 @@ export function exerciseFromLibrary(exercise: PTExercise): PTProgrammeExercise {
     notes: exercise.purpose ?? '',
     video_url: exercise.video_url,
     cues: exercise.cues.slice(0, 4),
-    pattern: patternFromTags(exercise.tags),
+    pattern: derivePattern(exercise.name, exercise.tags),
   };
 }
 

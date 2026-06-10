@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase, startsNewBand } from '@/utils/pt/programme';
-import { patternChipClass } from '@/utils/pt/patterns';
+import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTClient, PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise,
 } from '@/utils/pt/types';
@@ -126,28 +126,6 @@ async function functionErrorMessage(error: unknown, fallback: string): Promise<s
   return fnError.message ?? fallback;
 }
 
-function getMuscleTag(name: string, libEx?: PTExercise): string | null {
-  const combined = [
-    name,
-    ...(libEx?.muscles ?? []),
-    ...(libEx?.primary_muscles ?? []),
-    ...(libEx?.tags ?? []),
-  ].join(' ').toLowerCase();
-
-  const isSingleLeg =
-    /single.?leg|bulgarian|split squat|lunge|step.?up|pistol|curtsy|rear foot elevated|skater squat/i.test(combined) ||
-    (libEx?.tags?.some((t) => /single.?leg|unilateral/i.test(t)) ?? false);
-
-  const isLower = /squat|deadlift|lunge|leg press|leg curl|leg extension|romanian|rdl|glute|hip thrust|hip hinge|hamstring|quad|calf|calv|step.?up|good morning|hip abduct|hip adduct|tibialis|box jump|broad jump/i.test(combined);
-  const isUpper = /bench|chest press|row|pull.?up|chin.?up|lat pulldown|pull.?down|chest|shoulder|delt|tricep|bicep|curl|fly|flye|dip|push.?up|overhead press|incline|decline|face pull|cable cross|pec|lat /i.test(combined);
-  const isCore = /plank|crunch|sit.?up|oblique|pallof|anti.?rotat|dead bug|bird dog|hollow|v.?up|toe touch|ab /i.test(combined);
-
-  if (isLower) return isSingleLeg ? 'lower sl' : 'lower bi';
-  if (isUpper) return 'upper bi';
-  if (isCore) return 'core';
-  return null;
-}
-
 export default function PTProgrammeWizard({ clients, exercises }: { clients: PTClient[]; exercises: PTExercise[] }) {
   const supabase = createClient();
   const router = useRouter();
@@ -172,6 +150,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [dragEx, setDragEx] = useState<{ dayIndex: number; exId: string } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [boardEditExId, setBoardEditExId] = useState<string | null>(null);
+  const libById = useMemo(() => new Map(exercises.map((e) => [e.id, e])), [exercises]);
   const [currentWorkoutImportOpen, setCurrentWorkoutImportOpen] = useState(false);
   const [currentWorkoutImportStatus, setCurrentWorkoutImportStatus] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1166,24 +1145,11 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                           {ex.name}
                                         </p>
                                         {(() => {
-                                          if (ex.pattern) {
-                                            return (
-                                              <span className={`mt-px shrink-0 rounded-full px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] ring-1 ring-inset ${patternChipClass(ex.pattern)}`}>
-                                                {ex.pattern}
-                                              </span>
-                                            );
-                                          }
-                                          const libEx = ex.exercise_id ? exercises.find((e) => e.id === ex.exercise_id) : undefined;
-                                          const tag = getMuscleTag(ex.name, libEx);
-                                          if (!tag) return null;
-                                          const cls = tag.startsWith('lower')
-                                            ? 'border-emerald-200 text-emerald-700'
-                                            : tag.startsWith('upper')
-                                            ? 'border-sky-200 text-sky-700'
-                                            : 'border-amber-200 text-amber-700';
+                                          const p = resolvePattern(ex, libById);
+                                          if (!p) return null;
                                           return (
-                                            <span className={`mt-px shrink-0 border px-1 text-[0.48rem] uppercase tracking-wider leading-[1.8] ${cls}`}>
-                                              {tag}
+                                            <span className={`mt-px shrink-0 rounded-full px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] ring-1 ring-inset ${patternChipClass(p)}`}>
+                                              {p}
                                             </span>
                                           );
                                         })()}

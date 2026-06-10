@@ -1,11 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, startsNewBand } from '@/utils/pt/programme';
-import { patternChipClass } from '@/utils/pt/patterns';
+import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramTemplate, PTProgrammeExercise,
 } from '@/utils/pt/types';
@@ -59,6 +59,7 @@ export default function PTProgrammeTemplateEditView({
   const [dragEx, setDragEx] = useState<{ dayIndex: number; exId: string } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [boardEditExId, setBoardEditExId] = useState<string | null>(null);
+  const libById = useMemo(() => new Map(exercises.map((e) => [e.id, e])), [exercises]);
   const [weekBlocksInput, setWeekBlocksInput] = useState<Record<number, string>>({});
   const [listeningForPhase, setListeningForPhase] = useState<number | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
@@ -539,11 +540,15 @@ export default function PTProgrammeTemplateEditView({
                                     >
                                       {ex.name}
                                     </p>
-                                    {ex.pattern && (
-                                      <span className={`mt-px shrink-0 rounded-full px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] ring-1 ring-inset ${patternChipClass(ex.pattern)}`}>
-                                        {ex.pattern}
-                                      </span>
-                                    )}
+                                    {(() => {
+                                      const p = resolvePattern(ex, libById);
+                                      if (!p) return null;
+                                      return (
+                                        <span className={`mt-px shrink-0 rounded-full px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] ring-1 ring-inset ${patternChipClass(p)}`}>
+                                          {p}
+                                        </span>
+                                      );
+                                    })()}
                                   </div>
                                   <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
                                 </>

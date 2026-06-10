@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
-2026-06-09 by Claude - Added Board view to the template editor (previously only in the client editor + new-programme wizard).
+2026-06-10 by Claude - Pattern chips now auto-derive from exercise NAME (name-first), so existing programmes show tags without re-tagging.
 
 ## Last code fix commit
-this commit - Board view in template editor
+this commit - Name-based pattern resolution for chips
 
 ## What just happened (read first)
+
+### Pattern chips auto-derive from name (2026-06-10, LATEST)
+
+Pedro opened a template board and saw no pattern chips. Cause: the template exercises were created before the pattern field (stored `pattern` is null), AND many library cards carry messy legacy tags ("lower body", "pulling", "glute-focused", and goblet squat even tagged "mobility") rather than the clean pattern slugs, so slug-mapping alone tagged nothing (and would mis-tag).
+
+Fix (display-time resolution, no data migration):
+- `utils/pt/patterns.ts`: added `patternFromName(name)` (keyword classifier with single-arm/single-leg detection), `derivePattern(name, tags)` (name first, then slug tags), and `resolvePattern(ex, libById)` used for display: hand-set `ex.pattern` wins, else derive from the exercise name, else the linked library card's name/tags.
+- Auto-fill on adding a library exercise now uses `derivePattern` (name-aware) in `PTDayEditor.selectFromLibrary` and `programme.exerciseFromLibrary`.
+- Day editor chip + all THREE board views (client edit, wizard, template) now render `resolvePattern(...)`, so every library-linked exercise shows a chip immediately. Removed the old `getMuscleTag` heuristic + its now-unused definitions in the client editor and wizard.
+- Tightened the Carry name-match so "Suitcase Squat" resolves to Legs Anterior, not Carry.
+
+Note: name classification is best-effort; a few oddities (e.g. "Hip Flexor Pulls" -> Upper Pull) can be corrected via the day-editor dropdown, which always wins.
+
+Verification: `npx tsc --noEmit` and `npm run build` pass (exit 0). No live visual QA (admin-gated).
 
 ### Board view added to the template editor (2026-06-09, LATEST)
 

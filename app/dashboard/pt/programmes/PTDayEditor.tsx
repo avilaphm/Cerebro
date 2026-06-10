@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, sortExercisesBySectionOrder } from '@/utils/pt/programme';
-import { MOVEMENT_PATTERNS, patternChipClass, patternFromTags } from '@/utils/pt/patterns';
+import { MOVEMENT_PATTERNS, patternChipClass, derivePattern, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTExercise,
   PTProgrammeExercise,
@@ -104,6 +104,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
   const [customSection, setCustomSection] = useState('');
 
   const blocks = weekBlocks && weekBlocks.length > 0 ? calcWeekRanges(weekBlocks) : [];
+  const libById = useMemo(() => new Map(libraryExercises.map((e) => [e.id, e])), [libraryExercises]);
 
   const patch = (i: number, p: Partial<PTProgrammeExercise>) => {
     const updated = [...exercises];
@@ -211,7 +212,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     }
 
     const updated = [...exercises];
-    const autoPattern = patternFromTags(libEx.tags);
+    const autoPattern = derivePattern(libEx.name, libEx.tags);
     updated[idx] = {
       ...updated[idx],
       exercise_id: libEx.id,
@@ -269,6 +270,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
     const isSelected = selected.has(ex.id);
     const showVideo = showVideoFor.has(ex.id);
     const autocompleteMatches = autocompleteFor === ex.id ? getLibraryMatches(displayName) : [];
+    const resolvedPattern = resolvePattern(ex, libById);
 
     const gridCols = activeBlock >= 0
       ? 'grid-cols-[1.5rem_1fr_4rem_5rem_4rem_5rem_5rem_1.5rem_1.5rem_1.5rem]'
@@ -396,10 +398,10 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                 onClick={() => setPatternPickerFor((cur) => (cur === ex.id ? null : ex.id))}
                 onMouseDown={(e) => e.stopPropagation()}
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.62rem] font-medium ring-1 ring-inset transition-colors ${
-                  ex.pattern ? patternChipClass(ex.pattern) : 'bg-transparent text-black/30 ring-black/10 hover:text-black/55 hover:ring-black/25'
+                  resolvedPattern ? patternChipClass(resolvedPattern) : 'bg-transparent text-black/30 ring-black/10 hover:text-black/55 hover:ring-black/25'
                 }`}
               >
-                {ex.pattern ?? '+ pattern'}
+                {resolvedPattern ?? '+ pattern'}
                 <span className="text-[0.55rem] opacity-60">▾</span>
               </button>
               {ex.pattern && (
@@ -421,7 +423,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
                       type="button"
                       onMouseDown={() => setPattern(idx, p)}
                       className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-black/5 ${
-                        ex.pattern === p ? 'font-semibold' : ''
+                        resolvedPattern === p ? 'font-semibold' : ''
                       }`}
                     >
                       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-inset ${patternChipClass(p)}`} />
