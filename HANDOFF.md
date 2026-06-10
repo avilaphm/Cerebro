@@ -1,12 +1,25 @@
 # Handoff
 
 ## Last updated
-2026-06-10 by Claude - Client Nutrition Journey is now a collapsed one-liner moved to the end of the nutrition screen.
+2026-06-10 by Claude - Fixed nutrition screen shrinking: reverted the flex container, moved the Journey block physically instead of via order-last.
 
 ## Last code fix commit
-this commit - Collapse + relocate client Nutrition Journey
+this commit - Fix nutrition screen width regression
 
 ## What just happened (read first)
+
+### Fix nutrition screen width regression (2026-06-10, LATEST)
+
+The previous change (collapsing the Nutrition Journey) switched the NutritionTab root container from `space-y-4` to `flex flex-col gap-4` so `order-last` could move the journey to the end. But the cards use `mx-auto`, and in a flex column `margin:auto` overrides `align-items:stretch`, so every card hugged its content and shrank/narrowed. Pedro flagged "all looks smaller now".
+
+Fix in `app/client/NutritionTab.tsx`:
+- Reverted root container back to `space-y-4` (full-width cards restored).
+- Removed the `order-last`/flex hack and instead PHYSICALLY moved the Nutrition Journey JSX block to the end of the screen (after the meals section, before the modals).
+- Kept the earlier improvements: collapsed one-liner (`line-clamp-1`, week count in the eyebrow) and the full summary shown in the expanded panel.
+
+Lesson: don't switch a `space-y-*` block container to flex when children rely on `mx-auto` for width; it collapses them to content width. Move JSX instead.
+
+Verification: `npx tsc --noEmit` and `npm run build` pass (exit 0). No live visual QA (client portal auth-gated).
 
 ### Client Nutrition Journey collapsed + moved to end (2026-06-10, LATEST)
 
