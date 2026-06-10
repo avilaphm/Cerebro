@@ -704,19 +704,6 @@ export default function PTEmailsView({
     })();
   }, [supabase]);
 
-  const sendWrapPreview = async () => {
-    if (!previewClientId) { setStatus('Pick a client to preview with.'); return; }
-    setPreviewing(true);
-    setStatus('Generating wrap-up preview from real client data...');
-    const { data, error } = await supabase.functions.invoke('send-weekly-wrapup', {
-      body: { mode: 'preview', client_id: previewClientId },
-    });
-    setPreviewing(false);
-    if (error) { setStatus(`Preview failed: ${error.message}`); return; }
-    const res = data as { sent?: boolean; to?: string; error?: string } | null;
-    if (res?.error) { setStatus(`Preview failed: ${res.error}`); return; }
-    setStatus(res?.sent ? `Wrap-up preview sent to ${res.to ?? 'your inbox'}.` : 'Preview generated but the email did not send.');
-  };
 
   const patchDesign = (patch: Partial<EmailDesign>) => {
     setDesigns((current) => ({
@@ -858,6 +845,25 @@ export default function PTEmailsView({
       return;
     }
     setStatus(`Test sent to ${testEmail}.`);
+  };
+
+  const sendWrapPreview = async () => {
+    if (!previewClientId) { setStatus('Pick a client to preview with.'); return; }
+    setPreviewing(true);
+    // The preview renders the SAVED template, so save the current design first
+    // — that way Pedro never has to remember to hit "Save draft" beforehand.
+    setStatus('Saving design...');
+    const saved = await saveDraft('draft');
+    if (!saved) { setPreviewing(false); return; }
+    setStatus('Generating wrap-up preview from real client data...');
+    const { data, error } = await supabase.functions.invoke('send-weekly-wrapup', {
+      body: { mode: 'preview', client_id: previewClientId },
+    });
+    setPreviewing(false);
+    if (error) { setStatus(`Preview failed: ${error.message}`); return; }
+    const res = data as { sent?: boolean; to?: string; error?: string } | null;
+    if (res?.error) { setStatus(`Preview failed: ${res.error}`); return; }
+    setStatus(res?.sent ? `Wrap-up preview sent to ${res.to ?? 'your inbox'}.` : 'Preview generated but the email did not send.');
   };
 
   const copyHtml = async () => {
