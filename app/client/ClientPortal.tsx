@@ -5,6 +5,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Mic, Mic
 import { AnimatePresence, motion } from 'framer-motion';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
+import TopUpModal from './TopUpModal';
 import {
   CANONICAL_SECTION_ORDER,
   calcPhaseProgress,
@@ -491,6 +492,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [recurringWeeks, setRecurringWeeks] = useState('1');
   const [bookingReason, setBookingReason] = useState('');
   const [modalStep, setModalStep] = useState<ModalStep>(null);
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const [topUpReason, setTopUpReason] = useState<string | null>(null);
+  const [bookAfterTopUp, setBookAfterTopUp] = useState(false);
   const [dismissedOnboarding, setDismissedOnboarding] = useState(false);
   const [bookAnotherDate, setBookAnotherDate] = useState('');
   const [moveDayTarget, setMoveDayTarget] = useState<string | null>(null);
@@ -877,9 +881,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const nextBooking = activeBookings.find((booking) => new Date(booking.start_at).getTime() > nowMs) ?? null;
   const heldCredits = activeBookingHoldCount(bookings);
   const availableCredits = availableSessionCredits(client, bookings);
+  // Slots stay clickable even at zero credits: tapping one starts a booking that
+  // routes through the top-up popup. The credit check happens at confirmation
+  // (and again server-side via the Open-credits guard).
   const bookableSlots = useMemo(
-    () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, availableCredits > 0),
-    [availableCredits, bookingAvailability, bookingBlocks, bookings],
+    () => generateBookableSlots(bookingAvailability, bookingBlocks, bookings, true),
+    [bookingAvailability, bookingBlocks, bookings],
   );
   const enrichedBookableSlots = useMemo(() => {
     const byStart = new Map<string, PTBookableSlot>();
@@ -1319,8 +1326,17 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     await loadPortal();
   };
 
-  const bookSelectedSlot = async () => {
+  const bookSelectedSlot = async (skipCreditCheck = false) => {
     if (!selectedSlot || bookingBusy) return;
+    const needed = Number(recurringWeeks);
+    // Gate: if booking this would exceed paid (open) credits, route to top-up first.
+    // The server enforces the same Open-credits guard as a backstop.
+    if (!skipCreditCheck && availableSessionCredits(client, bookings) < needed) {
+      setBookAfterTopUp(true);
+      setTopUpReason('You need more sessions to book this. Choose a pack to continue.');
+      setTopUpOpen(true);
+      return;
+    }
     setBookingBusy(true);
     setStatus('Booking session...');
     const { data, error } = await supabase.functions.invoke<{ error?: string }>('manage-pt-booking', {
@@ -1341,6 +1357,24 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       await loadPortal();
     }
     setBookingBusy(false);
+  };
+
+  const handleTopUpSuccess = async () => {
+    setTopUpOpen(false);
+    setTopUpReason(null);
+    await loadPortal();
+    if (bookAfterTopUp) {
+      setBookAfterTopUp(false);
+      // Sessions are credited server-side already; skip the local pre-check
+      // (state may be stale this tick) and let the server Open-guard validate.
+      await bookSelectedSlot(true);
+    }
+  };
+
+  const openTopUp = (reason?: string | null) => {
+    setBookAfterTopUp(false);
+    setTopUpReason(reason ?? null);
+    setTopUpOpen(true);
   };
 
   const openBookingSlot = (slot: PTBookableSlot) => {
@@ -3440,7 +3474,26 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               </div>
             </div>
           </div>
+          {client && (
+            <button
+              type="button"
+              onClick={() => openTopUp()}
+              className="mt-4 w-full border border-black/15 bg-black py-3 text-sm font-medium text-white hover:bg-black/85 sm:w-auto sm:px-6"
+            >
+              Buy sessions
+            </button>
+          )}
         </section>
+
+        {client && (
+          <TopUpModal
+            open={topUpOpen}
+            clientId={client.id}
+            reason={topUpReason}
+            onClose={() => { setTopUpOpen(false); setTopUpReason(null); setBookAfterTopUp(false); }}
+            onSuccess={handleTopUpSuccess}
+          />
+        )}
 
         <section className="border border-black/10 bg-white p-5 md:p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">

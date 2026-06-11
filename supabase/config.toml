@@ -74,6 +74,11 @@ verify_jwt = false
 [functions.post-to-x]
 verify_jwt = false
 
+# stripe-webhook: called by Stripe (not a Supabase user JWT). Authenticity is
+# enforced in-code by verifying the Stripe signature against STRIPE_WEBHOOK_SECRET.
+[functions.stripe-webhook]
+verify_jwt = false
+
 # --- Public / anonymous-facing functions ---
 [functions.chat]
 verify_jwt = false

@@ -29,6 +29,8 @@ export interface PTClient {
   notes: string | null;
   user_id: string | null;
   sessions_remaining: number;
+  stripe_customer_id?: string | null;
+  last_pack_size?: number | null;
   document_url: string | null;
   password_created_at: string | null;
   lifestyle_context: string | null;

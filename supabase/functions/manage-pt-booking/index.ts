@@ -34,6 +34,14 @@ interface PTClientRow {
   email: string;
   user_id: string | null;
   sessions_remaining: number;
+  last_pack_size?: number | null;
+}
+
+// Low-session reminder emails only go to clients whose most recent pack was a 5 or
+// 10 (1/2-pack buyers know they're nearly out). The booking-time top-up popup is
+// the universal handler for hitting zero.
+function shouldSendCreditReminder(client: PTClientRow) {
+  return (client.last_pack_size ?? 0) >= 5;
 }
 
 interface AvailabilityRow {
@@ -148,9 +156,6 @@ async function createBooking(adminClient: ReturnType<typeof createClient>, userI
   const { data: availabilityRows } = await adminClient.from('pt_booking_availability').select('*').eq('is_active', true);
 
   const availability = (availabilityRows ?? []) as AvailabilityRow[];
-  if (client.sessions_remaining <= 0) {
-    return json({ error: 'No sessions remaining. Contact Pedro to add more.' }, 400);
-  }
 
   const occurrences: Array<{ start: Date; end: Date; availability: AvailabilityRow }> = [];
   for (const start of starts) {
@@ -161,6 +166,26 @@ async function createBooking(adminClient: ReturnType<typeof createClient>, userI
     const end = new Date(start.getTime() + sessionMinutes * 60000);
     if (!slotFitsWindow(start, end, matching)) return json({ error: `Selected slot is outside Pedro's availability on ${formatDateTime(start)}.` }, 400);
     occurrences.push({ start, end, availability: matching });
+  }
+
+  // Open-credits guard: a client can only hold as many future bookings as they
+  // have paid sessions. Count active future holds and require enough open credits
+  // for every occurrence being booked. This is the server-side backstop behind the
+  // client top-up popup, and closes the overbooking gap (was: sessions_remaining<=0).
+  const { data: holdRows } = await adminClient
+    .from('pt_booking_appointments')
+    .select('id')
+    .eq('client_id', client.id)
+    .in('status', ['scheduled', 'confirmed', 'cancellation_requested'])
+    .gt('start_at', new Date().toISOString());
+  const activeHolds = (holdRows ?? []).length;
+  const openCredits = client.sessions_remaining - activeHolds;
+  if (openCredits < occurrences.length) {
+    return json({
+      error: 'Not enough sessions left. Top up to book this session.',
+      code: 'insufficient_sessions',
+      open_credits: Math.max(0, openCredits),
+    }, 400);
   }
 
   const rangeStart = new Date(Math.min(...occurrences.map((item) => item.start.getTime()))).toISOString();
@@ -296,7 +321,7 @@ async function completeBooking(adminClient: ReturnType<typeof createClient>, use
     metadata: { appointment_id: appointment.id, start_at: appointment.start_at, balance_after: nextBalance },
   });
 
-  if ([2, 1, 0].includes(nextBalance)) {
+  if ([2, 1, 0].includes(nextBalance) && shouldSendCreditReminder(client)) {
     await sendCreditEmail(adminClient, client, nextBalance);
   }
 
@@ -335,7 +360,7 @@ async function noShowBooking(adminClient: ReturnType<typeof createClient>, userI
     metadata: { appointment_id: appointment.id, start_at: appointment.start_at, balance_after: nextBalance },
   });
 
-  if ([2, 1, 0].includes(nextBalance)) {
+  if ([2, 1, 0].includes(nextBalance) && shouldSendCreditReminder(client)) {
     await sendCreditEmail(adminClient, client, nextBalance);
   }
 
@@ -348,7 +373,7 @@ async function sendSessionAlerts(adminClient: ReturnType<typeof createClient>) {
 
   const { data: clients, error: clientError } = await adminClient
     .from('pt_clients')
-    .select('id, name, email, user_id, sessions_remaining')
+    .select('id, name, email, user_id, sessions_remaining, last_pack_size')
     .neq('status', 'archived')
     .lte('sessions_remaining', 1);
 
@@ -358,6 +383,8 @@ async function sendSessionAlerts(adminClient: ReturnType<typeof createClient>) {
   let sent = 0;
 
   for (const client of (clients ?? []) as PTClientRow[]) {
+    // Same rule as the post-session reminder: only nudge 5/10-pack buyers.
+    if (!shouldSendCreditReminder(client)) continue;
     const { data: upcoming } = await adminClient
       .from('pt_booking_appointments')
       .select('id, start_at')
@@ -523,7 +550,7 @@ async function applyCancellation(adminClient: ReturnType<typeof createClient>, u
 }
 
 async function getClientForRequest(adminClient: ReturnType<typeof createClient>, userId: string, isAdmin: boolean, requestedClientId?: string) {
-  let query = adminClient.from('pt_clients').select('id, name, email, user_id, sessions_remaining').neq('status', 'archived');
+  let query = adminClient.from('pt_clients').select('id, name, email, user_id, sessions_remaining, last_pack_size').neq('status', 'archived');
   query = isAdmin && requestedClientId ? query.eq('id', requestedClientId) : query.eq('user_id', userId);
   const { data } = await query.limit(1).maybeSingle();
   return data as PTClientRow | null;
@@ -532,7 +559,7 @@ async function getClientForRequest(adminClient: ReturnType<typeof createClient>,
 async function getAppointment(adminClient: ReturnType<typeof createClient>, appointmentId: string) {
   const { data } = await adminClient
     .from('pt_booking_appointments')
-    .select('*, pt_clients(id, name, email, user_id, sessions_remaining)')
+    .select('*, pt_clients(id, name, email, user_id, sessions_remaining, last_pack_size)')
     .eq('id', appointmentId)
     .maybeSingle();
   return data as AppointmentRow | null;

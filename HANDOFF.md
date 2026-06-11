@@ -1,12 +1,57 @@
 # Handoff
 
 ## Last updated
-2026-06-10 by Claude - Built the weekly wrap-up email feature (Spotify-Wrapped style): tags, AI recap, Sunday cron, client opt-out toggle. DEPLOYED.
+2026-06-11 by Claude - Built Stripe session payments (top-up packs, saved cards, Apple/Google Pay, low-session email gating, Open-credits booking guard). CODE COMPLETE + committed; NOT YET DEPLOYED - needs Pedro's go-live steps (see runbook below).
 
 ## Last code fix commit
-this commit - Weekly wrap-up email feature
+this commit - Stripe session payments
 
 ## What just happened (read first)
+
+### Stripe session payments (2026-06-11, LATEST)
+
+Clients now pay for PT sessions in-app. When a client books with no open credits, a top-up popup
+offers 4 packs (1=$110, 2=$220, 5=$525, 10=$1000) payable by Apple Pay / Google Pay / card. The card is
+saved; the next top-up is a one-tap re-charge. Sessions are credited automatically on payment.
+
+Shipped (code complete, build + tsc green; NOT deployed yet):
+- Migration `20260611000000_stripe_payments.sql`: adds `pt_clients.stripe_customer_id` + `last_pack_size`;
+  new `pt_payments` table (UNIQUE `stripe_payment_intent_id` = idempotency guard) with RLS (client reads own, admin all).
+- Edge fn `manage-pt-payment` (JWT-auth): `create_topup_intent` (ensures Stripe customer, makes PaymentIntent
+  at SERVER-side price, setup_future_usage off_session, returns saved_card if any) and `confirm_topup`
+  (verifies PI succeeded, credits idempotently).
+- Edge fn `stripe-webhook` (verify_jwt=false, Stripe-signature verified): `payment_intent.succeeded` → credit.
+  Added to config.toml.
+- `_shared/credit-pack.ts`: the ONE idempotent `creditPack()` used by both confirm_topup and the webhook.
+  Inserts pt_payments first (23505 = already credited → no-op), then bumps sessions_remaining, writes
+  pt_session_ledger `pack_added`, sets last_pack_size, emails the client. Server-authoritative price map.
+- Both Stripe clients use `Stripe.createFetchHttpClient()` (Deno) + webhook uses `createSubtleCryptoProvider()`.
+- `manage-pt-booking` changes: createBooking now enforces an OPEN-CREDITS guard (sessions_remaining minus
+  active future holds >= occurrences) instead of `sessions_remaining<=0` - closes the overbooking gap and is
+  the server backstop behind the popup (returns code `insufficient_sessions`). Low-session reminder emails
+  (2/1/0 in complete + no_show + cron sendSessionAlerts) are now gated by `shouldSendCreditReminder` =
+  `last_pack_size >= 5` (only 5/10-pack buyers get nagged; 1/2-pack buyers don't). last_pack_size added to
+  the relevant selects + PTClientRow.
+- Frontend: `app/client/TopUpModal.tsx` (pack select → Stripe Payment Element for new card OR one-tap saved
+  card → success), wired into `ClientPortal.tsx`: "Buy sessions" button by the Pack/Held/Open cards; booking
+  slots are now always clickable (canBook=true) so tapping one at 0 credits routes through the popup;
+  `bookSelectedSlot` pre-checks open credits and opens the top-up, then auto-continues the booking on success.
+  Added `@stripe/stripe-js` + `@stripe/react-stripe-js`. `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` added to .env.local.
+
+GO-LIVE RUNBOOK (Pedro must do, test mode first):
+1. ROLL the Stripe secret key - the old `sk_live` was pasted in chat and is compromised.
+2. `supabase secrets set STRIPE_SECRET_KEY=sk_test_... STRIPE_WEBHOOK_SECRET=whsec_...` (use test keys first;
+   set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY to the matching pk_test for testing).
+3. Apply the migration (prior sessions used Supabase MCP `apply_migration` due to remote migration-history drift).
+4. Deploy fns: `supabase functions deploy manage-pt-payment stripe-webhook manage-pt-booking --use-api`.
+5. Stripe dashboard: add webhook endpoint → the deployed stripe-webhook URL, event `payment_intent.succeeded`
+   (copy its whsec into step 2); register `cerebroai.au` under Payment Methods → Apple Pay.
+6. Test with card 4242 4242 4242 4242 (new card saves; second buy = one-tap). Then swap to live keys + live
+   webhook + re-register Apple Pay domain in live, do one small real purchase.
+NOTE: deploying manage-pt-booking before the secret is set means a client hitting the Open-guard sees
+"Top up to book" but the popup can't charge - so set secrets BEFORE/at the same time as the deploy.
+
+### Weekly wrap-up email feature (2026-06-10, LATEST)
 
 ### Weekly wrap-up email feature (2026-06-10, LATEST)
 
