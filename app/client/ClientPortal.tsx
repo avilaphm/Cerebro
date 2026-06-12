@@ -3489,6 +3489,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <TopUpModal
             open={topUpOpen}
             clientId={client.id}
+            clientName={client.name}
+            clientEmail={client.email}
             reason={topUpReason}
             onClose={() => { setTopUpOpen(false); setTopUpReason(null); setBookAfterTopUp(false); }}
             onSuccess={handleTopUpSuccess}

@@ -17,6 +17,7 @@ interface RequestBody {
   client_id?: string;
   pack?: number;
   payment_intent_id?: string;
+  save_card?: boolean;
 }
 
 interface PTClientRow {
@@ -96,11 +97,13 @@ async function createTopupIntent(
     savedCard = { brand: pm.card.brand, last4: pm.card.last4, payment_method_id: pm.id };
   }
 
+  // No setup_future_usage here: whether the card is kept is the client's choice,
+  // handled at confirm time (attach on consent). This also stops Stripe from
+  // rendering its own "save card" checkbox, so our single checkbox is the source of truth.
   const intent = await stripe.paymentIntents.create({
     amount,
     currency: 'aud',
     customer: customerId,
-    setup_future_usage: 'off_session',
     automatic_payment_methods: { enabled: true },
     metadata: {
       pt_client_id: client.id,
@@ -136,7 +139,33 @@ async function confirmTopup(
   }
 
   const result = await creditPack(adminClient, intent);
+
+  // Save the card for future one-tap top-ups only if the client opted in, and
+  // only if it isn't already on their account.
+  if (body.save_card && intent.payment_method && client.stripe_customer_id) {
+    const pmId = typeof intent.payment_method === 'string' ? intent.payment_method : intent.payment_method.id;
+    try {
+      const existing = await stripe.paymentMethods.list({ customer: client.stripe_customer_id, type: 'card' });
+      const newFingerprint = await cardFingerprint(stripe, pmId);
+      const alreadySaved = existing.data.some((m) => m.card?.fingerprint && m.card.fingerprint === newFingerprint);
+      if (!alreadySaved) {
+        await stripe.paymentMethods.attach(pmId, { customer: client.stripe_customer_id });
+      }
+    } catch (error) {
+      console.error('Could not save card:', error);
+    }
+  }
+
   return json({ ok: true, ...result });
+}
+
+async function cardFingerprint(stripe: Stripe, paymentMethodId: string) {
+  try {
+    const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+    return pm.card?.fingerprint ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function ensureStripeCustomer(
