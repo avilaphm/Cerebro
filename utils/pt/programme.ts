@@ -214,6 +214,18 @@ export function startsNewBand(
   return (prev.superset_id ?? null) !== (curr.superset_id ?? null);
 }
 
+// Splits a day's exercises into the divider-delimited "bands" used by the board
+// view (a band = a section start or superset group). The board renders one band
+// per shared subgrid row so band index N lines up across every day column.
+export function groupBands(exercises: PTProgrammeExercise[]): PTProgrammeExercise[][] {
+  const bands: PTProgrammeExercise[][] = [];
+  exercises.forEach((ex, i) => {
+    if (i === 0 || startsNewBand(exercises[i - 1], ex)) bands.push([ex]);
+    else bands[bands.length - 1].push(ex);
+  });
+  return bands;
+}
+
 export function sortExercisesBySectionOrder(exercises: PTProgrammeExercise[]): PTProgrammeExercise[] {
   type Group = { name: string | null; items: PTProgrammeExercise[] };
   const groups: Group[] = [];

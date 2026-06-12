@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase, startsNewBand } from '@/utils/pt/programme';
+import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays, appendDaysToFoundationPhase, groupBands } from '@/utils/pt/programme';
 import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTClient, PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise,
@@ -1048,14 +1048,25 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
               {boardView ? (
                 <div className="space-y-3">
-                  <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(0, 1fr))` }}>
+                  {(() => {
+                    const dayBands = phase.days.map((d) => groupBands(d.exercises));
+                    const maxBands = Math.max(1, ...dayBands.map((b) => b.length));
+                    return (
+                  <div
+                    className="grid gap-x-3"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(0, 1fr))`,
+                      gridTemplateRows: `auto repeat(${maxBands}, auto)`,
+                    }}
+                  >
                     {phase.days.map((day, di) => (
                       <div
                         key={day.id}
                         onDragOver={(e) => { e.preventDefault(); if (dragOverDay !== di) setDragOverDay(di); }}
                         onDragLeave={() => setDragOverDay((current) => (current === di ? null : current))}
                         onDrop={(e) => { e.preventDefault(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di); setDragEx(null); setDragOverDay(null); }}
-                        className={`flex min-h-[8rem] flex-col rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
+                        style={{ gridRow: `1 / span ${maxBands + 1}`, gridTemplateRows: 'subgrid' }}
+                        className={`grid rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
                       >
                         <div className="mb-2 flex items-start justify-between gap-1 px-1">
                           <div className="min-w-0">
@@ -1067,16 +1078,18 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                             <button type="button" onClick={() => deleteDay(activePhaseTab, di)} className="text-[0.65rem] text-black/25 hover:text-red-500 transition-colors" title="Delete day">×</button>
                           </div>
                         </div>
-                        <div className="flex flex-1 flex-col gap-1.5">
-                          {day.exercises.map((ex, exIdx) => {
-                            const isEditing = boardEditExId === ex.id;
-                            const boardMatches = isEditing ? getBoardMatches(ex.name) : [];
-                            const dividerBefore = startsNewBand(day.exercises[exIdx - 1], ex);
-                            return (
-                              <div key={ex.id}>
-                                {dividerBefore && <div className="my-1 border-t border-dashed border-black/15" />}
-                                {ex.section_start && <p className="px-1 pb-0.5 pt-1 text-[0.55rem] uppercase tracking-wider text-black/30">{ex.section_start}</p>}
+                        {dayBands[di].map((band, bi) => (
+                          <div
+                            key={band[0].id}
+                            className={`flex flex-col gap-1.5 ${bi > 0 ? 'mt-2 border-t border-dashed border-black/15 pt-2' : ''}`}
+                          >
+                            {band[0].section_start && <p className="px-1 pb-0.5 text-[0.55rem] uppercase tracking-wider text-black/30">{band[0].section_start}</p>}
+                            {band.map((ex) => {
+                              const isEditing = boardEditExId === ex.id;
+                              const boardMatches = isEditing ? getBoardMatches(ex.name) : [];
+                              return (
                                 <div
+                                  key={ex.id}
                                   draggable={!isEditing}
                                   onDragStart={isEditing ? undefined : (e) => { setDragEx({ dayIndex: di, exId: ex.id }); e.dataTransfer.effectAllowed = 'move'; }}
                                   onDragEnd={isEditing ? undefined : () => { setDragEx(null); setDragOverDay(null); }}
@@ -1161,16 +1174,18 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                     </>
                                   )}
                                 </div>
-                              </div>
-                            );
-                          })}
-                          {day.exercises.length === 0 && (
-                            <p className="px-1 py-4 text-center text-[0.62rem] text-black/25">Drop here</p>
-                          )}
-                        </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                        {day.exercises.length === 0 && (
+                          <p className="px-1 py-4 text-center text-[0.62rem] text-black/25">Drop here</p>
+                        )}
                       </div>
                     ))}
                   </div>
+                    );
+                  })()}
                 </div>
               ) : currentDay === null ? (
                 <div className="space-y-3">

@@ -1,12 +1,28 @@
 # Handoff
 
 ## Last updated
-2026-06-11 by Claude - Built Stripe session payments (top-up packs, saved cards, Apple/Google Pay, low-session email gating, Open-credits booking guard). CODE COMPLETE + committed; NOT YET DEPLOYED - needs Pedro's go-live steps (see runbook below).
+2026-06-12 by Claude - Aligned the board-view dotted dividers across day columns (programme editor). Pure UI/layout change; Stripe work below is still the open deploy item.
 
 ## Last code fix commit
-this commit - Stripe session payments
+this commit - board-view divider alignment (subgrid)
 
 ## What just happened (read first)
+
+### Board-view divider alignment (2026-06-12, LATEST)
+
+The "drag exercises between days" board (PT programme editor) now lays each day column out as a
+CSS **subgrid** so every divider-delimited "band" shares a row across all columns - so the dotted
+lines line up horizontally across Day 1..N, with a gap between blocks and whitespace where a day has
+fewer/shorter blocks (Pedro picked "every block row" alignment).
+- New helper `groupBands()` in `utils/pt/programme.ts` (groups a day's exercises by `startsNewBand`).
+- Applied identically to all three board renderers: `programmes/[id]/edit/PTProgrammeEditView.tsx`,
+  `programmes/template/[id]/edit/PTProgrammeTemplateEditView.tsx`, `programmes/new/PTProgrammeWizard.tsx`.
+- Each column: `display:grid; grid-template-rows: subgrid; grid-row: 1 / span (maxBands+1)`. Parent grid
+  defines `auto repeat(maxBands, auto)` rows (row 1 = day header). Dashed divider = `border-t border-dashed`
+  + `mt-2 pt-2` on bands after the first. tsc clean. NOT yet eyeballed by Claude (couldn't reach Pedro's
+  authed session) - Pedro to confirm on refresh.
+
+### Stripe session payments (2026-06-11)
 
 ### Stripe session payments (2026-06-11, LATEST)
 
