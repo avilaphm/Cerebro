@@ -19,8 +19,14 @@ fewer/shorter blocks (Pedro picked "every block row" alignment).
   `programmes/template/[id]/edit/PTProgrammeTemplateEditView.tsx`, `programmes/new/PTProgrammeWizard.tsx`.
 - Each column: `display:grid; grid-template-rows: subgrid; grid-row: 1 / span (maxBands+1)`. Parent grid
   defines `auto repeat(maxBands, auto)` rows (row 1 = day header). Dashed divider = `border-t border-dashed`
-  + `mt-2 pt-2` on bands after the first. tsc clean. NOT yet eyeballed by Claude (couldn't reach Pedro's
-  authed session) - Pedro to confirm on refresh.
+  + `mt-2 pt-2` on bands after the first.
+- `groupBands()` is now RENDER-ONLY grouping (Pedro's choice - does NOT touch stored data, which has dirty
+  superset_ids on older programmes): every section except Workout collapses to one tight block (warm-up /
+  metcon / stretches); the Workout section is paired into supersets of two BY POSITION (ignores superset_id).
+  So each day shows: Warm-Up block -> divider -> superset 1 (2 ex) -> divider -> superset 2 -> ... Verified
+  the grouping against the messy programme 3ab8403c (4 bands/day, aligned). Caveat Pedro accepted: the board's
+  positional pairing can differ from what the superset editor (PTDayEditor, reads real superset_id) shows.
+  tsc clean. NOT yet eyeballed by Claude (couldn't reach Pedro's authed session) - Pedro to confirm on refresh.
 
 ### Stripe session payments (2026-06-11)
 

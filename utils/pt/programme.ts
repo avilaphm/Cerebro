@@ -215,14 +215,29 @@ export function startsNewBand(
 }
 
 // Splits a day's exercises into the divider-delimited "bands" used by the board
-// view (a band = a section start or superset group). The board renders one band
-// per shared subgrid row so band index N lines up across every day column.
+// view. The board renders one band per shared subgrid row, so band index N lines
+// up across every day column. Render-only grouping (ignores stored superset_id,
+// which is unreliable on older programmes): every section except Workout collapses
+// to a single tight block (warm-up / metcon / stretches), and the Workout section
+// is paired into supersets of two by position. A divider with padding sits between
+// bands — i.e. between sections and between successive workout supersets.
 export function groupBands(exercises: PTProgrammeExercise[]): PTProgrammeExercise[][] {
   const bands: PTProgrammeExercise[][] = [];
-  exercises.forEach((ex, i) => {
-    if (i === 0 || startsNewBand(exercises[i - 1], ex)) bands.push([ex]);
-    else bands[bands.length - 1].push(ex);
-  });
+  let section: string | null = null;
+  let i = 0;
+  while (i < exercises.length) {
+    if (exercises[i].section_start) section = exercises[i].section_start ?? null;
+    const sectionStart = section;
+    let j = i;
+    while (j < exercises.length && !(j > i && exercises[j].section_start)) j++;
+    const items = exercises.slice(i, j);
+    if ((sectionStart ?? '').toLowerCase() === 'workout') {
+      for (let k = 0; k < items.length; k += 2) bands.push(items.slice(k, k + 2));
+    } else {
+      bands.push(items);
+    }
+    i = j;
+  }
   return bands;
 }
 
