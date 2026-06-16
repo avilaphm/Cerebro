@@ -1,12 +1,27 @@
 # Handoff
 
 ## Last updated
-2026-06-16 by Codex - Fixed liquid-glass padding regression on dashboard divider sections, especially PT client detail Notes and Client profile document.
+2026-06-16 by Codex - Added click-to-book modal to the coach PT bookings calendar.
 
 ## Last code fix commit
-this commit - liquid divider sections stay flat
+this commit - coach calendar slots open booking modal
 
 ## What just happened (read first)
+
+### Coach booking calendar click-to-book modal (2026-06-16, LATEST)
+
+Pedro asked for `/dashboard/pt/bookings` to book directly from calendar slots. The coach calendar now generates clickable open session slots inside each active availability window. Clicking a slot opens a centered booking popup where Pedro selects the client, confirms/edits the datetime, selects repeat count, and books through the existing `manage-pt-booking` Edge Function.
+
+Implementation notes:
+- Existing booked appointments still render above open slots and remain clickable for Mark done / Cancel.
+- Open slots are generated from `pt_booking_availability` using `session_duration_minutes` plus buffer/cadence rules.
+- Slots that overlap active appointments are hidden, so Pedro does not get duplicate click targets over booked times.
+- The old right-rail manual booking form remains as a fallback.
+
+Verification:
+- `npx eslint app/dashboard/pt/bookings/PTBookingsView.tsx` passes.
+- `npm run build` is currently blocked by unrelated uncommitted client-detail changes: `PTClientDetail` props do not include `loginEvents` / `lastSignInAt` while `page.tsx` passes them.
+- Browser route `/dashboard/pt/bookings` redirected to `/login` in the automated browser, so logged-in click-through could not be completed here.
 
 ### Dashboard liquid divider padding fix (2026-06-16, LATEST)
 

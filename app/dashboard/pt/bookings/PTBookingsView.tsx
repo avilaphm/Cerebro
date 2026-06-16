@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTClient } from '@/utils/pt/types';
 import type {
@@ -20,6 +20,12 @@ const COACH_CALENDAR_START_HOUR = 6;
 const COACH_CALENDAR_END_HOUR = 18;
 const COACH_HOUR_HEIGHT = 72;
 const GRID_TOP_PAD = 20;
+
+interface CoachCalendarSlot {
+  start_at: string;
+  end_at: string;
+  availability: PTBookingAvailability;
+}
 
 function timeToMinutes(value: string) {
   const [hour, minute] = value.slice(0, 5).split(':').map(Number);
@@ -60,6 +66,27 @@ function calendarOffsetMinutes(value: string | Date) {
   return (date.getHours() - COACH_CALENDAR_START_HOUR) * 60 + date.getMinutes();
 }
 
+function dateTimeLocalValue(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function slotSessionMinutes(window: PTBookingAvailability) {
+  return Number(window.session_duration_minutes ?? 45);
+}
+
+function slotStepMinutes(window: PTBookingAvailability) {
+  return slotSessionMinutes(window) + Number(window.buffer_minutes ?? Math.max(0, window.slot_duration_minutes - slotSessionMinutes(window)));
+}
+
+function overlapsRange(startA: string | Date, endA: string | Date, startB: string | Date, endB: string | Date) {
+  const aStart = typeof startA === 'string' ? new Date(startA).getTime() : startA.getTime();
+  const aEnd = typeof endA === 'string' ? new Date(endA).getTime() : endA.getTime();
+  const bStart = typeof startB === 'string' ? new Date(startB).getTime() : startB.getTime();
+  const bEnd = typeof endB === 'string' ? new Date(endB).getTime() : endB.getTime();
+  return aStart < bEnd && aEnd > bStart;
+}
+
 export default function PTBookingsView() {
   const supabase = createClient();
   const [clients, setClients] = useState<PTClient[]>([]);
@@ -69,6 +96,7 @@ export default function PTBookingsView() {
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [loadedAtMs, setLoadedAtMs] = useState(0);
   const [windowDraft, setWindowDraft] = useState({
     day_of_week: '1',
     start_time: '06:00',
@@ -87,6 +115,7 @@ export default function PTBookingsView() {
   const [calendarView, setCalendarView] = useState<BookingCalendarView>('week');
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [selectedAppointment, setSelectedAppointment] = useState<PTBookingAppointment | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<CoachCalendarSlot | null>(null);
   const [bookingDraft, setBookingDraft] = useState({
     client_id: '',
     start_at: `${addDaysInput(2)}T07:00`,
@@ -129,11 +158,15 @@ export default function PTBookingsView() {
     setRequests((requestsRes.data ?? []) as PTBookingCancellationRequest[]);
     setBookingDraft((current) => ({ ...current, client_id: current.client_id || clientRows[0]?.id || '' }));
     setPackDraft((current) => ({ ...current, client_id: current.client_id || clientRows[0]?.id || '' }));
+    setLoadedAtMs(Date.now());
     setLoading(false);
   }, [supabase]);
 
   useEffect(() => {
-    void loadData();
+    const timer = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadData]);
 
   const nextAppointments = useMemo(
@@ -252,7 +285,10 @@ export default function PTBookingsView() {
       },
     });
     setStatus(error?.message ?? data?.error ?? 'Booking created.');
-    if (!error && !data?.error) await loadData();
+    if (!error && !data?.error) {
+      setSelectedSlot(null);
+      await loadData();
+    }
     setBusy(null);
   };
 
@@ -288,6 +324,7 @@ export default function PTBookingsView() {
 
   const moveCalendar = (direction: -1 | 1) => {
     setSelectedAppointment(null);
+    setSelectedSlot(null);
     if (calendarView === 'month') {
       setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
       return;
@@ -301,6 +338,44 @@ export default function PTBookingsView() {
       : calendarView === 'week'
         ? `${formatBookingDate(calendarWeekDays[0])} - ${formatBookingDate(calendarWeekDays[4])}`
         : calendarMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+
+  const generateSlotsForDay = (day: Date, dayWindows: PTBookingAvailability[], dayAppointments: PTBookingAppointment[]) => {
+    const now = loadedAtMs || 0;
+    const slots: CoachCalendarSlot[] = [];
+
+    dayWindows.forEach((window) => {
+      const duration = slotSessionMinutes(window);
+      const step = slotStepMinutes(window);
+      const windowEnd = timeToMinutes(window.end_time);
+
+      for (
+        let minute = timeToMinutes(window.start_time);
+        minute + duration <= windowEnd;
+        minute += step
+      ) {
+        const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(minute / 60), minute % 60);
+        const end = new Date(start.getTime() + duration * 60000);
+        if (start.getTime() < now) continue;
+        const taken = dayAppointments.some((appointment) => overlapsRange(start, end, appointment.start_at, appointment.end_at));
+        if (!taken) {
+          slots.push({ start_at: start.toISOString(), end_at: end.toISOString(), availability: window });
+        }
+      }
+    });
+
+    return slots;
+  };
+
+  const openSlotBooking = (slot: CoachCalendarSlot) => {
+    setSelectedAppointment(null);
+    setSelectedSlot(slot);
+    setBookingDraft((current) => ({
+      ...current,
+      client_id: current.client_id || clients[0]?.id || '',
+      start_at: dateTimeLocalValue(slot.start_at),
+      recurring_weeks: '1',
+    }));
+  };
 
   const renderAppointmentBlock = (appointment: PTBookingAppointment, compact = false) => {
     const duration = Math.max(25, (new Date(appointment.end_at).getTime() - new Date(appointment.start_at).getTime()) / 60000);
@@ -330,6 +405,29 @@ export default function PTBookingsView() {
             {formatBookingTime(appointment.start_at)} - {formatBookingTime(appointment.end_at)}
           </span>
         )}
+      </button>
+    );
+  };
+
+  const renderBookableSlot = (slot: CoachCalendarSlot, compact = false) => {
+    const duration = Math.max(25, (new Date(slot.end_at).getTime() - new Date(slot.start_at).getTime()) / 60000);
+    const top = Math.max(0, (calendarOffsetMinutes(slot.start_at) / 60) * COACH_HOUR_HEIGHT);
+    const height = Math.max(34, (duration / 60) * COACH_HOUR_HEIGHT);
+
+    return (
+      <button
+        key={`${slot.availability.id}-${slot.start_at}`}
+        type="button"
+        onClick={() => openSlotBooking(slot)}
+        style={{ top, height }}
+        className={`absolute inset-x-1 z-[4] overflow-hidden border border-emerald-200 bg-white/85 px-2 py-1 text-left text-emerald-950 shadow-[0_10px_20px_-18px_rgba(0,0,0,0.45)] transition-colors hover:border-emerald-500 hover:bg-emerald-50 ${
+          selectedSlot?.start_at === slot.start_at ? 'border-emerald-700 bg-emerald-100' : ''
+        }`}
+      >
+        <span className={`block truncate font-medium ${compact ? 'text-[0.68rem]' : 'text-xs'}`}>
+          {formatBookingTime(slot.start_at)}
+        </span>
+        {!compact && <span className="mt-0.5 block truncate text-[0.65rem] opacity-60">Book session</span>}
       </button>
     );
   };
@@ -373,6 +471,7 @@ export default function PTBookingsView() {
             const key = dateKey(day);
             const dayAppointments = appointmentsByDate.get(key) ?? [];
             const dayWindows = availability.filter((w) => w.is_active && w.day_of_week === day.getDay());
+            const daySlots = generateSlotsForDay(day, dayWindows, dayAppointments);
             return (
               <div key={key} className="relative border-l border-black/10">
                 {Array.from({ length: COACH_CALENDAR_END_HOUR - COACH_CALENDAR_START_HOUR + 1 }, (_, index) => (
@@ -389,6 +488,7 @@ export default function PTBookingsView() {
                     />
                   );
                 })}
+                {daySlots.map((slot) => renderBookableSlot(slot, days.length > 1))}
                 {dayAppointments.map((appointment) => renderAppointmentBlock(appointment, days.length > 1))}
               </div>
             );
@@ -429,6 +529,81 @@ export default function PTBookingsView() {
             <button type="button" onClick={() => setStatus('')} className="text-black/35 hover:text-black" aria-label="Dismiss status">
               <X size={16} />
             </button>
+          </div>
+        )}
+
+        {selectedSlot && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-6 backdrop-blur-sm">
+            <div className="w-full max-w-md border border-black/10 bg-white shadow-[0_30px_90px_-55px_rgba(0,0,0,0.85)]">
+              <div className="flex items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
+                <div>
+                  <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Book session</p>
+                  <h2 className="mt-1 text-lg font-medium">
+                    {formatBookingDate(selectedSlot.start_at)} · {formatBookingTime(selectedSlot.start_at)}
+                  </h2>
+                  <p className="mt-1 text-xs text-black/45">
+                    {formatBookingTime(selectedSlot.start_at)} - {formatBookingTime(selectedSlot.end_at)}
+                    {selectedSlot.availability.location ? ` · ${selectedSlot.availability.location}` : ''}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setSelectedSlot(null)} className="text-black/35 hover:text-black" aria-label="Close booking popup">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="space-y-4 px-5 py-5">
+                <FormLabel label="Client">
+                  <select
+                    value={bookingDraft.client_id}
+                    onChange={(event) => setBookingDraft((current) => ({ ...current, client_id: event.target.value }))}
+                    className={FIELD_CLASS}
+                  >
+                    {clients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.name} ({client.sessions_remaining})
+                      </option>
+                    ))}
+                  </select>
+                </FormLabel>
+                <FormLabel label="Confirm time">
+                  <input
+                    type="datetime-local"
+                    value={bookingDraft.start_at}
+                    onChange={(event) => setBookingDraft((current) => ({ ...current, start_at: event.target.value }))}
+                    className={FIELD_CLASS}
+                  />
+                </FormLabel>
+                <FormLabel label="Repeat">
+                  <select
+                    value={bookingDraft.recurring_weeks}
+                    onChange={(event) => setBookingDraft((current) => ({ ...current, recurring_weeks: event.target.value }))}
+                    className={FIELD_CLASS}
+                  >
+                    <option value="1">One session</option>
+                    <option value="2">2 weeks</option>
+                    <option value="3">3 weeks</option>
+                    <option value="4">4 weeks</option>
+                  </select>
+                </FormLabel>
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSlot(null)}
+                    className="inline-flex min-h-11 items-center justify-center border border-black/10 px-4 text-sm text-black/55 hover:border-black/30 hover:text-black"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void createManualBooking()}
+                    disabled={busy === 'booking' || !bookingDraft.client_id || !bookingDraft.start_at}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 border border-black bg-black px-4 text-sm font-medium text-white hover:bg-white hover:text-black disabled:opacity-40"
+                  >
+                    <Check size={15} />
+                    {busy === 'booking' ? 'Booking...' : 'Book'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
