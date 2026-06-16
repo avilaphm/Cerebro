@@ -2717,6 +2717,7 @@ this commit - Reorder PT programmes and collapse templates
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped most recently:
+- Public Movement Assessment intake is live at `/movement-assessment`. It is a two-step prospect flow: Pedro Avila Coaching PAR-Q with signature, then live booking slots from `pt_booking_availability`/`pt_booking_blocks`. Successful booking creates or updates a `pt_clients` card, inserts a confirmed 50-minute appointment and block, and stores all PAR-Q answers, client note, booking metadata, and signature in an active `pt_client_notes.context` record visible on the client detail page. No migration was needed.
 - Task #13 is complete: `/dashboard/pt/programmes/review/[id]` now renders 4-agent review cards for Client Analysis, Methodology Plan, Programme Synthesis, and Validation, with approval gated on hard failures from both new and legacy validation keys.
 - Task #15 is complete: `/dashboard/pt/programmes/new` now uses the async orchestrator, phase-level synthesis, deterministic known-phase expansion, validation at step 8, and phase-level polling labels. Mira smoke run `00354c9e-13cf-4b94-8cea-66332fa493bf` passed cleanly.
 - Remaining PT programme creation work is Step 1 ingestion: build `ingest-client-intake`, build `embed-client-brain`, and update wizard Step 1 to accept 3 files + notes + voice before generation.

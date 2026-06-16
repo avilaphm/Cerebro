@@ -112,6 +112,22 @@ interface PTNote {
   context?: Record<string, unknown>;
 }
 
+interface MovementAssessmentParqAnswer {
+  id: string;
+  label: string;
+  text: string;
+  answer: 'yes' | 'no';
+}
+
+interface MovementAssessmentContext {
+  appointment_start_at?: string;
+  appointment_end_at?: string;
+  coach_notes?: string;
+  medical_flag?: boolean;
+  parq_answers: MovementAssessmentParqAnswer[];
+  signature_data_url?: string;
+}
+
 const ONE_RM_EXERCISES = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'] as const;
 type OneRMExercise = typeof ONE_RM_EXERCISES[number];
 
@@ -904,12 +920,96 @@ export default function PTClientDetail({
 
   const noteContextLabel = (note: PTNote) => {
     const context = note.context ?? {};
+    if (context.source === 'movement_assessment_intake') return 'Movement assessment intake';
     if (context.source !== 'workout_section') return null;
     const phase = typeof context.phase_index === 'number' ? `Phase ${context.phase_index + 1}` : null;
     const week = typeof context.week_number === 'number' ? `Week ${context.week_number}` : null;
     const workout = typeof context.workout_title === 'string' ? context.workout_title : null;
     const section = typeof context.section_title === 'string' ? context.section_title : null;
     return [phase, week, workout, section].filter(Boolean).join(' / ');
+  };
+
+  const movementAssessmentContext = (note: PTNote): MovementAssessmentContext | null => {
+    const context = note.context ?? {};
+    if (context.source !== 'movement_assessment_intake') return null;
+    const answers = Array.isArray(context.parq_answers)
+      ? context.parq_answers.filter((item): item is MovementAssessmentParqAnswer => {
+        const row = item as Partial<MovementAssessmentParqAnswer>;
+        return typeof row.id === 'string' &&
+          typeof row.label === 'string' &&
+          typeof row.text === 'string' &&
+          (row.answer === 'yes' || row.answer === 'no');
+      })
+      : [];
+
+    return {
+      appointment_start_at: typeof context.appointment_start_at === 'string' ? context.appointment_start_at : undefined,
+      appointment_end_at: typeof context.appointment_end_at === 'string' ? context.appointment_end_at : undefined,
+      coach_notes: typeof context.coach_notes === 'string' ? context.coach_notes : undefined,
+      medical_flag: typeof context.medical_flag === 'boolean' ? context.medical_flag : undefined,
+      parq_answers: answers,
+      signature_data_url: typeof context.signature_data_url === 'string' ? context.signature_data_url : undefined,
+    };
+  };
+
+  const renderMovementAssessmentContext = (note: PTNote) => {
+    const context = movementAssessmentContext(note);
+    if (!context) return null;
+    const bookedFor = context.appointment_start_at
+      ? new Date(context.appointment_start_at).toLocaleString('en-AU', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+      : null;
+
+    return (
+      <div className="mt-4 space-y-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="border border-amber-200 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Booked for</p>
+            <p className="mt-1 text-xs text-black/70">{bookedFor ?? 'Not recorded'}</p>
+          </div>
+          <div className="border border-amber-200 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">PAR-Q</p>
+            <p className={`mt-1 text-xs font-medium ${context.medical_flag ? 'text-amber-700' : 'text-black/70'}`}>
+              {context.medical_flag ? 'Medical flag present' : 'All answers No'}
+            </p>
+          </div>
+          <div className="border border-amber-200 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Session</p>
+            <p className="mt-1 text-xs text-black/70">Movement assessment</p>
+          </div>
+        </div>
+        {context.coach_notes && (
+          <div className="border border-amber-200 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Client note</p>
+            <p className="mt-1 text-sm leading-6 text-black/70">{context.coach_notes}</p>
+          </div>
+        )}
+        <div className="space-y-2">
+          {context.parq_answers.map((answer) => (
+            <div key={answer.id} className="grid gap-2 border border-amber-200 bg-white px-3 py-3 sm:grid-cols-[minmax(0,1fr)_4rem]">
+              <div>
+                <p className="text-xs font-medium text-black/80">{answer.label}</p>
+                <p className="mt-1 text-xs leading-5 text-black/55">{answer.text}</p>
+              </div>
+              <p className={`self-center text-sm font-semibold uppercase ${answer.answer === 'yes' ? 'text-amber-700' : 'text-black/55'}`}>
+                {answer.answer}
+              </p>
+            </div>
+          ))}
+        </div>
+        {context.signature_data_url?.startsWith('data:image/png;base64,') && (
+          <div className="border border-amber-200 bg-white px-3 py-3">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Signature</p>
+            <img src={context.signature_data_url} alt="Client PAR-Q signature" className="mt-2 h-24 max-w-full object-contain object-left" />
+          </div>
+        )}
+      </div>
+    );
   };
 
   const markTaskDone = async (taskId: string) => {
@@ -2465,6 +2565,7 @@ export default function PTClientDetail({
                   {noteContextLabel(note) && (
                     <p className="mt-1 text-xs text-amber-700">{noteContextLabel(note)}</p>
                   )}
+                  {renderMovementAssessmentContext(note)}
                   <p className="text-xs text-black/30 mt-1">
                     {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
