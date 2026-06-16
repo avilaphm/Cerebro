@@ -20,6 +20,7 @@ interface BookAssessmentBody {
   date_of_birth?: unknown;
   email?: unknown;
   answers?: unknown;
+  other_medical_note?: unknown;
   signature_data_url?: unknown;
   coach_notes?: unknown;
   start_at?: unknown;
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
         email: parsed.data.email,
         consentText: PAR_Q_CONSENT_TEXT,
         answers: parqAnswers.map((row) => ({ label: row.label, text: row.text, answer: row.answer })),
+        otherMedicalNote: parsed.data.other_medical_note,
         signatureDataUrl: parsed.data.signature_data_url,
         appointmentStartAt: slot.start_at,
         coachNotes: parsed.data.coach_notes,
@@ -168,6 +170,7 @@ export async function POST(req: NextRequest) {
       medical_flag: medicalFlag,
       consent_text: PAR_Q_CONSENT_TEXT,
       parq_answers: parqAnswers,
+      other_medical_note: parsed.data.other_medical_note,
       signature_data_url: parsed.data.signature_data_url,
       parq_pdf_path: parqPdfPath,
     };
@@ -223,7 +226,7 @@ export async function POST(req: NextRequest) {
 }
 
 function parseBody(body: BookAssessmentBody):
-  | { ok: true; data: { first_name: string; last_name: string; date_of_birth: string; email: string; answers: Record<string, ParQAnswer>; signature_data_url: string; coach_notes: string; start_at: string } }
+  | { ok: true; data: { first_name: string; last_name: string; date_of_birth: string; email: string; answers: Record<string, ParQAnswer>; other_medical_note: string; signature_data_url: string; coach_notes: string; start_at: string } }
   | { ok: false; error: string } {
   const firstName = cleanText(body.first_name, 80);
   const lastName = cleanText(body.last_name, 80);
@@ -231,6 +234,7 @@ function parseBody(body: BookAssessmentBody):
   const email = cleanText(body.email, 160).toLowerCase();
   const startAt = cleanText(body.start_at, 80);
   const coachNotes = cleanText(body.coach_notes, 1200);
+  const otherMedicalNote = cleanText(body.other_medical_note, 400);
   const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url : '';
 
   if (!firstName || !lastName) return { ok: false, error: 'First and last name are required.' };
@@ -260,6 +264,7 @@ function parseBody(body: BookAssessmentBody):
       date_of_birth: dateOfBirth,
       email,
       answers,
+      other_medical_note: otherMedicalNote,
       signature_data_url: signatureDataUrl,
       coach_notes: coachNotes,
       start_at: new Date(startAt).toISOString(),

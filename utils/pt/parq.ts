@@ -42,12 +42,7 @@ export const PAR_Q_QUESTIONS: ParQQuestion[] = [
     label: 'Other Medical Reasons',
     text: 'Do you know of any other reason why you should not do physical activity?',
   },
-  {
-    id: 'refer-physio',
-    label: 'Refer to Physio',
-    text: 'Does this client need to be referred to a physio before starting or continuing training?',
-  },
 ];
 
 export const PAR_Q_CONSENT_TEXT =
-  'If you answered Yes to one or more questions, consult with your healthcare provider before engaging in physical activity. If you answered No to all questions, you are likely able to engage in physical activity but should still consult healthcare providers if you have concerns or experience discomfort. I understand that the PAR-Q is a self-assessment tool and does not replace medical advice. I affirm that the information provided is accurate, and I assume responsibility for my health and well-being.';
+  'By signing below, I confirm that I have been cleared by my healthcare provider to take part in physical activity and exercise. I confirm the information I have provided is true and accurate, and I take responsibility for my own health and wellbeing during training.';

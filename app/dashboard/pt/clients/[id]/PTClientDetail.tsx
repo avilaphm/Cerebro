@@ -126,6 +126,7 @@ interface MovementAssessmentContext {
   coach_notes?: string;
   medical_flag?: boolean;
   parq_answers: MovementAssessmentParqAnswer[];
+  other_medical_note?: string;
   signature_data_url?: string;
   parq_pdf_path?: string;
 }
@@ -956,6 +957,7 @@ export default function PTClientDetail({
       coach_notes: typeof context.coach_notes === 'string' ? context.coach_notes : undefined,
       medical_flag: typeof context.medical_flag === 'boolean' ? context.medical_flag : undefined,
       parq_answers: answers,
+      other_medical_note: typeof context.other_medical_note === 'string' ? context.other_medical_note : undefined,
       signature_data_url: typeof context.signature_data_url === 'string' ? context.signature_data_url : undefined,
       parq_pdf_path: typeof context.parq_pdf_path === 'string' ? context.parq_pdf_path : undefined,
     };
@@ -1014,6 +1016,12 @@ export default function PTClientDetail({
             <p className="mt-1 text-xs text-black/70">Movement assessment</p>
           </div>
         </div>
+        {context.other_medical_note && (
+          <div className="border border-amber-300 bg-amber-50 px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-amber-700">Other medical reason (discuss in person)</p>
+            <p className="mt-1 text-sm leading-6 text-black/80">{context.other_medical_note}</p>
+          </div>
+        )}
         {context.coach_notes && (
           <div className="border border-amber-200 bg-white px-3 py-2">
             <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Client note</p>

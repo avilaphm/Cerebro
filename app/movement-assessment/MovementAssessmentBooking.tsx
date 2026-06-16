@@ -24,6 +24,7 @@ export default function MovementAssessmentBooking() {
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [email, setEmail] = useState('');
   const [answers, setAnswers] = useState<Answers>({});
+  const [otherMedicalNote, setOtherMedicalNote] = useState('');
   const [hasSignature, setHasSignature] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState('');
   const [slots, setSlots] = useState<AssessmentSlot[]>([]);
@@ -141,6 +142,7 @@ export default function MovementAssessmentBooking() {
           date_of_birth: dateOfBirth,
           email,
           answers,
+          other_medical_note: answers['other-medical'] === 'yes' ? otherMedicalNote : '',
           signature_data_url: signature,
           coach_notes: coachNotes,
           start_at: selectedSlot.start_at,
@@ -283,6 +285,18 @@ export default function MovementAssessmentBooking() {
                           );
                         })}
                       </div>
+                      {question.id === 'other-medical' && answers[question.id] === 'yes' && (
+                        <div className="md:col-span-2">
+                          <textarea
+                            value={otherMedicalNote}
+                            onChange={(event) => setOtherMedicalNote(event.target.value)}
+                            rows={2}
+                            maxLength={400}
+                            className="w-full resize-none border border-black/15 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-black/40"
+                            placeholder="In a line or two, what is it? We'll chat about it in person."
+                          />
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>

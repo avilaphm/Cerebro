@@ -14,6 +14,7 @@ export interface ParqPdfInput {
   email: string;
   consentText: string;
   answers: ParqPdfAnswer[];
+  otherMedicalNote?: string;
   signatureDataUrl?: string;
   appointmentStartAt?: string;
   coachNotes?: string;
@@ -147,6 +148,12 @@ export async function buildParqPdf(input: ParqPdfInput): Promise<Uint8Array> {
       gap: 8,
     });
   });
+
+  if (input.otherMedicalNote) {
+    divider();
+    drawText('Other medical reason (to discuss in person)', { font: bold, size: 11, gap: 2 });
+    drawText(input.otherMedicalNote, { size: 10, color: MUTED, gap: 6 });
+  }
 
   if (input.coachNotes) {
     divider();
