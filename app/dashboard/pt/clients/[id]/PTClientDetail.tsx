@@ -126,6 +126,7 @@ interface MovementAssessmentContext {
   medical_flag?: boolean;
   parq_answers: MovementAssessmentParqAnswer[];
   signature_data_url?: string;
+  parq_pdf_path?: string;
 }
 
 const ONE_RM_EXERCISES = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'] as const;
@@ -954,7 +955,13 @@ export default function PTClientDetail({
       medical_flag: typeof context.medical_flag === 'boolean' ? context.medical_flag : undefined,
       parq_answers: answers,
       signature_data_url: typeof context.signature_data_url === 'string' ? context.signature_data_url : undefined,
+      parq_pdf_path: typeof context.parq_pdf_path === 'string' ? context.parq_pdf_path : undefined,
     };
+  };
+
+  const openParqPdf = async (path: string) => {
+    const { data } = await supabase.storage.from('pt-client-docs').createSignedUrl(path, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
   };
 
   const renderMovementAssessmentContext = (note: PTNote) => {
@@ -972,6 +979,15 @@ export default function PTClientDetail({
 
     return (
       <div className="mt-4 space-y-4">
+        {context.parq_pdf_path && (
+          <button
+            type="button"
+            onClick={() => openParqPdf(context.parq_pdf_path as string)}
+            className="inline-flex items-center gap-2 border border-black bg-black px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-black/85"
+          >
+            Open signed PAR-Q (PDF)
+          </button>
+        )}
         <div className="grid gap-2 sm:grid-cols-3">
           <div className="border border-amber-200 bg-white px-3 py-2">
             <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Booked for</p>

@@ -1,12 +1,58 @@
 # Handoff
 
 ## Last updated
-2026-06-16 by Codex - Made dashboard dropdown/autocomplete panels render solid white.
+2026-06-16 by Claude - Fixed + optimized the public Movement Assessment page (signature/PAR-Q PDF, slots, booking, thank-you, email).
 
 ## Last code fix commit
-this commit - solid dashboard dropdown panels
+this commit - movement assessment: signature state fix, PAR-Q PDF, slot parity, thank-you + email
 
 ## What just happened (read first)
+
+### Movement Assessment page fixes (2026-06-16, LATEST)
+
+Pedro reported several issues on the public `/movement-assessment` flow. Root causes found and fixed:
+
+1. **Page-2 redirect + booking never saved (the big one).** `submitBooking()` read the signature from
+   `canvasRef.current.toDataURL()`, but the step-1 JSX (incl. the `<canvas>`) is unmounted once `step===2`,
+   so `canvasRef.current` was `null` → empty signature → `setStep(1)` early-return *before* the POST ever fired.
+   That single bug caused both "redirected to first page" and "booking did not save". Fix: capture the signature
+   into `signatureDataUrl` state in `continueToCalendar()` (page 1 → 2) and use that in `submitBooking()`;
+   `clearSignature()` clears it too. (`app/movement-assessment/MovementAssessmentBooking.tsx`)
+
+2. **Missing available slots.** `generateMovementAssessmentSlots` used a 50-min fit + `slot_duration_minutes`
+   step, which dropped the last slot in each availability window vs the coach/client booking calendar.
+   Rewrote it to mirror `PTBookingsView.generateSlotsForDay` exactly: `duration = session_duration_minutes`,
+   `step = duration + buffer`, fit `minute + duration <= windowEnd`. Verified in-browser: morning 9:30/10:20/11:10
+   and afternoon 2:30/3:20/4:10 now all show (50-min step). (`utils/pt/movement-assessment-booking.ts`)
+
+3. **PAR-Q now saved as a PDF on the client profile.** Added `pdf-lib` + `utils/pt/parq-pdf.ts` (builds an A4
+   PAR-Q with answers, consent, embedded signature PNG, booking time). The book route generates it, uploads to
+   the existing `pt-client-docs` bucket at `${client.id}/parq/<ts>-par-q.pdf`, and stores `parq_pdf_path` in the
+   movement-assessment note `context`. `PTClientDetail` renders an "Open signed PAR-Q (PDF)" button (signed URL,
+   same pattern as the client document download). NOTE: per Pedro's choice, the PDF/client/booking are all saved
+   on the page-2 booking submit (not on page-1 completion).
+
+4. **Thank-you page (step 3).** Now the 3-line confirmation Pedro asked for: "Thank you, {first}." / "You are
+   booked in." / "{date} · {time}" + a line that a confirmation email was sent.
+
+5. **Client confirmation email.** Book route now sends the client a booking-confirmation email and Pedro a coach
+   notification via Resend (`RESEND_API_KEY` is in `.env.local`; falls back silently if unset). Uses
+   `RESEND_FROM_PEDRO_NOTIFY` (falls back to onboarding@resend.dev) - set a verified-domain from address in Vercel
+   env for production. Coach notify goes to `COACH_NOTIFY_EMAIL`/`PEDRO_EMAIL` (fallback pedro@cerebroai.au).
+
+6. **Calendar.** Per Pedro's choice, "in-app calendar only" (no Google sync). Assessment bookings already insert
+   into `pt_booking_appointments` so they appear in `/dashboard/pt/bookings`; once the signature bug was fixed the
+   appointment actually persists. Added an indigo "Movement assessment" label to those appointment blocks in the
+   coach calendar (detected via the `notes` prefix) so Pedro can tell assessments from normal sessions.
+
+Verification: `npx tsc --noEmit`, `npm run build`, and targeted ESLint all pass. In-browser smoke test on
+`http://localhost:3000/movement-assessment` confirmed page-1 → page-2 no longer bounces and slots render. The final
+booking submit was NOT executed against live data (it would create a real client/appointment + send real emails) -
+Pedro to run one real booking to confirm the PDF + email + calendar end-to-end.
+
+TODO for Pedro: ensure `RESEND_API_KEY` (and ideally `RESEND_FROM_PEDRO_NOTIFY`, `COACH_NOTIFY_EMAIL`) are set in
+the Vercel project env so the confirmation email sends in production.
+
 
 ### Solid dashboard dropdown panels (2026-06-16, LATEST)
 

@@ -24,6 +24,7 @@ export default function MovementAssessmentBooking() {
   const [email, setEmail] = useState('');
   const [answers, setAnswers] = useState<Answers>({});
   const [hasSignature, setHasSignature] = useState(false);
+  const [signatureDataUrl, setSignatureDataUrl] = useState('');
   const [slots, setSlots] = useState<AssessmentSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState('');
@@ -102,14 +103,18 @@ export default function MovementAssessmentBooking() {
 
   function continueToCalendar() {
     if (!intakeReady) return;
+    // Capture the signature now: the canvas is unmounted once we leave step 1,
+    // so it can't be read back at booking time.
+    const signature = canvasRef.current?.toDataURL('image/png') ?? '';
+    if (signature.startsWith('data:image/png;base64,')) setSignatureDataUrl(signature);
     setStep(2);
     if (slots.length === 0) void loadSlots();
   }
 
   async function submitBooking() {
     if (!selectedSlot || submitting) return;
-    const signature = canvasRef.current?.toDataURL('image/png');
-    if (!signature || !hasSignature) {
+    const signature = signatureDataUrl || canvasRef.current?.toDataURL('image/png') || '';
+    if (!signature.startsWith('data:image/png;base64,') || !hasSignature) {
       setSubmitError('Please sign the PAR-Q before booking.');
       setStep(1);
       return;
@@ -185,6 +190,7 @@ export default function MovementAssessmentBooking() {
     const ctx = canvas?.getContext('2d');
     if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     setHasSignature(false);
+    setSignatureDataUrl('');
   }
 
   return (
@@ -411,12 +417,12 @@ export default function MovementAssessmentBooking() {
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-black text-white">
                   <Check className="h-5 w-5" />
                 </div>
-                <p className="mt-6 text-[0.62rem] uppercase tracking-[0.2em] text-black/35">Booked</p>
-                <h2 className="mt-2 font-display text-4xl font-light">Your movement assessment is booked.</h2>
-                <p className="mt-4 text-sm leading-6 text-black/60">
-                  {confirmedSlot ? `${confirmedSlot.label}. ` : ''}
-                  Bring comfortable clothes. Pedro will review your PAR-Q and note before the session.
-                </p>
+                <h2 className="mt-6 font-display text-4xl font-light">Thank you{firstName ? `, ${firstName}` : ''}.</h2>
+                <p className="mt-4 text-lg text-black/75">You are booked in.</p>
+                {confirmedSlot && (
+                  <p className="mt-2 text-lg font-medium text-black">{confirmedSlot.date_label} · {confirmedSlot.time_label}</p>
+                )}
+                <p className="mt-6 text-sm leading-6 text-black/50">A confirmation has been sent to your email.</p>
               </div>
             </div>
           )}

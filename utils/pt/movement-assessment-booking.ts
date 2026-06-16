@@ -39,16 +39,20 @@ export function generateMovementAssessmentSlots(
     for (const window of windows) {
       const startWindow = timeToMinutes(window.start_time);
       const endWindow = timeToMinutes(window.end_time);
-      const step = slotStepMinutes(window);
+      // Mirror the coach/client booking calendar exactly so the assessment shows
+      // every slot Pedro actually has: session_duration_minutes long, stepped by
+      // session + buffer, fitting a session within the window.
+      const duration = sessionMinutes(window);
       const buffer = bufferMinutes(window);
+      const step = duration + buffer;
 
       for (
         let minute = startWindow;
-        minute + MOVEMENT_ASSESSMENT_SESSION_MINUTES <= endWindow;
+        minute + duration <= endWindow;
         minute += step
       ) {
         const start = zonedDateTimeToUtc(day, minute);
-        const end = new Date(start.getTime() + MOVEMENT_ASSESSMENT_SESSION_MINUTES * 60000);
+        const end = new Date(start.getTime() + duration * 60000);
         const blockedUntil = new Date(end.getTime() + buffer * 60000);
 
         if (start < minStart || start > maxStart) continue;
@@ -91,14 +95,16 @@ export function timeToMinutes(value: string) {
   return hour * 60 + minute;
 }
 
-function slotStepMinutes(window: PTBookingAvailability) {
-  return Number(window.slot_duration_minutes ?? MOVEMENT_ASSESSMENT_SESSION_MINUTES);
+function sessionMinutes(window: PTBookingAvailability) {
+  return Number(window.session_duration_minutes ?? MOVEMENT_ASSESSMENT_SESSION_MINUTES);
 }
 
 function bufferMinutes(window: PTBookingAvailability) {
-  const explicit = Number(window.buffer_minutes ?? 0);
-  if (Number.isFinite(explicit) && explicit >= 0) return explicit;
-  return Math.max(0, slotStepMinutes(window) - MOVEMENT_ASSESSMENT_SESSION_MINUTES);
+  const explicit = window.buffer_minutes;
+  if (explicit !== null && explicit !== undefined && Number.isFinite(Number(explicit)) && Number(explicit) >= 0) {
+    return Number(explicit);
+  }
+  return Math.max(0, Number(window.slot_duration_minutes ?? 0) - sessionMinutes(window));
 }
 
 function sydneyDateParts(date: Date) {

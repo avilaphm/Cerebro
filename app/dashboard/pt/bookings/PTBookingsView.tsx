@@ -382,6 +382,8 @@ export default function PTBookingsView() {
     const top = Math.max(0, (calendarOffsetMinutes(appointment.start_at) / 60) * COACH_HOUR_HEIGHT);
     const height = Math.max(36, (duration / 60) * COACH_HOUR_HEIGHT);
     const isRequest = appointment.status === 'cancellation_requested';
+    const isAssessment = (appointment.notes ?? '').startsWith('Movement Assessment booking');
+    const isSelected = selectedAppointment?.id === appointment.id;
 
     return (
       <button
@@ -390,17 +392,23 @@ export default function PTBookingsView() {
         onClick={() => setSelectedAppointment(appointment)}
         style={{ top, height }}
         className={`absolute inset-x-1 z-10 overflow-hidden border px-2 py-1 text-left transition-colors ${
-          selectedAppointment?.id === appointment.id
+          isSelected
             ? 'border-black bg-black text-white'
             : isRequest
               ? 'border-amber-300 bg-amber-100 text-amber-900'
-              : 'border-black/10 bg-white text-black shadow-[0_12px_22px_-20px_rgba(0,0,0,0.55)] hover:border-black/35'
+              : isAssessment
+                ? 'border-indigo-300 bg-indigo-50 text-indigo-950 shadow-[0_12px_22px_-20px_rgba(0,0,0,0.55)] hover:border-indigo-500'
+                : 'border-black/10 bg-white text-black shadow-[0_12px_22px_-20px_rgba(0,0,0,0.55)] hover:border-black/35'
         }`}
       >
         <span className={`block truncate font-medium ${compact ? 'text-[0.72rem]' : 'text-sm'}`}>
           {appointment.pt_clients?.name ?? 'Client'}
         </span>
-        {!compact && (
+        {isAssessment ? (
+          <span className={`mt-0.5 block truncate text-[0.6rem] font-semibold uppercase tracking-[0.1em] ${isSelected ? 'text-white/80' : 'text-indigo-600'}`}>
+            Movement assessment
+          </span>
+        ) : !compact && (
           <span className="mt-0.5 block truncate text-xs opacity-70">
             {formatBookingTime(appointment.start_at)} - {formatBookingTime(appointment.end_at)}
           </span>

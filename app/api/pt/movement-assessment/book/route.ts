@@ -6,9 +6,13 @@ import {
   MOVEMENT_ASSESSMENT_SESSION_MINUTES,
 } from '@/utils/pt/movement-assessment-booking';
 import { PAR_Q_CONSENT_TEXT, PAR_Q_QUESTIONS, type ParQAnswer } from '@/utils/pt/parq';
+import { buildParqPdf } from '@/utils/pt/parq-pdf';
+import { formatBookingDate, formatBookingTime } from '@/utils/pt/bookings';
 import { createAdminClient } from '@/utils/supabase/admin';
 
 export const dynamic = 'force-dynamic';
+
+const PARQ_BUCKET = 'pt-client-docs';
 
 interface BookAssessmentBody {
   first_name?: unknown;
@@ -119,6 +123,33 @@ export async function POST(req: NextRequest) {
       status: 'active',
     });
 
+    // Generate the signed PAR-Q as a PDF and store it on the client profile.
+    let parqPdfPath: string | null = null;
+    try {
+      const pdfBytes = await buildParqPdf({
+        firstName: parsed.data.first_name,
+        lastName: parsed.data.last_name,
+        email: parsed.data.email,
+        consentText: PAR_Q_CONSENT_TEXT,
+        answers: parqAnswers.map((row) => ({ label: row.label, text: row.text, answer: row.answer })),
+        signatureDataUrl: parsed.data.signature_data_url,
+        appointmentStartAt: slot.start_at,
+        coachNotes: parsed.data.coach_notes,
+        submittedAt,
+      });
+      const path = `${client.id}/parq/${Date.now()}-par-q.pdf`;
+      const uploadRes = await supabase.storage
+        .from(PARQ_BUCKET)
+        .upload(path, Buffer.from(pdfBytes), { contentType: 'application/pdf', upsert: true });
+      if (uploadRes.error) {
+        console.error('PAR-Q PDF upload failed', uploadRes.error);
+      } else {
+        parqPdfPath = path;
+      }
+    } catch (pdfError) {
+      console.error('PAR-Q PDF generation failed', pdfError);
+    }
+
     const context = {
       source: 'movement_assessment_intake',
       submitted_at: submittedAt,
@@ -134,6 +165,7 @@ export async function POST(req: NextRequest) {
       consent_text: PAR_Q_CONSENT_TEXT,
       parq_answers: parqAnswers,
       signature_data_url: parsed.data.signature_data_url,
+      parq_pdf_path: parqPdfPath,
     };
 
     await Promise.all([
@@ -161,6 +193,19 @@ export async function POST(req: NextRequest) {
         },
       ]),
     ]);
+
+    try {
+      await sendAssessmentEmails({
+        clientName: parsed.data.first_name,
+        clientEmail: parsed.data.email,
+        startAt: slot.start_at,
+        location: slot.location,
+        medicalFlag,
+        coachNotes: parsed.data.coach_notes,
+      });
+    } catch (emailError) {
+      console.error('Movement assessment confirmation email failed', emailError);
+    }
 
     return NextResponse.json({
       ok: true,
@@ -264,4 +309,40 @@ async function findOrCreateClient(
 
   if (insertedRes.error || !insertedRes.data) throw insertedRes.error ?? new Error('Could not create client.');
   return insertedRes.data as ClientRow;
+}
+
+async function sendAssessmentEmails(input: {
+  clientName: string;
+  clientEmail: string;
+  startAt: string;
+  location: string | null;
+  medicalFlag: boolean;
+  coachNotes: string;
+}) {
+  const when = `${formatBookingDate(input.startAt)} · ${formatBookingTime(input.startAt)}`;
+  const locationLine = input.location ? `\nLocation: ${input.location}` : '';
+
+  const clientSubject = 'Your movement assessment is booked';
+  const clientText = `Hi ${input.clientName},\n\nThank you — your movement assessment with Pedro is booked.\n\nWhen: ${when}${locationLine}\n\nBring comfortable clothes you can move in. We'll have a short chat first, then go through the movement assessment.\n\nSee you then,\nPedro Avila Coaching`;
+  await sendEmail(input.clientEmail, clientSubject, clientText);
+
+  const coachEmail = process.env.COACH_NOTIFY_EMAIL ?? process.env.PEDRO_EMAIL ?? 'pedro@cerebroai.au';
+  const coachSubject = `[Movement Assessment] ${input.clientName} — ${when}`;
+  const coachText = `New movement assessment booked from the public intake.\n\nClient: ${input.clientName} <${input.clientEmail}>\nWhen: ${when}${locationLine}\nPAR-Q: ${input.medicalFlag ? 'MEDICAL FLAG present — review before training' : 'all answers No'}${input.coachNotes ? `\nClient note: ${input.coachNotes}` : ''}\n\nThe signed PAR-Q PDF is saved on the client profile.`;
+  await sendEmail(coachEmail, coachSubject, coachText);
+}
+
+async function sendEmail(to: string, subject: string, text: string) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return;
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_PEDRO_NOTIFY ?? 'Pedro Avila Coaching <onboarding@resend.dev>',
+      to,
+      subject,
+      text,
+    }),
+  });
 }
