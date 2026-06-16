@@ -465,11 +465,13 @@ body::before {
 /* Opt-out of glass treatment for elements that need a solid background (e.g. dropdowns, modals).
    Scoped under liquid-dashboard/client-liquid to beat the bg-white glass override. */
 .liquid-dashboard .no-glass,
+.liquid-dashboard main .no-glass,
 .client-liquid .no-glass,
 .no-glass {
-  background: white !important;
+  background: #ffffff !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  box-shadow: 0 18px 45px -28px rgba(0, 0, 0, 0.45) !important;
 }
 
 .liquid-dashboard .exercise-import-modal.no-glass,
@@ -479,23 +481,26 @@ body::before {
 }
 
 .liquid-dashboard .exercise-autocomplete.no-glass,
+.liquid-dashboard main .exercise-autocomplete.no-glass,
 .client-liquid .exercise-autocomplete.no-glass,
 .exercise-autocomplete.no-glass {
-  background: #f7f4ef !important;
+  background: #ffffff !important;
   color: #050505 !important;
 }
 
 .liquid-dashboard .exercise-autocomplete.no-glass button,
+.liquid-dashboard main .exercise-autocomplete.no-glass button,
 .client-liquid .exercise-autocomplete.no-glass button,
 .exercise-autocomplete.no-glass button {
-  background: #f7f4ef !important;
+  background: #ffffff !important;
   color: #050505 !important;
 }
 
 .liquid-dashboard .exercise-autocomplete.no-glass button:hover,
+.liquid-dashboard main .exercise-autocomplete.no-glass button:hover,
 .client-liquid .exercise-autocomplete.no-glass button:hover,
 .exercise-autocomplete.no-glass button:hover {
-  background: #ffffff !important;
+  background: #f3f1ea !important;
 }
 
 .liquid-dashboard main .exercise-import-button.no-glass,
@@ -535,9 +540,10 @@ body::before {
 
 /* Also protect bg-white descendants and form elements inside a no-glass container */
 .liquid-dashboard .no-glass [class*="bg-white"],
+.liquid-dashboard main .no-glass [class*="bg-white"],
 .client-liquid .no-glass [class*="bg-white"],
 .no-glass [class*="bg-white"] {
-  background: white !important;
+  background: #ffffff !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }

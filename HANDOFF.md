@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
-2026-06-16 by Codex - Added click-to-book modal to the coach PT bookings calendar.
+2026-06-16 by Codex - Made dashboard dropdown/autocomplete panels render solid white.
 
 ## Last code fix commit
-this commit - coach calendar slots open booking modal
+this commit - solid dashboard dropdown panels
 
 ## What just happened (read first)
+
+### Solid dashboard dropdown panels (2026-06-16, LATEST)
+
+Pedro flagged screenshots from the PT programme editor where dropdown/autocomplete backgrounds looked nearly transparent under the liquid-glass dashboard styling.
+
+Fix in `app/globals.css`:
+- Strengthened `.no-glass` selectors with `.liquid-dashboard main .no-glass` so they beat the higher-specificity liquid panel selector on dashboard surfaces.
+- Changed exercise autocomplete dropdowns and their row buttons from off-white/glass-looking fills to explicit `#ffffff`.
+- Kept hover feedback with a subtle solid `#f3f1ea` row fill.
+- Added a real shadow to no-glass panels so white dropdowns stay legible over busy dashboard content.
+
+Verification:
+- Scoped CSS diff reviewed.
+- Full build not run for this tiny CSS-only patch because the working tree already contains unrelated movement-assessment/package changes.
 
 ### Coach booking calendar click-to-book modal (2026-06-16, LATEST)
 
