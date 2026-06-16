@@ -169,6 +169,8 @@ interface Props {
   templates: PTProgramTemplate[];
   assignments: PTProgramAssignment[];
   events: PTEvent[];
+  loginEvents?: Array<{ id: string; created_at: string }>;
+  lastSignInAt?: string | null;
   notes: PTNote[];
   weeklyCheckins: PTWeeklyCheckin[];
   weeklyPlans: PTWeeklyPlan[];
@@ -402,6 +404,8 @@ export default function PTClientDetail({
   templates,
   assignments,
   events,
+  loginEvents = [],
+  lastSignInAt = null,
   notes: initialNotes,
   weeklyCheckins: initialWeeklyCheckins,
   weeklyPlans: initialWeeklyPlans,
@@ -839,10 +843,11 @@ export default function PTClientDetail({
     if (failed) setAssignmentList(assignments);
   };
   const lastLogin = events.find((e) => e.event_type === 'client_login');
+  const lastLoginAt = lastSignInAt ?? loginEvents[0]?.created_at ?? lastLogin?.created_at ?? null;
   const workoutActivity = events.find((e) => e.event_type === 'workout_logged');
-  const accountIsLive = client.status === 'active' || Boolean(client.password_created_at || lastLogin || workoutActivity);
-  const accountDetail = lastLogin
-    ? `Logged in ${new Date(lastLogin.created_at).toLocaleDateString('en-AU')}`
+  const accountIsLive = client.status === 'active' || Boolean(client.password_created_at || lastLoginAt || workoutActivity);
+  const accountDetail = lastLoginAt
+    ? `Logged in ${new Date(lastLoginAt).toLocaleDateString('en-AU')}`
     : workoutActivity
       ? `Workout logged ${new Date(workoutActivity.created_at).toLocaleDateString('en-AU')}`
       : client.password_created_at
@@ -1698,14 +1703,14 @@ export default function PTClientDetail({
   };
 
   return (
-    <div className="max-w-3xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-      <div className="flex items-center gap-3 mb-8">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-col px-5 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
+      <div className="order-[1] flex items-center gap-3 mb-8">
         <Link href="/dashboard/pt/clients" className="text-black/30 hover:text-black text-sm transition-colors">
           ← Clients
         </Link>
       </div>
 
-      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="order-[2] mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
           <div className="w-14 h-14 rounded-full bg-black/8 flex items-center justify-center text-xl font-medium text-black/50">
             {client.name.charAt(0).toUpperCase()}
@@ -1745,7 +1750,7 @@ export default function PTClientDetail({
         </div>
       </div>
 
-      <div className="mb-8 flex flex-wrap items-end gap-3 border border-black/8 px-4 py-4">
+      <div className="order-[14] mb-8 flex flex-wrap items-end gap-3 border border-black/8 px-4 py-4">
         <div>
           <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Pricing tier</label>
           <select
@@ -1770,7 +1775,7 @@ export default function PTClientDetail({
         </p>
       </div>
 
-      <div className="mb-8 grid gap-3 sm:grid-cols-3">
+      <div className="order-[3] mb-8 grid gap-3 sm:grid-cols-3">
         <div className="border border-black/8 px-4 py-4">
           <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Account</p>
           <p className="text-sm font-medium">
@@ -1786,14 +1791,32 @@ export default function PTClientDetail({
             </p>
           )}
         </div>
-        <div className="border border-black/8 px-4 py-4">
-          <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Last login</p>
-          <p className="text-sm font-medium">
-            {lastLogin
-              ? new Date(lastLogin.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
-              : 'Never'}
-          </p>
-        </div>
+        <details className="group border border-black/8 px-4 py-4 [&>summary]:list-none">
+          <summary className="flex cursor-pointer items-start justify-between gap-2 marker:hidden">
+            <span className="min-w-0">
+              <span className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Last login</span>
+              <span className="block text-sm font-medium">
+                {lastLoginAt
+                  ? new Date(lastLoginAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : 'Never'}
+              </span>
+            </span>
+            <svg aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-black/30 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24">
+              <path d="m7 9 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </summary>
+          {loginEvents.length > 0 ? (
+            <div className="mt-3 max-h-40 space-y-1 overflow-y-auto border-t border-black/8 pt-2">
+              {loginEvents.map((ev) => (
+                <p key={ev.id} className="text-xs text-black/50">
+                  {new Date(ev.created_at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 border-t border-black/8 pt-2 text-xs text-black/35">Login history builds from now on.</p>
+          )}
+        </details>
         <div className="border border-black/8 px-4 py-4">
           <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Sessions left</p>
           {editing ? (
@@ -1812,36 +1835,30 @@ export default function PTClientDetail({
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-5 mb-8">
-        <div>
-          <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Goals</label>
-          {editing ? (
+      {editing && (
+        <div className="order-[4] grid md:grid-cols-2 gap-5 mb-8">
+          <div>
+            <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Goals (quick note)</label>
             <input
               value={form.goals}
               onChange={(e) => setForm((f) => ({ ...f, goals: e.target.value }))}
               className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
             />
-          ) : (
-            <p className="text-sm text-black/60">{client.goals || '—'}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Notes</label>
-          {editing ? (
+          </div>
+          <div>
+            <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Notes (quick note)</label>
             <textarea
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               rows={3}
               className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40 resize-none"
             />
-          ) : (
-            <p className="text-sm text-black/60">{client.notes || '—'}</p>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {editing && (
-        <div className="grid md:grid-cols-2 gap-5 mb-8">
+        <div className="order-[4] grid md:grid-cols-2 gap-5 mb-8">
           <div>
             <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-2">Regular slot</label>
             <input
@@ -1884,7 +1901,7 @@ export default function PTClientDetail({
       )}
 
       {editing && (
-        <div className="flex gap-3 mb-8">
+        <div className="order-[4] flex gap-3 mb-8">
           <button onClick={() => setEditing(false)} className="border border-black/20 px-5 py-2 text-sm hover:bg-black/5 transition-colors">
             Cancel
           </button>
@@ -1894,18 +1911,20 @@ export default function PTClientDetail({
         </div>
       )}
 
-      <WeeklyClientProgress
-        clientId={client.id}
-        nutritionLogs={nutritionLogs}
-        workoutLogs={workoutLogs}
-        weeklySetLogs={weeklySetLogs}
-        priorSetLogs={priorSetLogs}
-        dailyTargets={dailyTargets}
-      />
+      <div className="order-[13]">
+        <WeeklyClientProgress
+          clientId={client.id}
+          nutritionLogs={nutritionLogs}
+          workoutLogs={workoutLogs}
+          weeklySetLogs={weeklySetLogs}
+          priorSetLogs={priorSetLogs}
+          dailyTargets={dailyTargets}
+        />
+      </div>
 
-      <div className="border-t border-black/8 pt-6 mb-8">
+      <div className="order-[8] border-t border-black/8 pt-6 mb-8">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Coaching</h2>
+          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Progress</h2>
           {coachingTasks.length > 0 && (
             <span className="border border-amber-200 bg-amber-50 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-amber-700">
               {coachingTasks.length} open
@@ -2219,14 +2238,17 @@ export default function PTClientDetail({
           </div>
         </div>
 
-        <div className="mt-4 border border-black/10 px-6 py-5">
-          <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Goals</p>
+      </div>
+
+      <div className="order-[9] border-t border-black/8 pt-6 mb-8">
+        <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Goals</h2>
+        <div className="border border-black/10 px-6 py-5">
           {activeGoals.length > 0 && (
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
+            <div className="grid gap-2 md:grid-cols-2">
               {activeGoals.map((goal) => (
                 <div key={goal.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-sm font-medium">{goal.title}</p>
                       <p className="mt-1 text-xs text-black/45">
                         {getGoalProgressLabel(goal, metrics)}
@@ -2235,7 +2257,7 @@ export default function PTClientDetail({
                     <select
                       value={goal.status}
                       onChange={(event) => void updateGoalStatus(goal.id, event.target.value as PTClientGoal['status'])}
-                      className="border border-black/10 bg-white px-2 py-1 text-[0.65rem] uppercase tracking-[0.08em] text-black/55 outline-none focus:border-black/35"
+                      className="shrink-0 border border-black/10 bg-white px-2 py-1 text-[0.65rem] uppercase tracking-[0.08em] text-black/55 outline-none focus:border-black/35"
                     >
                       <option value="active">Active</option>
                       <option value="paused">Paused</option>
@@ -2247,23 +2269,23 @@ export default function PTClientDetail({
               ))}
             </div>
           )}
-          <div className="mt-4 grid gap-2 md:grid-cols-[10rem_1fr_6rem_6rem_5rem_9rem]">
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <select value={newGoal.goal_type} onChange={(event) => setNewGoal((current) => ({ ...current, goal_type: event.target.value }))}
-              className="border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35">
+              className="w-full min-w-0 border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/35">
               {GOAL_TYPE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
             <input value={newGoal.title} onChange={(event) => setNewGoal((current) => ({ ...current, title: event.target.value }))}
-              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Goal title" />
+              className="w-full min-w-0 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35 sm:col-span-2 lg:col-span-2" placeholder="Goal title" />
             <input value={newGoal.current_value} onChange={(event) => setNewGoal((current) => ({ ...current, current_value: event.target.value }))}
-              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Now" inputMode="decimal" />
+              className="w-full min-w-0 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Now" inputMode="decimal" />
             <input value={newGoal.target_value} onChange={(event) => setNewGoal((current) => ({ ...current, target_value: event.target.value }))}
-              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Target" inputMode="decimal" />
+              className="w-full min-w-0 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Target" inputMode="decimal" />
             <input value={newGoal.unit} onChange={(event) => setNewGoal((current) => ({ ...current, unit: event.target.value }))}
-              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Unit" />
+              className="w-full min-w-0 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Unit" />
             <input type="date" value={newGoal.target_date} onChange={(event) => setNewGoal((current) => ({ ...current, target_date: event.target.value }))}
-              className="border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" />
+              className="w-full min-w-0 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" />
           </div>
           <textarea value={newGoal.notes} onChange={(event) => setNewGoal((current) => ({ ...current, notes: event.target.value }))}
             rows={2} className="mt-2 w-full resize-none border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/35" placeholder="Goal notes or plain-English definition." />
@@ -2274,7 +2296,7 @@ export default function PTClientDetail({
         </div>
       </div>
 
-      <div className="border-t border-black/8 pt-6 mb-8">
+      <div className="order-[10] border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programmes</h2>
         {assignmentList.length > 0 ? (
           <div className="space-y-3">
@@ -2364,7 +2386,7 @@ export default function PTClientDetail({
         )}
       </div>
 
-      <div className="border-t border-black/8 pt-6 mb-8">
+      <div className="order-[11] border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Programming Agent</h2>
         <div className="border border-black/10 bg-[#fbfbf8] px-6 py-5">
           <p className="text-sm text-black/55">
@@ -2416,7 +2438,7 @@ export default function PTClientDetail({
       </div>
 
       {/* 1RM Testing */}
-      <div className="border-t border-black/8 pt-6 mb-8">
+      <div className="order-[12] border-t border-black/8 pt-6 mb-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">1RM Results</h2>
           <button
@@ -2553,7 +2575,7 @@ export default function PTClientDetail({
       </div>
 
       {notes.length > 0 && (
-        <div className="border-t border-black/8 pt-6 mb-8">
+        <div className="order-[7] border-t border-black/8 pt-6 mb-8">
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-amber-600 mb-4">
             Notes ({notes.length})
           </h2>
@@ -2595,7 +2617,7 @@ export default function PTClientDetail({
         </div>
       )}
 
-      <div className="border-t border-black/8 pt-6 mb-8">
+      <div className="order-[15] border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Client profile document</h2>
         <input
           ref={fileRef}
@@ -2634,9 +2656,9 @@ export default function PTClientDetail({
         )}
       </div>
 
-      {status && <p className="text-xs text-black/50 mb-6">{status}</p>}
+      {status && <p className="order-[16] text-xs text-black/50 mb-6">{status}</p>}
 
-      <div className="border-t border-black/8 pt-6 flex flex-wrap items-center gap-3">
+      <div className="order-[17] border-t border-black/8 pt-6 flex flex-wrap items-center gap-3">
         <button
           onClick={sendInvite}
           disabled={inviting}
@@ -2679,7 +2701,7 @@ export default function PTClientDetail({
         )}
       </div>
       {passwordPanelOpen && (
-        <div className="mt-4 border border-black/10 bg-[#fbfbf8] p-4">
+        <div className="order-[18] mt-4 border border-black/10 bg-[#fbfbf8] p-4">
           <p className="text-sm font-medium text-black">Client password</p>
           <p className="mt-1 text-xs leading-relaxed text-black/45">
             Current passwords are encrypted and cannot be viewed. Send the client a reset link, or create a new temporary password now.

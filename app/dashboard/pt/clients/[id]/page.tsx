@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
+import { createAdminClient } from '@/utils/supabase/admin';
 import type {
   PT1RMResult,
   PT1RMTest,
@@ -40,11 +41,13 @@ interface PTEvent {
 export default async function PTClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  // Fetch an extra day so the Sydney calendar can trim the exact seven-day window.
+  // Fetch ~31 days so the nutrition/training cards can offer a 7 / 14 / 30 day
+  // range while the Sydney calendar still trims each window precisely.
   // eslint-disable-next-line react-hooks/purity
-  const recentQueryStart = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+  const recentQueryStart = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes, nutritionLogsRes, workoutLogsRes, weeklySetLogsRes, priorSetLogsRes] = await Promise.all([
+  const loginHistoryStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, loginEventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes, nutritionLogsRes, workoutLogsRes, weeklySetLogsRes, priorSetLogsRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -58,6 +61,14 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase
+      .from('pt_events')
+      .select('id, created_at')
+      .eq('client_id', id)
+      .eq('event_type', 'client_login')
+      .gte('created_at', loginHistoryStart)
+      .order('created_at', { ascending: false })
+      .limit(60),
     supabase
       .from('pt_client_notes')
       .select('*')
@@ -180,6 +191,20 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
     current_block_index: a.current_block_index ?? 0,
   }));
   const events = (eventsRes.data ?? []) as PTEvent[];
+  const loginEvents = (loginEventsRes.data ?? []) as Array<{ id: string; created_at: string }>;
+
+  // Supabase keeps the authoritative last sign-in on the auth user; the in-app
+  // login events only build a forward-looking history.
+  let lastSignInAt: string | null = null;
+  if (client.user_id) {
+    try {
+      const { data: authUser } = await createAdminClient().auth.admin.getUserById(client.user_id);
+      lastSignInAt = authUser.user?.last_sign_in_at ?? null;
+    } catch {
+      lastSignInAt = null;
+    }
+  }
+
   const notes = (notesRes.data ?? []) as PTNote[];
   const weeklyCheckins = (checkinsRes.data ?? []) as PTWeeklyCheckin[];
   const weeklyPlans = (plansRes.data ?? []) as PTWeeklyPlan[];
@@ -223,6 +248,8 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       templates={templates}
       assignments={assignments}
       events={events}
+      loginEvents={loginEvents}
+      lastSignInAt={lastSignInAt}
       notes={notes}
       weeklyCheckins={weeklyCheckins}
       weeklyPlans={weeklyPlans}

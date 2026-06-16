@@ -107,6 +107,26 @@ function hitClasses(hit: boolean, hasLogs: boolean, hasTarget: boolean) {
     : 'border-amber-200 bg-amber-50 text-amber-700';
 }
 
+const RANGE_OPTIONS = [7, 14, 30] as const;
+type RangeDays = (typeof RANGE_OPTIONS)[number];
+
+function RangeSelect({ value, onChange }: { value: RangeDays; onChange: (value: RangeDays) => void }) {
+  return (
+    <label className="flex items-center gap-1.5 text-[0.6rem] uppercase tracking-[0.1em] text-black/35">
+      Range
+      <select
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value) as RangeDays)}
+        className="border border-black/10 bg-white px-2 py-1 text-xs normal-case tracking-normal text-black/65 outline-none focus:border-black/35"
+      >
+        {RANGE_OPTIONS.map((days) => (
+          <option key={days} value={days}>Last {days} days</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function Chevron() {
   return (
     <svg
@@ -131,21 +151,26 @@ export default function WeeklyClientProgress({
   dailyTargets,
 }: Props) {
   const [effectiveDailyTargets, setEffectiveDailyTargets] = useState(dailyTargets);
+  const [nutritionRange, setNutritionRange] = useState<RangeDays>(7);
+  const [trainingRange, setTrainingRange] = useState<RangeDays>(7);
 
   const today = sydneyDateKey(new Date());
-  const dayKeys = Array.from({ length: 7 }, (_, index) => addDateKeyDays(today, index - 6));
-  const firstDay = dayKeys[0];
-  const dayKeySet = new Set(dayKeys);
+  const nutritionDayKeys = Array.from({ length: nutritionRange }, (_, index) => addDateKeyDays(today, index - (nutritionRange - 1)));
+  const trainingDayKeys = Array.from({ length: trainingRange }, (_, index) => addDateKeyDays(today, index - (trainingRange - 1)));
+  const firstNutritionDay = nutritionDayKeys[0];
+  const firstTrainingDay = trainingDayKeys[0];
+  const nutritionDayKeySet = new Set(nutritionDayKeys);
+  const trainingDayKeySet = new Set(trainingDayKeys);
   const proteinTarget = effectiveDailyTargets?.protein_g ?? null;
   const calorieTarget = effectiveDailyTargets?.calories ?? null;
 
-  const visibleNutritionLogs = nutritionLogs.filter((log) => dayKeySet.has(sydneyDateKey(log.logged_at)));
-  const visibleWorkoutLogs = workoutLogs.filter((log) => dayKeySet.has(sydneyDateKey(log.completed_at)));
+  const visibleNutritionLogs = nutritionLogs.filter((log) => nutritionDayKeySet.has(sydneyDateKey(log.logged_at)));
+  const visibleWorkoutLogs = workoutLogs.filter((log) => trainingDayKeySet.has(sydneyDateKey(log.completed_at)));
   const visibleWorkoutIds = new Set(visibleWorkoutLogs.map((log) => log.id));
   const visibleSetLogs = weeklySetLogs.filter((log) => log.workout_log_id && visibleWorkoutIds.has(log.workout_log_id));
   const baselineSetLogs = [
     ...priorSetLogs,
-    ...weeklySetLogs.filter((log) => sydneyDateKey(log.created_at) < firstDay),
+    ...weeklySetLogs.filter((log) => sydneyDateKey(log.created_at) < firstTrainingDay),
   ];
 
   const priorBestByExercise = new Map<string, number>();
@@ -175,7 +200,7 @@ export default function WeeklyClientProgress({
     .map(([key, current]) => ({ ...current, key, prior: priorBestByExercise.get(key) ?? 0 }));
   const pbKeys = new Set(pbs.map((pb) => pb.key));
 
-  const dailyNutrition = dayKeys.map((day) => {
+  const dailyNutrition = nutritionDayKeys.map((day) => {
     const logs = visibleNutritionLogs.filter((log) => sydneyDateKey(log.logged_at) === day);
     const protein = round(logs.reduce((total, log) => total + Number(log.protein_g ?? 0), 0));
     const calories = round(logs.reduce((total, log) => total + Number(log.calories ?? 0), 0));
@@ -202,20 +227,23 @@ export default function WeeklyClientProgress({
   return (
     <section id="weekly-progress" className="mb-8 scroll-mt-6 border-t border-black/8 pt-6">
       <div className="mb-4">
-        <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Weekly progress</p>
-        <p className="mt-1 text-xs text-black/40">{formatDay(firstDay)} - {formatDay(today)}</p>
+        <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Nutrition &amp; training</p>
+        <p className="mt-1 text-xs text-black/40">Logged activity, by range</p>
       </div>
 
-      <div className="grid gap-4">
+      <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
         <div className="border border-black/10 bg-white px-5 py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Nutrition - last 7 days</p>
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Nutrition - last {nutritionRange} days</p>
               <p className="mt-1 text-sm text-black/55">Open a day to review meals and estimated macros.</p>
             </div>
-            <span className="w-fit border border-black/10 bg-[#fbfbf8] px-2 py-1 text-xs text-black/55">
-              {trackedDays.length}/7 days tracked
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <RangeSelect value={nutritionRange} onChange={setNutritionRange} />
+              <span className="w-fit border border-black/10 bg-[#fbfbf8] px-2 py-1 text-xs text-black/55">
+                {trackedDays.length}/{nutritionRange} days tracked
+              </span>
+            </div>
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -242,7 +270,7 @@ export default function WeeklyClientProgress({
             onSaved={setEffectiveDailyTargets}
           />
 
-          <div className="mt-4 divide-y divide-black/8 border-y border-black/8">
+          <div className="mt-4 max-h-[32rem] divide-y divide-black/8 overflow-y-auto border-y border-black/8">
             {dailyNutrition.map((day) => (
               <details key={day.day} className="group">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-1 py-3 marker:hidden">
@@ -289,12 +317,15 @@ export default function WeeklyClientProgress({
         <div className="border border-black/10 bg-white px-5 py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Training - last 7 days</p>
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Training - last {trainingRange} days</p>
               <p className="mt-1 text-sm text-black/55">Open a workout to review exercises, sets, and progress.</p>
             </div>
-            <span className="w-fit border border-black/10 bg-[#fbfbf8] px-2 py-1 text-xs text-black/55">
-              {visibleWorkoutLogs.length} workout{visibleWorkoutLogs.length !== 1 ? 's' : ''}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <RangeSelect value={trainingRange} onChange={setTrainingRange} />
+              <span className="w-fit border border-black/10 bg-[#fbfbf8] px-2 py-1 text-xs text-black/55">
+                {visibleWorkoutLogs.length} workout{visibleWorkoutLogs.length !== 1 ? 's' : ''}
+              </span>
+            </div>
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -328,7 +359,7 @@ export default function WeeklyClientProgress({
             </div>
           )}
 
-          <div className="mt-4 divide-y divide-black/8 border-y border-black/8">
+          <div className="mt-4 max-h-[32rem] divide-y divide-black/8 overflow-y-auto border-y border-black/8">
             {visibleWorkoutLogs.length > 0 ? visibleWorkoutLogs.map((workout) => {
               const sets = visibleSetLogs.filter((set) => set.workout_log_id === workout.id);
               const exercises = [...new Set(sets.map((set) => set.exercise_name))];
@@ -371,7 +402,7 @@ export default function WeeklyClientProgress({
                 </details>
               );
             }) : (
-              <p className="px-1 py-3 text-xs text-black/35">No workouts logged in the last seven days.</p>
+              <p className="px-1 py-3 text-xs text-black/35">No workouts logged in the last {trainingRange} days.</p>
             )}
           </div>
         </div>

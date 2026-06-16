@@ -590,6 +590,18 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const currentClient = ((clientRows ?? []) as PTClient[])[0] ?? null;
     setClient(currentClient);
     if (currentClient) {
+      // Record a login once per Sydney day so the coach dashboard can show a
+      // login history. Guarded in localStorage to avoid one event per reload.
+      try {
+        const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' }).format(new Date());
+        const guardKey = `pt-login-logged:${currentClient.id}:${dayKey}`;
+        if (!window.localStorage.getItem(guardKey)) {
+          window.localStorage.setItem(guardKey, '1');
+          void supabase.from('pt_events').insert({ client_id: currentClient.id, event_type: 'client_login', metadata: {} });
+        }
+      } catch { /* non-fatal */ }
+    }
+    if (currentClient) {
       setNutritionDraft({
         height_cm: currentClient.height_cm ? String(currentClient.height_cm) : '',
         weight_kg: currentClient.current_weight_kg ? String(currentClient.current_weight_kg) : '',
