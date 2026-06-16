@@ -323,7 +323,7 @@ async function sendAssessmentEmails(input: {
   const locationLine = input.location ? `\nLocation: ${input.location}` : '';
 
   const clientSubject = 'Your movement assessment is booked';
-  const clientText = `Hi ${input.clientName},\n\nThank you — your movement assessment with Pedro is booked.\n\nWhen: ${when}${locationLine}\n\nBring comfortable clothes you can move in. We'll have a short chat first, then go through the movement assessment.\n\nSee you then,\nPedro Avila Coaching`;
+  const clientText = `Hi ${input.clientName},\n\nThank you, your movement assessment with Pedro is booked.\n\nWhen: ${when}${locationLine}\n\nBring comfortable clothes you can move in. We'll have a short chat first, then go through the movement assessment.\n\nSee you then,\nPedro Avila`;
   await sendEmail(input.clientEmail, clientSubject, clientText);
 
   const coachEmail = process.env.COACH_NOTIFY_EMAIL ?? process.env.PEDRO_EMAIL ?? 'pedro@cerebroai.au';

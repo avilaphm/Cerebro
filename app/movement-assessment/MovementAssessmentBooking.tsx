@@ -37,6 +37,7 @@ export default function MovementAssessmentBooking() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const didMountRef = useRef(false);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -81,7 +82,13 @@ export default function MovementAssessmentBooking() {
   }, [resizeCanvas]);
 
   // Land at the top of each step so people don't start a new step mid-scroll.
+  // Skip the initial mount: scrolling on first hydration can fight a user who
+  // has already scrolled down to the questions, making early clicks miss.
   useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [step]);
 
@@ -259,7 +266,7 @@ export default function MovementAssessmentBooking() {
                               type="button"
                               aria-pressed={selected}
                               onClick={() => setAnswer(question.id, answer)}
-                              className={`min-h-11 flex-1 rounded-full border px-5 text-sm font-medium transition-colors ${
+                              className={`min-h-11 flex-1 touch-manipulation select-none rounded-full border px-5 text-sm font-medium transition-colors ${
                                 selected
                                   ? 'border-black bg-black text-white'
                                   : 'border-black/15 bg-white text-black/55 hover:border-black/40 hover:text-black'
