@@ -339,7 +339,7 @@ async function sendEmail(to: string, subject: string, text: string) {
     method: 'POST',
     headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM_PEDRO_NOTIFY ?? 'Pedro Avila Coaching <onboarding@resend.dev>',
+      from: process.env.RESEND_FROM_PEDRO_NOTIFY ?? 'Pedro Avila Coaching <pedro@cerebroai.au>',
       to,
       subject,
       text,
