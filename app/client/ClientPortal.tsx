@@ -1495,6 +1495,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   };
 
   const finishWorkout = async () => {
+    if (savingWorkout) return;
     if (!client || !assignment || !selectedWorkout || !selectedPhase || !selectedDay) return;
     setSavingWorkout(true);
     setStatus('Saving workout...');

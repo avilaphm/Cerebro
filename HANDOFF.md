@@ -1,12 +1,30 @@
 # Handoff
 
 ## Last updated
-2026-06-12 by Claude - Aligned the board-view dotted dividers across day columns (programme editor). Pure UI/layout change; Stripe work below is still the open deploy item.
+2026-06-16 by Codex - Fixed client-side liquid-glass button tap behavior so mobile/touch clients do not need a second tap on Save/Finish CTAs.
 
 ## Last code fix commit
-this commit - board-view divider alignment (subgrid)
+this commit - client liquid button single-tap fix
 
 ## What just happened (read first)
+
+### Client liquid button single-tap fix (2026-06-16, LATEST)
+
+A client reported that after finishing a workout, tapping Save/Finish made the button turn white and required a second tap. Root cause was the global liquid-glass CSS:
+- `.client-liquid .bg-black:hover` inverted every black CTA to white on hover. Touch browsers can persist hover on tap, which made primary buttons look like the first tap only changed state.
+- `button[class*="bg-white"]` also matched Tailwind classes like `hover:bg-white`, so black CTAs carrying a hover utility could be treated as white/glass buttons.
+
+Fix:
+- Added `touch-action: manipulation` and transparent tap highlight to liquid buttons/links.
+- Scoped the white hover inversion to real hover devices only: `@media (hover: hover) and (pointer: fine)`.
+- Added a touch/coarse-pointer override so black client CTAs stay black during sticky hover.
+- Changed the white-button liquid selector from substring matching (`class*="bg-white"`) to exact utility matching (`class~="bg-white"`) so `hover:bg-white` no longer trips it.
+- Added a `savingWorkout` early return in `finishWorkout()` to prevent duplicate workout-log inserts from rapid double taps.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Browser QA on `http://localhost:3000/client-login`: injected `.client-liquid` black CTAs with both `hover:bg-white` and the real workout finish class stay black at rest; `touch-action: manipulation` is applied; one click fires one handler call. The actual client portal remains auth-gated, so this was a global CSS behavior test rather than a logged-in workout save.
 
 ### Board-view divider alignment (2026-06-12, LATEST)
 

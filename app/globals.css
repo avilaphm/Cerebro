@@ -175,6 +175,8 @@ body::before {
 .client-liquid button,
 .client-liquid a {
   border-radius: 999px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .liquid-dashboard main button,
@@ -296,24 +298,37 @@ body::before {
   color: inherit !important;
 }
 
-.liquid-dashboard main .bg-black:hover,
-.liquid-dashboard main button:hover[class*="hover:bg-white"],
-.liquid-dashboard main a:hover[class*="hover:bg-white"],
-.client-liquid .bg-black:hover,
-.client-liquid button:hover[class*="hover:bg-white"],
-.client-liquid a:hover[class*="hover:bg-white"] {
-  background: rgba(255, 255, 255, 0.92) !important;
-  color: #050505 !important;
+@media (hover: hover) and (pointer: fine) {
+  .liquid-dashboard main .bg-black:hover,
+  .liquid-dashboard main button:hover[class*="hover:bg-white"],
+  .liquid-dashboard main a:hover[class*="hover:bg-white"],
+  .client-liquid .bg-black:hover,
+  .client-liquid button:hover[class*="hover:bg-white"],
+  .client-liquid a:hover[class*="hover:bg-white"] {
+    background: rgba(255, 255, 255, 0.92) !important;
+    color: #050505 !important;
+  }
 }
 
-.liquid-dashboard main button[class*="bg-white"],
-.liquid-dashboard main a[class*="bg-white"],
-.liquid-dashboard main button[class*="bg-[#fbfbf8]"],
-.liquid-dashboard main a[class*="bg-[#fbfbf8]"],
-.client-liquid button[class*="bg-white"],
-.client-liquid a[class*="bg-white"],
-.client-liquid button[class*="bg-[#fbfbf8]"],
-.client-liquid a[class*="bg-[#fbfbf8]"] {
+@media (hover: none), (pointer: coarse) {
+  .client-liquid .bg-black:hover,
+  .client-liquid button.bg-black:hover,
+  .client-liquid a.bg-black:hover,
+  .client-liquid button:hover[class*="hover:bg-white"].bg-black,
+  .client-liquid a:hover[class*="hover:bg-white"].bg-black {
+    background: #080808 !important;
+    color: #ffffff !important;
+  }
+}
+
+.liquid-dashboard main button[class~="bg-white"],
+.liquid-dashboard main a[class~="bg-white"],
+.liquid-dashboard main button[class~="bg-[#fbfbf8]"],
+.liquid-dashboard main a[class~="bg-[#fbfbf8]"],
+.client-liquid button[class~="bg-white"],
+.client-liquid a[class~="bg-white"],
+.client-liquid button[class~="bg-[#fbfbf8]"],
+.client-liquid a[class~="bg-[#fbfbf8]"] {
   background: var(--liquid-glass-strong) !important;
   color: #050505 !important;
 }
