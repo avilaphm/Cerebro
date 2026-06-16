@@ -15,6 +15,20 @@ const PACKS: { pack: number; price: string; per: string }[] = [
   { pack: 10, price: '$1,000', per: '$100 / session' },
 ];
 
+// supabase-js collapses a non-2xx Edge Function response into a generic
+// "Edge Function returned a non-2xx status code". The actual JSON body lives on
+// the error's `context` (the raw Response) — read it so the client sees why.
+async function readFunctionError(err: unknown): Promise<string | null> {
+  const context = (err as { context?: Response } | null)?.context;
+  if (!context || typeof context.json !== 'function') return null;
+  try {
+    const body = await context.clone().json();
+    return typeof body?.error === 'string' ? body.error : null;
+  } catch {
+    return null;
+  }
+}
+
 const appearance = {
   theme: 'flat' as const,
   variables: {
@@ -84,7 +98,7 @@ export default function TopUpModal({ open, clientId, clientName, clientEmail, re
       { body: { action: 'create_topup_intent', client_id: clientId, pack } },
     );
     if (invokeError || !data || data.error || !data.client_secret) {
-      setError(invokeError?.message ?? data?.error ?? 'Could not start payment.');
+      setError((await readFunctionError(invokeError)) ?? data?.error ?? invokeError?.message ?? 'Could not start payment.');
       setBusy(false);
       return;
     }

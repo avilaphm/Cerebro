@@ -73,6 +73,7 @@ Deno.serve(async (req: Request) => {
     }
     return json({ error: 'Unknown action.' }, 400);
   } catch (error) {
+    console.error('manage-pt-payment failed:', error);
     return json({ error: error instanceof Error ? error.message : 'Payment action failed.' }, 500);
   }
 });
@@ -89,12 +90,17 @@ async function createTopupIntent(
 
   const customerId = await ensureStripeCustomer(adminClient, stripe, client);
 
-  // Look for an already-saved card so the client can pay in one tap.
+  // Look for an already-saved card so the client can pay in one tap. A failure
+  // here must not block the purchase — fall back to entering a new card.
   let savedCard: { brand: string; last4: string; payment_method_id: string } | null = null;
-  const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
-  const pm = methods.data[0];
-  if (pm?.card) {
-    savedCard = { brand: pm.card.brand, last4: pm.card.last4, payment_method_id: pm.id };
+  try {
+    const methods = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+    const pm = methods.data[0];
+    if (pm?.card) {
+      savedCard = { brand: pm.card.brand, last4: pm.card.last4, payment_method_id: pm.id };
+    }
+  } catch (error) {
+    console.error('Could not list saved cards:', error);
   }
 
   // No setup_future_usage here: whether the card is kept is the client's choice,
@@ -173,7 +179,20 @@ async function ensureStripeCustomer(
   stripe: Stripe,
   client: PTClientRow,
 ) {
-  if (client.stripe_customer_id) return client.stripe_customer_id;
+  // A stored customer id can become stale: the Stripe key may have been rotated
+  // or switched between live/test, leaving an id that no longer exists under the
+  // current key. Verify it before trusting it, and self-heal if it's gone.
+  if (client.stripe_customer_id) {
+    try {
+      const existing = await stripe.customers.retrieve(client.stripe_customer_id);
+      if (!existing.deleted) return client.stripe_customer_id;
+    } catch (error) {
+      if (!(error instanceof Stripe.errors.StripeInvalidRequestError && error.code === 'resource_missing')) {
+        throw error;
+      }
+      // resource_missing → fall through and recreate the customer below.
+    }
+  }
   const customer = await stripe.customers.create({
     email: client.email,
     name: client.name,
