@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
-import { creditPack, PACK_PRICES, VALID_PACKS, type PackSize } from '../_shared/credit-pack.ts';
+import { creditPack, packPrice, VALID_PACKS, type PackSize } from '../_shared/credit-pack.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,6 +28,7 @@ interface PTClientRow {
   sessions_remaining: number;
   stripe_customer_id: string | null;
   last_pack_size: number | null;
+  price_tier: number | null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -86,7 +87,9 @@ async function createTopupIntent(
 ) {
   const pack = Number(body.pack) as PackSize;
   if (!VALID_PACKS.includes(pack)) return json({ error: 'Invalid pack size.' }, 400);
-  const amount = PACK_PRICES[pack];
+  // Price is server-authoritative and driven by the client's tier — never trust
+  // anything the browser sends.
+  const amount = packPrice(client.price_tier, pack);
 
   const customerId = await ensureStripeCustomer(adminClient, stripe, client);
 
@@ -210,7 +213,7 @@ async function getClientForRequest(
 ) {
   let query = adminClient
     .from('pt_clients')
-    .select('id, name, email, user_id, sessions_remaining, stripe_customer_id, last_pack_size')
+    .select('id, name, email, user_id, sessions_remaining, stripe_customer_id, last_pack_size, price_tier')
     .neq('status', 'archived');
   query = isAdmin && requestedClientId ? query.eq('id', requestedClientId) : query.eq('user_id', userId);
   const { data } = await query.limit(1).maybeSingle();

@@ -4,16 +4,10 @@ import { useState } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { createClient } from '@/utils/supabase/client';
+import { packOptionsForTier } from '@/utils/pt/pricing';
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
-
-const PACKS: { pack: number; price: string; per: string }[] = [
-  { pack: 1, price: '$110', per: '$110 / session' },
-  { pack: 2, price: '$220', per: '$110 / session' },
-  { pack: 5, price: '$525', per: '$105 / session' },
-  { pack: 10, price: '$1,000', per: '$100 / session' },
-];
 
 // supabase-js collapses a non-2xx Edge Function response into a generic
 // "Edge Function returned a non-2xx status code". The actual JSON body lives on
@@ -59,13 +53,15 @@ interface TopUpModalProps {
   clientId: string;
   clientName: string;
   clientEmail: string;
+  priceTier?: number | null;
   reason?: string | null;
   onClose: () => void;
   onSuccess: () => void | Promise<void>;
 }
 
-export default function TopUpModal({ open, clientId, clientName, clientEmail, reason, onClose, onSuccess }: TopUpModalProps) {
+export default function TopUpModal({ open, clientId, clientName, clientEmail, priceTier, reason, onClose, onSuccess }: TopUpModalProps) {
   const supabase = createClient();
+  const packs = packOptionsForTier(priceTier);
   const [step, setStep] = useState<'select' | 'pay' | 'success'>('select');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +119,7 @@ export default function TopUpModal({ open, clientId, clientName, clientEmail, re
               {reason ?? 'Choose a pack. Sessions are added to your account as soon as you pay.'}
             </p>
             <div className="mt-5 grid grid-cols-2 gap-2">
-              {PACKS.map(({ pack, price, per }) => (
+              {packs.map(({ pack, price, per }) => (
                 <button
                   key={pack}
                   type="button"

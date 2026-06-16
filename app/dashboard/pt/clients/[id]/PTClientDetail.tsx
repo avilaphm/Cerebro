@@ -37,6 +37,7 @@ import WeeklyClientProgress, {
   type WeeklySetLog,
   type WeeklyWorkoutLog,
 } from './WeeklyClientProgress';
+import { TIER_LABELS, normalizeTier, type PriceTier } from '@/utils/pt/pricing';
 
 const STATUS_OPTIONS: PTClient['status'][] = ['invited', 'active', 'paused', 'archived'];
 const STATUS_COLORS: Record<PTClient['status'], string> = {
@@ -410,6 +411,8 @@ export default function PTClientDetail({
 
   const [client, setClient] = useState(initial);
   const [editing, setEditing] = useState(false);
+  const [tierDraft, setTierDraft] = useState<PriceTier>(normalizeTier(initial.price_tier));
+  const [tierSaving, setTierSaving] = useState(false);
   const [form, setForm] = useState({
     name: initial.name,
     goals: initial.goals ?? '',
@@ -489,6 +492,17 @@ export default function PTClientDetail({
     if (!error && data) setClient(data as PTClient);
     setEditing(false);
     setSaving(false);
+  };
+
+  const savedTier = normalizeTier(client.price_tier);
+  const saveTier = async () => {
+    setTierSaving(true);
+    const { error } = await supabase
+      .from('pt_clients')
+      .update({ price_tier: tierDraft })
+      .eq('id', client.id);
+    if (!error) setClient((c) => ({ ...c, price_tier: tierDraft }));
+    setTierSaving(false);
   };
 
   const handleUpload = async (file: File) => {
@@ -1629,6 +1643,31 @@ export default function PTClientDetail({
             </button>
           )}
         </div>
+      </div>
+
+      <div className="mb-8 flex flex-wrap items-end gap-3 border border-black/8 px-4 py-4">
+        <div>
+          <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Pricing tier</label>
+          <select
+            value={tierDraft}
+            onChange={(e) => setTierDraft(normalizeTier(Number(e.target.value)))}
+            className="border border-black/15 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
+          >
+            {([1, 2] as PriceTier[]).map((tier) => (
+              <option key={tier} value={tier}>{TIER_LABELS[tier]}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          onClick={saveTier}
+          disabled={tierSaving || tierDraft === savedTier}
+          className="border border-black bg-black px-4 py-2 text-sm text-white transition-colors disabled:opacity-30"
+        >
+          {tierSaving ? 'Saving…' : 'Save tier'}
+        </button>
+        <p className="ml-auto self-center text-xs text-black/40">
+          Sets the session-pack prices this client sees when buying sessions.
+        </p>
       </div>
 
       <div className="mb-8 grid gap-3 sm:grid-cols-3">

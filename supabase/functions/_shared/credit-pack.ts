@@ -2,16 +2,27 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@17';
 
 export type PackSize = 1 | 2 | 5 | 10;
+export type PriceTier = 1 | 2;
 
 // Server-authoritative prices (cents, AUD). Never trust a client-supplied amount.
-export const PACK_PRICES: Record<PackSize, number> = {
-  1: 11000,
-  2: 22000,
-  5: 52500,
-  10: 100000,
+// Tier 1 is the standard rate; tier 2 is the higher rate, set per client.
+export const TIER_PACK_PRICES: Record<PriceTier, Record<PackSize, number>> = {
+  1: { 1: 11000, 2: 22000, 5: 52500, 10: 100000 },
+  2: { 1: 12000, 2: 24000, 5: 57500, 10: 110000 },
 };
 
+// Back-compat default (tier 1) for any caller that doesn't pass a tier.
+export const PACK_PRICES: Record<PackSize, number> = TIER_PACK_PRICES[1];
+
 export const VALID_PACKS: PackSize[] = [1, 2, 5, 10];
+
+export function normalizeTier(value: unknown): PriceTier {
+  return value === 2 ? 2 : 1;
+}
+
+export function packPrice(tier: unknown, pack: PackSize): number {
+  return TIER_PACK_PRICES[normalizeTier(tier)][pack];
+}
 
 // Credit a successful PaymentIntent to the client's session balance — exactly once.
 // Called by manage-pt-payment's confirm_topup (instant UX) and by stripe-webhook

@@ -3492,6 +3492,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             clientId={client.id}
             clientName={client.name}
             clientEmail={client.email}
+            priceTier={client.price_tier}
             reason={topUpReason}
             onClose={() => { setTopUpOpen(false); setTopUpReason(null); setBookAfterTopUp(false); }}
             onSuccess={handleTopUpSuccess}
