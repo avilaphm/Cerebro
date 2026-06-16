@@ -130,12 +130,14 @@ export function addDays(date: Date, days: number) {
 
 export function formatBookingDate(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value;
-  return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', weekday: 'short' });
+  // Always render in the business timezone so server-side (UTC) output matches
+  // the client. Without this, slots generated on the server show the UTC clock.
+  return date.toLocaleDateString('en-AU', { timeZone: PT_BOOKING_TIMEZONE, day: 'numeric', month: 'short', weekday: 'short' });
 }
 
 export function formatBookingTime(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value;
-  return date.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString('en-AU', { timeZone: PT_BOOKING_TIMEZONE, hour: 'numeric', minute: '2-digit' });
 }
 
 export function overlaps(startA: string | Date, endA: string | Date, startB: string | Date, endB: string | Date) {

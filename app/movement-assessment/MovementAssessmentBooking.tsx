@@ -79,6 +79,11 @@ export default function MovementAssessmentBooking() {
     return () => window.removeEventListener('resize', resizeCanvas);
   }, [resizeCanvas]);
 
+  // Land at the top of each step so people don't start a new step mid-scroll.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
+
   async function loadSlots() {
     setSlotsLoading(true);
     setSlotsError('');
@@ -231,27 +236,33 @@ export default function MovementAssessmentBooking() {
                 </div>
                 <div className="space-y-2">
                   {PAR_Q_QUESTIONS.map((question, index) => (
-                    <article key={question.id} className="grid gap-4 border border-black/8 bg-[#fbfbf8] p-4 md:grid-cols-[minmax(0,1fr)_10rem] md:items-center">
+                    <article key={question.id} className="grid gap-4 border border-black/8 bg-[#fbfbf8] p-4 md:grid-cols-[minmax(0,1fr)_13rem] md:items-center">
                       <div className="flex gap-3">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-black/10 bg-white text-xs text-black/45">{index + 1}</span>
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-xs text-black/45">{index + 1}</span>
                         <div>
                           <h4 className="text-sm font-medium">{question.label}</h4>
                           <p className="mt-1 text-sm leading-6 text-black/60">{question.text}</p>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 border border-black/10 bg-white p-1">
-                        {(['yes', 'no'] as ParQAnswer[]).map((answer) => (
-                          <button
-                            key={answer}
-                            type="button"
-                            onClick={() => setAnswer(question.id, answer)}
-                            className={`min-h-10 text-sm font-medium transition-colors ${
-                              answers[question.id] === answer ? 'bg-black text-white' : 'text-black/45 hover:text-black'
-                            }`}
-                          >
-                            {answer === 'yes' ? 'Yes' : 'No'}
-                          </button>
-                        ))}
+                      <div className="flex gap-2">
+                        {(['yes', 'no'] as ParQAnswer[]).map((answer) => {
+                          const selected = answers[question.id] === answer;
+                          return (
+                            <button
+                              key={answer}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => setAnswer(question.id, answer)}
+                              className={`min-h-11 flex-1 rounded-full border px-5 text-sm font-medium transition-colors ${
+                                selected
+                                  ? 'border-black bg-black text-white'
+                                  : 'border-black/15 bg-white text-black/55 hover:border-black/40 hover:text-black'
+                              }`}
+                            >
+                              {answer === 'yes' ? 'Yes' : 'No'}
+                            </button>
+                          );
+                        })}
                       </div>
                     </article>
                   ))}
