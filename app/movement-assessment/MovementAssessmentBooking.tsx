@@ -21,6 +21,7 @@ export default function MovementAssessmentBooking() {
   const [step, setStep] = useState<Step>(1);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [email, setEmail] = useState('');
   const [answers, setAnswers] = useState<Answers>({});
   const [hasSignature, setHasSignature] = useState(false);
@@ -57,7 +58,8 @@ export default function MovementAssessmentBooking() {
 
   const answeredCount = PAR_Q_QUESTIONS.filter((question) => answers[question.id]).length;
   const medicalFlag = Object.values(answers).includes('yes');
-  const intakeReady = firstName.trim() && lastName.trim() && /\S+@\S+\.\S+/.test(email) && answeredCount === PAR_Q_QUESTIONS.length && hasSignature;
+  const dobValid = Boolean(dateOfBirth) && !Number.isNaN(Date.parse(dateOfBirth)) && new Date(dateOfBirth) < new Date();
+  const intakeReady = firstName.trim() && lastName.trim() && dobValid && /\S+@\S+\.\S+/.test(email) && answeredCount === PAR_Q_QUESTIONS.length && hasSignature;
 
   const dates = useMemo(() => {
     const seen = new Set<string>();
@@ -136,6 +138,7 @@ export default function MovementAssessmentBooking() {
         body: JSON.stringify({
           first_name: firstName,
           last_name: lastName,
+          date_of_birth: dateOfBirth,
           email,
           answers,
           signature_data_url: signature,
@@ -229,7 +232,10 @@ export default function MovementAssessmentBooking() {
               <div className="grid gap-4 md:grid-cols-3">
                 <Field label="First name" value={firstName} onChange={setFirstName} autoComplete="given-name" />
                 <Field label="Last name" value={lastName} onChange={setLastName} autoComplete="family-name" />
-                <Field label="Email address" value={email} onChange={setEmail} autoComplete="email" type="email" />
+                <Field label="Date of birth" value={dateOfBirth} onChange={setDateOfBirth} autoComplete="bday" type="date" />
+                <div className="md:col-span-3">
+                  <Field label="Email address" value={email} onChange={setEmail} autoComplete="email" type="email" />
+                </div>
               </div>
 
               {medicalFlag && (

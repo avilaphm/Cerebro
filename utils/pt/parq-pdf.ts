@@ -10,6 +10,7 @@ export interface ParqPdfAnswer {
 export interface ParqPdfInput {
   firstName: string;
   lastName: string;
+  dateOfBirth?: string;
   email: string;
   consentText: string;
   answers: ParqPdfAnswer[];
@@ -40,6 +41,14 @@ function formatDateTime(value?: string) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function formatDob(value?: string) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('en-AU', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
@@ -109,6 +118,8 @@ export async function buildParqPdf(input: ParqPdfInput): Promise<Uint8Array> {
 
   const name = `${input.firstName} ${input.lastName}`.trim();
   drawText(`Name: ${name}`, { size: 11, gap: 1 });
+  const dob = formatDob(input.dateOfBirth);
+  if (dob) drawText(`Date of birth: ${dob}`, { size: 11, color: MUTED, gap: 1 });
   drawText(`Email: ${input.email}`, { size: 11, color: MUTED, gap: 1 });
   const booked = formatDateTime(input.appointmentStartAt);
   if (booked) drawText(`Movement assessment booked: ${booked}`, { size: 11, color: MUTED, gap: 1 });

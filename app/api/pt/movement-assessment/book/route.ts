@@ -17,6 +17,7 @@ const PARQ_BUCKET = 'pt-client-docs';
 interface BookAssessmentBody {
   first_name?: unknown;
   last_name?: unknown;
+  date_of_birth?: unknown;
   email?: unknown;
   answers?: unknown;
   signature_data_url?: unknown;
@@ -28,6 +29,7 @@ interface ClientRow {
   id: string;
   name: string;
   last_name: string | null;
+  date_of_birth: string | null;
   email: string;
   status: string;
   notes: string | null;
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'That time is no longer available. Choose another time.' }, { status: 409 });
     }
 
-    const client = await findOrCreateClient(supabase, parsed.data.first_name, parsed.data.last_name, parsed.data.email);
+    const client = await findOrCreateClient(supabase, parsed.data.first_name, parsed.data.last_name, parsed.data.email, parsed.data.date_of_birth);
     const medicalFlag = Object.values(parsed.data.answers).includes('yes');
     const submittedAt = new Date().toISOString();
     const parqAnswers = PAR_Q_QUESTIONS.map((question) => ({
@@ -129,6 +131,7 @@ export async function POST(req: NextRequest) {
       const pdfBytes = await buildParqPdf({
         firstName: parsed.data.first_name,
         lastName: parsed.data.last_name,
+        dateOfBirth: parsed.data.date_of_birth,
         email: parsed.data.email,
         consentText: PAR_Q_CONSENT_TEXT,
         answers: parqAnswers.map((row) => ({ label: row.label, text: row.text, answer: row.answer })),
@@ -159,6 +162,7 @@ export async function POST(req: NextRequest) {
       session_minutes: MOVEMENT_ASSESSMENT_SESSION_MINUTES,
       first_name: parsed.data.first_name,
       last_name: parsed.data.last_name,
+      date_of_birth: parsed.data.date_of_birth,
       email: parsed.data.email,
       coach_notes: parsed.data.coach_notes,
       medical_flag: medicalFlag,
@@ -219,16 +223,20 @@ export async function POST(req: NextRequest) {
 }
 
 function parseBody(body: BookAssessmentBody):
-  | { ok: true; data: { first_name: string; last_name: string; email: string; answers: Record<string, ParQAnswer>; signature_data_url: string; coach_notes: string; start_at: string } }
+  | { ok: true; data: { first_name: string; last_name: string; date_of_birth: string; email: string; answers: Record<string, ParQAnswer>; signature_data_url: string; coach_notes: string; start_at: string } }
   | { ok: false; error: string } {
   const firstName = cleanText(body.first_name, 80);
   const lastName = cleanText(body.last_name, 80);
+  const dateOfBirth = cleanText(body.date_of_birth, 10);
   const email = cleanText(body.email, 160).toLowerCase();
   const startAt = cleanText(body.start_at, 80);
   const coachNotes = cleanText(body.coach_notes, 1200);
   const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url : '';
 
   if (!firstName || !lastName) return { ok: false, error: 'First and last name are required.' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || Number.isNaN(new Date(dateOfBirth).getTime()) || new Date(dateOfBirth) >= new Date()) {
+    return { ok: false, error: 'A valid date of birth is required.' };
+  }
   if (!EMAIL_RE.test(email)) return { ok: false, error: 'A valid email address is required.' };
   if (!startAt || Number.isNaN(new Date(startAt).getTime())) return { ok: false, error: 'Choose an available time.' };
   if (!signatureDataUrl.startsWith('data:image/png;base64,') || signatureDataUrl.length > 600000) {
@@ -249,6 +257,7 @@ function parseBody(body: BookAssessmentBody):
     data: {
       first_name: firstName,
       last_name: lastName,
+      date_of_birth: dateOfBirth,
       email,
       answers,
       signature_data_url: signatureDataUrl,
@@ -272,26 +281,29 @@ async function findOrCreateClient(
   firstName: string,
   lastName: string,
   email: string,
+  dateOfBirth: string,
 ): Promise<ClientRow> {
   const fullName = `${firstName} ${lastName}`.trim();
   const existingRes = await supabase
     .from('pt_clients')
-    .select('id, name, last_name, email, status, notes')
+    .select('id, name, last_name, date_of_birth, email, status, notes')
     .ilike('email', email)
     .maybeSingle();
 
   if (existingRes.error) throw existingRes.error;
   if (existingRes.data) {
     const existing = existingRes.data as ClientRow;
+    const date_of_birth = existing.date_of_birth || dateOfBirth;
     await supabase
       .from('pt_clients')
       .update({
         name: existing.name || fullName,
         last_name: existing.last_name || lastName,
+        date_of_birth,
         updated_at: new Date().toISOString(),
       })
       .eq('id', existing.id);
-    return { ...existing, name: existing.name || fullName, last_name: existing.last_name || lastName };
+    return { ...existing, name: existing.name || fullName, last_name: existing.last_name || lastName, date_of_birth };
   }
 
   const insertedRes = await supabase
@@ -299,12 +311,13 @@ async function findOrCreateClient(
     .insert({
       name: fullName,
       last_name: lastName,
+      date_of_birth: dateOfBirth,
       email,
       status: 'invited',
       sessions_remaining: 0,
       notes: 'Created from public Movement Assessment intake.',
     })
-    .select('id, name, last_name, email, status, notes')
+    .select('id, name, last_name, date_of_birth, email, status, notes')
     .single();
 
   if (insertedRes.error || !insertedRes.data) throw insertedRes.error ?? new Error('Could not create client.');

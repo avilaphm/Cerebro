@@ -122,6 +122,7 @@ interface MovementAssessmentParqAnswer {
 interface MovementAssessmentContext {
   appointment_start_at?: string;
   appointment_end_at?: string;
+  date_of_birth?: string;
   coach_notes?: string;
   medical_flag?: boolean;
   parq_answers: MovementAssessmentParqAnswer[];
@@ -951,6 +952,7 @@ export default function PTClientDetail({
     return {
       appointment_start_at: typeof context.appointment_start_at === 'string' ? context.appointment_start_at : undefined,
       appointment_end_at: typeof context.appointment_end_at === 'string' ? context.appointment_end_at : undefined,
+      date_of_birth: typeof context.date_of_birth === 'string' ? context.date_of_birth : undefined,
       coach_notes: typeof context.coach_notes === 'string' ? context.coach_notes : undefined,
       medical_flag: typeof context.medical_flag === 'boolean' ? context.medical_flag : undefined,
       parq_answers: answers,
@@ -992,6 +994,14 @@ export default function PTClientDetail({
           <div className="border border-amber-200 bg-white px-3 py-2">
             <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Booked for</p>
             <p className="mt-1 text-xs text-black/70">{bookedFor ?? 'Not recorded'}</p>
+          </div>
+          <div className="border border-amber-200 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Date of birth</p>
+            <p className="mt-1 text-xs text-black/70">
+              {context.date_of_birth
+                ? new Date(`${context.date_of_birth}T00:00:00Z`).toLocaleDateString('en-AU', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })
+                : 'Not recorded'}
+            </p>
           </div>
           <div className="border border-amber-200 bg-white px-3 py-2">
             <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">PAR-Q</p>
