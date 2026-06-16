@@ -1,12 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-06-16 by Codex - Fixed client-side liquid-glass button tap behavior so mobile/touch clients do not need a second tap on Save/Finish CTAs.
+2026-06-16 by Codex - Fixed liquid-glass padding regression on dashboard divider sections, especially PT client detail Notes and Client profile document.
 
 ## Last code fix commit
-this commit - client liquid button single-tap fix
+this commit - liquid divider sections stay flat
 
 ## What just happened (read first)
+
+### Dashboard liquid divider padding fix (2026-06-16, LATEST)
+
+Pedro flagged the PT client detail page screenshot where "Notes" and "Client profile document" looked like padding-less cards. Root cause was the global liquid-glass selector:
+- `.liquid-dashboard main [class*="border-black/8"]` and `[class*="border-black/10"]` matched divider-only sections like `border-t border-black/8 pt-6`.
+- Those dividers got glass background, radius, shadow, and blur but no left/right padding, making headings/content look flush and broken.
+
+Fix in `app/globals.css`:
+- Tightened the border-card part of the liquid selector to require an actual all-sides `border` class:
+  - from `[class*="border-black/8"]`
+  - to `[class~="border"][class*="border-black/8"]`
+- Same for `border-black/10`, for both `.liquid-dashboard` and `.client-liquid`.
+- Result: real tiles/cards (`border border-black/8`) still get liquid glass; divider-only sections (`border-t border-black/8`) stay flat and keep normal spacing.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- Browser QA against local stylesheet: injected dashboard fixture showed `border-t border-black/8` has transparent background, no radius/shadow, and no matching liquid panel rule; `border border-black/8` still has liquid glass card treatment and padding.
+- The actual PT client detail route is admin-auth gated in the automated browser, so verification used the real compiled stylesheet with a minimal fixture matching the failing classes.
 
 ### Client liquid button single-tap fix (2026-06-16, LATEST)
 

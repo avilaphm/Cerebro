@@ -109,17 +109,18 @@ body::before {
    They are semantic grouping wrappers (a heading plus their own cards), so
    glassing them produced padding-less panels with headings flush to the edge
    and nested card-in-card. Only elements that explicitly opt in (.liquid-panel)
-   or carry a real card class (border-black/10, bg-white, ...) become panels. */
+   or carry a real all-sides card class (border + border-black/10, bg-white, ...)
+   become panels; divider-only borders such as border-t stay flat. */
 .liquid-panel,
-.liquid-dashboard main [class*="border-black/10"],
-.liquid-dashboard main [class*="border-black/8"],
+.liquid-dashboard main [class~="border"][class*="border-black/10"],
+.liquid-dashboard main [class~="border"][class*="border-black/8"],
 .liquid-dashboard main [class*="bg-white"],
 .liquid-dashboard main [class*="bg-[#fbfbf8]"],
 .liquid-dashboard main [class*="bg-[#f7f7f3]"],
 .client-liquid section,
 .client-liquid article,
-.client-liquid [class*="border-black/10"],
-.client-liquid [class*="border-black/8"],
+.client-liquid [class~="border"][class*="border-black/10"],
+.client-liquid [class~="border"][class*="border-black/8"],
 .client-liquid [class*="bg-white"],
 .client-liquid [class*="bg-[#fbfbf8]"],
 .client-liquid [class*="bg-[#f7f7f3]"] {
