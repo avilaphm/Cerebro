@@ -79,6 +79,12 @@ verify_jwt = false
 [functions.stripe-webhook]
 verify_jwt = false
 
+# sync-assessment-calendar: called server-to-server by the public Movement
+# Assessment booking route (Next.js) with Bearer ${ASSESSMENT_CAL_SYNC_SECRET}.
+# A raw secret is not a JWT, so verify_jwt must be false; auth is the in-code check.
+[functions.sync-assessment-calendar]
+verify_jwt = false
+
 # --- Public / anonymous-facing functions ---
 [functions.chat]
 verify_jwt = false

@@ -202,6 +202,12 @@ export async function POST(req: NextRequest) {
     ]);
 
     try {
+      await syncAssessmentCalendar(appointmentRes.data.id);
+    } catch (calendarError) {
+      console.error('Movement assessment calendar sync failed', calendarError);
+    }
+
+    try {
       await sendAssessmentEmails({
         clientName: parsed.data.first_name,
         clientEmail: parsed.data.email,
@@ -327,6 +333,21 @@ async function findOrCreateClient(
 
   if (insertedRes.error || !insertedRes.data) throw insertedRes.error ?? new Error('Could not create client.');
   return insertedRes.data as ClientRow;
+}
+
+async function syncAssessmentCalendar(appointmentId: string) {
+  const secret = process.env.ASSESSMENT_CAL_SYNC_SECRET;
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!secret || !baseUrl) return;
+
+  const res = await fetch(`${baseUrl}/functions/v1/sync-assessment-calendar`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ appointment_id: appointmentId }),
+  });
+  if (!res.ok) {
+    console.error('sync-assessment-calendar returned', res.status, await res.text());
+  }
 }
 
 async function sendAssessmentEmails(input: {
