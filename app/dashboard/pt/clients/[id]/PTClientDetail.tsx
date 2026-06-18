@@ -131,6 +131,37 @@ interface MovementAssessmentContext {
   parq_pdf_path?: string;
 }
 
+interface MLAssessmentAnswer {
+  id: string;
+  prompt: string;
+  answer: string;
+  notes: string;
+}
+
+interface MLAssessmentMovement {
+  id: string;
+  title: string;
+  instructions?: string;
+  notes: string;
+  video_path: string | null;
+  video_mime_type?: string | null;
+  recorded_at?: string | null;
+}
+
+interface MLAssessmentContext {
+  stage: 'part_1_chat' | 'part_2_lifestyle' | 'final';
+  saved_at?: string;
+  answers?: MLAssessmentAnswer[];
+  chat_answers?: MLAssessmentAnswer[];
+  lifestyle_answers?: MLAssessmentAnswer[];
+  movement_assessment_summary?: {
+    completed_at?: string;
+    general_observations?: Record<string, string>;
+    general_notes?: string;
+    movements?: MLAssessmentMovement[];
+  };
+}
+
 const ONE_RM_EXERCISES = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'] as const;
 type OneRMExercise = typeof ONE_RM_EXERCISES[number];
 
@@ -929,6 +960,12 @@ export default function PTClientDetail({
   const noteContextLabel = (note: PTNote) => {
     const context = note.context ?? {};
     if (context.source === 'movement_assessment_intake') return 'Movement assessment intake';
+    if (context.source === 'ml_assessment') {
+      if (context.stage === 'final') return 'M & L Assessment completed';
+      if (context.stage === 'part_2_lifestyle') return 'M & L Assessment / Part 2';
+      if (context.stage === 'part_1_chat') return 'M & L Assessment / Part 1';
+      return 'M & L Assessment';
+    }
     if (context.source !== 'workout_section') return null;
     const phase = typeof context.phase_index === 'number' ? `Phase ${context.phase_index + 1}` : null;
     const week = typeof context.week_number === 'number' ? `Week ${context.week_number}` : null;
@@ -963,9 +1000,154 @@ export default function PTClientDetail({
     };
   };
 
-  const openParqPdf = async (path: string) => {
+  const mlAssessmentContext = (note: PTNote): MLAssessmentContext | null => {
+    const context = note.context ?? {};
+    if (context.source !== 'ml_assessment') return null;
+    const stage = context.stage;
+    if (stage !== 'part_1_chat' && stage !== 'part_2_lifestyle' && stage !== 'final') return null;
+
+    const parseAnswers = (value: unknown): MLAssessmentAnswer[] | undefined => {
+      if (!Array.isArray(value)) return undefined;
+      return value.filter((item): item is MLAssessmentAnswer => {
+        const row = item as Partial<MLAssessmentAnswer>;
+        return typeof row.id === 'string' &&
+          typeof row.prompt === 'string' &&
+          typeof row.answer === 'string' &&
+          typeof row.notes === 'string';
+      });
+    };
+
+    const summaryRecord = typeof context.movement_assessment_summary === 'object' && context.movement_assessment_summary !== null
+      ? context.movement_assessment_summary as Record<string, unknown>
+      : null;
+
+    const movements = Array.isArray(summaryRecord?.movements)
+      ? summaryRecord.movements.filter((item): item is MLAssessmentMovement => {
+        const row = item as Partial<MLAssessmentMovement>;
+        return typeof row.id === 'string' &&
+          typeof row.title === 'string' &&
+          typeof row.notes === 'string' &&
+          (typeof row.video_path === 'string' || row.video_path === null);
+      })
+      : undefined;
+
+    return {
+      stage,
+      saved_at: typeof context.saved_at === 'string' ? context.saved_at : undefined,
+      answers: parseAnswers(context.answers),
+      chat_answers: parseAnswers(context.chat_answers),
+      lifestyle_answers: parseAnswers(context.lifestyle_answers),
+      movement_assessment_summary: summaryRecord ? {
+        completed_at: typeof summaryRecord.completed_at === 'string' ? summaryRecord.completed_at : undefined,
+        general_observations: typeof summaryRecord.general_observations === 'object' && summaryRecord.general_observations !== null
+          ? summaryRecord.general_observations as Record<string, string>
+          : undefined,
+        general_notes: typeof summaryRecord.general_notes === 'string' ? summaryRecord.general_notes : undefined,
+        movements,
+      } : undefined,
+    };
+  };
+
+  const openClientDocPath = async (path: string) => {
     const { data } = await supabase.storage.from('pt-client-docs').createSignedUrl(path, 3600);
     if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+  };
+
+  const openParqPdf = async (path: string) => {
+    await openClientDocPath(path);
+  };
+
+  const renderAnswerList = (title: string, answers: MLAssessmentAnswer[] | undefined) => {
+    if (!answers?.some((answer) => answer.answer || answer.notes)) return null;
+    return (
+      <div className="border border-black/8 bg-white px-3 py-3">
+        <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">{title}</p>
+        <div className="mt-2 space-y-3">
+          {answers.filter((answer) => answer.answer || answer.notes).map((answer) => (
+            <div key={answer.id}>
+              <p className="text-xs font-medium leading-5 text-black/75">{answer.prompt}</p>
+              {answer.answer && <p className="mt-1 text-sm leading-6 text-black/70">{answer.answer}</p>}
+              {answer.notes && <p className="mt-1 text-xs leading-5 text-black/45">Pedro note: {answer.notes}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMLAssessmentContext = (note: PTNote) => {
+    const context = mlAssessmentContext(note);
+    if (!context) return null;
+    const summary = context.movement_assessment_summary;
+    const movementRows = summary?.movements?.filter((movement) => movement.notes || movement.video_path) ?? [];
+    const videoCount = movementRows.filter((movement) => movement.video_path).length;
+    const completedAt = summary?.completed_at ?? context.saved_at;
+
+    return (
+      <div className="mt-4 space-y-4">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="border border-black/8 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Stage</p>
+            <p className="mt-1 text-xs text-black/70">
+              {context.stage === 'final' ? 'Completed' : context.stage === 'part_2_lifestyle' ? 'Part 2 saved' : 'Part 1 saved'}
+            </p>
+          </div>
+          <div className="border border-black/8 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Videos</p>
+            <p className="mt-1 text-xs text-black/70">{videoCount}</p>
+          </div>
+          <div className="border border-black/8 bg-white px-3 py-2">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">Saved</p>
+            <p className="mt-1 text-xs text-black/70">
+              {completedAt
+                ? new Date(completedAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+                : 'Recorded'}
+            </p>
+          </div>
+        </div>
+
+        {renderAnswerList('Chat answers', context.answers ?? context.chat_answers)}
+        {renderAnswerList('Lifestyle answers', context.lifestyle_answers)}
+
+        {summary?.general_observations && (
+          <div className="border border-black/8 bg-white px-3 py-3">
+            <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">General observations</p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {Object.entries(summary.general_observations).filter(([, value]) => value).map(([key, value]) => (
+                <p key={key} className="text-xs leading-5 text-black/60">
+                  <span className="font-medium text-black/75">{key.replace(/_/g, ' ')}:</span> {value}
+                </p>
+              ))}
+            </div>
+            {summary.general_notes && <p className="mt-2 text-sm leading-6 text-black/70">{summary.general_notes}</p>}
+          </div>
+        )}
+
+        {movementRows.length > 0 && (
+          <div className="space-y-2">
+            {movementRows.map((movement) => (
+              <div key={movement.id} className="border border-black/8 bg-white px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium text-black/80">{movement.title}</p>
+                    {movement.notes && <p className="mt-1 text-sm leading-6 text-black/70">{movement.notes}</p>}
+                  </div>
+                  {movement.video_path && (
+                    <button
+                      type="button"
+                      onClick={() => void openClientDocPath(movement.video_path as string)}
+                      className="shrink-0 border border-black/15 px-3 py-1.5 text-xs text-black/55 transition-colors hover:border-black/35 hover:text-black"
+                    >
+                      Open video
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderMovementAssessmentContext = (note: PTNote) => {
@@ -2621,6 +2803,7 @@ export default function PTClientDetail({
                   {noteContextLabel(note) && (
                     <p className="mt-1 text-xs text-amber-700">{noteContextLabel(note)}</p>
                   )}
+                  {renderMLAssessmentContext(note)}
                   {renderMovementAssessmentContext(note)}
                   <p className="text-xs text-black/30 mt-1">
                     {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}

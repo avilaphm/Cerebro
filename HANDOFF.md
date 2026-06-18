@@ -1,12 +1,39 @@
 # Handoff
 
 ## Last updated
-2026-06-16 by Claude - Fixed + optimized the public Movement Assessment page (signature/PAR-Q PDF, slots, booking, thank-you, email).
+2026-06-18 by Codex - Added coach M & L Assessment tab with live dictation, movement video capture, client-profile saves, and video storage support.
 
 ## Last code fix commit
-this commit - movement assessment: signature state fix, PAR-Q PDF, slot parity, thank-you + email
+this commit - add M & L Assessment coach workflow
 
 ## What just happened (read first)
+
+### M & L Assessment coach tab (2026-06-18, LATEST)
+
+Pedro asked for the operational page he uses after a client books the public Movement Assessment. New route:
+`/dashboard/pt/ml-assessment`, shown in the PT nav immediately after "PT Sessions" as "M & L Assessment".
+
+Shipped:
+- Mobile-first three-part workflow:
+  - Part 1 Chat: Pedro selects the client, sees name/DOB/age/date, PAR-Q status, booked assessment, client notes, goals, and PAR-Q coach notes. Each question has Record voice -> live text plus Pedro notes.
+  - Part 2 Lifestyle & Context: exact questions Pedro provided, each with Record voice -> live text plus Pedro notes, then the close-the-conversation script.
+  - Part 3 Movement Screening: general posture observation fields plus every movement from Pedro's brief, including all hip sub-tests.
+- Browser speech recognition is wired per answer field and per movement review note. It uses Web Speech (`SpeechRecognition`/`webkitSpeechRecognition`) with interim results, so text updates while Pedro/client speaks. Fallback message tells Pedro to use Chrome/Android or the phone keyboard mic if the browser blocks Web Speech.
+- Movement video recording uses `getUserMedia` + `MediaRecorder`. Each movement opens the camera, records, and uploads to the private `pt-client-docs` bucket as soon as Pedro taps stop.
+- Part 1 and Part 2 each save a structured `pt_client_notes` row with `context.source = 'ml_assessment'`.
+- Finish saves the full chat/lifestyle/movement/video payload to the client profile and calls `update-client-brain` with `movement_assessment_summary` so programme generation can read it.
+- Client profile Notes now render M & L assessment rows with stage, saved date, video count, answers, general observations, movement notes, and "Open video" signed links.
+- Supabase migration `20260617235915_ml_assessment_video_storage.sql` updates the existing private `pt-client-docs` bucket to allow video MIME types and raises its file limit to 500MB. Applied live through Supabase MCP.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- Targeted ESLint passes for the new M & L route/nav files.
+- `npm run build` passes.
+- Supabase security advisors show only existing unrelated warnings: `pg_net` in public, service-role-only permissive policies, leaked-password protection disabled.
+- Supabase performance advisors show existing broad DB hygiene warnings; none were introduced by this feature.
+
+Important caveat:
+- Browser voice transcription depends on Web Speech support and microphone permission. Chrome desktop/Android is the best path. iOS browser support can be inconsistent, so Pedro should test on the actual phone/browser he plans to use before relying on it in-session.
 
 ### Movement Assessment page fixes (2026-06-16, LATEST)
 
