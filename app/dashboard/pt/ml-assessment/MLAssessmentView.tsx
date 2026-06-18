@@ -681,8 +681,8 @@ export default function MLAssessmentView({
   };
 
   const insertAssessmentNote = async (stage: 'part_1_chat' | 'part_2_lifestyle' | 'final', context: Record<string, unknown>, content: string) => {
-    if (!selectedClient) return false;
-    const { error } = await supabase.from('pt_client_notes').insert({
+    if (!selectedClient) return null;
+    const { data, error } = await supabase.from('pt_client_notes').insert({
       client_id: selectedClient.id,
       content,
       is_active: true,
@@ -692,10 +692,10 @@ export default function MLAssessmentView({
         saved_at: new Date().toISOString(),
         ...context,
       },
-    });
+    }).select('id').single();
     if (error) {
       setStatus(`Save failed: ${error.message}`);
-      return false;
+      return null;
     }
 
     await supabase.from('pt_events').insert({
@@ -703,7 +703,7 @@ export default function MLAssessmentView({
       event_type: stage === 'final' ? 'ml_assessment_completed' : 'ml_assessment_stage_saved',
       metadata: { source: 'ml_assessment', stage, ...context },
     });
-    return true;
+    return data.id as string;
   };
 
   const savePartOneAndNext = async () => {
@@ -711,13 +711,13 @@ export default function MLAssessmentView({
     setSaving(true);
     setStatus('Saving Part 1...');
     const answers = compactAnswers(chatAnswers, CHAT_QUESTIONS);
-    const ok = await insertAssessmentNote(
+    const noteId = await insertAssessmentNote(
       'part_1_chat',
       { answers },
       `M & L Assessment Part 1 saved for ${selectedClient.name}.`,
     );
     setSaving(false);
-    if (ok) {
+    if (noteId) {
       setStatus('Part 1 saved.');
       setStep(2);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -729,13 +729,13 @@ export default function MLAssessmentView({
     setSaving(true);
     setStatus('Saving Part 2...');
     const answers = compactAnswers(lifestyleAnswers, LIFESTYLE_QUESTIONS);
-    const ok = await insertAssessmentNote(
+    const noteId = await insertAssessmentNote(
       'part_2_lifestyle',
       { answers, close_script: CONSULT_CLOSE },
       `M & L Assessment Part 2 saved for ${selectedClient.name}.`,
     );
     setSaving(false);
-    if (ok) {
+    if (noteId) {
       setStatus('Part 2 saved.');
       setStep(3);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -763,7 +763,7 @@ export default function MLAssessmentView({
       const chat = compactAnswers(chatAnswers, CHAT_QUESTIONS);
       const lifestyle = compactAnswers(lifestyleAnswers, LIFESTYLE_QUESTIONS);
 
-      const ok = await insertAssessmentNote(
+      const finalNoteId = await insertAssessmentNote(
         'final',
         {
           client_info: {
@@ -780,7 +780,7 @@ export default function MLAssessmentView({
         `M & L Assessment completed. ${completedVideoCount} videos saved.`,
       );
 
-      if (ok) {
+      if (finalNoteId) {
         const weakMovements = MOVEMENTS
           .filter((movement) => movements[movement.id]?.notes.trim())
           .map((movement) => `${movement.title}: ${movements[movement.id].notes.trim()}`)
@@ -799,6 +799,18 @@ export default function MLAssessmentView({
             },
           },
         });
+        void supabase.functions.invoke('generate-ml-client-profile', {
+          body: {
+            client_id: completedClient.id,
+            assessment_note_id: finalNoteId,
+          },
+        }).then(({ error }) => {
+          if (error) {
+            setStatus(`Assessment saved. Client intelligence document failed: ${error.message}`);
+          } else {
+            setStatus('Assessment completed. Client intelligence document is ready on the profile.');
+          }
+        });
         setCompletion({
           clientId: completedClient.id,
           clientName: completedClient.name,
@@ -807,7 +819,7 @@ export default function MLAssessmentView({
         });
         resetAssessmentDraft();
         setStep(1);
-        setStatus('Assessment completed. Everything is saved to the client profile.');
+        setStatus('Assessment completed. Everything is saved. Client intelligence document is generating.');
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (error) {

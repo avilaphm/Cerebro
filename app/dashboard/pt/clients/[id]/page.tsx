@@ -31,6 +31,17 @@ interface PTNote {
   context?: Record<string, unknown>;
 }
 
+interface PTClientDocument {
+  id: string;
+  created_at: string;
+  document_type: 'intake' | 'movement_assessment' | 'profile' | 'other';
+  title: string;
+  content_text: string | null;
+  status: string;
+  parsed_summary?: Record<string, unknown>;
+  analysis?: Record<string, unknown>;
+}
+
 interface PTEvent {
   id: string;
   event_type: string;
@@ -47,7 +58,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const recentQueryStart = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
 
   const loginHistoryStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, loginEventsRes, notesRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes, nutritionLogsRes, workoutLogsRes, weeklySetLogsRes, priorSetLogsRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, loginEventsRes, notesRes, clientDocumentsRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes, nutritionLogsRes, workoutLogsRes, weeklySetLogsRes, priorSetLogsRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -75,6 +86,13 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .eq('client_id', id)
       .eq('is_active', true)
       .order('created_at', { ascending: false }),
+    supabase
+      .from('pt_client_documents')
+      .select('id, created_at, document_type, title, content_text, status, parsed_summary, analysis')
+      .eq('client_id', id)
+      .eq('document_type', 'profile')
+      .order('created_at', { ascending: false })
+      .limit(12),
     supabase
       .from('pt_weekly_checkins')
       .select('*')
@@ -206,6 +224,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   }
 
   const notes = (notesRes.data ?? []) as PTNote[];
+  const clientDocuments = (clientDocumentsRes.data ?? []) as PTClientDocument[];
   const weeklyCheckins = (checkinsRes.data ?? []) as PTWeeklyCheckin[];
   const weeklyPlans = (plansRes.data ?? []) as PTWeeklyPlan[];
   const weeklyPlanItems = (planItemsRes.data ?? []) as PTWeeklyPlanItem[];
@@ -267,6 +286,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       workoutLogs={workoutLogs}
       weeklySetLogs={weeklySetLogs}
       priorSetLogs={priorSetLogs}
+      clientDocuments={clientDocuments}
     />
   );
 }

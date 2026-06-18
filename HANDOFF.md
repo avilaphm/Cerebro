@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-06-18 by Codex - Added M & L Assessment completion confirmation, reset-to-Part-1 flow, and duplicate-finish guard.
+2026-06-18 by Codex - Added automatic M & L Client Intelligence document generation after final assessment save.
 
 ## Last code fix commit
-this commit - add M & L assessment completion reset
+this commit - add automatic M & L client intelligence docs
 
 ## What just happened (read first)
 
@@ -31,11 +31,16 @@ Latest refinement:
 - Movement video capture now requests a portrait camera stream and renders recording/playback in a portrait 9:16 frame.
 - Saved movement videos show a delete button beside the Saved label; deleting removes the object through Supabase Storage API and clears the video from the current draft.
 - Finish now has a duplicate-submit guard, shows an "Assessment completed" confirmation after the final save, links to the client profile, returns Pedro to Part 1, and clears all Part 1/2/3 draft fields/videos ready for the next assessment.
+- Finish now also triggers the deployed `generate-ml-client-profile` Edge Function in the background. It reads the exact final M & L note id, latest PAR-Q/intake note, client profile, client brain, exercise/lifestyle/nutrition docs, then stores a Markdown "M & L Client Intelligence" profile document in `pt_client_documents`.
+- Client profiles now load `pt_client_documents` profile rows and show a "Generated intelligence documents" section with expandable document text.
+- Project skills created outside the `cerebro-site` repo: `pt-ml-client-intelligence-orchestrator`, `pt-ml-evidence-extractor`, `pt-ml-findings-interpreter`, and `pt-ml-profile-document-writer`. Root `AGENTS.md` now documents this chain.
+- Supabase function deployment verified with `supabase functions list`: `generate-ml-client-profile` ACTIVE v1, updated 2026-06-18 01:48 UTC.
 
 Verification:
 - `npx tsc --noEmit` passes.
-- Targeted ESLint passes for the new M & L route/nav files.
+- Targeted ESLint passes for `app/dashboard/pt/ml-assessment/MLAssessmentView.tsx`; full targeted lint on client detail is still blocked by pre-existing React compiler lint violations in that large file.
 - `npm run build` passes.
+- Skill validation passes for the new M & L client intelligence skills.
 - Supabase security advisors show only existing unrelated warnings: `pg_net` in public, service-role-only permissive policies, leaked-password protection disabled.
 - Supabase performance advisors show existing broad DB hygiene warnings; none were introduced by this feature.
 

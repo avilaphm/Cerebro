@@ -112,6 +112,17 @@ interface PTNote {
   context?: Record<string, unknown>;
 }
 
+interface PTClientDocument {
+  id: string;
+  created_at: string;
+  document_type: 'intake' | 'movement_assessment' | 'profile' | 'other';
+  title: string;
+  content_text: string | null;
+  status: string;
+  parsed_summary?: Record<string, unknown>;
+  analysis?: Record<string, unknown>;
+}
+
 interface MovementAssessmentParqAnswer {
   id: string;
   label: string;
@@ -226,6 +237,7 @@ interface Props {
   workoutLogs?: WeeklyWorkoutLog[];
   weeklySetLogs?: WeeklySetLog[];
   priorSetLogs?: WeeklySetLog[];
+  clientDocuments?: PTClientDocument[];
   brainReports?: Array<{
     id: string;
     week_start: string;
@@ -461,6 +473,7 @@ export default function PTClientDetail({
   workoutLogs = [],
   weeklySetLogs = [],
   priorSetLogs = [],
+  clientDocuments = [],
   brainReports = [],
 }: Props) {
   const supabase = createClient();
@@ -506,6 +519,7 @@ export default function PTClientDetail({
   const [reviews, setReviews] = useState(initialReviews);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [status, setStatus] = useState('');
+  const [openGeneratedDocId, setOpenGeneratedDocId] = useState<string | null>(clientDocuments[0]?.id ?? null);
   const [reviewBusy, setReviewBusy] = useState<'weekly' | 'monthly' | null>(null);
   const [agentInstructions, setAgentInstructions] = useState('');
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
@@ -2886,9 +2900,44 @@ export default function PTClientDetail({
         )}
       </div>
 
-      {status && <p className="order-[16] text-xs text-black/50 mb-6">{status}</p>}
+      {clientDocuments.length > 0 && (
+        <div className="order-[16] border-t border-black/8 pt-6 mb-8">
+          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Generated intelligence documents</h2>
+          <div className="space-y-3">
+            {clientDocuments.map((doc) => {
+              const isOpen = openGeneratedDocId === doc.id;
+              return (
+                <div key={doc.id} className="border border-black/10 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => setOpenGeneratedDocId(isOpen ? null : doc.id)}
+                    className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-black/5"
+                  >
+                    <span>
+                      <span className="block text-sm font-medium text-black">{doc.title}</span>
+                      <span className="mt-1 block text-xs text-black/40">
+                        {doc.document_type.replace('_', ' ')} · {new Date(doc.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xs uppercase tracking-[0.12em] text-black/40">{isOpen ? 'Close' : 'Open'}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="border-t border-black/8 bg-[#fbfbf8] px-4 py-4">
+                      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-black/75">
+                        {doc.content_text || 'No document text saved.'}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      <div className="order-[17] border-t border-black/8 pt-6 flex flex-wrap items-center gap-3">
+      {status && <p className="order-[17] text-xs text-black/50 mb-6">{status}</p>}
+
+      <div className="order-[18] border-t border-black/8 pt-6 flex flex-wrap items-center gap-3">
         <button
           onClick={sendInvite}
           disabled={inviting}
