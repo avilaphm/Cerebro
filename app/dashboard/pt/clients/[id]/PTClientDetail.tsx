@@ -148,6 +148,12 @@ interface MLAssessmentMovement {
   recorded_at?: string | null;
 }
 
+interface MLAssessmentObservation {
+  label?: string;
+  value?: 'yes' | 'no' | '';
+  notes?: string;
+}
+
 interface MLAssessmentContext {
   stage: 'part_1_chat' | 'part_2_lifestyle' | 'final';
   saved_at?: string;
@@ -156,8 +162,7 @@ interface MLAssessmentContext {
   lifestyle_answers?: MLAssessmentAnswer[];
   movement_assessment_summary?: {
     completed_at?: string;
-    general_observations?: Record<string, string>;
-    general_notes?: string;
+    general_observations?: Record<string, string | MLAssessmentObservation>;
     movements?: MLAssessmentMovement[];
   };
 }
@@ -1040,9 +1045,8 @@ export default function PTClientDetail({
       movement_assessment_summary: summaryRecord ? {
         completed_at: typeof summaryRecord.completed_at === 'string' ? summaryRecord.completed_at : undefined,
         general_observations: typeof summaryRecord.general_observations === 'object' && summaryRecord.general_observations !== null
-          ? summaryRecord.general_observations as Record<string, string>
+          ? summaryRecord.general_observations as Record<string, string | MLAssessmentObservation>
           : undefined,
-        general_notes: typeof summaryRecord.general_notes === 'string' ? summaryRecord.general_notes : undefined,
         movements,
       } : undefined,
     };
@@ -1113,13 +1117,22 @@ export default function PTClientDetail({
           <div className="border border-black/8 bg-white px-3 py-3">
             <p className="text-[0.56rem] uppercase tracking-[0.16em] text-black/35">General observations</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              {Object.entries(summary.general_observations).filter(([, value]) => value).map(([key, value]) => (
-                <p key={key} className="text-xs leading-5 text-black/60">
-                  <span className="font-medium text-black/75">{key.replace(/_/g, ' ')}:</span> {value}
-                </p>
-              ))}
+              {Object.entries(summary.general_observations).filter(([, value]) => {
+                if (typeof value === 'string') return value.trim();
+                return value.value || value.notes;
+              }).map(([key, value]) => {
+                const label = typeof value === 'string' ? key.replace(/_/g, ' ') : value.label ?? key.replace(/_/g, ' ');
+                const answer = typeof value === 'string' ? value : value.value ? value.value.toUpperCase() : 'Not set';
+                const notes = typeof value === 'string' ? '' : value.notes ?? '';
+                return (
+                  <div key={key} className="border border-black/8 bg-[#fbfbf8] px-3 py-2">
+                    <p className="text-xs font-medium capitalize text-black/75">{label}</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.12em] text-black/45">{answer}</p>
+                    {notes && <p className="mt-1 text-xs leading-5 text-black/60">{notes}</p>}
+                  </div>
+                );
+              })}
             </div>
-            {summary.general_notes && <p className="mt-2 text-sm leading-6 text-black/70">{summary.general_notes}</p>}
           </div>
         )}
 

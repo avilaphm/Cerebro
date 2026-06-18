@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Calendar, Camera, Check, ChevronLeft, ChevronRight, Loader2, Mic, Play, Square, UserRound } from 'lucide-react';
+import { AlertCircle, Calendar, Camera, Check, ChevronLeft, ChevronRight, Loader2, Mic, Play, Square, Trash2, UserRound } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import type { PTClient } from '@/utils/pt/types';
 
@@ -61,6 +61,13 @@ interface MovementDraft {
   video_url: string | null;
   video_mime_type: string | null;
   recorded_at: string | null;
+}
+
+type ObservationValue = 'yes' | 'no' | '';
+
+interface ObservationDraft {
+  value: ObservationValue;
+  notes: string;
 }
 
 interface VideoState {
@@ -313,7 +320,7 @@ function compactAnswers(answers: Record<string, VoiceDraft>, labels: readonly { 
   }));
 }
 
-function buildMovementSummary(movements: Record<string, MovementDraft>, observations: Record<string, string>, generalNotes: string) {
+function buildMovementSummary(movements: Record<string, MovementDraft>, observations: Record<string, ObservationDraft>) {
   const movementRows = MOVEMENTS.map((movement) => ({
     id: movement.id,
     title: movement.title,
@@ -327,8 +334,14 @@ function buildMovementSummary(movements: Record<string, MovementDraft>, observat
   return {
     source: 'ml_assessment',
     completed_at: new Date().toISOString(),
-    general_observations: observations,
-    general_notes: generalNotes.trim(),
+    general_observations: Object.fromEntries(OBSERVATION_FIELDS.map((field) => [
+      field.id,
+      {
+        label: field.label,
+        value: observations[field.id]?.value ?? '',
+        notes: observations[field.id]?.notes.trim() ?? '',
+      },
+    ])),
     movements: movementRows,
   };
 }
@@ -359,14 +372,14 @@ export default function MLAssessmentView({
   const [selectedClientId, setSelectedClientId] = useState(() => appointments[0]?.client_id ?? clients[0]?.id ?? '');
   const [chatAnswers, setChatAnswers] = useState<Record<string, VoiceDraft>>(() => emptyVoiceDrafts(CHAT_QUESTIONS));
   const [lifestyleAnswers, setLifestyleAnswers] = useState<Record<string, VoiceDraft>>(() => emptyVoiceDrafts(LIFESTYLE_QUESTIONS));
-  const [observations, setObservations] = useState<Record<string, string>>(
-    () => Object.fromEntries(OBSERVATION_FIELDS.map((field) => [field.id, ''])),
+  const [observations, setObservations] = useState<Record<string, ObservationDraft>>(
+    () => Object.fromEntries(OBSERVATION_FIELDS.map((field) => [field.id, { value: '', notes: '' }])),
   );
-  const [generalObservationNotes, setGeneralObservationNotes] = useState('');
   const [movements, setMovements] = useState(() => emptyMovements());
   const [activeVoiceKey, setActiveVoiceKey] = useState<string | null>(null);
   const [voiceError, setVoiceError] = useState('');
   const [activeVideoKey, setActiveVideoKey] = useState<string | null>(null);
+  const [deletingVideoKey, setDeletingVideoKey] = useState<string | null>(null);
   const [videoStatus, setVideoStatus] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
@@ -433,6 +446,10 @@ export default function MLAssessmentView({
 
   const updateMovement = (id: string, patch: Partial<MovementDraft>) => {
     setMovements((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
+  };
+
+  const updateObservation = (id: string, patch: Partial<ObservationDraft>) => {
+    setObservations((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
   };
 
   const stopDictation = () => {
@@ -533,7 +550,12 @@ export default function MLAssessmentView({
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1080 },
+          height: { ideal: 1920 },
+          aspectRatio: { ideal: 9 / 16 },
+        },
         audio: true,
       });
       const mimeType = mimeForRecorder();
@@ -610,6 +632,25 @@ export default function MLAssessmentView({
     if (data?.signedUrl) updateMovement(movementId, { video_url: data.signedUrl });
   };
 
+  const deleteVideo = async (movementId: string, path: string) => {
+    setDeletingVideoKey(movementId);
+    setVideoStatus('Deleting video...');
+    const { error } = await supabase.storage.from('pt-client-docs').remove([path]);
+    if (error) {
+      setVideoStatus(`Delete failed: ${error.message}`);
+      setDeletingVideoKey(null);
+      return;
+    }
+    updateMovement(movementId, {
+      video_path: null,
+      video_url: null,
+      video_mime_type: null,
+      recorded_at: null,
+    });
+    setVideoStatus('Video deleted.');
+    setDeletingVideoKey(null);
+  };
+
   const insertAssessmentNote = async (stage: 'part_1_chat' | 'part_2_lifestyle' | 'final', context: Record<string, unknown>, content: string) => {
     if (!selectedClient) return false;
     const { error } = await supabase.from('pt_client_notes').insert({
@@ -678,7 +719,7 @@ export default function MLAssessmentView({
 
     setSaving(true);
     setStatus('Saving M & L Assessment...');
-    const movementSummary = buildMovementSummary(movements, observations, generalObservationNotes);
+    const movementSummary = buildMovementSummary(movements, observations);
     const chat = compactAnswers(chatAnswers, CHAT_QUESTIONS);
     const lifestyle = compactAnswers(lifestyleAnswers, LIFESTYLE_QUESTIONS);
 
@@ -804,12 +845,25 @@ export default function MLAssessmentView({
           <div className="border border-black/10 bg-[#fbfbf8]">
             <div className="flex items-center justify-between border-b border-black/8 px-3 py-2">
               <span className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Video</span>
-              {video?.path && (
-                <span className="inline-flex items-center gap-1 text-xs text-green-700">
-                  <Check className="h-3.5 w-3.5" />
-                  Saved
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {video?.path && (
+                  <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                    <Check className="h-3.5 w-3.5" />
+                    Saved
+                  </span>
+                )}
+                {video?.path && (
+                  <button
+                    type="button"
+                    onClick={() => void deleteVideo(movement.id, video.path)}
+                    disabled={deletingVideoKey === movement.id || isRecording}
+                    className="inline-flex h-7 w-7 items-center justify-center border border-red-200 bg-white text-red-600 transition-colors hover:bg-red-50 disabled:opacity-40"
+                    aria-label={`Delete ${movement.title} video`}
+                  >
+                    {deletingVideoKey === movement.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="p-3">
               {isRecording && (
@@ -818,7 +872,7 @@ export default function MLAssessmentView({
                   autoPlay
                   muted
                   playsInline
-                  className="mb-3 aspect-video w-full bg-black object-cover"
+                  className="mx-auto mb-3 aspect-[9/16] max-h-[70vh] w-full max-w-[24rem] bg-black object-cover"
                 />
               )}
               {video?.signedUrl && !isRecording && (
@@ -826,7 +880,7 @@ export default function MLAssessmentView({
                   src={video.signedUrl}
                   controls
                   playsInline
-                  className="mb-3 aspect-video w-full bg-black object-cover"
+                  className="mx-auto mb-3 aspect-[9/16] max-h-[70vh] w-full max-w-[24rem] bg-black object-cover"
                 />
               )}
               {video?.path && !video.signedUrl && (
@@ -1063,26 +1117,36 @@ export default function MLAssessmentView({
               </div>
               <div className="grid gap-3 px-4 py-4 md:grid-cols-2">
                 {OBSERVATION_FIELDS.map((field) => (
-                  <label key={field.id} className="block">
-                    <span className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">{field.label}</span>
-                    <input
-                      value={observations[field.id] ?? ''}
-                      onChange={(event) => setObservations((current) => ({ ...current, [field.id]: event.target.value }))}
-                      placeholder={field.placeholder}
-                      className="mt-2 w-full border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35"
+                  <div key={field.id} className="border border-black/8 bg-[#fbfbf8] px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">{field.label}</span>
+                      <div className="grid grid-cols-2 overflow-hidden rounded-full border border-black/10 bg-white p-0.5">
+                        {(['yes', 'no'] as const).map((value) => {
+                          const active = observations[field.id]?.value === value;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => updateObservation(field.id, { value: active ? '' : value })}
+                              className={`rounded-full px-4 py-1.5 text-xs font-medium uppercase tracking-[0.12em] transition-colors ${
+                                active ? 'bg-black text-white' : 'text-black/40 hover:bg-black/5 hover:text-black'
+                              }`}
+                            >
+                              {value}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <textarea
+                      value={observations[field.id]?.notes ?? ''}
+                      onChange={(event) => updateObservation(field.id, { notes: event.target.value })}
+                      rows={2}
+                      placeholder={`${field.placeholder} Notes...`}
+                      className="mt-3 w-full resize-none border border-black/10 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-black/35"
                     />
-                  </label>
+                  </div>
                 ))}
-                <label className="block md:col-span-2">
-                  <span className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Notes</span>
-                  <textarea
-                    value={generalObservationNotes}
-                    onChange={(event) => setGeneralObservationNotes(event.target.value)}
-                    rows={3}
-                    className="mt-2 w-full resize-none border border-black/10 bg-white px-3 py-3 text-sm leading-6 outline-none focus:border-black/35"
-                    placeholder="General posture notes"
-                  />
-                </label>
               </div>
             </section>
 

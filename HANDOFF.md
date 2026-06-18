@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-06-18 by Codex - Added coach M & L Assessment tab with live dictation, movement video capture, client-profile saves, and video storage support.
+2026-06-18 by Codex - Refined M & L Assessment Part 3 posture controls and portrait video cards with delete.
 
 ## Last code fix commit
-this commit - add M & L Assessment coach workflow
+this commit - refine M & L assessment capture controls
 
 ## What just happened (read first)
 
@@ -24,6 +24,12 @@ Shipped:
 - Finish saves the full chat/lifestyle/movement/video payload to the client profile and calls `update-client-brain` with `movement_assessment_summary` so programme generation can read it.
 - Client profile Notes now render M & L assessment rows with stage, saved date, video count, answers, general observations, movement notes, and "Open video" signed links.
 - Supabase migration `20260617235915_ml_assessment_video_storage.sql` updates the existing private `pt-client-docs` bucket to allow video MIME types and raises its file limit to 500MB. Applied live through Supabase MCP.
+
+Latest refinement:
+- Part 3 general observations are now yes/no pill buttons for head position, shoulder height, spinal curves, hip level, knee alignment, and foot position.
+- Each posture item has its own notes field underneath, and saved client-profile rendering supports both the new yes/no+notes shape and older text-only saves.
+- Movement video capture now requests a portrait camera stream and renders recording/playback in a portrait 9:16 frame.
+- Saved movement videos show a delete button beside the Saved label; deleting removes the object through Supabase Storage API and clears the video from the current draft.
 
 Verification:
 - `npx tsc --noEmit` passes.
