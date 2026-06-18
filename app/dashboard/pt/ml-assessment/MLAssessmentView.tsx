@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Calendar, Camera, Check, ChevronLeft, ChevronRight, Loader2, Mic, Play, Square, Trash2, UserRound } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
@@ -75,6 +76,13 @@ interface VideoState {
   signedUrl: string | null;
   mimeType: string;
   recordedAt: string;
+}
+
+interface CompletionState {
+  clientId: string;
+  clientName: string;
+  savedAt: string;
+  videoCount: number;
 }
 
 const CHAT_QUESTIONS = [
@@ -254,6 +262,10 @@ function emptyMovements(): Record<string, MovementDraft> {
   ])) as Record<string, MovementDraft>;
 }
 
+function emptyObservations(): Record<string, ObservationDraft> {
+  return Object.fromEntries(OBSERVATION_FIELDS.map((field) => [field.id, { value: '', notes: '' }])) as Record<string, ObservationDraft>;
+}
+
 function ageFromDob(dob: string | null | undefined) {
   if (!dob) return null;
   const birth = new Date(`${dob}T00:00:00`);
@@ -361,6 +373,7 @@ export default function MLAssessmentView({
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const dictationIntentRef = useRef(false);
+  const finishingRef = useRef(false);
   const dictationRef = useRef<{
     key: string;
     recognition: SpeechRecognitionLike;
@@ -372,9 +385,7 @@ export default function MLAssessmentView({
   const [selectedClientId, setSelectedClientId] = useState(() => appointments[0]?.client_id ?? clients[0]?.id ?? '');
   const [chatAnswers, setChatAnswers] = useState<Record<string, VoiceDraft>>(() => emptyVoiceDrafts(CHAT_QUESTIONS));
   const [lifestyleAnswers, setLifestyleAnswers] = useState<Record<string, VoiceDraft>>(() => emptyVoiceDrafts(LIFESTYLE_QUESTIONS));
-  const [observations, setObservations] = useState<Record<string, ObservationDraft>>(
-    () => Object.fromEntries(OBSERVATION_FIELDS.map((field) => [field.id, { value: '', notes: '' }])),
-  );
+  const [observations, setObservations] = useState<Record<string, ObservationDraft>>(() => emptyObservations());
   const [movements, setMovements] = useState(() => emptyMovements());
   const [activeVoiceKey, setActiveVoiceKey] = useState<string | null>(null);
   const [voiceError, setVoiceError] = useState('');
@@ -383,6 +394,7 @@ export default function MLAssessmentView({
   const [videoStatus, setVideoStatus] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
+  const [completion, setCompletion] = useState<CompletionState | null>(null);
 
   const selectedClient = useMemo(
     () => clients.find((client) => client.id === selectedClientId) ?? null,
@@ -437,18 +449,22 @@ export default function MLAssessmentView({
   }, []);
 
   const updateChat = (id: string, patch: Partial<VoiceDraft>) => {
+    setCompletion(null);
     setChatAnswers((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
   };
 
   const updateLifestyle = (id: string, patch: Partial<VoiceDraft>) => {
+    setCompletion(null);
     setLifestyleAnswers((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
   };
 
   const updateMovement = (id: string, patch: Partial<MovementDraft>) => {
+    setCompletion(null);
     setMovements((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
   };
 
   const updateObservation = (id: string, patch: Partial<ObservationDraft>) => {
+    setCompletion(null);
     setObservations((current) => ({ ...current, [id]: { ...current[id], ...patch } }));
   };
 
@@ -532,6 +548,19 @@ export default function MLAssessmentView({
 
     dictationIntentRef.current = true;
     spawn(initialText);
+  };
+
+  const resetAssessmentDraft = () => {
+    setChatAnswers(emptyVoiceDrafts(CHAT_QUESTIONS));
+    setLifestyleAnswers(emptyVoiceDrafts(LIFESTYLE_QUESTIONS));
+    setObservations(emptyObservations());
+    setMovements(emptyMovements());
+    setVoiceError('');
+    setVideoStatus('');
+    setActiveVoiceKey(null);
+    setActiveVideoKey(null);
+    setDeletingVideoKey(null);
+    chunksRef.current = [];
   };
 
   const startVideo = async (movementId: string) => {
@@ -714,55 +743,79 @@ export default function MLAssessmentView({
   };
 
   const finishAssessment = async () => {
+    if (finishingRef.current) return;
     if (!selectedClient) { setStatus('Select a client first.'); return; }
     if (activeVideoKey) { setStatus('Stop the active video before finishing.'); return; }
 
+    finishingRef.current = true;
     setSaving(true);
     setStatus('Saving M & L Assessment...');
-    const movementSummary = buildMovementSummary(movements, observations);
-    const chat = compactAnswers(chatAnswers, CHAT_QUESTIONS);
-    const lifestyle = compactAnswers(lifestyleAnswers, LIFESTYLE_QUESTIONS);
 
-    const ok = await insertAssessmentNote(
-      'final',
-      {
-        client_info: {
-          name: selectedClient.name,
-          date_of_birth: selectedDob,
-          consult_date: new Date().toISOString().slice(0, 10),
-          intake_note_id: selectedIntake?.id ?? null,
-          appointment_id: selectedAppointment?.id ?? null,
-        },
-        chat_answers: chat,
-        lifestyle_answers: lifestyle,
-        movement_assessment_summary: movementSummary,
-      },
-      `M & L Assessment completed. ${MOVEMENTS.filter((movement) => movements[movement.id]?.video_path).length} videos saved.`,
-    );
+    try {
+      const completedClient = selectedClient;
+      const completedClientDob = selectedDob;
+      const completedIntakeId = selectedIntake?.id ?? null;
+      const completedAppointmentId = selectedAppointment?.id ?? null;
+      const completedVideoCount = MOVEMENTS.filter((movement) => movements[movement.id]?.video_path).length;
+      if (activeVoiceKey) stopDictation();
 
-    if (ok) {
-      const weakMovements = MOVEMENTS
-        .filter((movement) => movements[movement.id]?.notes.trim())
-        .map((movement) => `${movement.title}: ${movements[movement.id].notes.trim()}`)
-        .slice(0, 12);
+      const movementSummary = buildMovementSummary(movements, observations);
+      const chat = compactAnswers(chatAnswers, CHAT_QUESTIONS);
+      const lifestyle = compactAnswers(lifestyleAnswers, LIFESTYLE_QUESTIONS);
 
-      await supabase.functions.invoke('update-client-brain', {
-        body: {
-          client_id: selectedClient.id,
-          trigger_type: 'note',
-          content: `M & L Assessment completed for ${selectedClient.name}.`,
-          structured_data: {
-            source: 'ml_assessment',
-            movement_assessment_summary: movementSummary,
-            weak_movements: weakMovements,
-            current_limitations: chat.find((answer) => answer.id === 'injuries_surgeries_pain')?.answer || undefined,
+      const ok = await insertAssessmentNote(
+        'final',
+        {
+          client_info: {
+            name: completedClient.name,
+            date_of_birth: completedClientDob,
+            consult_date: new Date().toISOString().slice(0, 10),
+            intake_note_id: completedIntakeId,
+            appointment_id: completedAppointmentId,
           },
+          chat_answers: chat,
+          lifestyle_answers: lifestyle,
+          movement_assessment_summary: movementSummary,
         },
-      });
-      setStatus('M & L Assessment saved to the client profile.');
-    }
+        `M & L Assessment completed. ${completedVideoCount} videos saved.`,
+      );
 
-    setSaving(false);
+      if (ok) {
+        const weakMovements = MOVEMENTS
+          .filter((movement) => movements[movement.id]?.notes.trim())
+          .map((movement) => `${movement.title}: ${movements[movement.id].notes.trim()}`)
+          .slice(0, 12);
+
+        await supabase.functions.invoke('update-client-brain', {
+          body: {
+            client_id: completedClient.id,
+            trigger_type: 'note',
+            content: `M & L Assessment completed for ${completedClient.name}.`,
+            structured_data: {
+              source: 'ml_assessment',
+              movement_assessment_summary: movementSummary,
+              weak_movements: weakMovements,
+              current_limitations: chat.find((answer) => answer.id === 'injuries_surgeries_pain')?.answer || undefined,
+            },
+          },
+        });
+        setCompletion({
+          clientId: completedClient.id,
+          clientName: completedClient.name,
+          savedAt: new Date().toISOString(),
+          videoCount: completedVideoCount,
+        });
+        resetAssessmentDraft();
+        setStep(1);
+        setStatus('Assessment completed. Everything is saved to the client profile.');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? `Save failed: ${error.message}` : 'Save failed. Try again.');
+    } finally {
+      setSaving(false);
+      finishingRef.current = false;
+    }
   };
 
   const selectedVideoStates = useMemo<Record<string, VideoState | null>>(() => {
@@ -968,7 +1021,10 @@ export default function MLAssessmentView({
               <span className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Client</span>
               <select
                 value={selectedClientId}
-                onChange={(event) => setSelectedClientId(event.target.value)}
+                onChange={(event) => {
+                  setCompletion(null);
+                  setSelectedClientId(event.target.value);
+                }}
                 className="mt-2 w-full border border-black/10 bg-white px-3 py-3 text-base outline-none focus:border-black/35"
               >
                 {sortedClients.map((client) => (
@@ -1039,6 +1095,40 @@ export default function MLAssessmentView({
         <div className="mt-4 flex items-start gap-2 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {voiceError}
+        </div>
+      )}
+
+      {completion && step === 1 && (
+        <div className="mt-4 border border-green-200 bg-green-50 px-4 py-4 text-sm text-green-900">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
+              <Check className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-green-950">Assessment completed</p>
+              <p className="mt-1 leading-6 text-green-900/75">
+                Everything has been saved to {completion.clientName}&apos;s client profile. Part 1 is blank and ready for the next assessment.
+              </p>
+              <p className="mt-1 text-xs uppercase tracking-[0.12em] text-green-900/55">
+                {completion.videoCount} videos saved · {new Date(completion.savedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link
+                  href={`/dashboard/pt/clients/${completion.clientId}`}
+                  className="inline-flex items-center justify-center border border-green-700 bg-green-700 px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-white"
+                >
+                  Open client profile
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setCompletion(null)}
+                  className="inline-flex items-center justify-center border border-green-700/25 bg-white px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] text-green-800"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

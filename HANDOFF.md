@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-06-18 by Codex - Refined M & L Assessment Part 3 posture controls and portrait video cards with delete.
+2026-06-18 by Codex - Added M & L Assessment completion confirmation, reset-to-Part-1 flow, and duplicate-finish guard.
 
 ## Last code fix commit
-this commit - refine M & L assessment capture controls
+this commit - add M & L assessment completion reset
 
 ## What just happened (read first)
 
@@ -30,6 +30,7 @@ Latest refinement:
 - Each posture item has its own notes field underneath, and saved client-profile rendering supports both the new yes/no+notes shape and older text-only saves.
 - Movement video capture now requests a portrait camera stream and renders recording/playback in a portrait 9:16 frame.
 - Saved movement videos show a delete button beside the Saved label; deleting removes the object through Supabase Storage API and clears the video from the current draft.
+- Finish now has a duplicate-submit guard, shows an "Assessment completed" confirmation after the final save, links to the client profile, returns Pedro to Part 1, and clears all Part 1/2/3 draft fields/videos ready for the next assessment.
 
 Verification:
 - `npx tsc --noEmit` passes.
