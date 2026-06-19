@@ -36,6 +36,7 @@ interface PTClientDocument {
   created_at: string;
   document_type: 'intake' | 'movement_assessment' | 'profile' | 'other';
   title: string;
+  storage_path: string | null;
   content_text: string | null;
   status: string;
   parsed_summary?: Record<string, unknown>;
@@ -88,7 +89,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .order('created_at', { ascending: false }),
     supabase
       .from('pt_client_documents')
-      .select('id, created_at, document_type, title, content_text, status, parsed_summary, analysis')
+      .select('id, created_at, document_type, title, storage_path, content_text, status, parsed_summary, analysis')
       .eq('client_id', id)
       .eq('document_type', 'profile')
       .order('created_at', { ascending: false })

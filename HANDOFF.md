@@ -1,12 +1,44 @@
 # Handoff
 
 ## Last updated
-2026-06-18 by Codex - Added automatic M & L Client Intelligence document generation after final assessment save.
+2026-06-19 by Codex - Added manual M & L Client Intelligence PDF export from client profile.
 
 ## Last code fix commit
-this commit - add automatic M & L client intelligence docs
+this commit - add manual M & L client intelligence PDF export
 
 ## What just happened (read first)
+
+### M & L Client Intelligence PDF export (2026-06-19, LATEST)
+
+Pedro asked for Anne-Maree's client profile to have a button that turns the notes from the completed M & L assessment, including movement video notes, into a structured PDF document.
+
+Shipped:
+- Client profile "Generated intelligence documents" section now appears when a final M & L assessment exists, even if no generated document exists yet.
+- New "Generate M & L PDF" button:
+  - calls the deployed `generate-ml-client-profile` Edge Function for the latest final M & L note,
+  - creates a fresh evidence-based Markdown intelligence document in `pt_client_documents`,
+  - calls a new protected Next route to convert that document into a PDF,
+  - uploads the PDF to the private `pt-client-docs` bucket,
+  - stores the PDF path in `pt_client_documents.storage_path`,
+  - opens a one-hour signed URL in a new tab.
+- Existing generated profile documents now show "PDF ready" and an "Open PDF" button when `storage_path` exists.
+- New Next API route: `app/api/pt/ml-client-profile-pdf/route.ts`.
+  - Requires an authenticated Pedro/admin dashboard session.
+  - Uses service-role access only server-side.
+  - Reads the generated profile document and linked final M & L assessment note.
+  - Appends a Movement Video Notes Appendix from `movement_assessment_summary.movements` so Pedro's video review notes are explicitly in the PDF.
+- New PDF renderer utility: `utils/pt/ml-client-profile-pdf.ts`.
+  - Uses `pdf-lib`.
+  - Normalizes smart punctuation to ASCII-safe text.
+  - Uses rectangle dividers rather than `drawLine`, because local `pdf-lib` validation rejected `drawLine` and array page sizes in the direct Node runtime.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npx eslint app/api/pt/ml-client-profile-pdf/route.ts utils/pt/ml-client-profile-pdf.ts` passes.
+- `npm run build` passes.
+- Generated a throwaway sample PDF from the new renderer and validated with `pypdf`: one page, expected sections, and `MOVEMENT VIDEO NOTES APPENDIX` with video notes present.
+- Poppler tools (`pdftoppm`, `pdfinfo`) are not installed locally, so visual PNG render QA could not be performed in this environment.
+- Full targeted ESLint on `PTClientDetail.tsx` is still blocked by pre-existing React compiler lint violations in that large file (`set-state-in-effect`, `Date.now()` purity, existing unescaped apostrophe, etc.).
 
 ### M & L Assessment coach tab (2026-06-18, LATEST)
 

@@ -117,6 +117,7 @@ interface PTClientDocument {
   created_at: string;
   document_type: 'intake' | 'movement_assessment' | 'profile' | 'other';
   title: string;
+  storage_path: string | null;
   content_text: string | null;
   status: string;
   parsed_summary?: Record<string, unknown>;
@@ -343,6 +344,21 @@ interface ReviewAgentResponse {
   performance_snapshot: Record<string, unknown>;
 }
 
+interface MLClientProfileResponse {
+  ok?: boolean;
+  error?: string;
+  document_id?: string;
+  title?: string;
+}
+
+interface MLClientProfilePdfResponse {
+  ok?: boolean;
+  error?: string;
+  document_id?: string;
+  storage_path?: string;
+  signed_url?: string | null;
+}
+
 function getSR() {
   const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
@@ -520,6 +536,7 @@ export default function PTClientDetail({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [status, setStatus] = useState('');
   const [openGeneratedDocId, setOpenGeneratedDocId] = useState<string | null>(clientDocuments[0]?.id ?? null);
+  const [mlPdfBusy, setMlPdfBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState<'weekly' | 'monthly' | null>(null);
   const [agentInstructions, setAgentInstructions] = useState('');
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
@@ -949,6 +966,9 @@ export default function PTClientDetail({
         })),
       )
     : [];
+  const latestFinalMLAssessmentNote = notes.find((note) =>
+    note.context?.source === 'ml_assessment' && note.context?.stage === 'final',
+  );
 
   const planningSignals = [
     !currentPlan ? 'No plan exists for this week.' : null,
@@ -1073,6 +1093,42 @@ export default function PTClientDetail({
 
   const openParqPdf = async (path: string) => {
     await openClientDocPath(path);
+  };
+
+  const generateMLClientPdf = async () => {
+    if (!latestFinalMLAssessmentNote || mlPdfBusy) return;
+    setMlPdfBusy(true);
+    setStatus('Generating M & L client PDF...');
+    try {
+      const { data, error } = await supabase.functions.invoke<MLClientProfileResponse>('generate-ml-client-profile', {
+        body: {
+          client_id: client.id,
+          assessment_note_id: latestFinalMLAssessmentNote.id,
+        },
+      });
+      if (error || data?.error || !data?.document_id) {
+        throw new Error(data?.error || error?.message || 'Could not generate the M & L client document.');
+      }
+
+      const pdfRes = await fetch('/api/pt/ml-client-profile-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document_id: data.document_id }),
+      });
+      const pdfData = await pdfRes.json() as MLClientProfilePdfResponse;
+      if (!pdfRes.ok || pdfData.error) {
+        throw new Error(pdfData.error || 'Could not generate the M & L PDF.');
+      }
+
+      setOpenGeneratedDocId(data.document_id);
+      setStatus('M & L client PDF generated.');
+      router.refresh();
+      if (pdfData.signed_url) window.open(pdfData.signed_url, '_blank');
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not generate the M & L PDF.');
+    } finally {
+      setMlPdfBusy(false);
+    }
   };
 
   const renderAnswerList = (title: string, answers: MLAssessmentAnswer[] | undefined) => {
@@ -2900,9 +2956,24 @@ export default function PTClientDetail({
         )}
       </div>
 
-      {clientDocuments.length > 0 && (
+      {(latestFinalMLAssessmentNote || clientDocuments.length > 0) && (
         <div className="order-[16] border-t border-black/8 pt-6 mb-8">
-          <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Generated intelligence documents</h2>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Generated intelligence documents</h2>
+              <p className="mt-2 text-sm leading-6 text-black/55">
+                Structured M & L profile document built from the final assessment, PAR-Q, Pedro notes, and movement video notes.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void generateMLClientPdf()}
+              disabled={!latestFinalMLAssessmentNote || mlPdfBusy}
+              className="shrink-0 border border-black bg-black px-4 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/10 disabled:text-black/35"
+            >
+              {mlPdfBusy ? 'Generating...' : 'Generate M & L PDF'}
+            </button>
+          </div>
           <div className="space-y-3">
             {clientDocuments.map((doc) => {
               const isOpen = openGeneratedDocId === doc.id;
@@ -2917,12 +2988,22 @@ export default function PTClientDetail({
                       <span className="block text-sm font-medium text-black">{doc.title}</span>
                       <span className="mt-1 block text-xs text-black/40">
                         {doc.document_type.replace('_', ' ')} · {new Date(doc.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {doc.storage_path ? ' · PDF ready' : ''}
                       </span>
                     </span>
                     <span className="shrink-0 text-xs uppercase tracking-[0.12em] text-black/40">{isOpen ? 'Close' : 'Open'}</span>
                   </button>
                   {isOpen && (
                     <div className="border-t border-black/8 bg-[#fbfbf8] px-4 py-4">
+                      {doc.storage_path && (
+                        <button
+                          type="button"
+                          onClick={() => void openClientDocPath(doc.storage_path as string)}
+                          className="mb-4 border border-black/15 bg-white px-3 py-2 text-xs font-medium text-black transition-colors hover:bg-black hover:text-white"
+                        >
+                          Open PDF
+                        </button>
+                      )}
                       <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-black/75">
                         {doc.content_text || 'No document text saved.'}
                       </pre>
@@ -2931,6 +3012,11 @@ export default function PTClientDetail({
                 </div>
               );
             })}
+            {clientDocuments.length === 0 && (
+              <div className="border border-dashed border-black/15 bg-white px-4 py-5 text-sm leading-6 text-black/45">
+                No generated M & L document yet. Generate the PDF to create the structured profile document.
+              </div>
+            )}
           </div>
         </div>
       )}
