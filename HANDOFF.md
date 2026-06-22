@@ -1,12 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-06-22 by Codex - Fixed M & L video note recording controls and button contrast.
+2026-06-22 by Codex - Fixed M & L dictation state race.
 
 ## Last code fix commit
-this commit - fix M & L recording buttons
+this commit - fix M & L dictation race
 
 ## What just happened (read first)
+
+### M & L dictation state race fix (2026-06-22, LATEST)
+
+Pedro reported that tapping `Record voice note` made the button flash between recording/original states and end back at the original state immediately, as if double-clicked.
+
+Root cause:
+- Starting a new Web Speech recognizer first stops the previous recognizer.
+- The previous recognizer's delayed `onend` callback could still call `setMlVideoListeningKey(null)` after the new recognizer started.
+- That stale callback cleared the new recording state almost immediately.
+
+Shipped:
+- `recognition.onerror` and `recognition.onend` now ignore stale recognizer instances unless they are still the active `mlVideoSpeechRef.current`.
+- Added a `capturedTranscript` flag so stop/end messages distinguish between a successful dictation stop and an immediate/no-words stop.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
 
 ### M & L video note recording button + contrast fix (2026-06-22, LATEST)
 

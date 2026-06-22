@@ -1186,12 +1186,14 @@ export default function PTClientDetail({
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.lang = 'en-AU';
+    let capturedTranscript = false;
     recognition.onresult = (event) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result?.isFinal) {
           const transcript = result[0]?.transcript ?? '';
           if (transcript) {
+            capturedTranscript = true;
             setMlVideoNoteDrafts((current) => {
               const base = current[key] ?? currentValue;
               return { ...current, [key]: (base ? `${base} ${transcript}` : transcript).trim() };
@@ -1201,14 +1203,19 @@ export default function PTClientDetail({
       }
     };
     recognition.onerror = (event) => {
+      if (mlVideoSpeechRef.current !== recognition) return;
       const reason = event.error ? ` (${event.error})` : '';
       setMlVideoStatus(`Could not start dictation${reason}. Check Chrome microphone permission, or type the video note instead.`);
       setMlVideoListeningKey(null);
-      if (mlVideoSpeechRef.current === recognition) mlVideoSpeechRef.current = null;
+      mlVideoSpeechRef.current = null;
     };
     recognition.onend = () => {
+      if (mlVideoSpeechRef.current !== recognition) return;
       setMlVideoListeningKey(null);
-      if (mlVideoSpeechRef.current === recognition) mlVideoSpeechRef.current = null;
+      mlVideoSpeechRef.current = null;
+      setMlVideoStatus(capturedTranscript
+        ? 'Dictation stopped. Review the text, then save the video note.'
+        : 'Dictation stopped before any words were captured. Check microphone permission, then try again or type the note.');
     };
     try {
       setMlVideoStatus('Starting microphone...');
