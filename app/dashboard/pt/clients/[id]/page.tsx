@@ -59,7 +59,7 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
   const recentQueryStart = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
 
   const loginHistoryStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const [clientRes, templatesRes, assignmentsRes, eventsRes, loginEventsRes, notesRes, clientDocumentsRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes, nutritionLogsRes, workoutLogsRes, weeklySetLogsRes, priorSetLogsRes] = await Promise.all([
+  const [clientRes, templatesRes, assignmentsRes, eventsRes, loginEventsRes, notesRes, mlNotesRes, clientDocumentsRes, checkinsRes, plansRes, planItemsRes, metricsRes, goalsRes, tasksRes, reviewsRes, checkinSessionsRes, oneRmTestsRes, nutritionDocRes, phaseNutritionRes, brainReportsRes, nutritionLogsRes, workoutLogsRes, weeklySetLogsRes, priorSetLogsRes] = await Promise.all([
     supabase.from('pt_clients').select('*').eq('id', id).single(),
     supabase.from('pt_program_templates').select('*').eq('status', 'ready').order('name'),
     supabase
@@ -86,6 +86,12 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
       .select('*')
       .eq('client_id', id)
       .eq('is_active', true)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('pt_client_notes')
+      .select('*')
+      .eq('client_id', id)
+      .contains('context', { source: 'ml_assessment' })
       .order('created_at', { ascending: false }),
     supabase
       .from('pt_client_documents')
@@ -224,7 +230,11 @@ export default async function PTClientDetailPage({ params }: { params: Promise<{
     }
   }
 
-  const notes = (notesRes.data ?? []) as PTNote[];
+  const noteById = new Map<string, PTNote>();
+  for (const note of [...((notesRes.data ?? []) as PTNote[]), ...((mlNotesRes.data ?? []) as PTNote[])]) {
+    noteById.set(note.id, note);
+  }
+  const notes = Array.from(noteById.values()).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const clientDocuments = (clientDocumentsRes.data ?? []) as PTClientDocument[];
   const weeklyCheckins = (checkinsRes.data ?? []) as PTWeeklyCheckin[];
   const weeklyPlans = (plansRes.data ?? []) as PTWeeklyPlan[];

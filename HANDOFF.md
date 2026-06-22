@@ -1,12 +1,34 @@
 # Handoff
 
 ## Last updated
-2026-06-22 by Codex - Made M & L dossier persistent and upgraded PDF workflow/research/fallback handling.
+2026-06-22 by Codex - Restored Anne-Maree M & L notes/videos and made M & L note loading permanent.
 
 ## Last code fix commit
-this commit - persist M & L dossier and improve PDF workflow
+this commit - always load M & L notes
 
 ## What just happened (read first)
+
+### M & L note/video restore + permanent loader fix (2026-06-22, LATEST)
+
+Pedro could not see Anne-Maree's M & L videos/notes after earlier clicking the old `Done` action. Root cause:
+- The old `Done` button had marked all Anne-Maree M & L assessment notes `is_active = false`.
+- The client profile server page only fetched `pt_client_notes` with `is_active = true`.
+- The video paths and Pedro movement notes were still in Supabase, but hidden from the page query.
+
+Shipped:
+- Restored Anne-Maree's M & L assessment notes in production:
+  - client id `aa13e098-b21d-4971-92e2-b6892d4c63f7`
+  - 4 M & L notes active again
+  - final M & L rows contain 15 movements each, 7 videos each, and saved movement notes.
+- `app/dashboard/pt/clients/[id]/page.tsx` now fetches:
+  - active notes as before,
+  - plus all M & L assessment notes for the client using `contains('context', { source: 'ml_assessment' })`, regardless of `is_active`.
+- The two result sets are merged by note id and sorted by created date, so M & L evidence stays visible even if an old inactive row exists.
+
+Verification:
+- Supabase SQL confirmed Anne-Maree has `ml_note_count = 4` and `active_ml_note_count = 4`.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
 
 ### M & L persistent dossier + research-backed PDF workflow (2026-06-22, LATEST)
 
