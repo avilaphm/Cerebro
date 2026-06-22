@@ -1,12 +1,31 @@
 # Handoff
 
 ## Last updated
-2026-06-22 by Codex - Restored Anne-Maree M & L notes/videos and made M & L note loading permanent.
+2026-06-22 by Codex - Fixed M & L video note recording controls and button contrast.
 
 ## Last code fix commit
-this commit - always load M & L notes
+this commit - fix M & L recording buttons
 
 ## What just happened (read first)
+
+### M & L video note recording button + contrast fix (2026-06-22, LATEST)
+
+Pedro reported that the video-note record icon in the M & L dossier could not be clicked and that some buttons had white text on a white/light background.
+
+Shipped:
+- `Record voice note` buttons inside the M & L movement video notes are now larger solid controls with explicit `title` and `aria-label`.
+- Browser dictation start now handles failures instead of silently doing nothing:
+  - shows `Starting microphone...`,
+  - shows `Recording video note. Speak now, then press Stop recording.` when active,
+  - shows a clear Chrome microphone permission / type-instead message if Web Speech errors.
+- Added a guard so a previous speech recognizer cannot clear the current recognizer state if Pedro switches movement rows quickly.
+- Added M & L dossier-specific button classes in `app/globals.css` so record, load video, save video note, generate PDF, and open PDF controls keep readable colors across normal/hover/disabled/recording states.
+- This specifically avoids the global liquid-dashboard `.text-white` / `hover:bg-white` cascade that could produce white text on light backgrounds.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
 
 ### M & L note/video restore + permanent loader fix (2026-06-22, LATEST)
 

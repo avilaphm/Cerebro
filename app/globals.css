@@ -561,3 +561,50 @@ body::before {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+
+.liquid-dashboard main .ml-dossier-solid-button {
+  background: #080808 !important;
+  border-color: #080808 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.liquid-dashboard main .ml-dossier-solid-button:hover:not(:disabled) {
+  background: #242424 !important;
+  border-color: #242424 !important;
+  color: #ffffff !important;
+}
+
+.liquid-dashboard main .ml-dossier-solid-button:disabled {
+  background: #eeeae3 !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+  color: rgba(0, 0, 0, 0.5) !important;
+  opacity: 1 !important;
+}
+
+.liquid-dashboard main .ml-dossier-outline-button,
+.liquid-dashboard main .ml-dossier-record-button {
+  background: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.18) !important;
+  color: #111111 !important;
+  box-shadow: none !important;
+}
+
+.liquid-dashboard main .ml-dossier-outline-button:hover,
+.liquid-dashboard main .ml-dossier-record-button:hover {
+  background: #f3f1ea !important;
+  border-color: rgba(0, 0, 0, 0.36) !important;
+  color: #050505 !important;
+}
+
+.liquid-dashboard main .ml-dossier-record-button.is-recording {
+  background: #fef2f2 !important;
+  border-color: rgba(220, 38, 38, 0.45) !important;
+  color: #b91c1c !important;
+}
+
+.liquid-dashboard main .ml-dossier-solid-button *,
+.liquid-dashboard main .ml-dossier-outline-button *,
+.liquid-dashboard main .ml-dossier-record-button * {
+  color: inherit !important;
+}

@@ -265,6 +265,7 @@ interface SpeechRecognitionLike {
   interimResults: boolean;
   lang: string;
   onresult: ((e: SpeechRecognitionEventLike) => void) | null;
+  onerror?: ((e: { error?: string; message?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -1199,13 +1200,26 @@ export default function PTClientDetail({
         }
       }
     };
+    recognition.onerror = (event) => {
+      const reason = event.error ? ` (${event.error})` : '';
+      setMlVideoStatus(`Could not start dictation${reason}. Check Chrome microphone permission, or type the video note instead.`);
+      setMlVideoListeningKey(null);
+      if (mlVideoSpeechRef.current === recognition) mlVideoSpeechRef.current = null;
+    };
     recognition.onend = () => {
       setMlVideoListeningKey(null);
-      mlVideoSpeechRef.current = null;
+      if (mlVideoSpeechRef.current === recognition) mlVideoSpeechRef.current = null;
     };
-    recognition.start();
-    setMlVideoListeningKey(key);
-    setMlVideoStatus('');
+    try {
+      setMlVideoStatus('Starting microphone...');
+      recognition.start();
+      setMlVideoListeningKey(key);
+      setMlVideoStatus('Recording video note. Speak now, then press Stop recording.');
+    } catch (error) {
+      setMlVideoListeningKey(null);
+      mlVideoSpeechRef.current = null;
+      setMlVideoStatus(error instanceof Error ? error.message : 'Could not start dictation. Type the video note instead.');
+    }
   };
 
   const saveMLMovementVideoNote = async (note: PTNote, movement: MLAssessmentMovement) => {
@@ -1496,7 +1510,7 @@ export default function PTClientDetail({
                         <button
                           type="button"
                           onClick={() => void loadMLMovementVideo(key, movement.video_path as string)}
-                          className="flex aspect-[9/16] max-h-[28rem] w-full flex-col items-center justify-center gap-3 border border-black/10 bg-white text-sm text-black/55 transition-colors hover:border-black/30 hover:text-black"
+                          className="ml-dossier-outline-button flex aspect-[9/16] max-h-[28rem] w-full flex-col items-center justify-center gap-3 border text-sm"
                         >
                           <Play className="h-8 w-8" />
                           Load and play video
@@ -1513,11 +1527,13 @@ export default function PTClientDetail({
                         <span className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Video review note</span>
                         <button
                           type="button"
+                          title={isListening ? 'Stop recording video note' : 'Record video note'}
+                          aria-label={isListening ? 'Stop recording video note' : 'Record video note'}
                           onClick={() => startMLVideoDictation(key, draftNote)}
-                          className={`inline-flex w-fit items-center gap-2 border px-3 py-1.5 text-xs transition-colors ${
+                          className={`ml-dossier-record-button inline-flex w-fit items-center gap-2 border px-4 py-2 text-xs font-medium transition-colors ${
                             isListening
-                              ? 'border-red-300 bg-red-50 text-red-700'
-                              : 'border-black/15 bg-white text-black/55 hover:border-black/35 hover:text-black'
+                              ? 'is-recording'
+                              : ''
                           }`}
                         >
                           {isListening ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
@@ -1539,7 +1555,7 @@ export default function PTClientDetail({
                           type="button"
                           onClick={() => void saveMLMovementVideoNote(note, movement)}
                           disabled={isSaving || !hasChanges}
-                          className="inline-flex items-center justify-center gap-2 border border-black bg-black px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/10 disabled:text-black/35"
+                          className="ml-dossier-solid-button inline-flex items-center justify-center gap-2 border px-3 py-2 text-xs font-medium transition-colors disabled:cursor-not-allowed"
                         >
                           {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                           {isSaving ? 'Saving...' : 'Save video note'}
@@ -2510,7 +2526,7 @@ export default function PTClientDetail({
                     type="button"
                     onClick={() => void generateMLClientPdf()}
                     disabled={!latestFinalMLAssessmentNote || mlPdfBusy}
-                    className="mt-2 w-full border border-black bg-black px-4 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/10 disabled:text-black/35"
+                    className="ml-dossier-solid-button mt-2 w-full border px-4 py-2 text-sm transition-colors disabled:cursor-not-allowed"
                   >
                     {mlPdfBusy ? 'Generating...' : mlPdfReady ? 'Regenerate M & L PDF' : 'Generate M & L PDF'}
                   </button>
@@ -2574,7 +2590,7 @@ export default function PTClientDetail({
                               <button
                                 type="button"
                                 onClick={() => void openClientDocPath(doc.storage_path as string)}
-                                className="mb-4 border border-black/15 bg-white px-3 py-2 text-xs font-medium text-black transition-colors hover:bg-black hover:text-white"
+                                className="ml-dossier-outline-button mb-4 border px-3 py-2 text-xs font-medium transition-colors"
                               >
                                 Open PDF
                               </button>
