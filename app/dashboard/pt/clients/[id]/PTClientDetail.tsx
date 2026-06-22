@@ -350,6 +350,7 @@ interface MLClientProfileResponse {
   error?: string;
   document_id?: string;
   title?: string;
+  generation_mode?: 'ai' | 'fallback';
   warning?: string | null;
 }
 
@@ -365,11 +366,16 @@ interface MLPdfProgress {
   percent: number;
   label: string;
   detail: string;
-  tone: 'working' | 'done' | 'error';
+  tone: 'working' | 'done' | 'warning' | 'error';
 }
 
 function mlMovementKey(noteId: string, movementId: string) {
   return `${noteId}:${movementId}`;
+}
+
+function mlDocumentGenerationMode(doc: PTClientDocument): 'ai' | 'fallback' | null {
+  const mode = doc.analysis?.generation_mode;
+  return mode === 'ai' || mode === 'fallback' ? mode : null;
 }
 
 function getSR() {
@@ -573,7 +579,6 @@ export default function PTClientDetail({
   const [openGeneratedDocId, setOpenGeneratedDocId] = useState<string | null>(clientDocuments[0]?.id ?? null);
   const [mlPdfBusy, setMlPdfBusy] = useState(false);
   const [mlPdfProgress, setMlPdfProgress] = useState<MLPdfProgress | null>(null);
-  const [mlCardOpen, setMlCardOpen] = useState(true);
   const [mlVideoUrls, setMlVideoUrls] = useState<Record<string, string>>({});
   const [mlVideoNoteDrafts, setMlVideoNoteDrafts] = useState<Record<string, string>>({});
   const [mlVideoListeningKey, setMlVideoListeningKey] = useState<string | null>(null);
@@ -1018,6 +1023,8 @@ export default function PTClientDetail({
   });
   const latestMLDocument = mlClientDocuments[0] ?? null;
   const mlPdfReady = mlClientDocuments.some((doc) => Boolean(doc.storage_path));
+  const latestMLPdfDocument = mlClientDocuments.find((doc) => Boolean(doc.storage_path)) ?? null;
+  const mlPdfIsFallback = latestMLPdfDocument ? mlDocumentGenerationMode(latestMLPdfDocument) === 'fallback' : false;
 
   const planningSignals = [
     !currentPlan ? 'No plan exists for this week.' : null,
@@ -1350,11 +1357,12 @@ export default function PTClientDetail({
       setOpenGeneratedDocId(generatedDocumentId);
       router.refresh();
       if (pdfData.signed_url) window.open(pdfData.signed_url, '_blank');
+      const usedFallback = data.generation_mode === 'fallback' || Boolean(data.warning);
       setMlPdfProgress({
         percent: 100,
-        label: 'PDF ready',
+        label: usedFallback ? 'Fallback PDF ready' : 'PDF ready',
         detail: data.warning ?? 'Structured M & L PDF created and saved to this profile.',
-        tone: 'done',
+        tone: usedFallback ? 'warning' : 'done',
       });
     } catch (err) {
       if (progressTimer !== null) window.clearInterval(progressTimer);
@@ -2456,11 +2464,7 @@ export default function PTClientDetail({
 
       {(mlAssessmentNotes.length > 0 || mlClientDocuments.length > 0) && (
         <section className="order-[5] mb-8 border border-black/10 bg-white/85">
-          <button
-            type="button"
-            onClick={() => setMlCardOpen((open) => !open)}
-            className="flex w-full flex-col gap-4 px-5 py-4 text-left transition-colors hover:bg-black/[0.02] sm:flex-row sm:items-center sm:justify-between"
-          >
+          <div className="flex w-full flex-col gap-4 px-5 py-4 text-left sm:flex-row sm:items-center sm:justify-between">
             <span className="min-w-0">
               <span className="block text-[0.6rem] uppercase tracking-[0.2em] text-black/35">M & L</span>
               <span className="mt-1 block font-display text-xl font-light text-black">Assessment dossier</span>
@@ -2473,15 +2477,13 @@ export default function PTClientDetail({
                 {latestFinalMLAssessmentNote ? 'Completed' : `${mlAssessmentNotes.length} saved`}
               </span>
               <span className="border border-black/10 bg-white px-2 py-1">{latestMLVideoCount} videos</span>
-              <span className={`border px-2 py-1 ${mlPdfReady ? 'border-green-200 bg-green-50 text-green-700' : 'border-black/10 bg-white'}`}>
-                {mlPdfReady ? 'PDF ready' : 'PDF not made'}
+              <span className={`border px-2 py-1 ${mlPdfReady ? (mlPdfIsFallback ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-green-200 bg-green-50 text-green-700') : 'border-black/10 bg-white'}`}>
+                {mlPdfReady ? (mlPdfIsFallback ? 'Fallback PDF' : 'PDF ready') : 'PDF not made'}
               </span>
-              <span className="text-black/25">{mlCardOpen ? 'Close' : 'Open'}</span>
             </span>
-          </button>
+          </div>
 
-          {mlCardOpen && (
-            <div className="border-t border-black/8 px-5 py-5">
+          <div className="border-t border-black/8 px-5 py-5">
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="border-r border-black/8 pr-4 md:col-span-1">
                   <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Status</p>
@@ -2519,7 +2521,9 @@ export default function PTClientDetail({
                 <div className={`mt-5 border px-4 py-3 ${
                   mlPdfProgress.tone === 'error'
                     ? 'border-red-200 bg-red-50 text-red-800'
-                    : mlPdfProgress.tone === 'done'
+                    : mlPdfProgress.tone === 'warning'
+                      ? 'border-amber-200 bg-amber-50 text-amber-800'
+                      : mlPdfProgress.tone === 'done'
                       ? 'border-green-200 bg-green-50 text-green-800'
                       : 'border-black/10 bg-[#fbfbf8] text-black'
                 }`}>
@@ -2529,7 +2533,7 @@ export default function PTClientDetail({
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden bg-black/8">
                     <div
-                      className={`h-full transition-all duration-500 ${progressWidthClass(mlPdfProgress.percent)} ${mlPdfProgress.tone === 'error' ? 'bg-red-500' : mlPdfProgress.tone === 'done' ? 'bg-green-600' : 'bg-black'}`}
+                      className={`h-full transition-all duration-500 ${progressWidthClass(mlPdfProgress.percent)} ${mlPdfProgress.tone === 'error' ? 'bg-red-500' : mlPdfProgress.tone === 'warning' ? 'bg-amber-500' : mlPdfProgress.tone === 'done' ? 'bg-green-600' : 'bg-black'}`}
                     />
                   </div>
                   <p className="mt-2 text-xs leading-5 opacity-75">{mlPdfProgress.detail}</p>
@@ -2547,6 +2551,7 @@ export default function PTClientDetail({
                   <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Generated documents</p>
                   {mlClientDocuments.map((doc) => {
                     const isOpen = openGeneratedDocId === doc.id;
+                    const generationMode = mlDocumentGenerationMode(doc);
                     return (
                       <div key={doc.id} className="border border-black/10 bg-white">
                         <button
@@ -2558,7 +2563,7 @@ export default function PTClientDetail({
                             <span className="block text-sm font-medium text-black">{doc.title}</span>
                             <span className="mt-1 block text-xs text-black/40">
                               {new Date(doc.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
-                              {doc.storage_path ? ' · PDF ready' : ''}
+                              {doc.storage_path ? ` · ${generationMode === 'fallback' ? 'Fallback PDF ready' : 'PDF ready'}` : ''}
                             </span>
                           </span>
                           <span className="shrink-0 text-xs uppercase tracking-[0.12em] text-black/40">{isOpen ? 'Close' : 'Open'}</span>
@@ -2596,22 +2601,12 @@ export default function PTClientDetail({
                           {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                       </div>
-                      <button
-                        onClick={async () => {
-                          await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', note.id);
-                          setNotes((prev) => prev.filter((n) => n.id !== note.id));
-                        }}
-                        className="shrink-0 text-xs text-black/30 transition-colors hover:text-black"
-                      >
-                        Done
-                      </button>
                     </div>
                     {renderMLAssessmentContext(note)}
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+          </div>
         </section>
       )}
 

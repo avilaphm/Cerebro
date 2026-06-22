@@ -36,25 +36,39 @@ function json(data: unknown, status = 200) {
   });
 }
 
-const SYSTEM_PROMPT = `You are Pedro Avila's M & L Client Intelligence workflow.
+const SYSTEM_PROMPT = `You are Pedro Avila's M & L PDF Generation workflow.
 
-You create one coach-facing document from a completed M & L Assessment, PAR-Q, client profile, and existing client brain.
+You create one durable coach-facing document from a completed M & L Assessment, PAR-Q, client profile, existing client brain, Pedro's movement-video notes, and bounded evidence research.
 
 Follow this exact skill chain:
 
-1. pt-ml-evidence-extractor
+1. pt-ml-pdf-generation-workflow
+- Generate the document when Pedro asks for the M & L PDF from uploaded/recorded notes and movement-video review notes.
+- Treat the PDF as a durable client-profile artifact. It must remain available after generation.
+- Use general web research only to clarify likely training implications of findings Pedro recorded. Do not diagnose.
+
+2. pt-ml-evidence-extractor
 - Extract only source-traceable facts from the PAR-Q, final M & L assessment, client profile, and existing brain/docs.
 - Keep unknown fields as unknown.
 - Never invent observations from video paths.
 
-2. pt-ml-findings-interpreter
+3. pt-ml-findings-interpreter
 - Interpret evidence into safety flags, movement priorities, likely muscles/patterns needing attention, lifestyle constraints, and programming implications.
 - Label hypotheses as hypotheses.
 - Do not diagnose. If medical clearance is unclear, flag it.
 
-3. pt-ml-profile-document-writer
+4. pt-ml-profile-document-writer
 - Write a Markdown document Pedro can open before programming.
-- Include snapshot, PAR-Q/clearance, what client said, movement findings, coach interpretation, muscles/patterns needing attention, programming brief, goals/adherence levers, and open questions.
+- Use this exact order:
+  1. Who This Person Is
+  2. Key Issues Found
+  3. Muscles / Patterns Needing Attention
+  4. What Is Happening
+  5. Evidence / Research Context
+  6. Best Approach Forward
+  7. Exercise Priorities
+  8. What Pedro Should Be Aware Of
+  9. Open Questions
 
 Return only valid JSON with this schema:
 {
@@ -78,11 +92,13 @@ Return only valid JSON with this schema:
 }
 
 Rules:
-- Use only supplied data.
+- Supplied notes are the source of truth. Web research can add general context only when the supplied notes point to a likely issue or pattern.
 - Medical wording must stay coach-facing and non-diagnostic.
 - Phrase training recommendations as programming considerations, not treatment.
 - If PAR-Q has any yes answer, include a clearance/monitoring flag.
-- Every useful recommendation must point back to a finding, goal, or client context.`;
+- Every useful recommendation must point back to a finding, goal, client context, or the general research context.
+- Do not say "physiotherapy plan". Use "physio-informed training considerations" or "refer to a physio/clinician if needed".
+- Include specific exercise categories and examples, but keep them conservative enough for programme creation to refine.`;
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -233,6 +249,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       document_id: doc.id,
       title: doc.title,
+      generation_mode: aiGenerationError ? 'fallback' : anthropicKey ? 'ai' : 'fallback',
       warning: aiGenerationError
         ? `AI generation timed out or failed, so a structured fallback document was created. ${aiGenerationError}`
         : null,
@@ -264,18 +281,25 @@ async function generateWithClaude(ctx: {
 }): Promise<Record<string, unknown>> {
   const anthropic = new Anthropic({ apiKey: ctx.anthropicKey });
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45_000);
+  const timer = setTimeout(() => ctrl.abort(), 85_000);
   try {
     const message = await anthropic.messages.create(
       {
         model: 'claude-sonnet-4-6',
-        max_tokens: 4500,
+        max_tokens: 6500,
         system: SYSTEM_PROMPT,
+        tools: [
+          {
+            type: 'web_search_20250305',
+            name: 'web_search',
+            max_uses: 3,
+          },
+        ],
         messages: [{ role: 'user', content: buildUserMessage(ctx) }],
-      },
+      } as any,
       { signal: ctrl.signal },
     );
-    const text = (message.content[0] as { text: string }).text;
+    const text = extractTextFromBlocks(message.content as unknown[]);
     return parseJson(text) ?? buildFallbackDocument(ctx);
   } finally {
     clearTimeout(timer);
@@ -305,8 +329,19 @@ function buildUserMessage(ctx: {
   if (ctx.documents.length) {
     parts.push(`RECENT CLIENT DOCUMENTS:\n${ctx.documents.map((doc) => `[${doc.document_type}] ${doc.title}\n${(doc.content_text ?? '').slice(0, 5000)}`).join('\n\n---\n\n')}`);
   }
-  parts.push('Now execute the skill chain and return the JSON only.');
+  parts.push('Now execute the skill chain. Use web search only for concise general evidence context about the movement patterns, conditions, or training implications explicitly suggested by the notes. Return the JSON only.');
   return parts.join('\n\n-----\n\n');
+}
+
+function extractTextFromBlocks(blocks: unknown[]): string {
+  return blocks
+    .map((block) => {
+      const row = block && typeof block === 'object' && !Array.isArray(block) ? block as Record<string, unknown> : {};
+      return row.type === 'text' && typeof row.text === 'string' ? row.text : '';
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 function tryParse(value: string): Record<string, unknown> | null {
@@ -355,7 +390,7 @@ function buildFallbackDocument(ctx: {
   const markdown = [
     `# M & L Client Intelligence - ${name}`,
     '',
-    '## Snapshot',
+    '## Who This Person Is',
     `- Goal: ${stringValue(ctx.client.goals, 'Not recorded')}`,
     `- Consult date: ${stringValue(asRecord(assessment.client_info).consult_date, today)}`,
     `- Videos recorded: ${videoCount}`,
@@ -364,13 +399,31 @@ function buildFallbackDocument(ctx: {
     `- Medical flag: ${medicalFlag ? 'Yes - confirm clearance before loading.' : 'No flag recorded.'}`,
     `- Coach/PAR-Q notes: ${stringValue(parqContext.coach_notes, 'Not recorded')}`,
     '',
-    '## Movement Assessment Findings',
+    '## Key Issues Found',
     notedMovements.length ? notedMovements.map((row) => `- ${row}`).join('\n') : '- No movement notes recorded.',
     '',
-    '## Programming Brief',
+    '## Muscles / Patterns Needing Attention',
+    '- Not enough AI interpretation was available. Use Pedro notes to identify weak, tight, unstable, or painful patterns before loading.',
+    '',
+    '## What Is Happening',
+    '- AI interpretation timed out or was unavailable, so this fallback document preserves the source evidence instead of inventing a deeper explanation.',
+    '- Treat these notes as a draft triage view, not a final physio-informed analysis.',
+    '',
+    '## Evidence / Research Context',
+    '- Research was not available in fallback mode. Use clinical judgment and refer out when symptoms, pain, or clearance are unclear.',
+    '',
+    '## Best Approach Forward',
     '- Start with a conservative Foundation block.',
     '- Prioritise movement quality, unilateral control, trunk strength, and any patterns Pedro marked in the assessment.',
     '- Progress loading only when symptoms, control, and confidence are stable.',
+    '',
+    '## Exercise Priorities',
+    '- Regress major lifts to pain-free ranges and stable positions.',
+    '- Use unilateral control, core endurance, hip control, scapular control, and mobility drills when supported by Pedro notes.',
+    '',
+    '## What Pedro Should Be Aware Of',
+    '- This PDF was created from fallback logic because AI generation failed or timed out.',
+    '- Regenerate after saving full video notes if a deeper document is needed.',
     '',
     '## Open Questions For Pedro',
     '- Confirm any pain, clearance, or health professional guidance before final programme loading.',

@@ -1,12 +1,38 @@
 # Handoff
 
 ## Last updated
-2026-06-22 by Codex - Added playable M & L movement videos and saved voice notes on client profile.
+2026-06-22 by Codex - Made M & L dossier persistent and upgraded PDF workflow/research/fallback handling.
 
 ## Last code fix commit
-this commit - add M & L movement video note review
+this commit - persist M & L dossier and improve PDF workflow
 
 ## What just happened (read first)
+
+### M & L persistent dossier + research-backed PDF workflow (2026-06-22, LATEST)
+
+Pedro flagged the M & L dossier screenshot where the progress bar said `PDF ready` but the detail said AI generation timed out or failed. That is a degraded/fallback success, not a clean AI success. Pedro also clicked `Close` and thought the notes/videos disappeared, and he asked for the generated document to follow a new order: who the person is, issues found, muscles needing attention, what is happening, research context, best approach forward, exercises, and what Pedro should be aware of.
+
+Shipped:
+- The top M & L dossier on `/dashboard/pt/clients/[id]` is now permanently expanded. The `Close/Open` toggle is gone, so assessment notes, video review notes, and generated documents stay visible on the profile.
+- Removed the `Done` hide/archive action from M & L assessment notes inside the dossier so Pedro cannot accidentally make those notes disappear from the active profile view.
+- Existing/generated docs now distinguish clean AI PDFs from fallback PDFs:
+  - header badge shows `Fallback PDF` when the source document has `analysis.generation_mode = fallback`,
+  - progress state uses amber warning styling and `Fallback PDF ready`,
+  - generated document list says `Fallback PDF ready` instead of plain `PDF ready`.
+- `generate-ml-client-profile` Edge Function now follows the new document order and includes a bounded Anthropic `web_search` pass (max 3 searches) for general evidence context tied to recorded findings. It does not diagnose or infer from video paths alone.
+- AI timeout increased from 45s to 85s to give the research + longer document enough room before falling back.
+- Fallback Markdown now uses the same section order and explicitly says AI/research was unavailable, instead of looking like a full intelligence document.
+- Created new project skill `skills/pt-ml-pdf-generation-workflow` using the skill-creator workflow. Updated root `AGENTS.md`, `pt-ml-client-intelligence-orchestrator`, and `pt-ml-profile-document-writer` so future agents use the same durable PDF flow and section order.
+- Deployed Supabase Edge Function `generate-ml-client-profile` to project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `python3 .../quick_validate.py skills/pt-ml-pdf-generation-workflow` passes.
+- `python3 .../quick_validate.py skills/pt-ml-client-intelligence-orchestrator` passes.
+- `python3 .../quick_validate.py skills/pt-ml-profile-document-writer` passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- No live regeneration test was run because it would create another real client document/PDF on Anne-Maree's profile.
 
 ### M & L movement video note review (2026-06-22, LATEST)
 
