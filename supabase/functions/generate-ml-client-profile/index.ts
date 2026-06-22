@@ -145,25 +145,42 @@ Deno.serve(async (req: Request) => {
 
     const parqNote = notes.find((note) => note.context?.source === 'movement_assessment_intake') ?? null;
     const existingDocs = (documentsRes.data ?? []) as ClientDocumentRow[];
-    const generated = anthropicKey
-      ? await generateWithClaude({
-        anthropicKey,
-        client: clientRes.data as Record<string, unknown>,
-        assessmentNote,
-        parqNote,
-        brain: brainRes.data as Record<string, unknown> | null,
-        exerciseDoc: exerciseDocRes.data as Record<string, unknown> | null,
-        nutritionDoc: nutritionDocRes.data as Record<string, unknown> | null,
-        lifestyleDoc: lifestyleDocRes.data as Record<string, unknown> | null,
-        documents: existingDocs,
-      })
-      : buildFallbackDocument({
+    let aiGenerationError: string | null = null;
+    let generated: Record<string, unknown>;
+
+    if (anthropicKey) {
+      try {
+        generated = await generateWithClaude({
+          anthropicKey,
+          client: clientRes.data as Record<string, unknown>,
+          assessmentNote,
+          parqNote,
+          brain: brainRes.data as Record<string, unknown> | null,
+          exerciseDoc: exerciseDocRes.data as Record<string, unknown> | null,
+          nutritionDoc: nutritionDocRes.data as Record<string, unknown> | null,
+          lifestyleDoc: lifestyleDocRes.data as Record<string, unknown> | null,
+          documents: existingDocs,
+        });
+      } catch (error) {
+        aiGenerationError = error instanceof Error ? error.message : 'AI generation failed.';
+        console.warn('generate-ml-client-profile AI fallback:', aiGenerationError);
+        generated = buildFallbackDocument({
+          client: clientRes.data as Record<string, unknown>,
+          assessmentNote,
+          parqNote,
+          brain: brainRes.data as Record<string, unknown> | null,
+          exerciseDoc: exerciseDocRes.data as Record<string, unknown> | null,
+        });
+      }
+    } else {
+      generated = buildFallbackDocument({
         client: clientRes.data as Record<string, unknown>,
         assessmentNote,
         parqNote,
         brain: brainRes.data as Record<string, unknown> | null,
         exerciseDoc: exerciseDocRes.data as Record<string, unknown> | null,
       });
+    }
 
     const today = new Date().toISOString().slice(0, 10);
     const title = cleanTitle(generated.document_title) || `M & L Client Intelligence - ${stringValue(clientRes.data.name, 'Client')} - ${today}`;
@@ -174,6 +191,8 @@ Deno.serve(async (req: Request) => {
       parq_note_id: parqNote?.id ?? null,
       findings: generated.findings,
       programming_brief: generated.programming_brief,
+      generation_mode: aiGenerationError ? 'fallback' : anthropicKey ? 'ai' : 'fallback',
+      ai_generation_error: aiGenerationError,
       generated_at: new Date().toISOString(),
     });
 
@@ -210,7 +229,14 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    return json({ ok: true, document_id: doc.id, title: doc.title });
+    return json({
+      ok: true,
+      document_id: doc.id,
+      title: doc.title,
+      warning: aiGenerationError
+        ? `AI generation timed out or failed, so a structured fallback document was created. ${aiGenerationError}`
+        : null,
+    });
   } catch (error) {
     console.error('generate-ml-client-profile error:', error);
     return json({ error: error instanceof Error ? error.message : 'Could not generate M & L client profile.' }, 500);
@@ -238,12 +264,12 @@ async function generateWithClaude(ctx: {
 }): Promise<Record<string, unknown>> {
   const anthropic = new Anthropic({ apiKey: ctx.anthropicKey });
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 80_000);
+  const timer = setTimeout(() => ctrl.abort(), 45_000);
   try {
     const message = await anthropic.messages.create(
       {
         model: 'claude-sonnet-4-6',
-        max_tokens: 6000,
+        max_tokens: 4500,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: buildUserMessage(ctx) }],
       },

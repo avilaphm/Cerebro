@@ -349,6 +349,7 @@ interface MLClientProfileResponse {
   error?: string;
   document_id?: string;
   title?: string;
+  warning?: string | null;
 }
 
 interface MLClientProfilePdfResponse {
@@ -357,6 +358,13 @@ interface MLClientProfilePdfResponse {
   document_id?: string;
   storage_path?: string;
   signed_url?: string | null;
+}
+
+interface MLPdfProgress {
+  percent: number;
+  label: string;
+  detail: string;
+  tone: 'working' | 'done' | 'error';
 }
 
 function getSR() {
@@ -396,6 +404,27 @@ function dateInputValue(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function progressWidthClass(percent: number) {
+  if (percent >= 100) return 'w-full';
+  if (percent >= 92) return 'w-[92%]';
+  if (percent >= 88) return 'w-[88%]';
+  if (percent >= 84) return 'w-[84%]';
+  if (percent >= 80) return 'w-4/5';
+  if (percent >= 75) return 'w-3/4';
+  if (percent >= 68) return 'w-[68%]';
+  if (percent >= 60) return 'w-3/5';
+  if (percent >= 55) return 'w-[55%]';
+  if (percent >= 50) return 'w-1/2';
+  if (percent >= 45) return 'w-[45%]';
+  if (percent >= 40) return 'w-2/5';
+  if (percent >= 35) return 'w-[35%]';
+  if (percent >= 30) return 'w-[30%]';
+  if (percent >= 25) return 'w-1/4';
+  if (percent >= 20) return 'w-1/5';
+  if (percent >= 10) return 'w-[10%]';
+  return 'w-[8%]';
 }
 
 function formatWeekRange(weekStart: string) {
@@ -537,6 +566,8 @@ export default function PTClientDetail({
   const [status, setStatus] = useState('');
   const [openGeneratedDocId, setOpenGeneratedDocId] = useState<string | null>(clientDocuments[0]?.id ?? null);
   const [mlPdfBusy, setMlPdfBusy] = useState(false);
+  const [mlPdfProgress, setMlPdfProgress] = useState<MLPdfProgress | null>(null);
+  const [mlCardOpen, setMlCardOpen] = useState(true);
   const [reviewBusy, setReviewBusy] = useState<'weekly' | 'monthly' | null>(null);
   const [agentInstructions, setAgentInstructions] = useState('');
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
@@ -966,9 +997,16 @@ export default function PTClientDetail({
         })),
       )
     : [];
-  const latestFinalMLAssessmentNote = notes.find((note) =>
-    note.context?.source === 'ml_assessment' && note.context?.stage === 'final',
-  );
+  const mlAssessmentNotes = notes.filter((note) => note.context?.source === 'ml_assessment');
+  const visibleNotes = notes.filter((note) => note.context?.source !== 'ml_assessment');
+  const latestFinalMLAssessmentNote = mlAssessmentNotes.find((note) => note.context?.stage === 'final');
+  const mlClientDocuments = clientDocuments.filter((doc) => {
+    const parsedSource = typeof doc.parsed_summary?.source === 'string' ? doc.parsed_summary.source : null;
+    const analysisSource = typeof doc.analysis?.source === 'string' ? doc.analysis.source : null;
+    return parsedSource === 'ml_client_intelligence' || analysisSource === 'ml_client_intelligence' || doc.title.includes('M & L');
+  });
+  const latestMLDocument = mlClientDocuments[0] ?? null;
+  const mlPdfReady = mlClientDocuments.some((doc) => Boolean(doc.storage_path));
 
   const planningSignals = [
     !currentPlan ? 'No plan exists for this week.' : null,
@@ -1095,37 +1133,112 @@ export default function PTClientDetail({
     await openClientDocPath(path);
   };
 
+  const invokeMLClientProfileDocument = async (assessmentNoteId: string) => {
+    const functionBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!functionBaseUrl || !anonKey) throw new Error('Supabase browser environment is missing.');
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error('Dashboard session expired. Sign in again and retry.');
+
+    const res = await fetch(`${functionBaseUrl}/functions/v1/generate-ml-client-profile`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: client.id,
+        assessment_note_id: assessmentNoteId,
+      }),
+    });
+
+    const payload = await res.json().catch(() => ({})) as MLClientProfileResponse;
+    if (!res.ok || payload.error || !payload.document_id) {
+      const edgeCode = res.headers.get('sb-error-code');
+      const statusText = edgeCode ? `${res.status} ${edgeCode}` : String(res.status);
+      throw new Error(payload.error || `M & L intelligence function failed (${statusText}).`);
+    }
+    return payload;
+  };
+
   const generateMLClientPdf = async () => {
     if (!latestFinalMLAssessmentNote || mlPdfBusy) return;
     setMlPdfBusy(true);
-    setStatus('Generating M & L client PDF...');
+    setStatus('');
+    setMlPdfProgress({
+      percent: 8,
+      label: 'Preparing assessment data',
+      detail: 'Collecting final M & L notes, PAR-Q context, and video review notes.',
+      tone: 'working',
+    });
+    let progressTimer: number | null = null;
     try {
-      const { data, error } = await supabase.functions.invoke<MLClientProfileResponse>('generate-ml-client-profile', {
-        body: {
-          client_id: client.id,
-          assessment_note_id: latestFinalMLAssessmentNote.id,
-        },
+      let driftingPercent = 22;
+      setMlPdfProgress({
+        percent: driftingPercent,
+        label: 'Generating intelligence document',
+        detail: 'AI is reading the assessment and writing the coach-facing profile.',
+        tone: 'working',
       });
-      if (error || data?.error || !data?.document_id) {
-        throw new Error(data?.error || error?.message || 'Could not generate the M & L client document.');
-      }
+      progressTimer = window.setInterval(() => {
+        driftingPercent = Math.min(58, driftingPercent + 4);
+        setMlPdfProgress({
+          percent: driftingPercent,
+          label: 'Generating intelligence document',
+          detail: 'Still processing the assessment notes. If AI times out, a structured fallback will be created.',
+          tone: 'working',
+        });
+      }, 3500);
+
+      const data = await invokeMLClientProfileDocument(latestFinalMLAssessmentNote.id);
+      const generatedDocumentId = data.document_id;
+      if (!generatedDocumentId) throw new Error('M & L intelligence document was not returned.');
+
+      if (progressTimer !== null) window.clearInterval(progressTimer);
+      progressTimer = null;
+      setMlPdfProgress({
+        percent: 68,
+        label: 'Building PDF',
+        detail: data.warning ?? 'Converting the generated profile into a downloadable PDF.',
+        tone: 'working',
+      });
 
       const pdfRes = await fetch('/api/pt/ml-client-profile-pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ document_id: data.document_id }),
+        body: JSON.stringify({ document_id: generatedDocumentId }),
       });
       const pdfData = await pdfRes.json() as MLClientProfilePdfResponse;
       if (!pdfRes.ok || pdfData.error) {
         throw new Error(pdfData.error || 'Could not generate the M & L PDF.');
       }
 
-      setOpenGeneratedDocId(data.document_id);
-      setStatus('M & L client PDF generated.');
+      setMlPdfProgress({
+        percent: 92,
+        label: 'Opening PDF',
+        detail: 'PDF stored on the client profile. Opening the signed link now.',
+        tone: 'working',
+      });
+      setOpenGeneratedDocId(generatedDocumentId);
       router.refresh();
       if (pdfData.signed_url) window.open(pdfData.signed_url, '_blank');
+      setMlPdfProgress({
+        percent: 100,
+        label: 'PDF ready',
+        detail: data.warning ?? 'Structured M & L PDF created and saved to this profile.',
+        tone: 'done',
+      });
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Could not generate the M & L PDF.');
+      if (progressTimer !== null) window.clearInterval(progressTimer);
+      setMlPdfProgress({
+        percent: 100,
+        label: 'Generation failed',
+        detail: err instanceof Error ? err.message : 'Could not generate the M & L PDF.',
+        tone: 'error',
+      });
     } finally {
       setMlPdfBusy(false);
     }
@@ -2001,6 +2114,11 @@ export default function PTClientDetail({
     }
   };
 
+  const latestMLContext = latestFinalMLAssessmentNote ? mlAssessmentContext(latestFinalMLAssessmentNote) : null;
+  const latestMLMovements = latestMLContext?.movement_assessment_summary?.movements ?? [];
+  const latestMLVideoCount = latestMLMovements.filter((movement) => movement.video_path).length;
+  const latestMLSavedAt = latestMLContext?.movement_assessment_summary?.completed_at ?? latestMLContext?.saved_at ?? latestFinalMLAssessmentNote?.created_at;
+
   return (
     <div className="mx-auto flex w-full max-w-[1500px] flex-col px-5 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
       <div className="order-[1] flex items-center gap-3 mb-8">
@@ -2133,6 +2251,161 @@ export default function PTClientDetail({
           )}
         </div>
       </div>
+
+      {(mlAssessmentNotes.length > 0 || mlClientDocuments.length > 0) && (
+        <section className="order-[5] mb-8 border border-black/10 bg-white/85">
+          <button
+            type="button"
+            onClick={() => setMlCardOpen((open) => !open)}
+            className="flex w-full flex-col gap-4 px-5 py-4 text-left transition-colors hover:bg-black/[0.02] sm:flex-row sm:items-center sm:justify-between"
+          >
+            <span className="min-w-0">
+              <span className="block text-[0.6rem] uppercase tracking-[0.2em] text-black/35">M & L</span>
+              <span className="mt-1 block font-display text-xl font-light text-black">Assessment dossier</span>
+              <span className="mt-1 block text-sm leading-6 text-black/50">
+                Assessment notes, video notes, generated intelligence document, and PDF export.
+              </span>
+            </span>
+            <span className="flex flex-wrap items-center gap-2 text-[0.62rem] uppercase tracking-[0.12em] text-black/45">
+              <span className="border border-black/10 bg-white px-2 py-1">
+                {latestFinalMLAssessmentNote ? 'Completed' : `${mlAssessmentNotes.length} saved`}
+              </span>
+              <span className="border border-black/10 bg-white px-2 py-1">{latestMLVideoCount} videos</span>
+              <span className={`border px-2 py-1 ${mlPdfReady ? 'border-green-200 bg-green-50 text-green-700' : 'border-black/10 bg-white'}`}>
+                {mlPdfReady ? 'PDF ready' : 'PDF not made'}
+              </span>
+              <span className="text-black/25">{mlCardOpen ? 'Close' : 'Open'}</span>
+            </span>
+          </button>
+
+          {mlCardOpen && (
+            <div className="border-t border-black/8 px-5 py-5">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="border-r border-black/8 pr-4 md:col-span-1">
+                  <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Status</p>
+                  <p className="mt-2 text-sm font-medium text-black">{latestFinalMLAssessmentNote ? 'Final assessment saved' : 'Partial saves only'}</p>
+                  <p className="mt-1 text-xs leading-5 text-black/45">
+                    {latestMLSavedAt
+                      ? new Date(latestMLSavedAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                      : 'No final timestamp'}
+                  </p>
+                </div>
+                <div className="border-r border-black/8 pr-4 md:col-span-1">
+                  <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Evidence</p>
+                  <p className="mt-2 text-sm font-medium text-black">{mlAssessmentNotes.length} M & L notes</p>
+                  <p className="mt-1 text-xs leading-5 text-black/45">{latestMLVideoCount} movement videos attached to the latest final save.</p>
+                </div>
+                <div className="border-r border-black/8 pr-4 md:col-span-1">
+                  <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Document</p>
+                  <p className="mt-2 text-sm font-medium text-black">{latestMLDocument ? 'Generated' : 'Not generated yet'}</p>
+                  <p className="mt-1 text-xs leading-5 text-black/45">{mlPdfReady ? 'PDF has been stored on this profile.' : 'Generate once the final assessment is saved.'}</p>
+                </div>
+                <div className="md:col-span-1">
+                  <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Action</p>
+                  <button
+                    type="button"
+                    onClick={() => void generateMLClientPdf()}
+                    disabled={!latestFinalMLAssessmentNote || mlPdfBusy}
+                    className="mt-2 w-full border border-black bg-black px-4 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/10 disabled:text-black/35"
+                  >
+                    {mlPdfBusy ? 'Generating...' : mlPdfReady ? 'Regenerate M & L PDF' : 'Generate M & L PDF'}
+                  </button>
+                </div>
+              </div>
+
+              {mlPdfProgress && (
+                <div className={`mt-5 border px-4 py-3 ${
+                  mlPdfProgress.tone === 'error'
+                    ? 'border-red-200 bg-red-50 text-red-800'
+                    : mlPdfProgress.tone === 'done'
+                      ? 'border-green-200 bg-green-50 text-green-800'
+                      : 'border-black/10 bg-[#fbfbf8] text-black'
+                }`}>
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-sm font-medium">{mlPdfProgress.label}</p>
+                    <p className="text-xs tabular-nums text-black/45">{mlPdfProgress.percent}%</p>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden bg-black/8">
+                    <div
+                      className={`h-full transition-all duration-500 ${progressWidthClass(mlPdfProgress.percent)} ${mlPdfProgress.tone === 'error' ? 'bg-red-500' : mlPdfProgress.tone === 'done' ? 'bg-green-600' : 'bg-black'}`}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs leading-5 opacity-75">{mlPdfProgress.detail}</p>
+                </div>
+              )}
+
+              {mlClientDocuments.length > 0 && (
+                <div className="mt-5 space-y-3">
+                  <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Generated documents</p>
+                  {mlClientDocuments.map((doc) => {
+                    const isOpen = openGeneratedDocId === doc.id;
+                    return (
+                      <div key={doc.id} className="border border-black/10 bg-white">
+                        <button
+                          type="button"
+                          onClick={() => setOpenGeneratedDocId(isOpen ? null : doc.id)}
+                          className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-black/5"
+                        >
+                          <span>
+                            <span className="block text-sm font-medium text-black">{doc.title}</span>
+                            <span className="mt-1 block text-xs text-black/40">
+                              {new Date(doc.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {doc.storage_path ? ' · PDF ready' : ''}
+                            </span>
+                          </span>
+                          <span className="shrink-0 text-xs uppercase tracking-[0.12em] text-black/40">{isOpen ? 'Close' : 'Open'}</span>
+                        </button>
+                        {isOpen && (
+                          <div className="border-t border-black/8 bg-[#fbfbf8] px-4 py-4">
+                            {doc.storage_path && (
+                              <button
+                                type="button"
+                                onClick={() => void openClientDocPath(doc.storage_path as string)}
+                                className="mb-4 border border-black/15 bg-white px-3 py-2 text-xs font-medium text-black transition-colors hover:bg-black hover:text-white"
+                              >
+                                Open PDF
+                              </button>
+                            )}
+                            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-black/75">
+                              {doc.content_text || 'No document text saved.'}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-5 space-y-3">
+                <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Assessment notes</p>
+                {mlAssessmentNotes.map((note) => (
+                  <div key={note.id} className="border border-black/10 bg-[#fbfbf8] px-4 py-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-black/80">{noteContextLabel(note) ?? 'M & L Assessment'}</p>
+                        <p className="mt-1 text-xs text-black/35">
+                          {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', note.id);
+                          setNotes((prev) => prev.filter((n) => n.id !== note.id));
+                        }}
+                        className="shrink-0 text-xs text-black/30 transition-colors hover:text-black"
+                      >
+                        Done
+                      </button>
+                    </div>
+                    {renderMLAssessmentContext(note)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {editing && (
         <div className="order-[4] grid md:grid-cols-2 gap-5 mb-8">
@@ -2873,20 +3146,19 @@ export default function PTClientDetail({
         )}
       </div>
 
-      {notes.length > 0 && (
+      {visibleNotes.length > 0 && (
         <div className="order-[7] border-t border-black/8 pt-6 mb-8">
           <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-amber-600 mb-4">
-            Notes ({notes.length})
+            Notes ({visibleNotes.length})
           </h2>
           <div className="space-y-2">
-            {notes.map((note) => (
+            {visibleNotes.map((note) => (
               <div key={note.id} className="flex items-start justify-between gap-4 border border-amber-200 bg-amber-50 px-4 py-3">
                 <div>
                   <p className="text-sm text-black/80">{note.content}</p>
                   {noteContextLabel(note) && (
                     <p className="mt-1 text-xs text-amber-700">{noteContextLabel(note)}</p>
                   )}
-                  {renderMLAssessmentContext(note)}
                   {renderMovementAssessmentContext(note)}
                   <p className="text-xs text-black/30 mt-1">
                     {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -2955,71 +3227,6 @@ export default function PTClientDetail({
           </button>
         )}
       </div>
-
-      {(latestFinalMLAssessmentNote || clientDocuments.length > 0) && (
-        <div className="order-[16] border-t border-black/8 pt-6 mb-8">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Generated intelligence documents</h2>
-              <p className="mt-2 text-sm leading-6 text-black/55">
-                Structured M & L profile document built from the final assessment, PAR-Q, Pedro notes, and movement video notes.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void generateMLClientPdf()}
-              disabled={!latestFinalMLAssessmentNote || mlPdfBusy}
-              className="shrink-0 border border-black bg-black px-4 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/10 disabled:text-black/35"
-            >
-              {mlPdfBusy ? 'Generating...' : 'Generate M & L PDF'}
-            </button>
-          </div>
-          <div className="space-y-3">
-            {clientDocuments.map((doc) => {
-              const isOpen = openGeneratedDocId === doc.id;
-              return (
-                <div key={doc.id} className="border border-black/10 bg-white">
-                  <button
-                    type="button"
-                    onClick={() => setOpenGeneratedDocId(isOpen ? null : doc.id)}
-                    className="flex w-full items-start justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-black/5"
-                  >
-                    <span>
-                      <span className="block text-sm font-medium text-black">{doc.title}</span>
-                      <span className="mt-1 block text-xs text-black/40">
-                        {doc.document_type.replace('_', ' ')} · {new Date(doc.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        {doc.storage_path ? ' · PDF ready' : ''}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-xs uppercase tracking-[0.12em] text-black/40">{isOpen ? 'Close' : 'Open'}</span>
-                  </button>
-                  {isOpen && (
-                    <div className="border-t border-black/8 bg-[#fbfbf8] px-4 py-4">
-                      {doc.storage_path && (
-                        <button
-                          type="button"
-                          onClick={() => void openClientDocPath(doc.storage_path as string)}
-                          className="mb-4 border border-black/15 bg-white px-3 py-2 text-xs font-medium text-black transition-colors hover:bg-black hover:text-white"
-                        >
-                          Open PDF
-                        </button>
-                      )}
-                      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-black/75">
-                        {doc.content_text || 'No document text saved.'}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {clientDocuments.length === 0 && (
-              <div className="border border-dashed border-black/15 bg-white px-4 py-5 text-sm leading-6 text-black/45">
-                No generated M & L document yet. Generate the PDF to create the structured profile document.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {status && <p className="order-[17] text-xs text-black/50 mb-6">{status}</p>}
 
