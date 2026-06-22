@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Check, Loader2, Mic, Play, Save, Square } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import {
   computeAdherenceSnapshot,
@@ -367,6 +368,10 @@ interface MLPdfProgress {
   tone: 'working' | 'done' | 'error';
 }
 
+function mlMovementKey(noteId: string, movementId: string) {
+  return `${noteId}:${movementId}`;
+}
+
 function getSR() {
   const w = window as Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
@@ -525,6 +530,7 @@ export default function PTClientDetail({
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const agentSpeechRef = useRef<SpeechRecognitionLike | null>(null);
+  const mlVideoSpeechRef = useRef<SpeechRecognitionLike | null>(null);
 
   const [client, setClient] = useState(initial);
   const [editing, setEditing] = useState(false);
@@ -568,6 +574,11 @@ export default function PTClientDetail({
   const [mlPdfBusy, setMlPdfBusy] = useState(false);
   const [mlPdfProgress, setMlPdfProgress] = useState<MLPdfProgress | null>(null);
   const [mlCardOpen, setMlCardOpen] = useState(true);
+  const [mlVideoUrls, setMlVideoUrls] = useState<Record<string, string>>({});
+  const [mlVideoNoteDrafts, setMlVideoNoteDrafts] = useState<Record<string, string>>({});
+  const [mlVideoListeningKey, setMlVideoListeningKey] = useState<string | null>(null);
+  const [mlVideoSavingKey, setMlVideoSavingKey] = useState<string | null>(null);
+  const [mlVideoStatus, setMlVideoStatus] = useState('');
   const [reviewBusy, setReviewBusy] = useState<'weekly' | 'monthly' | null>(null);
   const [agentInstructions, setAgentInstructions] = useState('');
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
@@ -1129,8 +1140,106 @@ export default function PTClientDetail({
     if (data?.signedUrl) window.open(data.signedUrl, '_blank');
   };
 
+  const loadMLMovementVideo = async (key: string, path: string) => {
+    if (mlVideoUrls[key]) return;
+    setMlVideoStatus('Loading video...');
+    const { data, error } = await supabase.storage.from('pt-client-docs').createSignedUrl(path, 3600);
+    if (error || !data?.signedUrl) {
+      setMlVideoStatus(error?.message ?? 'Could not load this video.');
+      return;
+    }
+    setMlVideoUrls((current) => ({ ...current, [key]: data.signedUrl }));
+    setMlVideoStatus('');
+  };
+
   const openParqPdf = async (path: string) => {
     await openClientDocPath(path);
+  };
+
+  const stopMLVideoDictation = () => {
+    mlVideoSpeechRef.current?.stop();
+  };
+
+  const startMLVideoDictation = (key: string, currentValue: string) => {
+    if (mlVideoListeningKey === key) {
+      stopMLVideoDictation();
+      return;
+    }
+
+    const SR = getSR();
+    if (!SR) {
+      setMlVideoStatus('Browser dictation is not available. Type the video note instead.');
+      return;
+    }
+
+    mlVideoSpeechRef.current?.stop();
+    const recognition = new SR();
+    mlVideoSpeechRef.current = recognition;
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-AU';
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result?.isFinal) {
+          const transcript = result[0]?.transcript ?? '';
+          if (transcript) {
+            setMlVideoNoteDrafts((current) => {
+              const base = current[key] ?? currentValue;
+              return { ...current, [key]: (base ? `${base} ${transcript}` : transcript).trim() };
+            });
+          }
+        }
+      }
+    };
+    recognition.onend = () => {
+      setMlVideoListeningKey(null);
+      mlVideoSpeechRef.current = null;
+    };
+    recognition.start();
+    setMlVideoListeningKey(key);
+    setMlVideoStatus('');
+  };
+
+  const saveMLMovementVideoNote = async (note: PTNote, movement: MLAssessmentMovement) => {
+    const key = mlMovementKey(note.id, movement.id);
+    const nextNote = (mlVideoNoteDrafts[key] ?? movement.notes ?? '').trim();
+    const rawContext = note.context ?? {};
+    const summary = typeof rawContext.movement_assessment_summary === 'object' && rawContext.movement_assessment_summary !== null
+      ? rawContext.movement_assessment_summary as Record<string, unknown>
+      : {};
+    const rawMovements = Array.isArray(summary.movements) ? summary.movements : [];
+    const updatedMovements = rawMovements.map((item) => {
+      const row = item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : {};
+      return row.id === movement.id ? { ...row, notes: nextNote, video_note_updated_at: new Date().toISOString() } : item;
+    });
+    const updatedContext = {
+      ...rawContext,
+      movement_assessment_summary: {
+        ...summary,
+        movements: updatedMovements,
+      },
+    };
+
+    setMlVideoSavingKey(key);
+    setMlVideoStatus('Saving video note...');
+    const { data, error } = await supabase
+      .from('pt_client_notes')
+      .update({ context: updatedContext })
+      .eq('id', note.id)
+      .select('id, content, is_active, created_at, source_message_id, context')
+      .single();
+
+    if (error || !data) {
+      setMlVideoStatus(error?.message ?? 'Could not save this video note.');
+      setMlVideoSavingKey(null);
+      return;
+    }
+
+    setNotes((current) => current.map((item) => (item.id === note.id ? data as PTNote : item)));
+    setMlVideoNoteDrafts((current) => ({ ...current, [key]: nextNote }));
+    setMlVideoSavingKey(null);
+    setMlVideoStatus('Video note saved. Regenerate the M & L PDF to include the latest notes.');
   };
 
   const invokeMLClientProfileDocument = async (assessmentNoteId: string) => {
@@ -1166,6 +1275,22 @@ export default function PTClientDetail({
 
   const generateMLClientPdf = async () => {
     if (!latestFinalMLAssessmentNote || mlPdfBusy) return;
+    const hasUnsavedVideoNotes = mlAssessmentNotes.some((note) => (
+      mlAssessmentContext(note)?.movement_assessment_summary?.movements?.some((movement) => {
+        const draft = mlVideoNoteDrafts[mlMovementKey(note.id, movement.id)];
+        return draft !== undefined && draft.trim() !== (movement.notes ?? '').trim();
+      }) ?? false
+    ));
+    if (hasUnsavedVideoNotes) {
+      setMlPdfProgress({
+        percent: 100,
+        label: 'Save video notes first',
+        detail: 'One or more video review notes have unsaved changes. Save them, then generate the M & L PDF.',
+        tone: 'error',
+      });
+      return;
+    }
+    stopMLVideoDictation();
     setMlPdfBusy(true);
     setStatus('');
     setMlPdfProgress({
@@ -1321,25 +1446,102 @@ export default function PTClientDetail({
 
         {movementRows.length > 0 && (
           <div className="space-y-2">
-            {movementRows.map((movement) => (
-              <div key={movement.id} className="border border-black/8 bg-white px-3 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium text-black/80">{movement.title}</p>
-                    {movement.notes && <p className="mt-1 text-sm leading-6 text-black/70">{movement.notes}</p>}
+            {movementRows.map((movement) => {
+              const key = mlMovementKey(note.id, movement.id);
+              const draftNote = mlVideoNoteDrafts[key] ?? movement.notes ?? '';
+              const videoUrl = mlVideoUrls[key];
+              const isListening = mlVideoListeningKey === key;
+              const isSaving = mlVideoSavingKey === key;
+              const hasChanges = draftNote.trim() !== (movement.notes ?? '').trim();
+
+              return (
+                <div key={movement.id} className="border border-black/8 bg-white">
+                  <div className="border-b border-black/8 px-3 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-black/80">{movement.title}</p>
+                        {movement.recorded_at && (
+                          <p className="mt-1 text-[0.65rem] uppercase tracking-[0.12em] text-black/30">
+                            Recorded {new Date(movement.recorded_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                      {movement.video_path && (
+                        <span className="inline-flex w-fit items-center gap-1 border border-green-200 bg-green-50 px-2 py-1 text-[0.62rem] uppercase tracking-[0.12em] text-green-700">
+                          <Check className="h-3 w-3" />
+                          Video saved
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {movement.video_path && (
-                    <button
-                      type="button"
-                      onClick={() => void openClientDocPath(movement.video_path as string)}
-                      className="shrink-0 border border-black/15 px-3 py-1.5 text-xs text-black/55 transition-colors hover:border-black/35 hover:text-black"
-                    >
-                      Open video
-                    </button>
-                  )}
+
+                  <div className="grid gap-4 px-3 py-3 lg:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.2fr)]">
+                    <div className="border border-black/8 bg-[#fbfbf8] p-3">
+                      {videoUrl ? (
+                        <video
+                          src={videoUrl}
+                          controls
+                          playsInline
+                          className="aspect-[9/16] max-h-[28rem] w-full bg-black object-cover"
+                        />
+                      ) : movement.video_path ? (
+                        <button
+                          type="button"
+                          onClick={() => void loadMLMovementVideo(key, movement.video_path as string)}
+                          className="flex aspect-[9/16] max-h-[28rem] w-full flex-col items-center justify-center gap-3 border border-black/10 bg-white text-sm text-black/55 transition-colors hover:border-black/30 hover:text-black"
+                        >
+                          <Play className="h-8 w-8" />
+                          Load and play video
+                        </button>
+                      ) : (
+                        <div className="flex aspect-[9/16] max-h-[28rem] w-full items-center justify-center border border-dashed border-black/10 bg-white px-4 text-center text-sm leading-6 text-black/35">
+                          No video saved for this movement.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex min-w-0 flex-col border border-black/8 bg-[#fbfbf8]">
+                      <div className="flex flex-col gap-2 border-b border-black/8 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Video review note</span>
+                        <button
+                          type="button"
+                          onClick={() => startMLVideoDictation(key, draftNote)}
+                          className={`inline-flex w-fit items-center gap-2 border px-3 py-1.5 text-xs transition-colors ${
+                            isListening
+                              ? 'border-red-300 bg-red-50 text-red-700'
+                              : 'border-black/15 bg-white text-black/55 hover:border-black/35 hover:text-black'
+                          }`}
+                        >
+                          {isListening ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                          {isListening ? 'Stop recording' : 'Record voice note'}
+                        </button>
+                      </div>
+                      <textarea
+                        value={draftNote}
+                        onChange={(event) => setMlVideoNoteDrafts((current) => ({ ...current, [key]: event.target.value }))}
+                        rows={7}
+                        placeholder={isListening ? 'Listening...' : 'Watch the video, then dictate or type Pedro notes here.'}
+                        className="min-h-[11rem] w-full flex-1 resize-none bg-transparent px-3 py-3 text-sm leading-7 text-black/75 outline-none placeholder:text-black/25"
+                      />
+                      <div className="flex flex-col gap-2 border-t border-black/8 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs leading-5 text-black/40">
+                          {hasChanges ? 'Unsaved changes. Save before generating the PDF.' : movement.notes ? 'Saved note will be included in the PDF.' : 'No video note saved yet.'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void saveMLMovementVideoNote(note, movement)}
+                          disabled={isSaving || !hasChanges}
+                          className="inline-flex items-center justify-center gap-2 border border-black bg-black px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/10 disabled:text-black/35"
+                        >
+                          {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          {isSaving ? 'Saving...' : 'Save video note'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -2331,6 +2533,12 @@ export default function PTClientDetail({
                     />
                   </div>
                   <p className="mt-2 text-xs leading-5 opacity-75">{mlPdfProgress.detail}</p>
+                </div>
+              )}
+
+              {mlVideoStatus && (
+                <div className="mt-5 border border-black/10 bg-[#fbfbf8] px-4 py-3 text-xs leading-5 text-black/55">
+                  {mlVideoStatus}
                 </div>
               )}
 

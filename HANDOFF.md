@@ -1,12 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-06-19 by Codex - Added manual M & L Client Intelligence PDF export from client profile.
+2026-06-22 by Codex - Added playable M & L movement videos and saved voice notes on client profile.
 
 ## Last code fix commit
-this commit - add manual M & L client intelligence PDF export
+this commit - add M & L movement video note review
 
 ## What just happened (read first)
+
+### M & L movement video note review (2026-06-22, LATEST)
+
+Pedro asked to watch the saved M & L movement videos from the client profile, record voice notes while reviewing them, save those notes against the videos, then generate the PDF from all assessment notes plus the video notes.
+
+Shipped:
+- The top client-profile `M & L` card now embeds each saved movement video inside the assessment note instead of only opening it in a new tab.
+- Each movement row has a `Load and play video` control, a browser dictation button for `Record voice note`, an editable note field, and a `Save video note` button.
+- Saved video notes update the existing final M & L `pt_client_notes.context.movement_assessment_summary.movements[].notes` field. No new table or migration was needed.
+- Generate/Regenerate M & L PDF now refuses to run when a video note has unsaved changes, so Pedro does not accidentally create a stale PDF.
+- The existing PDF route already reads `movement_assessment_summary.movements[].notes` into the Movement Video Notes Appendix, so saved review notes are included on the next PDF generation.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- Targeted ESLint on `PTClientDetail.tsx` is still blocked by pre-existing React compiler lint issues in that large file (`set-state-in-effect`, `Date.now()` purity, unescaped apostrophe, plus warnings). No new build blocker was introduced.
 
 ### M & L Client Intelligence PDF export (2026-06-19, LATEST)
 
