@@ -1,12 +1,47 @@
 # Handoff
 
 ## Last updated
-2026-06-24 by Codex - Added board-view drag into larger supersets.
+2026-06-25 by Codex - Synced PT Session swaps into client programme on Finish Session.
 
 ## Last code fix commit
-this commit - allow board supersets with more than two exercises
+this commit - sync PT session exercise swaps to programme
 
 ## What just happened (read first)
+
+### PT Sessions exercise swaps persist to active programme (2026-06-25, LATEST)
+
+Pedro reported that he swapped exercises while tracking Stephen's Day 1 workout in PT Sessions, but the swapped exercises were not saved into the client's programme.
+
+Root cause:
+- `swapExercise()` only wrote to local `exerciseOverrides` state.
+- `Finish session` logged sets using the swapped exercise, but the assignment update only advanced the programme cursor.
+- The active `pt_program_assignments.programme` JSON was never patched, so the next view still showed the original exercise.
+
+Shipped:
+- `PTSessionsView` now applies session exercise overrides to the selected active programme day when Pedro presses `Finish session`.
+- The programme patch happens after workout/set logs are inserted and before session credit deduction.
+- If the programme patch fails, the flow stops before deducting the session and shows: `Workout saved, but programme update failed: ...`.
+- The patch preserves the original exercise slot structure:
+  - same exercise `id`,
+  - same sets/reps/rest,
+  - same section/superset/week overrides,
+  - only exercise identity fields change: `exercise_id`, `name`, `notes`, `video_url`, `cues`, `pattern`.
+- The swap UI now preserves the original exercise prescription instead of defaulting a swapped exercise to `3 x 8-12`.
+- Inserts a `pt_events` row with `event_type = programme_exercise_swapped` and swap metadata.
+- Reloads client data after finish so Pedro sees the updated programme immediately.
+- Created project skill outside the app repo:
+  - `skills/pt-session-programme-swap-sync/SKILL.md`
+  - Root `AGENTS.md` now documents the PT Session swap-sync rule.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- Skill validation passes for `pt-session-programme-swap-sync`.
+
+Notes:
+- No schema or Supabase function deploy was needed. This updates the existing `pt_program_assignments.programme` JSON from the authenticated dashboard client.
+- No live Stephen session was finished during verification because that would write a real workout log and deduct a real session.
 
 ### Programme board-view supersets larger than 2 exercises (2026-06-24, LATEST)
 

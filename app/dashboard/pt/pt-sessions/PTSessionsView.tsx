@@ -12,6 +12,7 @@ import {
   safeProgramme,
   type PhaseProgress,
 } from '@/utils/pt/programme';
+import { derivePattern } from '@/utils/pt/patterns';
 import { formatBookingDate, formatBookingTime, type PTBookingAppointment } from '@/utils/pt/bookings';
 import type {
   PTClient,
@@ -102,6 +103,39 @@ function getWorkoutCompletedAt(logs: WorkoutLog[], phaseIndex: number, dayIndex:
 
 function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
   return exercise.exercise_id ?? exercise.name.toLowerCase();
+}
+
+function applyExerciseOverridesToProgramme(
+  assignment: PTProgramAssignment,
+  selectedWorkout: SelectedWorkout,
+  overrides: Record<string, PTProgrammeExercise>,
+): { programme: PTProgramAssignment['programme']; changed: boolean; swapped: Array<{ from: string; to: string }> } {
+  const overrideEntries = Object.entries(overrides);
+  if (overrideEntries.length === 0) {
+    return { programme: assignment.programme, changed: false, swapped: [] };
+  }
+
+  const programme = structuredClone(assignment.programme);
+  const day = programme.phases[selectedWorkout.phaseIndex]?.days[selectedWorkout.dayIndex];
+  if (!day) return { programme: assignment.programme, changed: false, swapped: [] };
+
+  const swapped: Array<{ from: string; to: string }> = [];
+  day.exercises = day.exercises.map((exercise) => {
+    const override = overrides[exercise.id];
+    if (!override) return exercise;
+    swapped.push({ from: exercise.name, to: override.name });
+    return {
+      ...exercise,
+      exercise_id: override.exercise_id,
+      name: override.name,
+      notes: override.notes,
+      video_url: override.video_url,
+      cues: override.cues,
+      pattern: override.pattern ?? exercise.pattern ?? null,
+    };
+  });
+
+  return { programme, changed: swapped.length > 0, swapped };
 }
 
 function isToday(isoString: string) {
@@ -370,16 +404,21 @@ export default function PTSessionsView({
   function swapExercise(originalId: string, lib: PTExercise) {
     if (!selectedWorkout || !assignment) return;
     const phase = assignment.programme.phases[selectedWorkout.phaseIndex];
+    const original = phase?.days[selectedWorkout.dayIndex]?.exercises.find((exercise) => exercise.id === originalId);
+    if (!phase || !original) return;
     const blockIndex = phaseProgress[selectedWorkout.phaseIndex]?.blockIndex ?? 0;
-    const existingValues = getExerciseBlockValues(
-      { id: originalId, exercise_id: null, name: lib.name, sets: '3', reps: '8-12', rest: '', notes: '', video_url: null, cues: [] },
-      phase?.week_blocks, blockIndex,
-    );
+    const existingValues = getExerciseBlockValues(original, phase.week_blocks, blockIndex);
     const count = parseSets(existingValues.sets);
     const newExercise: PTProgrammeExercise = {
-      id: originalId, exercise_id: lib.id, name: lib.name,
-      sets: existingValues.sets, reps: existingValues.reps, rest: '', notes: lib.purpose ?? '',
+      ...original,
+      exercise_id: lib.id,
+      name: lib.name,
+      sets: original.sets,
+      reps: original.reps,
+      rest: original.rest,
+      notes: lib.purpose ?? '',
       video_url: lib.video_url, cues: lib.cues.slice(0, 4),
+      pattern: derivePattern(lib.name, lib.tags),
     };
     setExerciseOverrides((prev) => ({ ...prev, [originalId]: newExercise }));
     setSetCounts((prev) => ({ ...prev, [originalId]: count }));
@@ -422,7 +461,7 @@ export default function PTSessionsView({
     if (!phase || !day) return;
 
     setSaving(true);
-    setStatus('Saving session...');
+    setStatus(Object.keys(exerciseOverrides).length > 0 ? 'Saving session and programme swaps...' : 'Saving session...');
 
     const progress = phaseProgress[selectedWorkout.phaseIndex];
     const blockIndex = progress?.blockIndex ?? null;
@@ -528,23 +567,51 @@ export default function PTSessionsView({
       { id: workoutId, phase_index: selectedWorkout.phaseIndex, day_index: selectedWorkout.dayIndex,
         week_number: weekWithinBlock, block_index: blockIndex, is_quick_done: false, created_at: new Date().toISOString() },
     ];
-    const cursor = getCursorUpdateAfterWorkout(assignment.programme, updatedLogs, selectedWorkout.phaseIndex);
-    if (
+    const swapSync = applyExerciseOverridesToProgramme(assignment, selectedWorkout, exerciseOverrides);
+    const cursor = getCursorUpdateAfterWorkout(swapSync.programme, updatedLogs, selectedWorkout.phaseIndex);
+    const cursorChanged = Boolean(
       cursor &&
       (
         cursor.phaseIndex !== (assignment.current_phase_index ?? null) ||
         cursor.blockIndex !== assignment.current_block_index ||
         cursor.week !== assignment.current_week
-      )
-    ) {
-      await supabase
+      ),
+    );
+
+    if (swapSync.changed || cursorChanged) {
+      const assignmentPatch: Partial<PTProgramAssignment> = {};
+      if (swapSync.changed) assignmentPatch.programme = swapSync.programme;
+      if (cursor) {
+        assignmentPatch.current_phase_index = cursor.phaseIndex;
+        assignmentPatch.current_block_index = cursor.blockIndex;
+        assignmentPatch.current_week = cursor.week;
+      }
+
+      const { error: assignmentError } = await supabase
         .from('pt_program_assignments')
-        .update({
-          current_phase_index: cursor.phaseIndex,
-          current_block_index: cursor.blockIndex,
-          current_week: cursor.week,
-        })
+        .update(assignmentPatch)
         .eq('id', assignment.id);
+
+      if (assignmentError) {
+        setStatus(`Workout saved, but programme update failed: ${assignmentError.message}`);
+        setSaving(false);
+        return;
+      }
+
+      if (swapSync.changed) {
+        await supabase.from('pt_events').insert({
+          client_id: selectedClient.id,
+          assignment_id: assignment.id,
+          event_type: 'programme_exercise_swapped',
+          metadata: {
+            source: 'pt_sessions_finish',
+            workout_log_id: workoutId,
+            phase_index: selectedWorkout.phaseIndex,
+            day_index: selectedWorkout.dayIndex,
+            swaps: swapSync.swapped,
+          },
+        });
+      }
     }
 
     // Deduct session credit
