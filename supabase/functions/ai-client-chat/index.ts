@@ -384,7 +384,7 @@ async function readLiveClientContext(params: {
       .select('id, phase_index, day_index, week_number, workout_title, notes, completed_at, created_at')
       .eq('client_id', clientId)
       .order('completed_at', { ascending: false })
-      .limit(25),
+      .limit(100),
     adminClient
       .from('pt_nutrition_logs')
       .select('logged_at, meal_description, protein_g, carbs_g, fat_g, calories, meal_type')
@@ -410,7 +410,7 @@ async function readLiveClientContext(params: {
       .eq('client_id', clientId)
       .in('workout_log_id', workoutIds)
       .order('created_at', { ascending: false })
-      .limit(500);
+      .limit(2000);
     sets = (setRows ?? []) as SetLogRow[];
   }
 

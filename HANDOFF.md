@@ -19,8 +19,8 @@ Pedro reported that the client-side AI could not answer a question about a previ
 Shipped:
 - `ai-client-chat` now retrieves live client context before every answer:
   - active programme details, current phase/week/block, current phase days/exercises, exercise notes and 1RM target notes,
-  - last 25 workout logs,
-  - exact set logs for those workouts, capped at 500 sets,
+  - last 100 workout logs,
+  - exact set logs for those workouts, capped at 2,000 sets,
   - exercise-level history summary with latest logged session, latest sets/reps/load, best logged load, and session count,
   - recent nutrition logs and macro averages,
   - recent body metrics,
@@ -41,14 +41,14 @@ Shipped:
   - Root `AGENTS.md` now documents the client-side Henrique workflow.
 
 Deployment:
-- Redeployed `ai-client-chat` ACTIVE v16 on Supabase project `otcnrkfvgyvwolironoz`.
+- Redeployed `ai-client-chat` ACTIVE v17 on Supabase project `otcnrkfvgyvwolironoz`.
 
 Verification:
 - `npx tsc --noEmit` passes.
 - `npm run build` passes.
 - `git diff --check` passes.
 - Skill validation passes for `pt-client-ai-live-coach`.
-- Supabase function list confirms `ai-client-chat` ACTIVE v16.
+- Supabase function list confirms `ai-client-chat` ACTIVE v17.
 
 Notes:
 - No live client chat message was sent during verification because it would write a real AI response into a real client's message history.
