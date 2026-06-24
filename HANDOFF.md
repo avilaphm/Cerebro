@@ -1,12 +1,46 @@
 # Handoff
 
 ## Last updated
-2026-06-24 by Codex - Added voice phase rebuild for PT programmes.
+2026-06-24 by Codex - Auto-updated programme loads after 1RM save.
 
 ## Last code fix commit
-this commit - add PT voice phase rebuild
+this commit - auto-update 1RM programme loads
 
 ## What just happened (read first)
+
+### Auto-apply 1RM percentages after testing (2026-06-24, LATEST)
+
+Pedro clarified that after clients finish 1RM testing, the AI/system must automatically update programming and exercises with percentage-based kg suggestions using the max/highest 1RM kg result.
+
+Shipped:
+- `saveOneRmResults()` on the client profile now automatically invokes `recalculate-percentage-loads` after saving the 1RM test rows.
+- The manual `Recalculate programme loads` button remains, but now uses the same helper as the automatic post-save flow.
+- `recalculate-percentage-loads` now:
+  - reads all stored 1RM rows for the client,
+  - uses the highest `estimated_1rm_kg` per canonical Big 5 lift, falling back to `load_kg` if needed,
+  - writes `current_1rm` to `pt_client_exercise_doc`,
+  - stores `one_rm_map` and `resolved_loads` on assignment `validation_summary`,
+  - updates the programme JSON itself with target notes on compatible exercises, e.g. `Target ~55kg @ 65% 1RM` or multi-block `Targets: Block 1 ~55kg @ 65% | ...`,
+  - strips old target lines before writing new ones so reruns do not stack duplicate targets.
+- The generation ledger records `RECALCULATE_PERCENTAGE_LOADS` with source `1rm_result` after automatic recalculation.
+- Updated project 1RM skills outside the app repo:
+  - `pt-record-1rm-results`
+  - `pt-run-1rm-testing-session`
+  - `pt-prescribe-workout-weights`
+  They now document that highest stored 1RM drives the post-test prescription.
+
+Deployment:
+- Redeployed `recalculate-percentage-loads` ACTIVE v10 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- Skill validation passes for the updated 1RM skills.
+- Supabase function list confirms `recalculate-percentage-loads` ACTIVE v10.
+
+Notes:
+- No live 1RM save was executed against a real client because it would write real 1RM rows and modify a real active programme.
 
 ### PT programme voice phase rebuild + 1RM kg suggestions (2026-06-24, LATEST)
 

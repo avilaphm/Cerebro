@@ -183,6 +183,13 @@ interface MLAssessmentContext {
 const ONE_RM_EXERCISES = ['BB Squat', 'BB Deadlift', 'BB Bench Press', 'BB Shoulder Press', 'Pull-up'] as const;
 type OneRMExercise = typeof ONE_RM_EXERCISES[number];
 
+interface RecalculateLoadsPayload {
+  one_rm_map?: Record<string, number>;
+  resolved_loads_count?: number;
+  programme_targets_written?: number;
+  error?: string;
+}
+
 function phaseLooksLikeTesting(title: string): boolean {
   return /1\s*rm|test/i.test(title);
 }
@@ -703,6 +710,42 @@ export default function PTClientDetail({
     router.refresh();
   };
 
+  const runPercentageLoadRecalculation = async () => {
+    if (!activeAssignment) return { ok: false, message: 'No active programme to update.' };
+
+    const { data, error } = await supabase.functions.invoke<RecalculateLoadsPayload>('recalculate-percentage-loads', {
+      body: { client_id: client.id, assignment_id: activeAssignment.id },
+    });
+
+    if (error || data?.error) {
+      return { ok: false, message: data?.error ?? error?.message ?? 'Could not update programme loads.' };
+    }
+
+    if (activeAssignment.generation_run_id) {
+      void supabase.from('pt_program_generation_steps').insert({
+        run_id: activeAssignment.generation_run_id,
+        step_order: 20,
+        command_name: 'RECALCULATE_PERCENTAGE_LOADS',
+        status: 'succeeded',
+        input_json: {
+          client_id: client.id,
+          assignment_id: activeAssignment.id,
+          source: '1rm_result',
+          one_rm_map: data?.one_rm_map ?? {},
+          resolved_loads_count: data?.resolved_loads_count ?? 0,
+          programme_targets_written: data?.programme_targets_written ?? 0,
+        },
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+      });
+    }
+
+    return {
+      ok: true,
+      message: `Programme loads updated from highest 1RM values (${data?.programme_targets_written ?? 0} exercise target${data?.programme_targets_written === 1 ? '' : 's'} written).`,
+    };
+  };
+
   const saveOneRmResults = async () => {
     const filled = ONE_RM_EXERCISES.filter((ex) => oneRmInputs[ex].weight !== '');
     if (filled.length === 0) { setOneRmStatus('Enter at least one result.'); return; }
@@ -796,10 +839,15 @@ export default function PTClientDetail({
       });
     }
 
+    setOneRmStatus('Saved. Updating programme loads from highest 1RM values...');
+    const loadResult = activeAssignment
+      ? await runPercentageLoadRecalculation()
+      : { ok: false, message: 'Saved. No active programme to update.' };
+
     const newTest: PT1RMTest = { id: testRow.id, client_id: client.id, assignment_id: activeAssignment?.id ?? null, tested_at: new Date().toISOString().slice(0, 10), notes: null, created_at: new Date().toISOString(), results: resultRows.map((r, i) => ({ id: `temp-${i}`, test_id: testRow.id, client_id: client.id, exercise_name: r.exercise_name, tested_weight_kg: r.tested_weight_kg, tested_reps: r.tested_reps, estimated_1rm_kg: r.estimated_1rm_kg, notes: null, created_at: new Date().toISOString() })) };
     setOneRmTests((prev) => [newTest, ...prev]);
     setOneRmAdvancePhaseIndex(findPostOneRmPhaseIndex(activeAssignment));
-    setOneRmStatus('Saved.');
+    setOneRmStatus(loadResult.ok ? loadResult.message : `1RM saved, but load update failed: ${loadResult.message}`);
     setOneRmInputs(Object.fromEntries(ONE_RM_EXERCISES.map((ex) => [ex, { weight: '', reps: '1' }])) as Record<OneRMExercise, { weight: string; reps: string }>);
     setOneRmSaving(false);
   };
@@ -861,22 +909,9 @@ export default function PTClientDetail({
     if (!activeAssignment) return;
     setRecalcBusy(true);
     setOneRmStatus('Recalculating percentage loads...');
-    const { error } = await supabase.functions.invoke('recalculate-percentage-loads', {
-      body: { client_id: client.id, assignment_id: activeAssignment.id },
-    });
-    if (!error && activeAssignment.generation_run_id) {
-      void supabase.from('pt_program_generation_steps').insert({
-        run_id: activeAssignment.generation_run_id,
-        step_order: 20,
-        command_name: 'RECALCULATE_PERCENTAGE_LOADS',
-        status: 'succeeded',
-        input_json: { client_id: client.id, assignment_id: activeAssignment.id },
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      });
-    }
+    const result = await runPercentageLoadRecalculation();
     setRecalcBusy(false);
-    setOneRmStatus(error ? `Error: ${error.message}` : 'Loads recalculated. Refresh the programme editor to see kg targets.');
+    setOneRmStatus(result.ok ? result.message : `Error: ${result.message}`);
   };
 
   const sendInvite = async () => {
