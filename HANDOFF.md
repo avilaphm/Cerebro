@@ -1,12 +1,38 @@
 # Handoff
 
 ## Last updated
-2026-06-24 by Codex - Upgraded Henrique client AI live context.
+2026-06-24 by Codex - Added board-view drag into larger supersets.
 
 ## Last code fix commit
-this commit - upgrade client AI live context
+this commit - allow board supersets with more than two exercises
 
 ## What just happened (read first)
+
+### Programme board-view supersets larger than 2 exercises (2026-06-24, LATEST)
+
+Pedro asked to drag exercises into other supersets in board view so a superset can contain 3+ exercises, instead of the board being limited to visual pairs of 2.
+
+Shipped:
+- Updated shared programme board grouping in `utils/pt/programme.ts`.
+- Board view now respects real `superset_id` groups, so one superset can render 2, 3, 4, or more exercises.
+- Older programmes without stored `superset_id` still fall back to the previous visual Workout pairing by position.
+- Added `moveExerciseIntoProgrammeSuperset()` helper:
+  - dropping an exercise onto a visible superset band joins that superset,
+  - dropping onto a visual pair creates a real stored superset from that pair plus the dropped exercise,
+  - dragging an exercise onto a normal day/card drop removes old superset membership so it becomes standalone,
+  - singleton leftovers have their `superset_id` cleared so old hidden group IDs do not confuse future board rendering.
+- Wired the behavior into all programme board editors:
+  - active assignment editor: `app/dashboard/pt/programmes/[id]/edit/PTProgrammeEditView.tsx`
+  - new programme wizard: `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`
+  - template editor: `app/dashboard/pt/programmes/template/[id]/edit/PTProgrammeTemplateEditView.tsx`
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
+Notes:
+- No schema or Supabase deploy was needed. Superset membership already lives in programme JSON as `exercise.superset_id`.
 
 ### Henrique client AI live-context upgrade (2026-06-24, LATEST)
 

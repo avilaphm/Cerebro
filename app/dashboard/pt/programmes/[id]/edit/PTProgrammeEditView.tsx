@@ -14,6 +14,7 @@ import {
   getWeeksLeftFromCursor,
   makeId,
   moveExerciseBetweenProgrammeDays,
+  moveExerciseIntoProgrammeSuperset,
   parseWeekBlocks,
   safeProgramme,
   groupBands,
@@ -307,6 +308,15 @@ export default function PTProgrammeEditView({
       const ph = p.phases[activePhaseTab];
       if (!ph) return p;
       p.phases[activePhaseTab] = moveExerciseBetweenProgrammeDays(ph, fromDay, exId, toDay, beforeExId);
+      return p;
+    });
+  };
+
+  const moveExerciseToSuperset = (fromDay: number, exId: string, toDay: number, targetExId: string) => {
+    update((p) => {
+      const ph = p.phases[activePhaseTab];
+      if (!ph) return p;
+      p.phases[activePhaseTab] = moveExerciseIntoProgrammeSuperset(ph, fromDay, exId, toDay, targetExId);
       return p;
     });
   };
@@ -1390,6 +1400,14 @@ export default function PTProgrammeEditView({
                     {dayBands[di].map((band, bi) => (
                       <div
                         key={band[0].id}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (dragEx) moveExerciseToSuperset(dragEx.dayIndex, dragEx.exId, di, band[0].id);
+                          setDragEx(null);
+                          setDragOverDay(null);
+                        }}
                         className={`flex flex-col gap-1.5 ${bi > 0 ? 'mt-2 border-t border-dashed border-black/15 pt-2' : ''}`}
                       >
                         {band[0].section_start && <p className="px-1 pb-0.5 text-[0.55rem] uppercase tracking-wider text-black/30">{band[0].section_start}</p>}
@@ -1403,7 +1421,16 @@ export default function PTProgrammeEditView({
                               onDragStart={isEditing ? undefined : (e) => { setDragEx({ dayIndex: di, exId: ex.id }); e.dataTransfer.effectAllowed = 'move'; }}
                               onDragEnd={isEditing ? undefined : () => { setDragEx(null); setDragOverDay(null); }}
                               onDragOver={(e) => e.preventDefault()}
-                              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di, ex.id); setDragEx(null); setDragOverDay(null); }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (dragEx) {
+                                  if (band.length > 1 || ex.superset_id) moveExerciseToSuperset(dragEx.dayIndex, dragEx.exId, di, ex.id);
+                                  else moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di, ex.id);
+                                }
+                                setDragEx(null);
+                                setDragOverDay(null);
+                              }}
                               className={`relative rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${isEditing ? 'border-black/30' : dragEx?.exId === ex.id ? 'cursor-grab opacity-40 border-black/10' : 'cursor-grab border-black/10 hover:border-black/25'}`}
                             >
                               {isEditing ? (

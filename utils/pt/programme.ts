@@ -215,12 +215,9 @@ export function startsNewBand(
 }
 
 // Splits a day's exercises into the divider-delimited "bands" used by the board
-// view. The board renders one band per shared subgrid row, so band index N lines
-// up across every day column. Render-only grouping (ignores stored superset_id,
-// which is unreliable on older programmes): every section except Workout collapses
-// to a single tight block (warm-up / metcon / stretches), and the Workout section
-// is paired into supersets of two by position. A divider with padding sits between
-// bands — i.e. between sections and between successive workout supersets.
+// view. Real superset_id groups render as one band, so supersets can contain 2,
+// 3, or more exercises. Older programmes without superset_id still fall back to
+// pairing Workout exercises by position to preserve the previous board layout.
 export function groupBands(exercises: PTProgrammeExercise[]): PTProgrammeExercise[][] {
   const bands: PTProgrammeExercise[][] = [];
   let section: string | null = null;
@@ -232,7 +229,20 @@ export function groupBands(exercises: PTProgrammeExercise[]): PTProgrammeExercis
     while (j < exercises.length && !(j > i && exercises[j].section_start)) j++;
     const items = exercises.slice(i, j);
     if ((sectionStart ?? '').toLowerCase() === 'workout') {
-      for (let k = 0; k < items.length; k += 2) bands.push(items.slice(k, k + 2));
+      let k = 0;
+      while (k < items.length) {
+        const supersetId = items[k].superset_id ?? null;
+        if (supersetId) {
+          let end = k + 1;
+          while (end < items.length && items[end].superset_id === supersetId) end++;
+          bands.push(items.slice(k, end));
+          k = end;
+        } else {
+          const fallbackEnd = items[k + 1]?.superset_id ? k + 1 : Math.min(k + 2, items.length);
+          bands.push(items.slice(k, fallbackEnd));
+          k = fallbackEnd;
+        }
+      }
     } else {
       bands.push(items);
     }
@@ -305,6 +315,18 @@ function rebuildDayExercises(items: Array<{ exercise: PTProgrammeExercise; secti
   });
 }
 
+function clearSingletonSupersets(exercises: PTProgrammeExercise[]): PTProgrammeExercise[] {
+  const counts = new Map<string, number>();
+  exercises.forEach((exercise) => {
+    if (exercise.superset_id) counts.set(exercise.superset_id, (counts.get(exercise.superset_id) ?? 0) + 1);
+  });
+  return exercises.map((exercise) => (
+    exercise.superset_id && (counts.get(exercise.superset_id) ?? 0) < 2
+      ? { ...exercise, superset_id: null }
+      : exercise
+  ));
+}
+
 export function moveExerciseBetweenProgrammeDays(
   phase: PTProgrammePhase,
   fromDay: number,
@@ -319,13 +341,14 @@ export function moveExerciseBetweenProgrammeDays(
   const movedIndex = fromItems.findIndex((item) => item.exercise.id === exerciseId);
   if (movedIndex === -1) return phase;
 
-  const [moved] = fromItems.splice(movedIndex, 1);
+  const [movedRaw] = fromItems.splice(movedIndex, 1);
+  const moved = { ...movedRaw, exercise: { ...movedRaw.exercise, superset_id: null } };
 
   if (fromDay === toDay) {
     let insertAt = beforeExerciseId ? fromItems.findIndex((item) => item.exercise.id === beforeExerciseId) : fromItems.length;
     if (insertAt === -1) insertAt = fromItems.length;
     fromItems.splice(insertAt, 0, moved);
-    days[fromDay] = { ...days[fromDay], exercises: rebuildDayExercises(fromItems) };
+    days[fromDay] = { ...days[fromDay], exercises: clearSingletonSupersets(rebuildDayExercises(fromItems)) };
     return { ...phase, days };
   }
 
@@ -334,8 +357,55 @@ export function moveExerciseBetweenProgrammeDays(
   if (insertAt === -1) insertAt = toItems.length;
   toItems.splice(insertAt, 0, moved);
 
-  days[fromDay] = { ...days[fromDay], exercises: rebuildDayExercises(fromItems) };
-  days[toDay] = { ...days[toDay], exercises: rebuildDayExercises(toItems) };
+  days[fromDay] = { ...days[fromDay], exercises: clearSingletonSupersets(rebuildDayExercises(fromItems)) };
+  days[toDay] = { ...days[toDay], exercises: clearSingletonSupersets(rebuildDayExercises(toItems)) };
+
+  return { ...phase, days };
+}
+
+export function moveExerciseIntoProgrammeSuperset(
+  phase: PTProgrammePhase,
+  fromDay: number,
+  exerciseId: string,
+  toDay: number,
+  targetExerciseId: string,
+): PTProgrammePhase {
+  if (!phase.days[fromDay] || !phase.days[toDay] || exerciseId === targetExerciseId) return phase;
+
+  const days = phase.days.map((day) => ({ ...day, exercises: day.exercises.slice() }));
+  const fromItems = resolveDayExercises(days[fromDay].exercises);
+  const movedIndex = fromItems.findIndex((item) => item.exercise.id === exerciseId);
+  if (movedIndex === -1) return phase;
+
+  const [movedRaw] = fromItems.splice(movedIndex, 1);
+  const toItems = fromDay === toDay ? fromItems : resolveDayExercises(days[toDay].exercises);
+  const targetIndex = toItems.findIndex((item) => item.exercise.id === targetExerciseId);
+  if (targetIndex === -1) return phase;
+
+  const targetSupersetId = toItems[targetIndex].exercise.superset_id ?? makeId('superset');
+  const targetSection = toItems[targetIndex].section;
+
+  toItems[targetIndex] = {
+    ...toItems[targetIndex],
+    exercise: { ...toItems[targetIndex].exercise, superset_id: targetSupersetId },
+  };
+
+  const moved = {
+    section: targetSection,
+    exercise: { ...movedRaw.exercise, superset_id: targetSupersetId },
+  };
+
+  let insertAt = targetIndex + 1;
+  while (insertAt < toItems.length && toItems[insertAt].exercise.superset_id === targetSupersetId) insertAt++;
+  toItems.splice(insertAt, 0, moved);
+
+  if (fromDay === toDay) {
+    days[fromDay] = { ...days[fromDay], exercises: clearSingletonSupersets(rebuildDayExercises(toItems)) };
+    return { ...phase, days };
+  }
+
+  days[fromDay] = { ...days[fromDay], exercises: clearSingletonSupersets(rebuildDayExercises(fromItems)) };
+  days[toDay] = { ...days[toDay], exercises: clearSingletonSupersets(rebuildDayExercises(toItems)) };
 
   return { ...phase, days };
 }
