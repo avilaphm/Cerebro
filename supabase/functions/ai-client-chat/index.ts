@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import OpenAI from 'npm:openai@4';
+import Anthropic from 'npm:@anthropic-ai/sdk@0.65.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +25,96 @@ interface KnowledgeChunk {
   chunk_text: string;
   document_title: string;
   similarity: number;
+}
+
+interface ClientBrainChunk {
+  chunk_text: string;
+  doc_type: string;
+  similarity: number;
+}
+
+interface WorkoutLogRow {
+  id: string;
+  phase_index: number;
+  day_index: number;
+  week_number: number;
+  workout_title: string;
+  notes: string | null;
+  completed_at: string;
+  created_at: string;
+}
+
+interface SetLogRow {
+  workout_log_id: string;
+  exercise_name: string;
+  set_number: number;
+  reps: number | null;
+  weight: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+interface NutritionLogRow {
+  logged_at: string;
+  meal_description: string | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  calories: number | null;
+  meal_type: string | null;
+}
+
+interface MetricRow {
+  measured_at: string;
+  weight_kg: number | null;
+  waist_cm: number | null;
+  body_fat_pct: number | null;
+  muscle_mass_kg: number | null;
+  source: string;
+  notes: string | null;
+}
+
+interface ProgrammeExercise {
+  name?: string;
+  sets?: string;
+  reps?: string;
+  rest?: string;
+  notes?: string;
+}
+
+interface ProgrammeDay {
+  title?: string;
+  focus?: string;
+  exercises?: ProgrammeExercise[];
+}
+
+interface ProgrammePhase {
+  title?: string;
+  focus?: string;
+  weeks?: string;
+  days?: ProgrammeDay[];
+}
+
+interface ProgrammeShape {
+  phases?: ProgrammePhase[];
+}
+
+interface AssignmentRow {
+  name: string;
+  goal: string | null;
+  current_phase_index: number | null;
+  current_week: number | null;
+  current_block_index: number | null;
+  programme: ProgrammeShape | null;
+}
+
+interface LiveClientContext {
+  programmeDetail: string | null;
+  workoutHistory: string;
+  exerciseHistory: string;
+  nutritionHistory: string;
+  metricsHistory: string;
+  clientBrainMatches: string;
 }
 
 // Detects food-logging intent in client message
@@ -93,6 +184,244 @@ async function searchKnowledgeBase(
   } catch {
     return '';
   }
+}
+
+async function searchClientBrain(
+  query: string,
+  clientId: string,
+  openai: OpenAI,
+  adminClient: ReturnType<typeof createClient>,
+): Promise<string> {
+  try {
+    const embedding = await embedText(query, openai);
+    const { data } = await adminClient.rpc('match_client_brain_chunks', {
+      query_embedding: embedding,
+      target_client_id: clientId,
+      match_count: 8,
+      match_threshold: 0.18,
+    });
+    if (!data || data.length === 0) return '';
+    return (data as ClientBrainChunk[])
+      .map((c) => `[${c.doc_type} / ${Math.round(c.similarity * 100)}%]\n${c.chunk_text}`)
+      .join('\n\n---\n\n')
+      .slice(0, 7000);
+  } catch {
+    return '';
+  }
+}
+
+function isoDate(value: string | null | undefined): string {
+  if (!value) return 'unknown date';
+  return value.slice(0, 10);
+}
+
+function formatKg(value: number | null | undefined): string {
+  if (typeof value !== 'number') return 'bodyweight';
+  return Number.isInteger(value) ? `${value}kg` : `${Math.round(value * 10) / 10}kg`;
+}
+
+function formatSet(set: SetLogRow): string {
+  const reps = typeof set.reps === 'number' ? `${set.reps}` : '?';
+  return `${set.set_number}:${reps}x${formatKg(set.weight)}${set.notes ? ` (${set.notes})` : ''}`;
+}
+
+function formatProgrammeDetail(assignment: AssignmentRow | null): string | null {
+  if (!assignment) return null;
+  const phases = assignment.programme?.phases ?? [];
+  const currentPhaseIndex = assignment.current_phase_index ?? 0;
+  const currentPhase = phases[currentPhaseIndex] ?? phases[0] ?? null;
+  const phaseList = phases
+    .map((phase, index) => `${index + 1}. ${phase.title ?? 'Untitled'}${phase.weeks ? ` (${phase.weeks}w)` : ''}`)
+    .join(' -> ');
+
+  const currentDays = (currentPhase?.days ?? [])
+    .slice(0, 7)
+    .map((day, dayIndex) => {
+      const exercises = (day.exercises ?? [])
+        .slice(0, 18)
+        .map((exercise) => {
+          const prescription = [exercise.sets, exercise.reps].filter(Boolean).join(' x ');
+          const notes = exercise.notes ? `; notes: ${exercise.notes}` : '';
+          return `${exercise.name ?? 'Exercise'}${prescription ? ` (${prescription})` : ''}${notes}`;
+        })
+        .join(' | ');
+      return `Day ${dayIndex + 1}: ${day.title ?? 'Untitled'}${day.focus ? ` - ${day.focus}` : ''}\n${exercises}`;
+    })
+    .join('\n');
+
+  return [
+    `Programme: ${assignment.name}`,
+    `Goal: ${assignment.goal ?? 'Not set'}`,
+    `Current phase: ${currentPhase?.title ?? 'Unknown'} | week ${assignment.current_week ?? 1} | block ${assignment.current_block_index ?? 0}`,
+    `All phases: ${phaseList || 'No phases found'}`,
+    currentDays ? `Current phase exercise plan:\n${currentDays}` : null,
+  ].filter(Boolean).join('\n');
+}
+
+function formatRecentWorkouts(workouts: WorkoutLogRow[], sets: SetLogRow[]): string {
+  if (workouts.length === 0) return 'No workout logs found yet.';
+  const setsByWorkout = new Map<string, SetLogRow[]>();
+  for (const set of sets) {
+    const list = setsByWorkout.get(set.workout_log_id) ?? [];
+    list.push(set);
+    setsByWorkout.set(set.workout_log_id, list);
+  }
+
+  return workouts.slice(0, 10).map((workout) => {
+    const workoutSets = (setsByWorkout.get(workout.id) ?? [])
+      .sort((a, b) => a.exercise_name.localeCompare(b.exercise_name) || a.set_number - b.set_number);
+    const byExercise = new Map<string, SetLogRow[]>();
+    for (const set of workoutSets) {
+      const list = byExercise.get(set.exercise_name) ?? [];
+      list.push(set);
+      byExercise.set(set.exercise_name, list);
+    }
+    const exerciseLines = Array.from(byExercise.entries())
+      .slice(0, 14)
+      .map(([exercise, exerciseSets]) => `${exercise}: ${exerciseSets.map(formatSet).join(', ')}`)
+      .join(' | ');
+    return [
+      `- ${isoDate(workout.completed_at ?? workout.created_at)}: ${workout.workout_title}`,
+      `(phase ${workout.phase_index + 1}, week ${workout.week_number}, day ${workout.day_index + 1})`,
+      workout.notes ? `notes: ${workout.notes}` : null,
+      exerciseLines ? `sets: ${exerciseLines}` : 'sets: none logged',
+    ].filter(Boolean).join(' ');
+  }).join('\n');
+}
+
+function formatExerciseHistory(workouts: WorkoutLogRow[], sets: SetLogRow[]): string {
+  if (sets.length === 0) return 'No set history found yet.';
+  const workoutById = new Map(workouts.map((workout) => [workout.id, workout]));
+  const grouped = new Map<string, SetLogRow[]>();
+  for (const set of sets) {
+    const key = set.exercise_name.trim();
+    if (!key) continue;
+    const list = grouped.get(key) ?? [];
+    list.push(set);
+    grouped.set(key, list);
+  }
+
+  return Array.from(grouped.entries())
+    .map(([exercise, exerciseSets]) => {
+      const sorted = [...exerciseSets].sort((a, b) => {
+        const aTime = new Date(workoutById.get(a.workout_log_id)?.completed_at ?? a.created_at).getTime();
+        const bTime = new Date(workoutById.get(b.workout_log_id)?.completed_at ?? b.created_at).getTime();
+        return bTime - aTime || a.set_number - b.set_number;
+      });
+      const latestWorkoutId = sorted[0]?.workout_log_id;
+      const latestWorkout = latestWorkoutId ? workoutById.get(latestWorkoutId) : null;
+      const latestSets = sorted
+        .filter((set) => set.workout_log_id === latestWorkoutId)
+        .sort((a, b) => a.set_number - b.set_number);
+      const sessionCount = new Set(exerciseSets.map((set) => set.workout_log_id)).size;
+      const bestWeight = exerciseSets.reduce<number | null>((best, set) => (
+        typeof set.weight === 'number' ? Math.max(best ?? set.weight, set.weight) : best
+      ), null);
+      return {
+        latestTime: new Date(latestWorkout?.completed_at ?? sorted[0]?.created_at ?? 0).getTime(),
+        text: `- ${exercise}: latest ${isoDate(latestWorkout?.completed_at ?? sorted[0]?.created_at)}${latestWorkout ? ` in ${latestWorkout.workout_title}` : ''}; ${latestSets.map(formatSet).join(', ')}; best logged load ${formatKg(bestWeight)}; ${sessionCount} logged session${sessionCount === 1 ? '' : 's'}`,
+      };
+    })
+    .sort((a, b) => b.latestTime - a.latestTime)
+    .slice(0, 45)
+    .map((entry) => entry.text)
+    .join('\n');
+}
+
+function average(values: Array<number | null>): number | null {
+  const nums = values.filter((value): value is number => typeof value === 'number');
+  if (nums.length === 0) return null;
+  return Math.round(nums.reduce((sum, value) => sum + value, 0) / nums.length);
+}
+
+function formatNutritionHistory(logs: NutritionLogRow[]): string {
+  if (logs.length === 0) return 'No nutrition logs found yet.';
+  const avg = {
+    protein: average(logs.map((log) => log.protein_g)),
+    carbs: average(logs.map((log) => log.carbs_g)),
+    fat: average(logs.map((log) => log.fat_g)),
+    calories: average(logs.map((log) => log.calories)),
+  };
+  const recent = logs.slice(0, 14).map((log) => {
+    const macros = [
+      typeof log.protein_g === 'number' ? `${log.protein_g}g protein` : null,
+      typeof log.carbs_g === 'number' ? `${log.carbs_g}g carbs` : null,
+      typeof log.fat_g === 'number' ? `${log.fat_g}g fat` : null,
+      typeof log.calories === 'number' ? `${log.calories} cals` : null,
+    ].filter(Boolean).join(', ');
+    return `- ${isoDate(log.logged_at)}${log.meal_type ? ` ${log.meal_type}` : ''}: ${log.meal_description ?? 'meal'}${macros ? ` (${macros})` : ''}`;
+  }).join('\n');
+  return [
+    `Recent nutrition average from ${logs.length} logged meals: ${avg.protein ?? '?'}g protein, ${avg.carbs ?? '?'}g carbs, ${avg.fat ?? '?'}g fat, ${avg.calories ?? '?'} cals.`,
+    recent,
+  ].join('\n');
+}
+
+function formatMetricsHistory(metrics: MetricRow[]): string {
+  if (metrics.length === 0) return 'No body metrics found yet.';
+  return metrics.slice(0, 10).map((metric) => {
+    const values = [
+      typeof metric.weight_kg === 'number' ? `weight ${metric.weight_kg}kg` : null,
+      typeof metric.waist_cm === 'number' ? `waist ${metric.waist_cm}cm` : null,
+      typeof metric.body_fat_pct === 'number' ? `body fat ${metric.body_fat_pct}%` : null,
+      typeof metric.muscle_mass_kg === 'number' ? `muscle ${metric.muscle_mass_kg}kg` : null,
+    ].filter(Boolean).join(', ');
+    return `- ${metric.measured_at}: ${values || 'metric logged'} (${metric.source})${metric.notes ? ` - ${metric.notes}` : ''}`;
+  }).join('\n');
+}
+
+async function readLiveClientContext(params: {
+  clientId: string;
+  assignment: AssignmentRow | null;
+  query: string;
+  openai: OpenAI;
+  adminClient: ReturnType<typeof createClient>;
+}): Promise<LiveClientContext> {
+  const { clientId, assignment, query, openai, adminClient } = params;
+  const [workoutsRes, nutritionRes, metricsRes, clientBrainMatches] = await Promise.all([
+    adminClient
+      .from('pt_workout_logs')
+      .select('id, phase_index, day_index, week_number, workout_title, notes, completed_at, created_at')
+      .eq('client_id', clientId)
+      .order('completed_at', { ascending: false })
+      .limit(25),
+    adminClient
+      .from('pt_nutrition_logs')
+      .select('logged_at, meal_description, protein_g, carbs_g, fat_g, calories, meal_type')
+      .eq('client_id', clientId)
+      .order('logged_at', { ascending: false })
+      .limit(35),
+    adminClient
+      .from('pt_client_metrics')
+      .select('measured_at, weight_kg, waist_cm, body_fat_pct, muscle_mass_kg, source, notes')
+      .eq('client_id', clientId)
+      .order('measured_at', { ascending: false })
+      .limit(12),
+    searchClientBrain(query, clientId, openai, adminClient),
+  ]);
+
+  const workouts = (workoutsRes.data ?? []) as WorkoutLogRow[];
+  let sets: SetLogRow[] = [];
+  const workoutIds = workouts.map((workout) => workout.id);
+  if (workoutIds.length > 0) {
+    const { data: setRows } = await adminClient
+      .from('pt_set_logs')
+      .select('workout_log_id, exercise_name, set_number, reps, weight, notes, created_at')
+      .eq('client_id', clientId)
+      .in('workout_log_id', workoutIds)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    sets = (setRows ?? []) as SetLogRow[];
+  }
+
+  return {
+    programmeDetail: formatProgrammeDetail(assignment),
+    workoutHistory: formatRecentWorkouts(workouts, sets),
+    exerciseHistory: formatExerciseHistory(workouts, sets),
+    nutritionHistory: formatNutritionHistory((nutritionRes.data ?? []) as NutritionLogRow[]),
+    metricsHistory: formatMetricsHistory((metricsRes.data ?? []) as MetricRow[]),
+    clientBrainMatches,
+  };
 }
 
 interface BrainContext {
@@ -261,32 +590,36 @@ function formatBrainContext(brain: BrainContext): string {
   return lines.join('\n');
 }
 
+function extractTextFromBlocks(blocks: unknown[]): string {
+  return blocks
+    .map((block) => {
+      const row = block && typeof block === 'object' && !Array.isArray(block) ? block as Record<string, unknown> : {};
+      return row.type === 'text' && typeof row.text === 'string' ? row.text : '';
+    })
+    .join('\n')
+    .trim();
+}
+
 function buildSystemPrompt(params: {
   clientName: string;
   goals: string | null;
   coachingFocus: string | null;
   lifestyleContext: string | null;
   activeGoals: Array<{ title: string; target: string | null; status: string }>;
-  programmeSummary: string | null;
-  recentLogs: Array<{ phase_index: number; day_index: number; created_at: string }>;
   recentCheckins: Array<{ week_start: string; ai_weekly_focus: unknown }>;
   clientNotes: Array<{ content: string; created_at: string }>;
   knowledgeContext: string;
   brainContext: string | null;
+  liveContext: LiveClientContext;
 }): string {
   const {
     clientName, goals, coachingFocus, lifestyleContext,
-    activeGoals, programmeSummary, recentLogs, recentCheckins,
-    clientNotes, knowledgeContext, brainContext,
+    activeGoals, recentCheckins, clientNotes, knowledgeContext, brainContext, liveContext,
   } = params;
 
   const goalsText = activeGoals.length > 0
     ? activeGoals.map((g) => `- ${g.title}${g.target ? ` (target: ${g.target})` : ''}`).join('\n')
     : (goals ?? 'Not specified');
-
-  const logsText = recentLogs.length > 0
-    ? `${recentLogs.length} recent sessions logged`
-    : 'No recent sessions logged';
 
   const checkinsText = recentCheckins.length > 0
     ? recentCheckins
@@ -309,22 +642,39 @@ Pedro is a Brazilian-born, Sydney-based personal trainer and AI founder. You emb
 ## Your role
 - You are the client's always-available AI coach. You know everything about them.
 - Answer questions about their programme, exercises, nutrition, recovery, and lifestyle.
-- Give specific, actionable advice grounded in their current programme and history.
+- Give specific, actionable advice grounded in their current programme and live history.
 - You are warm, direct, and encouraging -- not robotic or overly formal.
 - Keep responses concise and practical unless asked for detail.
-- When you reference past events, weights, or conversations, do it naturally as if you remember them.
+- When you reference past events, weights, reps, sets, meals, body metrics, or conversations, use the exact client evidence below and mention dates/exercises naturally.
 - If the client asks why you are called Henrique, explain: Pedro's full first name is Pedro Henrique, and Henrique is his second first name. The name fits because you are the second version of Pedro inside the app.
+
+## Evidence hierarchy
+1. For questions about what this client has done, use Live Client Context first. That is the source of truth.
+2. Use Long-Term Client Memory for patterns, goals, injuries, preferences, and coaching decisions.
+3. Use Pedro's Knowledge Base for training/nutrition principles.
+4. Use web search only when the client asks a general/current question that cannot be answered from the client evidence or Pedro's knowledge base.
+5. Never use web search to guess the client's own history. If a client-specific detail is not present, say what you can see and ask for the missing detail.
 
 ## Client: ${clientName}
 **Goals:** ${goalsText}
 **Coaching focus:** ${coachingFocus ?? 'General fitness'}
 **Lifestyle context:** ${lifestyleContext ?? 'Not specified'}
 
-## Current Programme
-${programmeSummary ?? 'No active programme assigned yet.'}
+## Live Client Context
+### Active Programme
+${liveContext.programmeDetail ?? 'No active programme assigned yet.'}
 
-## Training Activity
-${logsText}
+### Recent Exact Workouts And Set Logs
+${liveContext.workoutHistory}
+
+### Exercise-Level History Summary
+${liveContext.exerciseHistory}
+
+### Nutrition Logs
+${liveContext.nutritionHistory}
+
+### Body Metrics
+${liveContext.metricsHistory}
 
 ## Recent Check-ins
 ${checkinsText}
@@ -332,14 +682,16 @@ ${checkinsText}
 ## Pedro's Coaching Notes
 ${notesText}
 
-${brainContext ? `${brainContext}\n` : ''}${knowledgeContext ? `## Pedro's Knowledge Base (relevant excerpts)\n${knowledgeContext}\n` : ''}
+${brainContext ? `${brainContext}\n` : ''}${liveContext.clientBrainMatches ? `## Client Brain Semantic Matches\n${liveContext.clientBrainMatches}\n` : ''}${knowledgeContext ? `## Pedro's Knowledge Base (relevant excerpts)\n${knowledgeContext}\n` : ''}
 ## Nutrition Logging
 If the client is describing food they ate or are about to eat (e.g. "just had X", "about to have X", "had X for lunch"), acknowledge that you'll log it and confirm: "[meal description] -- looks like ~Xg protein, Xg carbs, Xg fat (~X cals). Logged." Then ask a brief follow-up if useful.
 
 ## Important rules
+- If the client asks what they did previously for an exercise, answer from Recent Exact Workouts And Set Logs or Exercise-Level History Summary. Include the latest date, exercise name, sets, reps, and load when available.
+- If the client asks what to lift today, compare today's active programme prescription with their latest logged performance and any 1RM targets in the programme notes.
 - If the client mentions "hey pedro", "hi pedro", or explicitly asks to speak to Pedro directly, always reply: "I'll flag this for Pedro so he can follow up with you directly. In the meantime, [brief helpful note]."
 - Never pretend to be Pedro himself -- you are Henrique, his AI assistant.
-- If you don't know something specific about the client, say so and give general guidance.
+- If you don't know something specific about the client after checking the evidence, say exactly what you can and cannot see.
 - For medical concerns or injuries, always recommend the client consult a healthcare professional.
 - If the client mentions losing or gaining weight but does NOT state a specific number, ask: "That's great progress! What's your current weight so I can update your profile?"
 - If the client mentions a specific weight (e.g. "I'm now 78kg"), acknowledge it positively and confirm it has been noted for their progress record.
@@ -357,12 +709,14 @@ Deno.serve(async (req: Request) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const openaiKey = Deno.env.get('OPENAI_API_KEY')!;
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const adminClient = createClient(supabaseUrl, serviceKey);
     const openai = new OpenAI({ apiKey: openaiKey });
+    const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
 
     const { data: authData, error: authError } = await userClient.auth.getUser();
     if (authError || !authData.user) return json({ error: 'Unauthorized.' }, 401);
@@ -396,7 +750,6 @@ Deno.serve(async (req: Request) => {
     const [
       goalsRes,
       assignmentRes,
-      logsRes,
       checkinsRes,
       notesRes,
       historyRes,
@@ -417,12 +770,6 @@ Deno.serve(async (req: Request) => {
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1),
-      adminClient
-        .from('pt_workout_logs')
-        .select('phase_index, day_index, created_at')
-        .eq('client_id', body.client_id)
-        .order('created_at', { ascending: false })
-        .limit(10),
       adminClient
         .from('pt_weekly_checkins')
         .select('week_start, ai_weekly_focus')
@@ -446,19 +793,14 @@ Deno.serve(async (req: Request) => {
       client.use_brain ? readBrainDocs(body.client_id, adminClient) : Promise.resolve(null),
     ]);
 
-    const activeAssignment = (assignmentRes.data ?? [])[0] ?? null;
-
-    let programmeSummary: string | null = null;
-    if (activeAssignment) {
-      const prog = activeAssignment.programme as {
-        phases?: Array<{ title: string; focus: string; weeks: string }>;
-      } | null;
-      const phases = prog?.phases ?? [];
-      const phaseList = phases.map((p) => `${p.title} (${p.weeks}w)`).join(' -> ');
-      const currentPhase = activeAssignment.current_phase_index ?? 0;
-      const phaseTitle = phases[currentPhase]?.title ?? 'Unknown phase';
-      programmeSummary = `Programme: ${activeAssignment.name} | Goal: ${activeAssignment.goal ?? 'Not set'}\nCurrent phase: ${phaseTitle} (week ${activeAssignment.current_week ?? 1})\nProgramme structure: ${phaseList}`;
-    }
+    const activeAssignment = ((assignmentRes.data ?? [])[0] ?? null) as AssignmentRow | null;
+    const liveContext = await readLiveClientContext({
+      clientId: body.client_id,
+      assignment: activeAssignment,
+      query: body.content,
+      openai,
+      adminClient,
+    });
 
     // If food intent detected and brain is on, call log-nutrition in parallel with chat
     let nutritionResult: { meal_description: string; protein_g: number | null; carbs_g: number | null; fat_g: number | null; calories: number | null } | null = null;
@@ -501,12 +843,11 @@ Deno.serve(async (req: Request) => {
       coachingFocus: client.coaching_focus,
       lifestyleContext: client.lifestyle_context,
       activeGoals: (goalsRes.data ?? []) as Array<{ title: string; target: string | null; status: string }>,
-      programmeSummary,
-      recentLogs: (logsRes.data ?? []) as Array<{ phase_index: number; day_index: number; created_at: string }>,
       recentCheckins: (checkinsRes.data ?? []) as Array<{ week_start: string; ai_weekly_focus: unknown }>,
       clientNotes: (notesRes.data ?? []) as Array<{ content: string; created_at: string }>,
       knowledgeContext,
       brainContext,
+      liveContext,
     });
 
     // Inject nutrition context into the user message if food was logged
@@ -524,14 +865,40 @@ Deno.serve(async (req: Request) => {
       { role: 'user', content: userContent },
     ];
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
-      temperature: 0.5,
-      max_tokens: 600,
-      messages: chatMessages,
-    });
-
-    const aiResponse = completion.choices[0]?.message?.content?.trim() ?? "I'm here to help -- could you rephrase that?";
+    let aiResponse = "I'm here to help -- could you rephrase that?";
+    if (anthropic) {
+      const claudeMessages = chatMessages
+        .filter((message) => message.role !== 'system')
+        .map((message) => ({
+          role: message.role === 'assistant' ? 'assistant' : 'user',
+          content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+        }));
+      const response = await anthropic.messages.create(
+        {
+          model: 'claude-sonnet-4-6',
+          temperature: 0.4,
+          max_tokens: 900,
+          system: systemPrompt,
+          tools: [
+            {
+              type: 'web_search_20250305',
+              name: 'web_search',
+              max_uses: 2,
+            },
+          ],
+          messages: claudeMessages,
+        } as any,
+      );
+      aiResponse = extractTextFromBlocks(response.content as unknown[]) || aiResponse;
+    } else {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4.1-mini',
+        temperature: 0.5,
+        max_tokens: 700,
+        messages: chatMessages,
+      });
+      aiResponse = completion.choices[0]?.message?.content?.trim() ?? aiResponse;
+    }
 
     if (wantsPedro) {
       await Promise.all([

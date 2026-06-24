@@ -1,12 +1,57 @@
 # Handoff
 
 ## Last updated
-2026-06-24 by Codex - Auto-updated programme loads after 1RM save.
+2026-06-24 by Codex - Upgraded Henrique client AI live context.
 
 ## Last code fix commit
-this commit - auto-update 1RM programme loads
+this commit - upgrade client AI live context
 
 ## What just happened (read first)
+
+### Henrique client AI live-context upgrade (2026-06-24, LATEST)
+
+Pedro reported that the client-side AI could not answer a question about a previous exercise. Root cause:
+- `ai-client-chat` only passed a shallow workout summary (`10 recent sessions logged`) to the model.
+- It did not include exact workout/set history.
+- It did not search the client-specific `pt_client_brain_chunks` semantic memory.
+- It had no web-search tool for general/current questions.
+
+Shipped:
+- `ai-client-chat` now retrieves live client context before every answer:
+  - active programme details, current phase/week/block, current phase days/exercises, exercise notes and 1RM target notes,
+  - last 25 workout logs,
+  - exact set logs for those workouts, capped at 500 sets,
+  - exercise-level history summary with latest logged session, latest sets/reps/load, best logged load, and session count,
+  - recent nutrition logs and macro averages,
+  - recent body metrics,
+  - weekly check-ins,
+  - Pedro notes,
+  - recent message history,
+  - durable client brain docs,
+  - semantic matches from `match_client_brain_chunks`.
+- The prompt now enforces an evidence hierarchy:
+  1. live client context first,
+  2. long-term client memory,
+  3. Pedro knowledge base,
+  4. bounded web research only for general/current knowledge gaps.
+- Switched runtime answer generation to Claude Sonnet with Anthropic `web_search` capped at 2 uses.
+- Kept OpenAI for embeddings and as fallback if Anthropic is unavailable.
+- Created project skill outside the app repo:
+  - `skills/pt-client-ai-live-coach/SKILL.md`
+  - Root `AGENTS.md` now documents the client-side Henrique workflow.
+
+Deployment:
+- Redeployed `ai-client-chat` ACTIVE v16 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- Skill validation passes for `pt-client-ai-live-coach`.
+- Supabase function list confirms `ai-client-chat` ACTIVE v16.
+
+Notes:
+- No live client chat message was sent during verification because it would write a real AI response into a real client's message history.
 
 ### Auto-apply 1RM percentages after testing (2026-06-24, LATEST)
 
