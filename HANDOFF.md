@@ -1,12 +1,54 @@
 # Handoff
 
 ## Last updated
-2026-06-22 by Codex - Fixed M & L dictation state race.
+2026-06-24 by Codex - Added voice phase rebuild for PT programmes.
 
 ## Last code fix commit
-this commit - fix M & L dictation race
+this commit - add PT voice phase rebuild
 
 ## What just happened (read first)
+
+### PT programme voice phase rebuild + 1RM kg suggestions (2026-06-24, LATEST)
+
+Pedro asked for the programme editor to support a voice/chat agent that replaces the currently selected phase, instead of appending like `+ Build from text`.
+
+Shipped:
+- Programme edit page now has `+ Build with voice` beside `+ Build from text`.
+- Pedro can dictate or type the phase brief, ask the agent what is missing, answer the questions, then generate a replacement draft.
+- The generated draft replaces only the selected phase locally. It does not save or publish until Pedro clicks `Save changes`.
+- New Edge Function `rebuild-programme-phase`:
+  - validates Pedro/admin auth,
+  - supports `check` and `generate` actions,
+  - reads the selected assignment/phase, client profile, recent workout logs, recent set logs, client notes, client exercise doc, exercise library, and Big 5 1RM results,
+  - asks short missing-detail questions before generation,
+  - returns one replacement phase plus `one_rm_map`, `resolved_loads`, answered assumptions, and review notes,
+  - creates missing `pt_exercises` cards with `video_url = null` so Pedro can add videos later.
+- Board view now shows amber 1RM load chips on compatible Big 5 exercises when the phase has a percentage block and a 1RM exists.
+- Existing `recalculate-percentage-loads` now uses the highest recorded Big 5 estimated 1RM per lift, matching Pedro's request, instead of stopping at the newest row.
+- Coach PT Sessions and client workout logger set inputs now auto-propagate weights:
+  - typing set 1 weight fills later empty sets,
+  - changing set 2 updates later sets that still carried the previous auto-filled value,
+  - adding a new set inherits the nearest previous set weight.
+- Created project skills outside the `cerebro-site` git repo:
+  - `skills/pt-voice-phase-rebuild-orchestrator`
+  - `skills/pt-phase-rebuild-history-reader`
+  - `skills/pt-phase-rebuild-programme-writer`
+  - Root `AGENTS.md` now documents this chain.
+
+Deployment:
+- Deployed `rebuild-programme-phase` ACTIVE v1 to Supabase project `otcnrkfvgyvwolironoz`.
+- Redeployed `recalculate-percentage-loads` ACTIVE v9.
+
+Verification:
+- Skill validation passes for all three new skills.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes from `cerebro-site`.
+- Targeted ESLint on the touched large UI files is still blocked by pre-existing React compiler lint errors in `ClientPortal`, `PTProgrammeEditView`, and `PTSessionsView`; no new build blocker remains.
+
+Notes:
+- No live authenticated browser generation was run because it would call Anthropic and potentially create real exercise cards for a real client.
+- `rebuild-programme-phase` is intentionally JWT-protected by default; do not add it to `verify_jwt = false` unless there is a server-to-server caller.
 
 ### M & L dictation state race fix (2026-06-22, LATEST)
 

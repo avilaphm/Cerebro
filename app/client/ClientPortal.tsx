@@ -398,6 +398,15 @@ function draftKey(phaseIndex: number, dayIndex: number, exerciseId: string, setI
   return `${phaseIndex}-${dayIndex}-${exerciseId}-${setIndex}`;
 }
 
+function parseDraftKey(key: string): { prefix: string; exerciseId: string; setIndex: number } | null {
+  const parts = key.split('-');
+  if (parts.length < 4) return null;
+  const setIndex = Number(parts[parts.length - 1]);
+  if (!Number.isInteger(setIndex)) return null;
+  const exerciseId = parts.slice(2, -1).join('-');
+  return { prefix: `${parts[0]}-${parts[1]}-${exerciseId}-`, exerciseId, setIndex };
+}
+
 function sectionNoteKey(phaseIndex: number, dayIndex: number, sectionId: string) {
   return `${phaseIndex}-${dayIndex}-${sectionId}`;
 }
@@ -1020,14 +1029,32 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   }, [setLogs]);
 
   const updateSetDraft = (key: string, patch: Partial<SetDraft>) => {
-    setSetDrafts((current) => ({
-      ...current,
-      [key]: {
-        reps: current[key]?.reps ?? '',
-        weight: current[key]?.weight ?? '',
-        ...patch,
-      },
-    }));
+    setSetDrafts((current) => {
+      const currentDraft = current[key] ?? { reps: '', weight: '' };
+      const next: Record<string, SetDraft> = {
+        ...current,
+        [key]: { ...currentDraft, ...patch },
+      };
+
+      if (patch.weight !== undefined) {
+        const parsed = parseDraftKey(key);
+        const nextWeight = patch.weight.trim();
+        const previousWeight = currentDraft.weight.trim();
+        const count = parsed ? setCounts[parsed.exerciseId] ?? 0 : 0;
+        if (parsed && nextWeight) {
+          for (let i = parsed.setIndex + 1; i < count; i++) {
+            const laterKey = `${parsed.prefix}${i}`;
+            const later = next[laterKey] ?? { reps: '', weight: '' };
+            const laterWeight = later.weight.trim();
+            if (!laterWeight || (previousWeight && laterWeight === previousWeight)) {
+              next[laterKey] = { ...later, weight: patch.weight };
+            }
+          }
+        }
+      }
+
+      return next;
+    });
   };
 
   const setExerciseCount = (key: string, nextCount: number) => {
@@ -1044,13 +1071,17 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
     const previous = history[nextIndex] ?? history[history.length - 1];
 
-    setSetDrafts((current) => ({
-      ...current,
-      [key]: current[key] ?? {
-        reps: '',
-        weight: previous?.weight !== null && previous?.weight !== undefined ? String(previous.weight) : '',
-      },
-    }));
+    setSetDrafts((current) => {
+      const previousKey = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, nextIndex - 1);
+      const previousWeight = current[previousKey]?.weight?.trim();
+      return {
+        ...current,
+        [key]: current[key] ?? {
+          reps: '',
+          weight: previousWeight || (previous?.weight !== null && previous?.weight !== undefined ? String(previous.weight) : ''),
+        },
+      };
+    });
     setExerciseCount(exercise.id, currentCount + 1);
   };
 

@@ -119,14 +119,14 @@ Deno.serve(async (req: Request) => {
 
     if (resultErr) return json({ error: `Could not load 1RM results: ${resultErr.message}` }, 500);
 
-    // Build map: canonical exercise -> best estimated 1RM (most recent)
+    // Build map: canonical exercise -> highest estimated 1RM Pedro has recorded.
     const oneRmMap: Record<string, number> = {};
     for (const row of (resultRows ?? [])) {
       const r = row as { exercise_name: string; estimated_1rm_kg: number | null };
       if (!r.estimated_1rm_kg) continue;
       const canonical = matchExerciseName(r.exercise_name);
-      if (!canonical || oneRmMap[canonical] !== undefined) continue;
-      oneRmMap[canonical] = r.estimated_1rm_kg;
+      if (!canonical) continue;
+      oneRmMap[canonical] = Math.max(oneRmMap[canonical] ?? 0, r.estimated_1rm_kg);
     }
 
     if (Object.keys(oneRmMap).length === 0) {

@@ -60,6 +60,15 @@ function draftKey(phaseIndex: number, dayIndex: number, exerciseId: string, setI
   return `${phaseIndex}-${dayIndex}-${exerciseId}-${setIndex}`;
 }
 
+function parseDraftKey(key: string): { prefix: string; exerciseId: string; setIndex: number } | null {
+  const parts = key.split('-');
+  if (parts.length < 4) return null;
+  const setIndex = Number(parts[parts.length - 1]);
+  if (!Number.isInteger(setIndex)) return null;
+  const exerciseId = parts.slice(2, -1).join('-');
+  return { prefix: `${parts[0]}-${parts[1]}-${exerciseId}-`, exerciseId, setIndex };
+}
+
 function getWorkoutSections(day: PTProgrammeDay, phase: PTProgrammePhase, blockIndex: number): WorkoutSectionView[] {
   const sections: WorkoutSectionView[] = [];
   day.exercises.forEach((exercise, index) => {
@@ -295,7 +304,29 @@ export default function PTSessionsView({
   }, [selectedWorkout, assignment, phaseProgress, lastSetsByExercise]);
 
   function updateSetDraft(key: string, patch: Partial<SetDraft>) {
-    setSetDrafts((prev) => ({ ...prev, [key]: { ...(prev[key] ?? { reps: '', weight: '' }), ...patch } }));
+    setSetDrafts((prev) => {
+      const current = prev[key] ?? { reps: '', weight: '' };
+      const next: Record<string, SetDraft> = { ...prev, [key]: { ...current, ...patch } };
+
+      if (patch.weight !== undefined) {
+        const parsed = parseDraftKey(key);
+        const nextWeight = patch.weight.trim();
+        const previousWeight = current.weight.trim();
+        const count = parsed ? setCounts[parsed.exerciseId] ?? 0 : 0;
+        if (parsed && nextWeight) {
+          for (let i = parsed.setIndex + 1; i < count; i++) {
+            const laterKey = `${parsed.prefix}${i}`;
+            const later = next[laterKey] ?? { reps: '', weight: '' };
+            const laterWeight = later.weight.trim();
+            if (!laterWeight || (previousWeight && laterWeight === previousWeight)) {
+              next[laterKey] = { ...later, weight: patch.weight };
+            }
+          }
+        }
+      }
+
+      return next;
+    });
   }
 
   function setExerciseCount(exerciseId: string, count: number) {
@@ -315,10 +346,17 @@ export default function PTSessionsView({
     const history = lastSetsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
     const key = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, newCount - 1);
     const last = history.find((l) => l.set_number === newCount);
-    setSetDrafts((prev) => ({
-      ...prev,
-      [key]: { reps: last?.reps?.toString() ?? defaultReps, weight: last?.weight?.toString() ?? '' },
-    }));
+    setSetDrafts((prev) => {
+      const previousKey = draftKey(selectedWorkout.phaseIndex, selectedWorkout.dayIndex, exercise.id, newCount - 2);
+      const previousWeight = prev[previousKey]?.weight?.trim();
+      return {
+        ...prev,
+        [key]: {
+          reps: last?.reps?.toString() ?? defaultReps,
+          weight: last?.weight?.toString() ?? previousWeight ?? '',
+        },
+      };
+    });
   }
 
   function toggleDone(exerciseId: string) {

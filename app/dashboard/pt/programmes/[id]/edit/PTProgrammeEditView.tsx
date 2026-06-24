@@ -35,12 +35,17 @@ interface SpeechRecognitionEventLike {
   resultIndex: number;
   results: ArrayLike<SpeechRecognitionResultLike>;
 }
+interface SpeechRecognitionErrorEventLike {
+  error?: string;
+}
 interface SpeechRecognitionLike {
   continuous: boolean; interimResults: boolean; lang: string;
   onresult: ((e: SpeechRecognitionEventLike) => void) | null;
   onend: (() => void) | null;
+  onerror?: ((e: SpeechRecognitionErrorEventLike) => void) | null;
   start: () => void;
   stop: () => void;
+  abort?: () => void;
 }
 
 interface ProgrammingAgentDraft {
@@ -58,6 +63,24 @@ interface ProgrammingAgentDraft {
 interface CurrentWorkoutImportResult {
   created_exercises?: Array<{ name: string; exercise_id: string }>;
   matched_count?: number;
+}
+
+interface PhaseRebuildCheckPayload {
+  ready?: boolean;
+  missing_questions?: string[];
+  captured?: Record<string, unknown>;
+  one_rm_map?: Record<string, number>;
+  error?: string;
+}
+
+interface PhaseRebuildPayload {
+  phase?: PTProgrammePhase;
+  one_rm_map?: Record<string, number>;
+  resolved_loads?: unknown[];
+  questions_answered?: string[];
+  review_notes?: string[];
+  matched_count?: number;
+  error?: string;
 }
 
 interface PhaseNutritionRow {
@@ -115,6 +138,28 @@ function getSR() {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+const BIG_5_ALIASES: Array<[string, string[]]> = [
+  ['BB Squat', ['squat', 'bb squat', 'barbell squat', 'back squat']],
+  ['BB Deadlift', ['deadlift', 'bb deadlift', 'barbell deadlift', 'conventional deadlift', 'romanian deadlift', 'rdl']],
+  ['BB Bench Press', ['bench press', 'bb bench', 'barbell bench', 'chest press', 'bb chest press']],
+  ['BB Shoulder Press', ['shoulder press', 'overhead press', 'ohp', 'bb shoulder press', 'barbell shoulder press', 'military press']],
+  ['Pull-up', ['pull-up', 'pullup', 'pull up', 'chin-up', 'chinup']],
+];
+
+function matchCanonicalLift(name: string): string | null {
+  const lower = name.toLowerCase();
+  for (const [canonical, aliases] of BIG_5_ALIASES) {
+    if (aliases.some((alias) => lower.includes(alias))) return canonical;
+  }
+  return null;
+}
+
+function resolveKgFromPct(pctStr: string, oneRmKg: number): number | null {
+  const pct = Number.parseFloat(pctStr.replace('%', '').trim());
+  if (!Number.isFinite(pct) || pct <= 0 || pct > 200) return null;
+  return Math.round(oneRmKg * (pct / 100) * 4) / 4;
+}
+
 export default function PTProgrammeEditView({
   assignment: initial,
   exercises,
@@ -155,6 +200,13 @@ export default function PTProgrammeEditView({
   const [buildOpen, setBuildOpen] = useState(false);
   const [building, setBuilding] = useState(false);
   const [buildStatus, setBuildStatus] = useState('');
+  const [voiceBuildOpen, setVoiceBuildOpen] = useState(false);
+  const [voiceBrief, setVoiceBrief] = useState('');
+  const [voiceBuildBusy, setVoiceBuildBusy] = useState(false);
+  const [voiceBuildStatus, setVoiceBuildStatus] = useState('');
+  const [voiceBuildQuestions, setVoiceBuildQuestions] = useState<string[]>([]);
+  const [voiceBuildReady, setVoiceBuildReady] = useState(false);
+  const [voiceBuildListening, setVoiceBuildListening] = useState(false);
   const [boardView, setBoardView] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
@@ -186,7 +238,9 @@ export default function PTProgrammeEditView({
   const [applyTargets, setApplyTargets] = useState({ protein_g: 150, carbs_g: 200, fat_g: 65, fibre_g: 30, calories: 2000 });
   const [applyBusy, setApplyBusy] = useState(false);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
+  const srVoiceBuildRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
+  const voiceBuildTranscriptRef = useRef('');
 
   const update = (fn: (p: PTProgramme) => PTProgramme) =>
     setProgramme((cur) => fn(structuredClone(cur)));
@@ -301,6 +355,144 @@ export default function PTProgrammeEditView({
       `Added "${newPhase.title}" - ${payload.matched_count ?? 0} matched from library`
       + (created > 0 ? `, ${created} new card${created === 1 ? '' : 's'} created (add videos later)` : '')
       + '. Drag it into position and Save changes.',
+    );
+  };
+
+  const startVoiceBuildDictation = () => {
+    const SR = getSR();
+    if (!SR) {
+      setVoiceBuildStatus('Browser dictation is not available. Use Chrome desktop/Android, or type the brief.');
+      return;
+    }
+    srVoiceBuildRef.current?.abort?.();
+    voiceBuildTranscriptRef.current = voiceBrief;
+    const recognition = new SR();
+    srVoiceBuildRef.current = recognition;
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-AU';
+    recognition.onresult = (event) => {
+      let next = voiceBuildTranscriptRef.current;
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result?.isFinal) {
+          const text = result[0]?.transcript?.trim() ?? '';
+          if (text) next = `${next}${next ? '\n' : ''}${text}`;
+        }
+      }
+      voiceBuildTranscriptRef.current = next;
+      setVoiceBrief(next);
+      setVoiceBuildReady(false);
+    };
+    recognition.onerror = (event) => {
+      if (srVoiceBuildRef.current !== recognition) return;
+      setVoiceBuildListening(false);
+      setVoiceBuildStatus(`Could not record voice${event.error ? ` (${event.error})` : ''}. Type the brief or check microphone permission.`);
+    };
+    recognition.onend = () => {
+      if (srVoiceBuildRef.current !== recognition) return;
+      srVoiceBuildRef.current = null;
+      setVoiceBuildListening(false);
+    };
+    try {
+      recognition.start();
+      setVoiceBuildListening(true);
+      setVoiceBuildStatus('Recording. Speak the phase, then stop and ask the agent to check it.');
+    } catch {
+      srVoiceBuildRef.current = null;
+      setVoiceBuildListening(false);
+      setVoiceBuildStatus('Could not start dictation. Type the brief or try again.');
+    }
+  };
+
+  const stopVoiceBuildDictation = () => {
+    srVoiceBuildRef.current?.stop();
+    setVoiceBuildListening(false);
+  };
+
+  const checkVoiceBuildBrief = async () => {
+    if (voiceBrief.trim().length < 10) {
+      setVoiceBuildStatus('Speak or type what you want for this phase first.');
+      return;
+    }
+    setVoiceBuildBusy(true);
+    setVoiceBuildStatus('Checking what the agent still needs...');
+    const { data, error } = await supabase.functions.invoke('rebuild-programme-phase', {
+      body: {
+        action: 'check',
+        assignment_id: initial.id,
+        client_id: initial.client_id,
+        phase_index: activePhaseTab,
+        transcript: voiceBrief,
+      },
+    });
+    setVoiceBuildBusy(false);
+    const payload = data as PhaseRebuildCheckPayload | null;
+    if (error || payload?.error) {
+      setVoiceBuildStatus(payload?.error ?? 'Could not check the phase brief.');
+      return;
+    }
+    if (payload?.one_rm_map) {
+      setValidationSummary((cur) => ({ ...cur, one_rm_map: payload.one_rm_map }));
+    }
+    const questions = payload?.missing_questions ?? [];
+    setVoiceBuildQuestions(questions);
+    setVoiceBuildReady(Boolean(payload?.ready) && questions.length === 0);
+    setVoiceBuildStatus(
+      questions.length > 0
+        ? 'The agent needs a little more detail before it rebuilds the phase.'
+        : 'The agent has enough detail. Generate the replacement phase when ready.',
+    );
+  };
+
+  const generateVoiceBuildPhase = async () => {
+    if (voiceBrief.trim().length < 10) {
+      setVoiceBuildStatus('Speak or type what you want for this phase first.');
+      return;
+    }
+    const currentPhaseTitle = programme.phases[activePhaseTab]?.title ?? `Phase ${activePhaseTab + 1}`;
+    if (!window.confirm(`Replace "${currentPhaseTitle}" with an AI draft from this brief? You can still review it before saving.`)) return;
+    setVoiceBuildBusy(true);
+    setVoiceBuildStatus(`Rebuilding ${currentPhaseTitle} from the brief, client history, and 1RM results...`);
+    const { data, error } = await supabase.functions.invoke('rebuild-programme-phase', {
+      body: {
+        action: 'generate',
+        assignment_id: initial.id,
+        client_id: initial.client_id,
+        phase_index: activePhaseTab,
+        transcript: voiceBrief,
+      },
+    });
+    setVoiceBuildBusy(false);
+    const payload = data as PhaseRebuildPayload | null;
+    if (error || payload?.error || !payload?.phase) {
+      setVoiceBuildStatus(payload?.error ?? 'Could not rebuild that phase.');
+      return;
+    }
+    const replacementPhase: PTProgrammePhase = {
+      ...payload.phase,
+      id: programme.phases[activePhaseTab]?.id ?? payload.phase.id ?? makeId('phase'),
+    };
+    update((p) => {
+      p.phases[activePhaseTab] = replacementPhase;
+      return p;
+    });
+    setValidationSummary((cur) => ({
+      ...cur,
+      ...(payload.one_rm_map ? { one_rm_map: payload.one_rm_map } : {}),
+      ...(payload.resolved_loads ? { resolved_loads: payload.resolved_loads } : {}),
+      phase_rebuild_review_notes: payload.review_notes ?? [],
+      phase_rebuild_questions_answered: payload.questions_answered ?? [],
+    }));
+    setActiveDay(null);
+    setBoardView(true);
+    setVoiceBuildReady(false);
+    setVoiceBuildOpen(false);
+    setVoiceBuildQuestions([]);
+    setVoiceBuildStatus(
+      `Replaced ${currentPhaseTitle} with an editable draft`
+      + (payload.matched_count !== undefined ? ` (${payload.matched_count} linked exercise${payload.matched_count === 1 ? '' : 's'})` : '')
+      + '. Review it, adjust anything needed, then Save changes.',
     );
   };
 
@@ -567,6 +759,24 @@ export default function PTProgrammeEditView({
 
   const phase = programme.phases[activePhaseTab] ?? null;
   const currentDay = phase && activeDay !== null ? phase.days[activeDay] ?? null : null;
+  const oneRmMap = typeof validationSummary.one_rm_map === 'object' && validationSummary.one_rm_map !== null
+    ? validationSummary.one_rm_map as Record<string, number>
+    : undefined;
+
+  const getLoadTag = (phaseIndex: number, ex: PTProgrammeExercise): string | null => {
+    const canonical = matchCanonicalLift(ex.name);
+    const oneRm = canonical && oneRmMap ? oneRmMap[canonical] : null;
+    const targetPhase = programme.phases[phaseIndex];
+    if (!canonical || !oneRm || !targetPhase) return null;
+    const blockIndex = phaseIndex === cursor.phaseIndex ? cursor.blockIndex : 0;
+    const block = targetPhase.week_blocks?.[Math.min(blockIndex, (targetPhase.week_blocks?.length ?? 1) - 1)];
+    const override = ex.week_overrides?.find((item) => item.block_index === blockIndex);
+    const pct = override?.weight_pct ?? block?.weight_pct;
+    if (!pct) return null;
+    const kg = resolveKgFromPct(pct, oneRm);
+    if (kg === null) return null;
+    return `${pct} -> ${kg}kg`;
+  };
 
   return (
     <div className="max-w-4xl px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
@@ -747,7 +957,7 @@ export default function PTProgrammeEditView({
                     <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">
                       Progressive overload — sets or % per block
                     </label>
-                    <p className="text-[0.6rem] text-black/30 mb-2">e.g. "2 sets for 2 weeks..." or "75% for 1 week, 85% for 3 weeks"</p>
+                    <p className="text-[0.6rem] text-black/30 mb-2">e.g. &quot;2 sets for 2 weeks...&quot; or &quot;75% for 1 week, 85% for 3 weeks&quot;</p>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <input
                         value={weekBlocksInput[i] ?? formatWeekBlocks(ph.week_blocks)}
@@ -988,7 +1198,20 @@ export default function PTProgrammeEditView({
             </button>
             <button
               type="button"
-              onClick={() => setBuildOpen((v) => !v)}
+              onClick={() => {
+                setVoiceBuildOpen((v) => !v);
+                setBuildOpen(false);
+              }}
+              className={`border px-3 py-1.5 text-xs transition-colors ${voiceBuildOpen ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/35'}`}
+            >
+              {voiceBuildOpen ? 'Close voice' : '+ Build with voice'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setBuildOpen((v) => !v);
+                setVoiceBuildOpen(false);
+              }}
               className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
             >
               {buildOpen ? 'Close' : '+ Build from text'}
@@ -996,6 +1219,82 @@ export default function PTProgrammeEditView({
           </div>
         </div>
         {currentWorkoutImportStatus && <p className="mb-4 text-xs text-black/50">{currentWorkoutImportStatus}</p>}
+
+        {voiceBuildOpen && phase && (
+          <div className="mb-6 border border-black/15 bg-black/[0.02] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-medium">Build this phase with voice</p>
+                <p className="mt-1 text-xs leading-relaxed text-black/45">
+                  Speak what you want for <span className="font-medium text-black">{phase.title}</span>. The agent checks for missing details, reads client history and 1RM results, then replaces this phase only. Save changes when you are happy.
+                </p>
+              </div>
+              <span className="shrink-0 border border-amber-200 bg-amber-50 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-amber-700">
+                Replaces selected phase
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {voiceBuildListening ? (
+                <>
+                  <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">Recording</span>
+                  <button
+                    type="button"
+                    onClick={stopVoiceBuildDictation}
+                    className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black"
+                  >
+                    Stop recording
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startVoiceBuildDictation}
+                  disabled={voiceBuildBusy}
+                  className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
+                >
+                  Record voice brief
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void checkVoiceBuildBrief()}
+                disabled={voiceBuildBusy || voiceBrief.trim().length < 10}
+                className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
+              >
+                Ask what is missing
+              </button>
+              <button
+                type="button"
+                onClick={() => void generateVoiceBuildPhase()}
+                disabled={voiceBuildBusy || voiceBrief.trim().length < 10 || voiceBuildQuestions.length > 0}
+                className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30"
+              >
+                {voiceBuildBusy ? 'Working...' : voiceBuildReady ? 'Generate replacement phase' : 'Generate anyway'}
+              </button>
+            </div>
+            <textarea
+              value={voiceBrief}
+              onChange={(e) => {
+                setVoiceBrief(e.target.value);
+                setVoiceBuildReady(false);
+              }}
+              rows={8}
+              placeholder={'Example: For Hypertrophy, make it 4 days. Day 1 lower A with back squat main lift, RDL, leg press. Day 2 upper A with bench press and pull-up. Day 3 lower B with deadlift and hip thrust. Day 4 upper B with shoulder press, row, arms. Use Stephen current 1RM percentages and keep week 1 around 65%.'}
+              className="mt-3 w-full resize-y border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
+            />
+            {voiceBuildQuestions.length > 0 && (
+              <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-3">
+                <p className="text-xs font-medium text-amber-800">Answer these before generating:</p>
+                <ul className="mt-2 space-y-1">
+                  {voiceBuildQuestions.map((question, index) => (
+                    <li key={`${question}-${index}`} className="text-xs text-amber-800">{index + 1}. {question}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {voiceBuildStatus && <p className="mt-3 text-xs text-black/50">{voiceBuildStatus}</p>}
+          </div>
+        )}
 
         {buildOpen && (
           <div className="mb-6 border border-black/15 bg-black/[0.02] p-4">
@@ -1026,6 +1325,7 @@ export default function PTProgrammeEditView({
           </div>
         )}
         {!buildOpen && buildStatus && <p className="mb-4 text-xs text-black/50">{buildStatus}</p>}
+        {!voiceBuildOpen && voiceBuildStatus && <p className="mb-4 text-xs text-black/50">{voiceBuildStatus}</p>}
 
         <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
           {programme.phases.map((ph, i) => (
@@ -1178,6 +1478,15 @@ export default function PTProgrammeEditView({
                                         </span>
                                       );
                                     })()}
+                                    {(() => {
+                                      const tag = getLoadTag(activePhaseTab, ex);
+                                      if (!tag) return null;
+                                      return (
+                                        <span className="mt-px shrink-0 rounded-full bg-amber-50 px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] text-amber-700 ring-1 ring-inset ring-amber-200">
+                                          {tag}
+                                        </span>
+                                      );
+                                    })()}
                                   </div>
                                   <p className="mt-0.5 text-[0.62rem] text-black/40">{ex.sets}×{ex.reps}{ex.rest ? ` · ${ex.rest}` : ''}</p>
                                 </>
@@ -1266,7 +1575,7 @@ export default function PTProgrammeEditView({
                     exercises={currentDay.exercises}
                     libraryExercises={exercises}
                     weekBlocks={phase.week_blocks}
-                    oneRmMap={typeof validationSummary.one_rm_map === 'object' && validationSummary.one_rm_map !== null ? validationSummary.one_rm_map as Record<string, number> : undefined}
+                    oneRmMap={oneRmMap}
                     onChange={(updated) => patchDay(activePhaseTab, activeDay, { exercises: updated })}
                   />
                 </div>
