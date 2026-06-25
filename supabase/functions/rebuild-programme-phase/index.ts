@@ -1062,37 +1062,47 @@ function inferGenerationMode(messages: ChatMessage[], constraints: GenerationCon
 }
 
 function inferGenerationConstraints(context: Context, messages: ChatMessage[]): GenerationConstraints {
-  const sourceText = [
-    ...messages.map((message) => message.content),
+  const userText = messages
+    .filter((message) => message.role === 'user')
+    .map((message) => message.content)
+    .join('\n');
+  const contextText = [
     collectText(context.client, 1500),
     collectText(context.exerciseDoc, 2500),
     collectText(context.documents, 2500),
     collectText(context.notes, 1500),
   ].join('\n');
+  const sourceText = [userText, contextText].join('\n');
   const lower = sourceText.toLowerCase();
+  const userLower = userText.toLowerCase();
+  const equipmentLower = /\bequipment\b|\baccess\b|\bmachine\b|\bavailable\b|\bhas\b|\bhave\b/.test(userLower)
+    ? userLower
+    : lower;
   const allowed = new Set<string>(['bodyweight', 'mat']);
   const add = (...items: string[]) => items.forEach((item) => allowed.add(item));
 
-  if (/\bfree weights?\b/.test(lower)) add('free weights', 'dumbbell', 'barbell', 'kettlebell');
-  if (/\bdumbbells?\b|\bdb\b/.test(lower)) add('free weights', 'dumbbell');
-  if (/\bbarbells?\b|\bbb\b|\bsquat rack\b/.test(lower)) add('free weights', 'barbell');
-  if (/\bkettlebells?\b|\bkb\b/.test(lower)) add('free weights', 'kettlebell');
-  if (lower.includes('squat rack')) add('squat rack', 'barbell');
-  if (lower.includes('bench')) add('bench');
-  if (lower.includes('leg press')) add('leg press');
-  if (lower.includes('chest press')) add('chest press');
-  if (lower.includes('shoulder press')) add('shoulder press');
-  if (lower.includes('rear delt') || lower.includes('pec fly')) add('rear delt/pec fly');
-  if (lower.includes('pull down') || lower.includes('pulldown')) add('pull down');
-  if (lower.includes('row machine') || lower.includes('seated row')) add('row machine');
-  if (lower.includes('hanging leg raise') || lower.includes('hanging knee raise')) add('hanging leg raise');
-  if (lower.includes('cable')) add('cable');
-  if (lower.includes('band')) add('band');
+  if (/\bfree weights?\b/.test(equipmentLower)) add('free weights', 'dumbbell', 'barbell', 'kettlebell');
+  if (/\bdumbbells?\b|\bdb\b/.test(equipmentLower)) add('free weights', 'dumbbell');
+  if (/\bbarbells?\b|\bbb\b|\bsquat rack\b/.test(equipmentLower)) add('free weights', 'barbell');
+  if (/\bkettlebells?\b|\bkb\b/.test(equipmentLower)) add('free weights', 'kettlebell');
+  if (equipmentLower.includes('squat rack')) add('squat rack', 'barbell');
+  if (equipmentLower.includes('bench')) add('bench');
+  if (equipmentLower.includes('leg press')) add('leg press');
+  if (equipmentLower.includes('chest press')) add('chest press');
+  if (equipmentLower.includes('shoulder press')) add('shoulder press');
+  if (equipmentLower.includes('rear delt') || equipmentLower.includes('pec fly')) add('rear delt/pec fly');
+  if (equipmentLower.includes('pull down') || equipmentLower.includes('pulldown')) add('pull down');
+  if (equipmentLower.includes('row machine') || equipmentLower.includes('seated row')) add('row machine');
+  if (equipmentLower.includes('hanging leg raise') || equipmentLower.includes('hanging knee raise')) add('hanging leg raise');
+  const cableDenied = /(?:no|without|not|wasnt|wasn't|isn'?t|doesn'?t have|dont have|don't have|unavailable)[^.]{0,50}\bcable\b|\bcable\b[^.]{0,50}(?:wasnt|wasn't|not|unavailable|isn'?t|doesn'?t have|dont have|don't have|no access)/.test(equipmentLower);
+  const bandDenied = /(?:no|without|not|wasnt|wasn't|isn'?t|doesn'?t have|dont have|don't have|unavailable)[^.]{0,50}\bband\b|\bband\b[^.]{0,50}(?:wasnt|wasn't|not|unavailable|isn'?t|doesn'?t have|dont have|don't have|no access)/.test(equipmentLower);
+  if (!cableDenied && equipmentLower.includes('cable')) add('cable');
+  if (!bandDenied && equipmentLower.includes('band')) add('band');
   const hamCurlDenied = /(?:no|without|not|wasnt|wasn't|isn'?t|doesn'?t have|dont have|don't have|unavailable)[^.]{0,50}(?:hamstring curl|leg curl)|(?:hamstring curl|leg curl)[^.]{0,50}(?:wasnt|wasn't|not|unavailable|isn'?t|doesn'?t have|dont have|don't have)/.test(lower);
-  if (!hamCurlDenied && (lower.includes('hamstring curl machine') || lower.includes('leg curl machine'))) add('hamstring curl');
+  if (!hamCurlDenied && (equipmentLower.includes('hamstring curl machine') || equipmentLower.includes('leg curl machine'))) add('hamstring curl');
 
-  const equipmentMentioned = /\bequipment\b|\baccess\b|\bmachine\b|\bavailable\b|\bhas\b|\bhad\b/.test(lower);
-  const limitedEquipment = /(?:only|limited|restricted|access to|available equipment|no access|doesn'?t have|dont have|don't have)/.test(lower) && allowed.size > 2 && equipmentMentioned;
+  const equipmentMentioned = /\bequipment\b|\baccess\b|\bmachine\b|\bavailable\b|\bhas\b|\bhad\b|\bhave\b/.test(equipmentLower);
+  const limitedEquipment = /(?:only|limited|restricted|access to|available equipment|no access|doesn'?t have|dont have|don't have)/.test(equipmentLower) && allowed.size > 2 && equipmentMentioned;
   const notes = limitedEquipment
     ? [`Strict equipment list inferred: ${Array.from(allowed).join(', ')}`]
     : ['No strict limited-equipment instruction detected; default gym access applies.'];
@@ -1281,6 +1291,8 @@ async function retrieveKnowledgeContext(
 async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Phase, context: Context, constraints: GenerationConstraints): Promise<Phase> {
   const byNorm = new Map<string, LibraryRow>();
   for (const row of context.library) byNorm.set(normalise(row.name), row);
+  const byLowerName = new Map<string, LibraryRow>();
+  for (const row of context.library) byLowerName.set(row.name.trim().toLowerCase(), row);
 
   const names = [...new Set((parsed.days ?? [])
     .flatMap((d) => d.exercises ?? [])
@@ -1288,11 +1300,22 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
     .filter(Boolean))];
   const resolved = new Map<string, LibraryRow>();
   const missing: string[] = [];
+  const missingLowerNames = new Set<string>();
 
   for (const name of names) {
     const hit = matchLibrary(name, byNorm, context.library);
     if (hit) resolved.set(name, hit);
-    else if (isExerciseAllowed(name, null, constraints)) missing.push(name);
+    else if (isExerciseAllowed(name, null, constraints)) {
+      const lowerName = name.trim().toLowerCase();
+      const existing = byLowerName.get(lowerName);
+      if (existing) {
+        resolved.set(name, existing);
+        byNorm.set(normalise(existing.name), existing);
+      } else if (!missingLowerNames.has(lowerName)) {
+        missingLowerNames.add(lowerName);
+        missing.push(name);
+      }
+    }
   }
 
   if (missing.length > 0) {
@@ -1316,7 +1339,30 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
       .from('pt_exercises')
       .insert(toInsert)
       .select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags');
-    if (error) throw new Error(`Could not create missing exercise cards: ${error.message}`);
+    if (error) {
+      const { data: refreshed, error: refreshError } = await admin
+        .from('pt_exercises')
+        .select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags')
+        .order('name');
+      if (refreshError) throw new Error(`Could not create missing exercise cards: ${error.message}`);
+
+      const refreshedLibrary = (refreshed ?? []) as LibraryRow[];
+      const refreshedByNorm = new Map<string, LibraryRow>();
+      for (const row of refreshedLibrary) refreshedByNorm.set(normalise(row.name), row);
+
+      const stillMissing = missing.filter((name) => {
+        const row = matchLibrary(name, refreshedByNorm, refreshedLibrary);
+        if (row) {
+          resolved.set(name, row);
+          byNorm.set(normalise(row.name), row);
+          return false;
+        }
+        return true;
+      });
+      if (stillMissing.length > 0) {
+        throw new Error(`Could not create missing exercise cards: ${error.message}`);
+      }
+    }
     for (const row of (inserted ?? []) as LibraryRow[]) {
       resolved.set(row.name, row);
       byNorm.set(normalise(row.name), row);

@@ -121,6 +121,33 @@ function formatCapturedValue(value: unknown): string {
   return String(value);
 }
 
+async function resolveFunctionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  if (!error) return fallback;
+  const err = error as { message?: string; context?: { json?: () => Promise<unknown>; text?: () => Promise<string> } };
+  const context = err.context;
+  if (context && typeof context.json === 'function') {
+    const payload = await context.json().catch(() => null);
+    if (payload && typeof payload === 'object') {
+      const message = (payload as { error?: unknown; message?: unknown }).error
+        ?? (payload as { error?: unknown; message?: unknown }).message;
+      if (typeof message === 'string' && message.trim()) return message.trim();
+    }
+  }
+  if (context && typeof context.text === 'function') {
+    const text = await context.text().catch(() => '');
+    if (text.trim()) {
+      try {
+        const parsed = JSON.parse(text) as { error?: unknown; message?: unknown };
+        const message = parsed.error ?? parsed.message;
+        if (typeof message === 'string' && message.trim()) return message.trim();
+      } catch {
+        return text.trim().slice(0, 240);
+      }
+    }
+  }
+  return err.message ?? fallback;
+}
+
 function inferPhaseBuilderMode(messages: PhaseRebuildChatMessage[], brief = ''): 'adapt_current' | 'rebuild_phase' {
   const text = [...messages.map((message) => message.content), brief].join('\n').toLowerCase();
   if (/\b(re-?do|rebuild|recreate|start over|from scratch|whole programme|whole program|new programme|new program|new phase|replace the whole|redo the whole|build a new|create a new)\b/.test(text)) {
@@ -500,7 +527,7 @@ export default function PTProgrammeEditView({
     setVoiceBuildBusyMode(null);
     const payload = data as PhaseRebuildMessagePayload | null;
     if (error || payload?.error) {
-      setVoiceBuildStatus(payload?.error ?? 'Could not continue the phase-builder chat.');
+      setVoiceBuildStatus(payload?.error ?? await resolveFunctionErrorMessage(error, 'Could not continue the phase-builder chat.'));
       return;
     }
     if (payload?.run_id) setVoiceBuildRunId(payload.run_id);
@@ -552,7 +579,7 @@ export default function PTProgrammeEditView({
     setVoiceBuildBusyMode(null);
     const payload = data as PhaseRebuildPayload | null;
     if (error || payload?.error || !payload?.phase) {
-      setVoiceBuildStatus(payload?.error ?? error?.message ?? 'Could not rebuild that phase.');
+      setVoiceBuildStatus(payload?.error ?? await resolveFunctionErrorMessage(error, 'Could not rebuild that phase.'));
       return;
     }
     const replacementPhase: PTProgrammePhase = {

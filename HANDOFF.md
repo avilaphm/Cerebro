@@ -1,12 +1,42 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Fixed adapt-current phase assembly crash.
+2026-06-25 by Codex - Fixed adapt-current duplicate exercise and strict equipment parsing.
 
 ## Last code fix commit
-this commit - fix adapt-current phase assembly
+this commit - fix adapt-current duplicate exercise handling
 
 ## What just happened (read first)
+
+### Adapt-current duplicate exercise and equipment parser fix (2026-06-25, LATEST)
+
+Pedro retried `Adapt current phase` for Olga and the UI still showed `Edge Function returned a non-2xx status code`.
+
+Observed in Supabase:
+- `rebuild-programme-phase` v8 failed with:
+  - `Could not create missing exercise cards: duplicate key value violates unique constraint "pt_exercises_name_idx"`
+- The same failed run showed strict equipment inference had incorrectly allowed `cable` and `band` because the assistant summary mentioned replacements/avoid items containing those words.
+
+Shipped:
+- `assemblePhase()` now de-dupes missing exercise card creation by lower-case name before insert.
+- If the insert still hits a duplicate race/existing library issue, the function re-reads `pt_exercises`, links the existing card, and continues instead of failing the phase.
+- Strict equipment inference now uses coach/user messages first and no longer treats assistant-generated summaries as available-equipment evidence.
+- `no cable` / `no band` instructions are now respected; those words no longer add cable/band to the allowed list.
+- Programme editor now reads JSON error bodies from Supabase `FunctionsHttpError.context`, so future failures show the function's real `{ error }` message instead of only `Edge Function returned a non-2xx status code`.
+
+Deployment:
+- Deployed `rebuild-programme-phase` ACTIVE v11 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- `supabase functions list` confirms `rebuild-programme-phase` ACTIVE v11.
+- Direct service-role curl smoke test reached v10/v11 endpoint but returned the function's expected `Unauthorized` path because this function requires an authenticated Pedro session. Live browser retry is the correct end-to-end test.
+
+Notes:
+- No schema migration was needed.
+- The previously failed run remains failed; retry from the programme editor to create a fresh v11 run.
 
 ### Adapt-current non-2xx fix (2026-06-25, LATEST)
 
