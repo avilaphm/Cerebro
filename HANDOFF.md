@@ -1,14 +1,46 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Fixed adapt-current duplicate exercise and strict equipment parsing.
+2026-06-25 by Codex - Fixed adapt-current duplicate exercise failure with per-exercise resolver.
 
 ## Last code fix commit
-this commit - fix adapt-current duplicate exercise handling
+this commit - make adapt-current missing exercise creation non-fatal
 
 ## What just happened (read first)
 
-### Adapt-current duplicate exercise and equipment parser fix (2026-06-25, LATEST)
+### Adapt-current duplicate exercise non-fatal resolver (2026-06-25, LATEST)
+
+Pedro retried `Adapt current phase` after v11 and the UI showed the real server error:
+- `Could not create missing exercise cards: duplicate key value violates unique constraint "pt_exercises_name_idx"`
+
+Root cause:
+- v11 still used one bulk insert for missing exercise cards.
+- If any missing exercise was a lower-case duplicate, Postgres rejected the whole insert.
+- Because the whole bulk insert rolled back, genuinely new missing cards were still absent after the fallback re-read, so the function still failed.
+
+Shipped:
+- Removed the all-or-nothing bulk insert path.
+- Added per-exercise missing-card resolution:
+  - case-insensitive lookup first,
+  - single-card insert second,
+  - duplicate retry lookup third,
+  - if it still cannot link/create the card, the generated phase continues with that exercise unlinked instead of failing.
+- This means the builder can still return an editable programme even if one generated exercise card cannot be inserted.
+
+Deployment:
+- Deployed `rebuild-programme-phase` ACTIVE v12 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- `supabase functions list` confirms `rebuild-programme-phase` ACTIVE v12.
+
+Notes:
+- No schema migration was needed.
+- The previously failed v11 run remains failed; retry from the programme editor to create a fresh v12 run.
+
+### Adapt-current duplicate exercise and equipment parser fix (2026-06-25)
 
 Pedro retried `Adapt current phase` for Olga and the UI still showed `Edge Function returned a non-2xx status code`.
 

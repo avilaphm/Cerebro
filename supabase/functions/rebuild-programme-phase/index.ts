@@ -49,6 +49,8 @@ const WARMUP_ONLY_NAMES = [
   'Cat Cow',
 ];
 
+const EXERCISE_SELECT = 'id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags';
+
 const PREFERRED_WARMUPS: Array<{ names: string[]; patterns: string[]; reps: string; notes: string }> = [
   { names: ['Cobra to Child Pose', 'Cobra Child Pose'], patterns: ['horizontal_push', 'vertical_push', 'vertical_pull', 'horizontal_pull', 'corrective'], reps: '8-10', notes: 'Spine, shoulder, and lat preparation.' },
   { names: ['Downward Dog'], patterns: ['hinge', 'squat', 'vertical_push', 'vertical_pull', 'corrective'], reps: '30 sec', notes: 'Posterior chain and shoulder preparation.' },
@@ -542,7 +544,7 @@ async function loadContext(admin: ReturnType<typeof createClient>, assignmentId:
     admin.from('pt_client_lifestyle_doc').select('sleep_baseline, stress_patterns, schedule_notes, recurring_challenges, goals_context').eq('client_id', clientId).maybeSingle(),
     admin.from('pt_client_nutrition_doc').select('daily_targets, nutrition_obstacles, eating_habits, recurring_gaps').eq('client_id', clientId).maybeSingle(),
     admin.from('pt_client_1rm_results').select('exercise_name, tested_weight_kg, estimated_1rm_kg, created_at').eq('client_id', clientId).order('created_at', { ascending: false }),
-    admin.from('pt_exercises').select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags').order('name'),
+    admin.from('pt_exercises').select(EXERCISE_SELECT).order('name'),
   ]);
 
   const assignment = assignmentRes.data as AssignmentRow | null;
@@ -1288,6 +1290,61 @@ async function retrieveKnowledgeContext(
   }
 }
 
+async function resolveOrCreateExercise(admin: ReturnType<typeof createClient>, name: string): Promise<LibraryRow | null> {
+  const existing = await findExerciseByExactName(admin, name);
+  if (existing) return existing;
+
+  const insertPayload = {
+    name,
+    primary_muscles: [] as string[],
+    secondary_muscles: [] as string[],
+    muscles: [] as string[],
+    equipment: null,
+    video_url: null,
+    cues: [] as string[],
+    setup_cues: [] as string[],
+    tags: [] as string[],
+    conditions: [] as string[],
+    progression_ids: [] as string[],
+    regression_ids: [] as string[],
+    purpose: null,
+    source: 'ai',
+  };
+  const { data, error } = await admin
+    .from('pt_exercises')
+    .insert(insertPayload)
+    .select(EXERCISE_SELECT)
+    .maybeSingle();
+
+  if (!error && data) return data as LibraryRow;
+
+  const duplicate = error?.message?.includes('duplicate key') || error?.code === '23505';
+  const retried = await findExerciseByExactName(admin, name);
+  if (retried) return retried;
+
+  console.warn('Could not create/link generated exercise card; continuing with unlinked exercise.', {
+    name,
+    duplicate,
+    error: error?.message,
+  });
+  return null;
+}
+
+async function findExerciseByExactName(admin: ReturnType<typeof createClient>, name: string): Promise<LibraryRow | null> {
+  const { data, error } = await admin
+    .from('pt_exercises')
+    .select(EXERCISE_SELECT)
+    .ilike('name', name)
+    .limit(10);
+  if (error) {
+    console.warn('Could not look up exercise by name.', { name, error: error.message });
+    return null;
+  }
+  const rows = (data ?? []) as LibraryRow[];
+  return rows.find((row) => row.name.trim().toLowerCase() === name.trim().toLowerCase())
+    ?? matchLibrary(name, new Map(rows.map((row) => [normalise(row.name), row])), rows);
+}
+
 async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Phase, context: Context, constraints: GenerationConstraints): Promise<Phase> {
   const byNorm = new Map<string, LibraryRow>();
   for (const row of context.library) byNorm.set(normalise(row.name), row);
@@ -1319,53 +1376,12 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
   }
 
   if (missing.length > 0) {
-    const toInsert = missing.map((name) => ({
-      name,
-      primary_muscles: [] as string[],
-      secondary_muscles: [] as string[],
-      muscles: [] as string[],
-      equipment: null,
-      video_url: null,
-      cues: [] as string[],
-      setup_cues: [] as string[],
-      tags: [] as string[],
-      conditions: [] as string[],
-      progression_ids: [] as string[],
-      regression_ids: [] as string[],
-      purpose: null,
-      source: 'ai',
-    }));
-    const { data: inserted, error } = await admin
-      .from('pt_exercises')
-      .insert(toInsert)
-      .select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags');
-    if (error) {
-      const { data: refreshed, error: refreshError } = await admin
-        .from('pt_exercises')
-        .select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags')
-        .order('name');
-      if (refreshError) throw new Error(`Could not create missing exercise cards: ${error.message}`);
-
-      const refreshedLibrary = (refreshed ?? []) as LibraryRow[];
-      const refreshedByNorm = new Map<string, LibraryRow>();
-      for (const row of refreshedLibrary) refreshedByNorm.set(normalise(row.name), row);
-
-      const stillMissing = missing.filter((name) => {
-        const row = matchLibrary(name, refreshedByNorm, refreshedLibrary);
-        if (row) {
-          resolved.set(name, row);
-          byNorm.set(normalise(row.name), row);
-          return false;
-        }
-        return true;
-      });
-      if (stillMissing.length > 0) {
-        throw new Error(`Could not create missing exercise cards: ${error.message}`);
-      }
-    }
-    for (const row of (inserted ?? []) as LibraryRow[]) {
-      resolved.set(row.name, row);
+    for (const name of missing) {
+      const row = await resolveOrCreateExercise(admin, name);
+      if (!row) continue;
+      resolved.set(name, row);
       byNorm.set(normalise(row.name), row);
+      byLowerName.set(row.name.trim().toLowerCase(), row);
     }
   }
 
