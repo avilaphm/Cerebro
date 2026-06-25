@@ -66,6 +66,7 @@ The coach is replacing ONE selected programme phase. Behave like a practical pro
 - Read the client context, movement analysis, injuries, weak/tight muscles, recent training, 1RM data, and the active phase.
 - Ask ONE short question at a time only when a critical decision is missing.
 - If the coach gives enough information, return ready=true and summarize the captured plan.
+- Detect scope: if the coach says adapt, adjust, modify, current programme, current phase, equipment access, or make this work with available equipment, preserve the current phase structure and change only what is needed. If the coach says redo, rebuild, from scratch, new programme, new phase, or whole programme, rebuild the selected phase.
 - Default intelligently when details are safe: most clients train 3-4 days, occasionally 5.
 
 Return valid JSON only:
@@ -81,6 +82,7 @@ Return valid JSON only:
     "avoid": string[],
     "weekly_set_targets": string[],
     "client_needs": string[],
+    "change_scope": "adapt_current" | "rebuild_phase" | null,
     "assumptions": string[]
   }
 }
@@ -276,6 +278,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Send at least one message before generating.' }, 400);
     }
     const constraints = inferGenerationConstraints(context, messages);
+    const generationMode = inferGenerationMode(messages, constraints);
 
     const contextStep = await appendStep(admin, runId, 'PHASE_CONTEXT_READER', {
       assignment_id: assignmentId,
@@ -295,37 +298,51 @@ Deno.serve(async (req) => {
       taskType: 'phase_rebuild_chat',
       phaseType: String(context.selectedPhase?.title ?? ''),
       clientGoal: String(context.assignment.goal ?? context.client?.goals ?? ''),
-      questionOrDecision: 'Build a client-specific phase using weekly set volume, movement-pattern coverage, injuries, movement analysis, and Pedro split rules.',
+      questionOrDecision: generationMode === 'adapt_current'
+        ? 'Adapt the current selected phase to Pedro instructions while preserving the existing programme structure where possible.'
+        : 'Build a client-specific phase using weekly set volume, movement-pattern coverage, injuries, movement analysis, and Pedro split rules.',
     });
 
     await admin.from('pt_program_generation_runs').update({
-      current_command: 'PHASE_GENERATE_REPLACEMENT',
+      current_command: generationMode === 'adapt_current' ? 'PHASE_ADAPT_CURRENT' : 'PHASE_GENERATE_REPLACEMENT',
       status: 'running',
       updated_at: new Date().toISOString(),
     }).eq('id', runId);
 
     let written: WrittenPhase | null = null;
-    try {
-      written = await claudeJson<WrittenPhase>(anthropic, {
-        system: WRITE_SYSTEM,
-        user: buildWritePrompt(context, messages, knowledgeContext, constraints),
-        maxTokens: 4200,
-        timeoutMs: 32_000,
-      });
-    } catch (error) {
-      const fallbackReason = isAbortError(error)
-        ? 'AI writer timed out; deterministic fallback phase was created.'
-        : error instanceof Error
-          ? `AI writer failed: ${error.message}. Deterministic fallback phase was created.`
-          : 'AI writer failed; deterministic fallback phase was created.';
-      written = buildDeterministicPhase(context, messages, fallbackReason, constraints);
-      await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
-        reason: fallbackReason,
+    if (generationMode === 'adapt_current') {
+      written = buildAdaptedCurrentPhase(context, messages, constraints);
+      await appendStep(admin, runId, 'PHASE_ADAPT_CURRENT', {
+        mode: generationMode,
+        equipment_constraints: constraints,
       }, {
         phase: written.phase,
         assumptions: written.assumptions ?? [],
         review_notes: written.review_notes ?? [],
       });
+    } else {
+      try {
+        written = await claudeJson<WrittenPhase>(anthropic, {
+          system: WRITE_SYSTEM,
+          user: buildWritePrompt(context, messages, knowledgeContext, constraints),
+          maxTokens: 4200,
+          timeoutMs: 32_000,
+        });
+      } catch (error) {
+        const fallbackReason = isAbortError(error)
+          ? 'AI writer timed out; deterministic fallback phase was created.'
+          : error instanceof Error
+            ? `AI writer failed: ${error.message}. Deterministic fallback phase was created.`
+            : 'AI writer failed; deterministic fallback phase was created.';
+        written = buildDeterministicPhase(context, messages, fallbackReason, constraints);
+        await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
+          reason: fallbackReason,
+        }, {
+          phase: written.phase,
+          assumptions: written.assumptions ?? [],
+          review_notes: written.review_notes ?? [],
+        });
+      }
     }
     if (!written?.phase?.days || !Array.isArray(written.phase.days)) {
       written = buildDeterministicPhase(context, messages, 'AI writer returned an incomplete phase; deterministic fallback phase was created.', constraints);
@@ -342,6 +359,7 @@ Deno.serve(async (req) => {
       messages,
       knowledge_context: knowledgeContext,
       equipment_constraints: constraints,
+      generation_mode: generationMode,
     }, {
       split_selected: written.split_selected ?? null,
       assumptions: written.assumptions ?? [],
@@ -357,6 +375,7 @@ Deno.serve(async (req) => {
     }, audit);
     await appendStep(admin, runId, 'PHASE_GENERATE_REPLACEMENT', {
       phase_index: phaseIndex,
+      generation_mode: generationMode,
     }, {
       phase: assembled,
       resolved_loads: resolvedLoads,
@@ -370,6 +389,7 @@ Deno.serve(async (req) => {
       validation_summary: audit,
       coaching_reasoning: {
         captured_chat: summarizeMessages(messages),
+        generation_mode: generationMode,
         questions_answered: written.questions_answered ?? [],
         assumptions: written.assumptions ?? [],
         review_notes: written.review_notes ?? [],
@@ -389,6 +409,7 @@ Deno.serve(async (req) => {
       review_notes: written.review_notes ?? [],
       weekly_set_volume: audit.weekly_set_volume,
       movement_pattern_coverage: audit.movement_pattern_coverage,
+      generation_mode: generationMode,
       split_selected: audit.split_selected,
       unilateral_bilateral_balance: audit.unilateral_bilateral_balance,
       client_needs_applied: audit.client_needs_applied,
@@ -462,6 +483,7 @@ interface GenerationConstraints {
   allowedEquipment: string[];
   notes: string[];
 }
+type GenerationMode = 'adapt_current' | 'rebuild_phase';
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -802,6 +824,41 @@ function buildDeterministicPhase(context: Context, messages: ChatMessage[], reas
   };
 }
 
+function buildAdaptedCurrentPhase(context: Context, messages: ChatMessage[], constraints: GenerationConstraints): WrittenPhase {
+  const selected = context.selectedPhase;
+  const phase = clonePhase(selected) ?? {
+    id: `phase-adapt-${Date.now()}`,
+    title: 'Adapted phase',
+    focus: 'Adapted from current phase.',
+    weeks: '4',
+    days: [],
+  };
+  return {
+    phase,
+    split_selected: inferSplit(phase.days?.length ?? 0),
+    weekly_set_volume: {},
+    movement_pattern_coverage: {},
+    questions_answered: messages.filter((message) => message.role === 'user').map((message) => message.content).slice(-4),
+    assumptions: [
+      'Pedro asked to adapt the current phase, so the existing day structure, allowed exercises, sets, reps, rest, and phase blocks were preserved where possible.',
+      constraints.limitedEquipment
+        ? `Only exercises compatible with available equipment were kept: ${constraints.allowedEquipment.join(', ')}.`
+        : 'No strict equipment list was detected, so gym access was assumed.',
+      'Unavailable exercises are replaced by same-pattern alternatives before Pedro reviews the draft.',
+    ],
+    review_notes: [
+      'Adapt-current mode was used. This is not a full re-programme.',
+      'Warm-ups were regenerated after the existing Workout sections were checked.',
+    ],
+    web_research_used: false,
+  };
+}
+
+function clonePhase(phase: Phase | null): Phase | null {
+  if (!phase) return null;
+  return JSON.parse(JSON.stringify(phase)) as Phase;
+}
+
 function inferRequestedDayCount(messages: ChatMessage[], selectedPhase: Phase | null): number {
   const text = messages.map((message) => message.content).join('\n').toLowerCase();
   const match = text.match(/\b([2-5])\s*(?:day|days|workout|workouts|session|sessions)\b/);
@@ -989,6 +1046,15 @@ function resolveExerciseName(context: Context, candidates: string[], constraints
   return candidates.find((candidate) => !isWarmupOnlyName(candidate)) ?? candidates[0];
 }
 
+function inferGenerationMode(messages: ChatMessage[], constraints: GenerationConstraints): GenerationMode {
+  const text = messages.map((message) => message.content).join('\n').toLowerCase();
+  const rebuildRequested = /\b(re-?do|rebuild|recreate|start over|from scratch|whole programme|whole program|new programme|new program|new phase|replace the whole|redo the whole|build a new|create a new)\b/.test(text);
+  if (rebuildRequested) return 'rebuild_phase';
+  const adaptRequested = /\b(adapt|adjust|modify|tweak|edit|keep the current|current programme|current program|current phase|same programme|same program|fit|make it work|equipment|access to|available)\b/.test(text);
+  if (adaptRequested || constraints.limitedEquipment) return 'adapt_current';
+  return 'rebuild_phase';
+}
+
 function inferGenerationConstraints(context: Context, messages: ChatMessage[]): GenerationConstraints {
   const sourceText = [
     ...messages.map((message) => message.content),
@@ -1149,7 +1215,7 @@ function isEquipmentAvailable(need: string, allowedEquipment: string[]): boolean
 
 function replacementCandidates(ex: Exercise): string[] {
   const pattern = sanitizePattern(ex.pattern) ?? inferPattern(ex.name ?? '', null);
-  if (pattern === 'hinge') return ['Single Leg RDL', 'DB Single-Leg RDL', 'Barbell Hip Thrust', 'Glute Bridge', 'Back Extension'];
+  if (pattern === 'hinge') return ['Single Leg RDL', 'DB Single-Leg RDL', 'Barbell Hip Thrust', 'Back Extension', 'Cable Pull Through'];
   if (pattern === 'squat' || pattern === 'bilateral_lower') return ['Leg Press', 'Back Squat', 'Goblet Squat', 'Bodyweight Squat'];
   if (pattern === 'unilateral_lower') return ['Reverse Lunge', 'Split Squat', 'Cossack Squat', 'Single Leg RDL'];
   if (pattern === 'horizontal_push' || pattern === 'single_arm_push' || pattern === 'two_arm_push') return ['Chest Press', 'DB Bench Press', 'Push Up'];
@@ -1220,7 +1286,7 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
   for (const name of names) {
     const hit = matchLibrary(name, byNorm, context.library);
     if (hit) resolved.set(name, hit);
-    else missing.push(name);
+    else if (isExerciseAllowed(name, null, constraints)) missing.push(name);
   }
 
   if (missing.length > 0) {
@@ -1255,12 +1321,19 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
   const weekBlocks = sanitiseWeekBlocks(parsed.week_blocks, old);
   const days = (parsed.days ?? []).map((day, dayIndex) => {
     let lastSection = '';
+    let currentInputSection = '';
     const supersetMainLiftSeen = new Set<string>();
     const mappedExercises = (day.exercises ?? []).map((ex, exIndex) => {
       const originalName = String(ex.name ?? '').trim();
       let name = originalName;
       let row = resolved.get(name) ?? matchLibrary(name, byNorm, context.library);
-      const rawSection = SECTIONS.includes(ex.section as typeof SECTIONS[number]) ? ex.section! : 'Workout';
+      const declaredSection = SECTIONS.includes(ex.section_start as typeof SECTIONS[number])
+        ? ex.section_start!
+        : SECTIONS.includes(ex.section as typeof SECTIONS[number])
+          ? ex.section!
+          : '';
+      if (declaredSection) currentInputSection = declaredSection;
+      const rawSection = currentInputSection || 'Workout';
       const shouldBeWorkout = rawSection === 'Workout' || (!isWarmupOnlyName(name) && rawSection !== 'Warm Up');
       if (shouldBeWorkout && (isWarmupOnlyName(name) || !isExerciseAllowed(name, row, constraints))) {
         name = resolveExerciseName(context, replacementCandidates(ex), constraints);

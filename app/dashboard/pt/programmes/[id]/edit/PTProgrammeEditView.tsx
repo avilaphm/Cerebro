@@ -86,6 +86,7 @@ interface PhaseRebuildMessagePayload {
 interface PhaseRebuildPayload {
   run_id?: string;
   phase?: PTProgrammePhase;
+  generation_mode?: 'adapt_current' | 'rebuild_phase';
   one_rm_map?: Record<string, number>;
   resolved_loads?: unknown[];
   weekly_set_volume?: Record<string, number>;
@@ -118,6 +119,17 @@ function formatCapturedValue(value: unknown): string {
   if (value && typeof value === 'object') return JSON.stringify(value);
   if (value === null || value === undefined || value === '') return 'Not set';
   return String(value);
+}
+
+function inferPhaseBuilderMode(messages: PhaseRebuildChatMessage[], brief = ''): 'adapt_current' | 'rebuild_phase' {
+  const text = [...messages.map((message) => message.content), brief].join('\n').toLowerCase();
+  if (/\b(re-?do|rebuild|recreate|start over|from scratch|whole programme|whole program|new programme|new program|new phase|replace the whole|redo the whole|build a new|create a new)\b/.test(text)) {
+    return 'rebuild_phase';
+  }
+  if (/\b(adapt|adjust|modify|tweak|edit|keep the current|current programme|current program|current phase|same programme|same program|fit|make it work|equipment|access to|available)\b/.test(text)) {
+    return 'adapt_current';
+  }
+  return 'rebuild_phase';
 }
 
 function toNutritionRows(items: unknown[]): PhaseNutritionRow[] {
@@ -499,9 +511,12 @@ export default function PTProgrammeEditView({
     }
     setVoiceBrief('');
     setVoiceBuildReady(Boolean(payload?.ready));
+    const inferredMode = inferPhaseBuilderMode(payload?.messages ?? voiceBuildMessages, '');
     setVoiceBuildStatus(
       payload?.ready
-        ? 'The agent has enough detail. Generate the replacement phase when ready.'
+        ? inferredMode === 'adapt_current'
+          ? 'The agent has enough detail. Adapt the current phase when ready.'
+          : 'The agent has enough detail. Generate the replacement phase when ready.'
         : 'Answer the agent, then send another message.',
     );
   };
@@ -513,10 +528,16 @@ export default function PTProgrammeEditView({
       return;
     }
     const currentPhaseTitle = programme.phases[activePhaseTab]?.title ?? `Phase ${activePhaseTab + 1}`;
-    if (!window.confirm(`Replace "${currentPhaseTitle}" with an AI draft from this brief? You can still review it before saving.`)) return;
+    const inferredMode = inferPhaseBuilderMode(voiceBuildMessages, voiceBrief);
+    const actionLabel = inferredMode === 'adapt_current' ? 'Adapt' : 'Replace';
+    if (!window.confirm(`${actionLabel} "${currentPhaseTitle}" from this brief? You can still review it before saving.`)) return;
     setVoiceBuildBusy(true);
     setVoiceBuildBusyMode('generate');
-    setVoiceBuildStatus(`Rebuilding ${currentPhaseTitle} from the brief, client history, and 1RM results...`);
+    setVoiceBuildStatus(
+      inferredMode === 'adapt_current'
+        ? `Adapting ${currentPhaseTitle} from the current programme and your latest constraints...`
+        : `Rebuilding ${currentPhaseTitle} from the brief, client history, and 1RM results...`,
+    );
     const { data, error } = await supabase.functions.invoke('rebuild-programme-phase', {
       body: {
         action: 'generate',
@@ -542,6 +563,7 @@ export default function PTProgrammeEditView({
       p.phases[activePhaseTab] = replacementPhase;
       return p;
     });
+    const completedMode = payload.generation_mode ?? inferredMode;
     setValidationSummary((cur) => ({
       ...cur,
       ...(payload.run_id ? { phase_rebuild_chat_run_id: payload.run_id } : {}),
@@ -563,7 +585,7 @@ export default function PTProgrammeEditView({
     setVoiceBuildOpen(false);
     setVoiceBrief('');
     setVoiceBuildStatus(
-      `Replaced ${currentPhaseTitle} with an editable draft`
+      `${completedMode === 'adapt_current' ? 'Adapted' : 'Replaced'} ${currentPhaseTitle} with an editable draft`
       + (payload.matched_count !== undefined ? ` (${payload.matched_count} linked exercise${payload.matched_count === 1 ? '' : 's'})` : '')
       + '. Review it, adjust anything needed, then Save changes.',
     );
@@ -1271,11 +1293,11 @@ export default function PTProgrammeEditView({
               <div>
                 <p className="text-sm font-medium">Chat with the programme agent</p>
                 <p className="mt-1 text-xs leading-relaxed text-black/45">
-                  Type, dictate, or do both for <span className="font-medium text-black">{phase.title}</span>. The agent reads client history, movement analysis, injuries, recent training, weekly set volume, movement patterns, and 1RM results before replacing this phase only.
+                  Type, dictate, or do both for <span className="font-medium text-black">{phase.title}</span>. Say adapt/current to keep the programme structure and adjust only what is needed, or say redo/rebuild/from scratch to create a new phase.
                 </p>
               </div>
               <span className="shrink-0 border border-amber-200 bg-amber-50 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-amber-700">
-                Replaces selected phase
+                Adapts or replaces selected phase
               </span>
             </div>
             {voiceBuildMessages.length > 0 && (
@@ -1347,7 +1369,13 @@ export default function PTProgrammeEditView({
                 disabled={voiceBuildBusy || (!voiceBuildReady && !voiceBuildMessages.some((message) => message.role === 'user'))}
                 className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:border-black/10 disabled:bg-white disabled:text-black/30 disabled:hover:bg-white disabled:hover:text-black/30"
               >
-                {voiceBuildBusy ? 'Working...' : voiceBuildReady ? 'Generate replacement phase' : 'Generate anyway'}
+                {voiceBuildBusy
+                  ? 'Working...'
+                  : inferPhaseBuilderMode(voiceBuildMessages, voiceBrief) === 'adapt_current'
+                    ? 'Adapt current phase'
+                    : voiceBuildReady
+                      ? 'Generate replacement phase'
+                      : 'Generate anyway'}
               </button>
             </div>
             <textarea

@@ -1,12 +1,48 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Enforced workout-specific warm-ups and strict equipment restrictions in phase rebuild.
+2026-06-25 by Codex - Added adapt-current mode to the programme phase agent.
 
 ## Last code fix commit
-this commit - enforce warmup and equipment rules in phase rebuild
+this commit - add adapt-current mode to phase agent
 
 ## What just happened (read first)
+
+### Phase agent adapt-current mode (2026-06-25, LATEST)
+
+Pedro clarified that the phase agent should not always redo the whole phase. Olga's case is the example: if the existing programme is good and Pedro gives an equipment list, the agent should adapt the current phase to those constraints instead of creating a new programme.
+
+Shipped:
+- `rebuild-programme-phase` now detects generation mode from the chat:
+  - `adapt_current` when Pedro says adapt, adjust, modify, current programme/current phase, equipment, access, or available equipment.
+  - `rebuild_phase` when Pedro says redo, rebuild, from scratch, new programme/new phase, or whole programme.
+- Adapt-current mode is deterministic:
+  - clones the selected phase,
+  - preserves day structure, phase blocks, sets, reps, rest, and allowed exercises where possible,
+  - applies strict equipment filtering/replacement,
+  - regenerates warm-ups after the existing Workout sections are checked.
+- Rebuild mode keeps the existing AI writer + deterministic fallback behaviour.
+- The programme editor UI now changes language based on inferred mode:
+  - `Adapt current phase` for adaptation,
+  - `Generate replacement phase` for rebuilds,
+  - confirmation/status messages now say adapt vs replace correctly.
+- The chat system prompt and project skills now tell the agent to detect scope before changing a phase.
+
+Deployment:
+- Deployed `rebuild-programme-phase` ACTIVE v7 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `quick_validate.py` passes for:
+  - `pt-phase-programme-writer`
+  - `pt-workout-structure-planner`
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- `supabase functions list` confirms `rebuild-programme-phase` ACTIVE v7.
+
+Notes:
+- No schema migration was needed.
+- No live Olga generation was run because it would create real generation run records and potentially missing exercise cards.
 
 ### Phase rebuild warm-up and equipment guardrails (2026-06-25, LATEST)
 
