@@ -378,9 +378,17 @@ export default function PTProgrammeEditView({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
       return true;
-    } catch {
-      setVoiceBuildStatus('Microphone is blocked for this site. In Chrome, click the tune/lock icon beside the address bar, allow Microphone, then press Record voice brief again. You can keep typing here meanwhile.');
-      return false;
+    } catch (err) {
+      // Only a real permission denial means "blocked". Other failures (mic busy
+      // in another app, a transient AbortError) shouldn't claim the site is
+      // blocked — let SpeechRecognition try its own capture path, which often
+      // still works.
+      const name = err instanceof DOMException ? err.name : '';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        setVoiceBuildStatus('Microphone is blocked for this site. In Chrome, click the tune/lock icon beside the address bar, allow Microphone, then press Record voice brief again. You can keep typing here meanwhile.');
+        return false;
+      }
+      return true;
     }
   };
 

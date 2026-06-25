@@ -5,7 +5,12 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  // Allow this site's own origin to use mic/camera (voice briefs, dictation,
+  // ML-assessment photo capture). An empty allowlist "()" blocks them for every
+  // origin — including ours — so getUserMedia throws NotAllowedError even when
+  // the browser's site permission is granted. "(self)" keeps cross-origin
+  // iframes locked out while letting first-party features work.
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=()" },
 ];
 
 const nextConfig: NextConfig = {
