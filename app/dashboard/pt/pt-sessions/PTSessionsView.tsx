@@ -24,6 +24,20 @@ import type {
   PTSetLog,
 } from '@/utils/pt/types';
 
+function getYouTubeId(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname.includes('youtu.be')) return parsed.pathname.split('/').filter(Boolean)[0] ?? null;
+    if (parsed.pathname.startsWith('/shorts/')) return parsed.pathname.split('/')[2] ?? null;
+    if (parsed.pathname.startsWith('/embed/')) return parsed.pathname.split('/')[2] ?? null;
+    return parsed.searchParams.get('v');
+  } catch {
+    const match = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{6,})/);
+    return match?.[1] ?? null;
+  }
+}
+
 interface SetDraft { reps: string; weight: string; }
 
 interface WorkoutLog {
@@ -178,8 +192,14 @@ export default function PTSessionsView({
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [doneExercises, setDoneExercises] = useState<Set<string>>(new Set());
   const [exerciseOverrides, setExerciseOverrides] = useState<Record<string, PTProgrammeExercise>>({});
+  const [libExercises, setLibExercises] = useState<PTExercise[]>(exercises);
   const [swapTarget, setSwapTarget] = useState<string | null>(null);
   const [swapSearch, setSwapSearch] = useState('');
+  const [creatingExercise, setCreatingExercise] = useState(false);
+  const [newExName, setNewExName] = useState('');
+  const [newExVideo, setNewExVideo] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
   const [noShowBusy, setNoShowBusy] = useState(false);
@@ -432,8 +452,43 @@ export default function PTSessionsView({
       newDrafts[key] = { reps: last?.reps?.toString() ?? defaultReps, weight: last?.weight?.toString() ?? '' };
     }
     setSetDrafts((prev) => ({ ...prev, ...newDrafts }));
+    closeSwap();
+  }
+
+  function closeSwap() {
     setSwapTarget(null);
     setSwapSearch('');
+    setCreatingExercise(false);
+    setNewExName('');
+    setNewExVideo('');
+    setCreateError('');
+  }
+
+  async function createAndSwapExercise() {
+    if (!swapTarget) return;
+    const name = newExName.trim();
+    if (!name) { setCreateError('Give the exercise a name.'); return; }
+    const video = newExVideo.trim();
+    if (video && !getYouTubeId(video)) { setCreateError('That does not look like a YouTube link.'); return; }
+
+    setCreateBusy(true);
+    setCreateError('');
+    const { data, error } = await supabase
+      .from('pt_exercises')
+      .insert({ name, video_url: video || null, source: 'manual' })
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      setCreateError(error?.message ?? 'Could not create the exercise.');
+      setCreateBusy(false);
+      return;
+    }
+
+    const created = data as PTExercise;
+    setLibExercises((prev) => [created, ...prev].sort((a, b) => a.name.localeCompare(b.name)));
+    setCreateBusy(false);
+    swapExercise(swapTarget, created);
   }
 
   const handleNoShow = async () => {
@@ -659,14 +714,14 @@ export default function PTSessionsView({
   };
 
   const filteredExercises = useMemo(() => {
-    if (!swapSearch.trim()) return exercises.slice(0, 30);
+    if (!swapSearch.trim()) return libExercises.slice(0, 30);
     const q = swapSearch.toLowerCase();
-    return exercises.filter((e) =>
+    return libExercises.filter((e) =>
       e.name.toLowerCase().includes(q) ||
       e.muscles.some((m) => m.toLowerCase().includes(q)) ||
       (e.tags ?? []).some((t) => t.toLowerCase().includes(q)),
     ).slice(0, 30);
-  }, [exercises, swapSearch]);
+  }, [libExercises, swapSearch]);
 
   // ─── Render: Workout Logger ───────────────────────────────────────────────
 
@@ -851,41 +906,106 @@ export default function PTSessionsView({
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
             <div className="w-full max-w-md bg-white">
               <div className="flex items-center justify-between border-b border-black/10 px-4 py-4">
-                <p className="font-medium">Swap exercise</p>
-                <button type="button" onClick={() => { setSwapTarget(null); setSwapSearch(''); }} className="text-black/40 hover:text-black">
+                <p className="font-medium">{creatingExercise ? 'New exercise' : 'Swap exercise'}</p>
+                <button type="button" onClick={closeSwap} className="text-black/40 hover:text-black">
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <div className="border-b border-black/10 px-4 py-3">
-                <div className="flex items-center gap-2 border border-black/15 bg-[#fbfbf8] px-3 py-2">
-                  <Search className="h-4 w-4 shrink-0 text-black/35" />
-                  <input
-                    autoFocus
-                    value={swapSearch}
-                    onChange={(e) => setSwapSearch(e.target.value)}
-                    placeholder="Search exercises..."
-                    className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-                  />
-                </div>
-              </div>
-              <div className="max-h-72 overflow-y-auto divide-y divide-black/8">
-                {filteredExercises.length === 0 && (
-                  <p className="px-4 py-6 text-center text-sm text-black/40">No exercises found</p>
-                )}
-                {filteredExercises.map((ex) => (
-                  <button
-                    key={ex.id}
-                    type="button"
-                    onClick={() => swapExercise(swapTarget, ex)}
-                    className="w-full px-4 py-3 text-left transition-colors hover:bg-black/4"
-                  >
-                    <p className="text-sm font-medium">{ex.name}</p>
-                    {ex.muscles.length > 0 && (
-                      <p className="mt-0.5 text-xs text-black/40">{ex.muscles.slice(0, 3).join(', ')}</p>
+
+              {creatingExercise ? (
+                <div className="px-4 py-4">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[0.6rem] uppercase tracking-[0.14em] text-black/40">Exercise name</label>
+                      <input
+                        autoFocus
+                        value={newExName}
+                        onChange={(e) => { setNewExName(e.target.value); setCreateError(''); }}
+                        placeholder="e.g. Copenhagen Plank"
+                        className="mt-1 w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/35"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[0.6rem] uppercase tracking-[0.14em] text-black/40">YouTube link (optional)</label>
+                      <input
+                        value={newExVideo}
+                        onChange={(e) => { setNewExVideo(e.target.value); setCreateError(''); }}
+                        placeholder="https://youtube.com/watch?v=..."
+                        className="mt-1 w-full border border-black/15 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/35"
+                        inputMode="url"
+                      />
+                    </div>
+                    {getYouTubeId(newExVideo) && (
+                      <img
+                        src={`https://img.youtube.com/vi/${getYouTubeId(newExVideo)}/hqdefault.jpg`}
+                        alt="Video preview"
+                        className="aspect-video w-full border border-black/10 object-cover"
+                      />
                     )}
-                  </button>
-                ))}
-              </div>
+                    {createError && <p className="text-xs text-red-600">{createError}</p>}
+                  </div>
+                  <div className="mt-4 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setCreatingExercise(false); setCreateError(''); }}
+                      className="flex-1 border border-black/15 px-4 py-3 text-xs font-medium uppercase tracking-[0.12em] text-black/50 transition-colors hover:border-black/30 hover:text-black"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void createAndSwapExercise()}
+                      disabled={createBusy || !newExName.trim()}
+                      className="flex-[2] border border-black bg-black px-4 py-3 text-xs font-medium uppercase tracking-[0.12em] text-white transition-colors hover:bg-black/85 disabled:opacity-40"
+                    >
+                      {createBusy ? 'Creating...' : 'Create & swap in'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="border-b border-black/10 px-4 py-3">
+                    <div className="flex items-center gap-2 border border-black/15 bg-[#fbfbf8] px-3 py-2">
+                      <Search className="h-4 w-4 shrink-0 text-black/35" />
+                      <input
+                        autoFocus
+                        value={swapSearch}
+                        onChange={(e) => setSwapSearch(e.target.value)}
+                        placeholder="Search exercises..."
+                        className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto divide-y divide-black/8">
+                    {filteredExercises.length === 0 && (
+                      <p className="px-4 py-6 text-center text-sm text-black/40">No exercises found</p>
+                    )}
+                    {filteredExercises.map((ex) => (
+                      <button
+                        key={ex.id}
+                        type="button"
+                        onClick={() => swapExercise(swapTarget, ex)}
+                        className="w-full px-4 py-3 text-left transition-colors hover:bg-black/4"
+                      >
+                        <p className="text-sm font-medium">{ex.name}</p>
+                        {ex.muscles.length > 0 && (
+                          <p className="mt-0.5 text-xs text-black/40">{ex.muscles.slice(0, 3).join(', ')}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="border-t border-black/10 p-3">
+                    <button
+                      type="button"
+                      onClick={() => { setCreatingExercise(true); setNewExName(swapSearch.trim()); setNewExVideo(''); setCreateError(''); }}
+                      className="flex w-full items-center justify-center gap-2 border border-dashed border-black/20 px-4 py-3 text-xs font-medium uppercase tracking-[0.12em] text-black/50 transition-colors hover:border-black/40 hover:text-black"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Create new exercise
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
