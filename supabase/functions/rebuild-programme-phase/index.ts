@@ -72,6 +72,7 @@ Split rules:
 - 5 days/week: Lower A / Upper A / Full Body / Lower B / Upper B.
 - Full body days should use contrast: two-leg lower with single-arm upper, or two-arm upper with single-leg lower, when useful.
 - Upper/lower weeks should alternate two-arm vs single-arm upper emphasis and two-leg vs single-leg lower emphasis across A/B days.
+- Superset rule: do not pair two big/main lifts in the same superset by default. Put squat, deadlift/hinge main lift, bench/chest press main lift, shoulder/overhead press main lift, pulldown/pull-up main lift, main row, hip thrust main lift, and leg press main lift in separate supersets or standalone unless Pedro explicitly asks otherwise.
 
 If ready, assistant_message must be a concise plan summary, not another question.`;
 
@@ -121,6 +122,7 @@ Rules:
 - Use Pedro's split rules: 2-3 days are full body; 4 days are 2 upper + 2 lower; 5 days are 2 upper + 2 lower + 1 full body.
 - Build well-rounded training across horizontal push/pull, vertical push/pull, squat, hinge, core/corrective, and the client's specific needs.
 - Use bilateral/unilateral contrast: two-leg lower work should be balanced with single-arm upper work where useful; two-arm upper work should be balanced with single-leg lower work where useful; upper/lower A/B days should alternate these emphases.
+- Do not pair two big/main lifts in the same superset by default. Big/main lifts include squat, deadlift or main hinge, bench/chest press, shoulder/overhead press, pulldown/pull-up, main row, hip thrust, and leg press when used as main work. Put them in separate supersets or make one standalone, and pair each with a smaller accessory, core, corrective, mobility, or isolation movement unless Pedro explicitly asks for a big-lift pairing.
 - Weekly set volume matters most. Choose conservative set targets from client level, injury status, recovery, and phase goal unless Pedro specified exact targets.
 - Put Pedro's requested main lift/main movement near the top of each day's Workout section.
 - Include Pedro's must-use exercises unless client history makes that inappropriate; explain in review_notes if changed.
@@ -728,6 +730,7 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
   const weekBlocks = sanitiseWeekBlocks(parsed.week_blocks, old);
   const days = (parsed.days ?? []).map((day, dayIndex) => {
     let lastSection = '';
+    const supersetMainLiftSeen = new Set<string>();
     const exercises = (day.exercises ?? []).map((ex, exIndex) => {
       const name = String(ex.name ?? '').trim();
       const row = resolved.get(name) ?? matchLibrary(name, byNorm, context.library);
@@ -735,6 +738,16 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
       const sectionStart = section !== lastSection ? section : undefined;
       lastSection = section;
       const pattern = sanitizePattern(ex.pattern) ?? inferPattern(row?.name ?? name, row);
+      const proposedSupersetId = ex.superset_label ? `ss-${dayIndex + 1}-${slug(String(ex.superset_label))}` : null;
+      const isMainLift = isBigMainLift(row?.name ?? name, pattern);
+      let supersetId = proposedSupersetId;
+      if (proposedSupersetId && isMainLift) {
+        if (supersetMainLiftSeen.has(proposedSupersetId)) {
+          supersetId = `ss-${dayIndex + 1}-main-${slug(row?.name ?? name)}`;
+        } else {
+          supersetMainLiftSeen.add(proposedSupersetId);
+        }
+      }
       const exercise: Exercise = {
         id: `ex-${dayIndex + 1}-${exIndex + 1}-${slug(row?.name ?? name)}`,
         exercise_id: row?.id ?? null,
@@ -745,7 +758,7 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
         notes: String(ex.notes ?? ''),
         video_url: row?.video_url ?? null,
         cues: row?.cues ?? [],
-        superset_id: ex.superset_label ? `ss-${dayIndex + 1}-${slug(String(ex.superset_label))}` : null,
+        superset_id: supersetId,
         section_start: sectionStart,
         pattern,
       };
@@ -913,6 +926,34 @@ function inferPattern(name: string, row: LibraryRow | null): string {
   if (haystack.includes('core') || haystack.includes('crunch') || haystack.includes('plank') || haystack.includes('dead bug') || haystack.includes('pallof')) return 'core';
   if (haystack.includes('mobility') || haystack.includes('cars') || haystack.includes('stretch') || haystack.includes('corrective')) return 'corrective';
   return 'corrective';
+}
+
+function isBigMainLift(name: string, pattern?: string | null): boolean {
+  const lower = normalise(name);
+  const mainPatterns = new Set(['squat', 'hinge', 'horizontal_push', 'horizontal_pull', 'vertical_push', 'vertical_pull']);
+  if (pattern && !mainPatterns.has(pattern)) return false;
+  return [
+    'back squat',
+    'front squat',
+    'barbell squat',
+    'goblet squat',
+    'deadlift',
+    'romanian deadlift',
+    'hip thrust',
+    'bench press',
+    'chest press',
+    'shoulder press',
+    'overhead press',
+    'pull up',
+    'pullup',
+    'pull down',
+    'pulldown',
+    'barbell row',
+    'machine row',
+    'seated row',
+    'chest supported row',
+    'leg press',
+  ].some((term) => lower.includes(term));
 }
 
 function sanitiseWeekBlocks(blocks: Phase['week_blocks'], old: Phase | null): Phase['week_blocks'] {

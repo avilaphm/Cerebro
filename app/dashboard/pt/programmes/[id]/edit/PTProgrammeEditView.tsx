@@ -1244,7 +1244,7 @@ export default function PTProgrammeEditView({
                 {Object.entries(voiceBuildCaptured).slice(0, 8).map(([key, value]) => (
                   <div key={key}>
                     <p className="text-[0.58rem] uppercase tracking-[0.14em] text-black/35">{key.replaceAll('_', ' ')}</p>
-                    <p className="mt-1 text-xs text-black/65">{formatCapturedValue(value)}</p>
+                    <p className="mt-1 break-words text-xs leading-relaxed text-black/65">{formatCapturedValue(value)}</p>
                   </div>
                 ))}
               </div>
@@ -1266,7 +1266,7 @@ export default function PTProgrammeEditView({
                   type="button"
                   onClick={startVoiceBuildDictation}
                   disabled={voiceBuildBusy}
-                  className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
+                  className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:border-black/10 disabled:text-black/30 disabled:hover:border-black/10"
                 >
                   {voiceBrief.trim() ? 'Add voice to brief' : 'Record voice brief'}
                 </button>
@@ -1275,7 +1275,7 @@ export default function PTProgrammeEditView({
                 type="button"
                 onClick={() => void sendVoiceBuildMessage()}
                 disabled={voiceBuildBusy || voiceBrief.trim().length < 2}
-                className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
+                className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:border-black/10 disabled:text-black/30 disabled:hover:border-black/10"
               >
                 Send to agent
               </button>
@@ -1283,7 +1283,7 @@ export default function PTProgrammeEditView({
                 type="button"
                 onClick={() => void generateVoiceBuildPhase()}
                 disabled={voiceBuildBusy || (!voiceBuildReady && !voiceBuildMessages.some((message) => message.role === 'user'))}
-                className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30"
+                className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:border-black/10 disabled:bg-white disabled:text-black/30 disabled:hover:bg-white disabled:hover:text-black/30"
               >
                 {voiceBuildBusy ? 'Working...' : voiceBuildReady ? 'Generate replacement phase' : 'Generate anyway'}
               </button>
