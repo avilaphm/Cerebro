@@ -1,12 +1,55 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Streamlined programme edit page around one selected phase.
+2026-06-25 by Codex - Enforced workout-specific warm-ups and strict equipment restrictions in phase rebuild.
 
 ## Last code fix commit
-this commit - streamline programme phase editor
+this commit - enforce warmup and equipment rules in phase rebuild
 
 ## What just happened (read first)
+
+### Phase rebuild warm-up and equipment guardrails (2026-06-25, LATEST)
+
+Pedro reported the phase builder kept generating the same three warm-ups on every day and added Hamstring Curl even when Olga's available-equipment list did not include that machine.
+
+Shipped:
+- Created new root skill outside app git:
+  - `skills/pt-warmup-selector/SKILL.md`
+- Updated root programming skills and `AGENTS.md` so selected-phase rebuild now chains:
+  - workout structure,
+  - programme writer,
+  - warm-up selector,
+  - volume/pattern audit.
+- `rebuild-programme-phase` now prompts the AI to:
+  - build the Workout section first,
+  - then select exactly 3 warm-ups from Pedro's preferred pool,
+  - keep Dead Bug, Bird Dog, Cobra to Child Pose, Downward Dog, Spiderman Lunge with Thoracic Rotation, Glute Bridge, Hip Airplanes, and Clamshells out of the Workout section unless Pedro explicitly overrides,
+  - respect limited equipment lists strictly.
+- Added deterministic server-side enforcement:
+  - generic/generated warm-up blocks are removed during assembly,
+  - each day gets a fresh 3-exercise warm-up selected from the final Workout patterns,
+  - warm-up-only drills found in Workout are replaced or dropped,
+  - unavailable exercises are replaced or dropped before the draft returns,
+  - Hamstring Curl / Leg Curl is blocked unless a hamstring curl or leg curl machine is explicitly available.
+- The exercise library query now reads `equipment` so the guard can use existing library metadata.
+
+Deployment:
+- Deployed `rebuild-programme-phase` ACTIVE v6 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `quick_validate.py` passes for:
+  - `pt-warmup-selector`
+  - `pt-programme-builder`
+  - `pt-phase-programme-writer`
+  - `pt-workout-structure-planner`
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- `supabase functions list` confirms `rebuild-programme-phase` ACTIVE v6.
+
+Notes:
+- No schema migration was needed.
+- No live client generation was run during verification because it can create real generation runs and missing exercise cards.
 
 ### Programme edit page streamlined around one phase selection (2026-06-25, LATEST)
 

@@ -35,6 +35,31 @@ const PATTERNS = [
   'corrective',
 ] as const;
 
+const WARMUP_ONLY_NAMES = [
+  'Dead Bug',
+  'Bird Dog',
+  'Cobra to Child Pose',
+  'Downward Dog',
+  'Spiderman Lunge with Thoracic Rotation',
+  'Glute Bridge',
+  'Hip Airplanes',
+  'Clamshells',
+  'Active Thoracic Extension',
+  '90/90 Hip Switch',
+  'Cat Cow',
+];
+
+const PREFERRED_WARMUPS: Array<{ names: string[]; patterns: string[]; reps: string; notes: string }> = [
+  { names: ['Cobra to Child Pose', 'Cobra Child Pose'], patterns: ['horizontal_push', 'vertical_push', 'vertical_pull', 'horizontal_pull', 'corrective'], reps: '8-10', notes: 'Spine, shoulder, and lat preparation.' },
+  { names: ['Downward Dog'], patterns: ['hinge', 'squat', 'vertical_push', 'vertical_pull', 'corrective'], reps: '30 sec', notes: 'Posterior chain and shoulder preparation.' },
+  { names: ['Spiderman Lunge with Thoracic Rotation', 'Spiderman Lunges Thoracic Rotations', 'Spiderman Lunge Thoracic Rotations'], patterns: ['squat', 'hinge', 'unilateral_lower', 'horizontal_push', 'vertical_pull', 'corrective'], reps: '8 each side', notes: 'Hip and thoracic preparation.' },
+  { names: ['Glute Bridge', 'Glute Bridges'], patterns: ['hinge', 'squat', 'unilateral_lower', 'bilateral_lower'], reps: '10-12', notes: 'Glute activation before lower-body work.' },
+  { names: ['Dead Bug'], patterns: ['core', 'squat', 'hinge', 'unilateral_lower'], reps: '8 each side', notes: 'Trunk control before loading.' },
+  { names: ['Bird Dog'], patterns: ['core', 'hinge', 'horizontal_pull', 'unilateral_lower'], reps: '8 each side', notes: 'Posterior-chain and trunk sequencing.' },
+  { names: ['Hip Airplanes'], patterns: ['unilateral_lower', 'hinge', 'squat', 'bilateral_lower'], reps: '6 each side', notes: 'Hip control and single-leg stability.' },
+  { names: ['Clamshells', 'Clamshell'], patterns: ['unilateral_lower', 'squat', 'hinge', 'bilateral_lower'], reps: '10-12 each side', notes: 'Glute med and knee-control preparation.' },
+];
+
 const CHAT_SYSTEM = `You are Pedro Avila's phase rebuild chat agent inside Cerebro.
 
 The coach is replacing ONE selected programme phase. Behave like a practical programming assistant:
@@ -63,7 +88,7 @@ Return valid JSON only:
 Ask about missing details in this priority:
 1. number of training days if not inferable;
 2. main lift/main intent for any day that is unclear;
-3. important constraints that affect pain, injury, equipment, or phase progression.
+3. important constraints that affect pain, injury, equipment, or phase progression. If the coach gives a limited equipment list, treat that list as strict.
 
 Split rules:
 - 2 days/week: full-body A/B.
@@ -123,11 +148,15 @@ Rules:
 - Build well-rounded training across horizontal push/pull, vertical push/pull, squat, hinge, core/corrective, and the client's specific needs.
 - Use bilateral/unilateral contrast: two-leg lower work should be balanced with single-arm upper work where useful; two-arm upper work should be balanced with single-leg lower work where useful; upper/lower A/B days should alternate these emphases.
 - Do not pair two big/main lifts in the same superset by default. Big/main lifts include squat, deadlift or main hinge, bench/chest press, shoulder/overhead press, pulldown/pull-up, main row, hip thrust, and leg press when used as main work. Put them in separate supersets or make one standalone, and pair each with a smaller accessory, core, corrective, mobility, or isolation movement unless Pedro explicitly asks for a big-lift pairing.
+- Respect Pedro's equipment restrictions exactly. If he gives a limited equipment list, do not use machines or tools outside it. Hamstring Curl / Leg Curl requires an explicit hamstring curl or leg curl machine; do not use it just because it is a common posterior-chain accessory.
+- Build the Workout section first. Then select exactly 3 Warm Up exercises based on the day's workout muscles, movement patterns, injuries, and client needs.
+- Use Pedro's preferred warm-up pool first: Cobra to Child Pose, Downward Dog, Spiderman Lunge with Thoracic Rotation, Glute Bridge, Dead Bug, Bird Dog, Hip Airplanes, Clamshells.
+- Dead Bug, Bird Dog, Cobra to Child Pose, Downward Dog, Spiderman Lunge with Thoracic Rotation, Glute Bridge, Hip Airplanes, and Clamshells belong in Warm Up, not Workout, unless Pedro explicitly says otherwise.
 - Weekly set volume matters most. Choose conservative set targets from client level, injury status, recovery, and phase goal unless Pedro specified exact targets.
 - Put Pedro's requested main lift/main movement near the top of each day's Workout section.
 - Include Pedro's must-use exercises unless client history makes that inappropriate; explain in review_notes if changed.
 - Consider client history: avoid needless recent repetition unless Pedro requested it, respect assessment/client constraints, and keep the phase coach-editable.
-- Warm-up 2-4 items, workout main work plus useful accessories, optional MetCon/Stretches only if requested or clearly useful.
+- Warm Up exactly 3 items, then Workout main work plus useful accessories. Optional MetCon/Stretches only if requested or clearly useful.
 - If replacing Hypertrophy or Strength, preserve or create week_blocks with sets and weight_pct. Use the existing selected phase blocks when compatible.
 - For Big 5-compatible lifts, set exercise weight_pct only when it should differ from the phase block. Otherwise leave it empty.
 - Use only the four canonical sections.
@@ -246,6 +275,7 @@ Deno.serve(async (req) => {
     if (messages.filter((message) => message.role === 'user').length === 0) {
       return json({ error: 'Send at least one message before generating.' }, 400);
     }
+    const constraints = inferGenerationConstraints(context, messages);
 
     const contextStep = await appendStep(admin, runId, 'PHASE_CONTEXT_READER', {
       assignment_id: assignmentId,
@@ -278,7 +308,7 @@ Deno.serve(async (req) => {
     try {
       written = await claudeJson<WrittenPhase>(anthropic, {
         system: WRITE_SYSTEM,
-        user: buildWritePrompt(context, messages, knowledgeContext),
+        user: buildWritePrompt(context, messages, knowledgeContext, constraints),
         maxTokens: 4200,
         timeoutMs: 32_000,
       });
@@ -288,7 +318,7 @@ Deno.serve(async (req) => {
         : error instanceof Error
           ? `AI writer failed: ${error.message}. Deterministic fallback phase was created.`
           : 'AI writer failed; deterministic fallback phase was created.';
-      written = buildDeterministicPhase(context, messages, fallbackReason);
+      written = buildDeterministicPhase(context, messages, fallbackReason, constraints);
       await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
         reason: fallbackReason,
       }, {
@@ -298,7 +328,7 @@ Deno.serve(async (req) => {
       });
     }
     if (!written?.phase?.days || !Array.isArray(written.phase.days)) {
-      written = buildDeterministicPhase(context, messages, 'AI writer returned an incomplete phase; deterministic fallback phase was created.');
+      written = buildDeterministicPhase(context, messages, 'AI writer returned an incomplete phase; deterministic fallback phase was created.', constraints);
       await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
         reason: 'AI writer returned an incomplete phase.',
       }, {
@@ -311,13 +341,14 @@ Deno.serve(async (req) => {
     await appendStep(admin, runId, 'PHASE_STRUCTURE_PLANNER', {
       messages,
       knowledge_context: knowledgeContext,
+      equipment_constraints: constraints,
     }, {
       split_selected: written.split_selected ?? null,
       assumptions: written.assumptions ?? [],
       review_notes: written.review_notes ?? [],
     });
 
-    const assembled = await assemblePhase(admin, written.phase, context);
+    const assembled = await assemblePhase(admin, written.phase, context, constraints);
     const resolvedLoads = resolveLoads(assembled, context.oneRmMap);
     const audit = auditPhase(assembled, context, written, runId);
 
@@ -423,7 +454,13 @@ interface LibraryRow {
   primary_muscles: string[] | null;
   secondary_muscles: string[] | null;
   muscles: string[] | null;
+  equipment?: string | null;
   tags?: string[] | null;
+}
+interface GenerationConstraints {
+  limitedEquipment: boolean;
+  allowedEquipment: string[];
+  notes: string[];
 }
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -477,7 +514,7 @@ async function loadContext(admin: ReturnType<typeof createClient>, assignmentId:
     admin.from('pt_client_lifestyle_doc').select('sleep_baseline, stress_patterns, schedule_notes, recurring_challenges, goals_context').eq('client_id', clientId).maybeSingle(),
     admin.from('pt_client_nutrition_doc').select('daily_targets, nutrition_obstacles, eating_habits, recurring_gaps').eq('client_id', clientId).maybeSingle(),
     admin.from('pt_client_1rm_results').select('exercise_name, tested_weight_kg, estimated_1rm_kg, created_at').eq('client_id', clientId).order('created_at', { ascending: false }),
-    admin.from('pt_exercises').select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, tags').order('name'),
+    admin.from('pt_exercises').select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags').order('name'),
   ]);
 
   const assignment = assignmentRes.data as AssignmentRow | null;
@@ -592,7 +629,7 @@ function buildChatPrompt(context: Context, messages: ChatMessage[]) {
   });
 }
 
-function buildWritePrompt(context: Context, messages: ChatMessage[], knowledgeContext: Record<string, unknown>) {
+function buildWritePrompt(context: Context, messages: ChatMessage[], knowledgeContext: Record<string, unknown>, constraints: GenerationConstraints) {
   return JSON.stringify({
     chat_messages: messages,
     selected_phase_index: context.phaseIndex,
@@ -602,6 +639,12 @@ function buildWritePrompt(context: Context, messages: ChatMessage[], knowledgeCo
     recent_training_summary: compactTraining(context, 0),
     one_rm_map: context.oneRmMap,
     library_names: selectRelevantLibraryNames(context, messages),
+    equipment_constraints: constraints,
+    warmup_rules: {
+      timing: 'Build Workout first, then select exactly 3 Warm Up exercises for each day.',
+      preferred_pool: PREFERRED_WARMUPS.map((item) => item.names[0]),
+      warmup_only: WARMUP_ONLY_NAMES,
+    },
     knowledge_context: knowledgeContext,
     programming_method: {
       weekly_set_volume: 'Use weekly sets per muscle group as the main volume control. Pick conservative default targets by client level, injury status, recovery, and phase goal unless Pedro gave exact targets.',
@@ -719,15 +762,15 @@ function selectRelevantLibraryNames(context: Context, messages: ChatMessage[]) {
   return picked;
 }
 
-function buildDeterministicPhase(context: Context, messages: ChatMessage[], reason: string): WrittenPhase {
+function buildDeterministicPhase(context: Context, messages: ChatMessage[], reason: string, constraints: GenerationConstraints): WrittenPhase {
   const dayCount = inferRequestedDayCount(messages, context.selectedPhase);
   const phaseTitle = context.selectedPhase?.title ?? `${dayCount}-day rebuilt phase`;
   const phaseFocus = context.selectedPhase?.focus || `${inferSplit(dayCount)} with main lifts separated into their own supersets.`;
   const days = dayCount <= 3
-    ? buildFullBodyFallbackDays(context, dayCount)
+    ? buildFullBodyFallbackDays(context, dayCount, constraints)
     : dayCount === 4
-      ? buildUpperLowerFallbackDays(context)
-      : buildFiveDayFallbackDays(context);
+      ? buildUpperLowerFallbackDays(context, constraints)
+      : buildFiveDayFallbackDays(context, constraints);
 
   return {
     phase: {
@@ -746,6 +789,9 @@ function buildDeterministicPhase(context: Context, messages: ChatMessage[], reas
     assumptions: [
       `Requested ${dayCount} training day${dayCount === 1 ? '' : 's'} from the chat, or carried over from the selected phase.`,
       'Main lifts are separated by default and paired with smaller core, corrective, mobility, or accessory work.',
+      constraints.limitedEquipment
+        ? `Exercise choices are restricted to available equipment: ${constraints.allowedEquipment.join(', ')}.`
+        : 'Equipment was not restricted by Pedro, so gym access was assumed.',
       'Review exercise selection manually before saving.',
     ],
     review_notes: [
@@ -771,113 +817,113 @@ function clampDayCount(value: number) {
   return Math.min(5, Math.max(2, Math.round(value)));
 }
 
-function buildFullBodyFallbackDays(context: Context, dayCount: number): Day[] {
+function buildFullBodyFallbackDays(context: Context, dayCount: number, constraints: GenerationConstraints): Day[] {
   const templates = [
     {
       title: 'Day 1 - Full Body A',
       focus: 'Squat main lift, horizontal push, single-arm pull, core and stability.',
       workout: [
-        mainExercise(context, ['Back Squat', 'BB Back Squat', 'Barbell Back Squat'], 'squat', 'A'),
-        smallExercise(context, ['Pallof Press', 'Dead Bug'], 'core', 'A'),
-        mainExercise(context, ['Barbell Bench Press', 'BB Bench Press', 'Chest Press'], 'horizontal_push', 'B'),
-        smallExercise(context, ['Hamstring Curl', 'Leg Curl', 'Cable Crunch'], 'hinge', 'B'),
-        smallExercise(context, ['Single Arm DB Row', 'Single-Arm DB Row', 'Row Machine'], 'single_arm_pull', 'C'),
-        smallExercise(context, ['Cossack Squat', 'Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'C'),
-        smallExercise(context, ['Hanging Knee Raise', 'Cable Crunch'], 'core', 'D'),
+        mainExercise(context, ['Back Squat', 'BB Back Squat', 'Barbell Back Squat', 'Leg Press'], 'squat', 'A', constraints),
+        smallExercise(context, ['Pallof Press', 'Side Plank', 'Plank'], 'core', 'A', constraints),
+        mainExercise(context, ['Barbell Bench Press', 'BB Bench Press', 'Chest Press'], 'horizontal_push', 'B', constraints),
+        smallExercise(context, ['Single Leg RDL', 'DB Single-Leg RDL', 'Barbell Hip Thrust', 'Leg Press'], 'hinge', 'B', constraints),
+        smallExercise(context, ['Single Arm DB Row', 'Single-Arm DB Row', 'Row Machine'], 'single_arm_pull', 'C', constraints),
+        smallExercise(context, ['Cossack Squat', 'Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'C', constraints),
+        smallExercise(context, ['Hanging Knee Raise', 'Side Plank', 'Plank'], 'core', 'D', constraints),
       ],
     },
     {
       title: 'Day 2 - Full Body B',
       focus: 'Deadlift main lift, vertical push, vertical pull, unilateral lower support.',
       workout: [
-        mainExercise(context, ['Conventional Deadlift', 'BB Deadlift', 'Barbell Deadlift'], 'hinge', 'A'),
-        smallExercise(context, ['Dead Bug', 'Side Plank'], 'core', 'A'),
-        mainExercise(context, ['Overhead Press', 'BB Shoulder Press', 'Shoulder Press', 'DB Shoulder Press'], 'vertical_push', 'B'),
-        smallExercise(context, ['Split Squat', 'Rear Foot Elevated Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'B'),
-        mainExercise(context, ['Lat Pulldown', 'Pull-up', 'Pull Up'], 'vertical_pull', 'C'),
-        smallExercise(context, ['Hip Airplanes', '90/90 Hip Switch', 'Active Thoracic Extension'], 'corrective', 'C'),
-        smallExercise(context, ['Cable Crunch', 'Hanging Knee Raise'], 'core', 'D'),
+        mainExercise(context, ['Conventional Deadlift', 'BB Deadlift', 'Barbell Deadlift', 'Barbell Hip Thrust'], 'hinge', 'A', constraints),
+        smallExercise(context, ['Side Plank', 'Plank', 'Pallof Press'], 'core', 'A', constraints),
+        mainExercise(context, ['Overhead Press', 'BB Shoulder Press', 'Shoulder Press', 'DB Shoulder Press'], 'vertical_push', 'B', constraints),
+        smallExercise(context, ['Split Squat', 'Rear Foot Elevated Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'B', constraints),
+        mainExercise(context, ['Lat Pulldown', 'Pull-up', 'Pull Up'], 'vertical_pull', 'C', constraints),
+        smallExercise(context, ['Rear Delt Fly', 'Face Pull', 'Pec Fly'], 'horizontal_pull', 'C', constraints),
+        smallExercise(context, ['Hanging Knee Raise', 'Side Plank', 'Plank'], 'core', 'D', constraints),
       ],
     },
     {
       title: 'Day 3 - Full Body C',
       focus: 'Hip thrust or pull main lift, lower accessory, posterior chain and trunk.',
       workout: [
-        mainExercise(context, ['Barbell Hip Thrust', 'BB Hip Thrust', 'Hip Thrust'], 'hinge', 'A'),
-        smallExercise(context, ['Side Plank', 'Pallof Press'], 'core', 'A'),
-        mainExercise(context, ['Pull-up', 'Pull Up', 'Lat Pulldown'], 'vertical_pull', 'B'),
-        smallExercise(context, ['Leg Press', 'Goblet Squat', 'Bodyweight Squat'], 'squat', 'C'),
-        smallExercise(context, ['Single Leg RDL', 'DB Single-Leg RDL', 'Single Leg Romanian Deadlift'], 'unilateral_lower', 'D'),
-        smallExercise(context, ['Rear Delt Fly', 'Face Pull', 'Pec Fly'], 'horizontal_pull', 'D'),
-        smallExercise(context, ['Hanging Knee Raise', 'Dead Bug'], 'core', 'E'),
+        mainExercise(context, ['Barbell Hip Thrust', 'BB Hip Thrust', 'Hip Thrust'], 'hinge', 'A', constraints),
+        smallExercise(context, ['Side Plank', 'Pallof Press', 'Plank'], 'core', 'A', constraints),
+        mainExercise(context, ['Pull-up', 'Pull Up', 'Lat Pulldown'], 'vertical_pull', 'B', constraints),
+        smallExercise(context, ['Leg Press', 'Goblet Squat', 'Bodyweight Squat'], 'squat', 'C', constraints),
+        smallExercise(context, ['Single Leg RDL', 'DB Single-Leg RDL', 'Single Leg Romanian Deadlift'], 'unilateral_lower', 'D', constraints),
+        smallExercise(context, ['Rear Delt Fly', 'Face Pull', 'Pec Fly'], 'horizontal_pull', 'D', constraints),
+        smallExercise(context, ['Hanging Knee Raise', 'Side Plank', 'Plank'], 'core', 'E', constraints),
       ],
     },
   ];
-  return templates.slice(0, dayCount).map((template, index) => fallbackDay(context, template, index));
+  return templates.slice(0, dayCount).map((template, index) => fallbackDay(context, template, index, constraints));
 }
 
-function buildUpperLowerFallbackDays(context: Context): Day[] {
+function buildUpperLowerFallbackDays(context: Context, constraints: GenerationConstraints): Day[] {
   return [
     fallbackDay(context, {
       title: 'Day 1 - Lower A',
       focus: 'Squat main lift with unilateral and trunk support.',
       workout: [
-        mainExercise(context, ['Back Squat', 'BB Back Squat', 'Barbell Back Squat'], 'squat', 'A'),
-        smallExercise(context, ['Pallof Press', 'Dead Bug'], 'core', 'A'),
-        smallExercise(context, ['Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'B'),
-        smallExercise(context, ['Hamstring Curl', 'Single Leg RDL'], 'hinge', 'B'),
-        smallExercise(context, ['Cable Crunch', 'Hanging Knee Raise'], 'core', 'C'),
+        mainExercise(context, ['Back Squat', 'BB Back Squat', 'Barbell Back Squat', 'Leg Press'], 'squat', 'A', constraints),
+        smallExercise(context, ['Pallof Press', 'Side Plank', 'Plank'], 'core', 'A', constraints),
+        smallExercise(context, ['Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'B', constraints),
+        smallExercise(context, ['Single Leg RDL', 'DB Single-Leg RDL', 'Barbell Hip Thrust'], 'hinge', 'B', constraints),
+        smallExercise(context, ['Hanging Knee Raise', 'Side Plank', 'Plank'], 'core', 'C', constraints),
       ],
-    }, 0),
+    }, 0, constraints),
     fallbackDay(context, {
       title: 'Day 2 - Upper A',
       focus: 'Horizontal push and pull with shoulder support.',
       workout: [
-        mainExercise(context, ['Barbell Bench Press', 'BB Bench Press', 'Chest Press'], 'horizontal_push', 'A'),
-        smallExercise(context, ['Face Pull', 'Rear Delt Fly'], 'horizontal_pull', 'A'),
-        mainExercise(context, ['Lat Pulldown', 'Pull-up'], 'vertical_pull', 'B'),
-        smallExercise(context, ['Tricep Extension', 'Cable Tricep Extension'], 'vertical_push', 'B'),
-        smallExercise(context, ['Bicep Curl', 'Cable Bicep Curl'], 'single_arm_pull', 'C'),
+        mainExercise(context, ['Barbell Bench Press', 'BB Bench Press', 'Chest Press'], 'horizontal_push', 'A', constraints),
+        smallExercise(context, ['Face Pull', 'Rear Delt Fly'], 'horizontal_pull', 'A', constraints),
+        mainExercise(context, ['Lat Pulldown', 'Pull-up'], 'vertical_pull', 'B', constraints),
+        smallExercise(context, ['Tricep Extension', 'Cable Tricep Extension', 'Dumbbell Tricep Extension'], 'vertical_push', 'B', constraints),
+        smallExercise(context, ['Bicep Curl', 'Cable Bicep Curl', 'Dumbbell Bicep Curl'], 'single_arm_pull', 'C', constraints),
       ],
-    }, 1),
+    }, 1, constraints),
     fallbackDay(context, {
       title: 'Day 3 - Lower B',
       focus: 'Deadlift or hip thrust main lift with single-leg work.',
       workout: [
-        mainExercise(context, ['Conventional Deadlift', 'BB Deadlift', 'Barbell Deadlift'], 'hinge', 'A'),
-        smallExercise(context, ['Dead Bug', 'Side Plank'], 'core', 'A'),
-        mainExercise(context, ['Barbell Hip Thrust', 'Hip Thrust'], 'hinge', 'B'),
-        smallExercise(context, ['Cossack Squat', 'Split Squat'], 'unilateral_lower', 'C'),
-        smallExercise(context, ['Pallof Press', 'Cable Crunch'], 'core', 'D'),
+        mainExercise(context, ['Conventional Deadlift', 'BB Deadlift', 'Barbell Deadlift', 'Barbell Hip Thrust'], 'hinge', 'A', constraints),
+        smallExercise(context, ['Side Plank', 'Plank', 'Pallof Press'], 'core', 'A', constraints),
+        mainExercise(context, ['Barbell Hip Thrust', 'Hip Thrust', 'Leg Press'], 'hinge', 'B', constraints),
+        smallExercise(context, ['Cossack Squat', 'Split Squat'], 'unilateral_lower', 'C', constraints),
+        smallExercise(context, ['Pallof Press', 'Hanging Knee Raise', 'Side Plank'], 'core', 'D', constraints),
       ],
-    }, 2),
+    }, 2, constraints),
     fallbackDay(context, {
       title: 'Day 4 - Upper B',
       focus: 'Vertical push with row and single-arm support.',
       workout: [
-        mainExercise(context, ['Overhead Press', 'BB Shoulder Press', 'Shoulder Press'], 'vertical_push', 'A'),
-        smallExercise(context, ['Hamstring Curl', 'Calf Raise'], 'hinge', 'A'),
-        mainExercise(context, ['Row Machine', 'Seated Row', 'Chest Supported Row'], 'horizontal_pull', 'B'),
-        smallExercise(context, ['Single Arm DB Bench Press', 'DB Bench Press'], 'single_arm_push', 'C'),
-        smallExercise(context, ['Face Pull', 'Rear Delt Fly'], 'horizontal_pull', 'D'),
+        mainExercise(context, ['Overhead Press', 'BB Shoulder Press', 'Shoulder Press'], 'vertical_push', 'A', constraints),
+        smallExercise(context, ['Calf Raise', 'Side Plank', 'Plank'], 'hinge', 'A', constraints),
+        mainExercise(context, ['Row Machine', 'Seated Row', 'Chest Supported Row'], 'horizontal_pull', 'B', constraints),
+        smallExercise(context, ['Single Arm DB Bench Press', 'DB Bench Press', 'Chest Press'], 'single_arm_push', 'C', constraints),
+        smallExercise(context, ['Face Pull', 'Rear Delt Fly'], 'horizontal_pull', 'D', constraints),
       ],
-    }, 3),
+    }, 3, constraints),
   ];
 }
 
-function buildFiveDayFallbackDays(context: Context): Day[] {
-  const days = buildUpperLowerFallbackDays(context);
+function buildFiveDayFallbackDays(context: Context, constraints: GenerationConstraints): Day[] {
+  const days = buildUpperLowerFallbackDays(context, constraints);
   days.splice(2, 0, fallbackDay(context, {
     title: 'Day 3 - Full Body',
     focus: 'Efficient full-body stability day with no paired main lifts.',
     workout: [
-      mainExercise(context, ['Leg Press', 'Goblet Squat', 'Bodyweight Squat'], 'squat', 'A'),
-      smallExercise(context, ['Dead Bug', 'Pallof Press'], 'core', 'A'),
-      mainExercise(context, ['Lat Pulldown', 'Pull-up'], 'vertical_pull', 'B'),
-      smallExercise(context, ['Single Leg RDL', 'Reverse Lunge'], 'unilateral_lower', 'C'),
-      smallExercise(context, ['Cable Crunch', 'Hanging Knee Raise'], 'core', 'D'),
+      mainExercise(context, ['Leg Press', 'Goblet Squat', 'Bodyweight Squat'], 'squat', 'A', constraints),
+      smallExercise(context, ['Pallof Press', 'Side Plank', 'Plank'], 'core', 'A', constraints),
+      mainExercise(context, ['Lat Pulldown', 'Pull-up'], 'vertical_pull', 'B', constraints),
+      smallExercise(context, ['Single Leg RDL', 'Reverse Lunge'], 'unilateral_lower', 'C', constraints),
+      smallExercise(context, ['Hanging Knee Raise', 'Side Plank', 'Plank'], 'core', 'D', constraints),
     ],
-  }, 2));
+  }, 2, constraints));
   return days.slice(0, 5).map((day, index) => ({ ...day, id: `fallback-day-${index + 1}-${slug(day.title ?? 'day')}` }));
 }
 
@@ -885,27 +931,27 @@ function fallbackDay(
   context: Context,
   template: { title: string; focus: string; workout: Exercise[] },
   index: number,
+  constraints: GenerationConstraints,
 ): Day {
+  const warmups = buildWarmupExercises(context, template.workout, index, constraints);
   return {
     id: `fallback-day-${index + 1}-${slug(template.title)}`,
     title: template.title,
     focus: template.focus,
     exercises: [
-      smallExercise(context, ['Dead Bug', 'Cat Cow'], 'core', ''),
-      smallExercise(context, ['Active Thoracic Extension', '90/90 Hip Switch'], 'corrective', ''),
-      smallExercise(context, ['Hip Airplanes', 'Bodyweight Squat'], 'corrective', ''),
+      ...warmups,
       ...template.workout,
     ].map((exercise, exerciseIndex) => ({
       ...exercise,
       id: `fallback-ex-${index + 1}-${exerciseIndex + 1}-${slug(exercise.name ?? 'exercise')}`,
-      section: exerciseIndex < 3 ? 'Warm Up' : 'Workout',
-      section_start: exerciseIndex === 0 ? 'Warm Up' : exerciseIndex === 3 ? 'Workout' : undefined,
+      section: exerciseIndex < warmups.length ? 'Warm Up' : 'Workout',
+      section_start: exerciseIndex === 0 ? 'Warm Up' : exerciseIndex === warmups.length ? 'Workout' : undefined,
     })),
   };
 }
 
-function mainExercise(context: Context, names: string[], pattern: string, supersetLabel: string): Exercise {
-  const name = resolveExerciseName(context, names);
+function mainExercise(context: Context, names: string[], pattern: string, supersetLabel: string, constraints?: GenerationConstraints): Exercise {
+  const name = resolveExerciseName(context, names, constraints);
   return {
     name,
     section: 'Workout',
@@ -918,8 +964,8 @@ function mainExercise(context: Context, names: string[], pattern: string, supers
   };
 }
 
-function smallExercise(context: Context, names: string[], pattern: string, supersetLabel: string): Exercise {
-  const name = resolveExerciseName(context, names);
+function smallExercise(context: Context, names: string[], pattern: string, supersetLabel: string, constraints?: GenerationConstraints): Exercise {
+  const name = resolveExerciseName(context, names, constraints);
   return {
     name,
     section: 'Workout',
@@ -932,14 +978,186 @@ function smallExercise(context: Context, names: string[], pattern: string, super
   };
 }
 
-function resolveExerciseName(context: Context, candidates: string[]) {
+function resolveExerciseName(context: Context, candidates: string[], constraints?: GenerationConstraints) {
   const byNorm = new Map<string, LibraryRow>();
   for (const row of context.library) byNorm.set(normalise(row.name), row);
   for (const candidate of candidates) {
     const hit = matchLibrary(candidate, byNorm, context.library);
-    if (hit?.name) return hit.name;
+    if (hit?.name && isExerciseAllowed(hit.name, hit, constraints)) return hit.name;
+    if (!hit && isExerciseAllowed(candidate, null, constraints)) return candidate;
   }
-  return candidates[0];
+  return candidates.find((candidate) => !isWarmupOnlyName(candidate)) ?? candidates[0];
+}
+
+function inferGenerationConstraints(context: Context, messages: ChatMessage[]): GenerationConstraints {
+  const sourceText = [
+    ...messages.map((message) => message.content),
+    collectText(context.client, 1500),
+    collectText(context.exerciseDoc, 2500),
+    collectText(context.documents, 2500),
+    collectText(context.notes, 1500),
+  ].join('\n');
+  const lower = sourceText.toLowerCase();
+  const allowed = new Set<string>(['bodyweight', 'mat']);
+  const add = (...items: string[]) => items.forEach((item) => allowed.add(item));
+
+  if (/\bfree weights?\b/.test(lower)) add('free weights', 'dumbbell', 'barbell', 'kettlebell');
+  if (/\bdumbbells?\b|\bdb\b/.test(lower)) add('free weights', 'dumbbell');
+  if (/\bbarbells?\b|\bbb\b|\bsquat rack\b/.test(lower)) add('free weights', 'barbell');
+  if (/\bkettlebells?\b|\bkb\b/.test(lower)) add('free weights', 'kettlebell');
+  if (lower.includes('squat rack')) add('squat rack', 'barbell');
+  if (lower.includes('bench')) add('bench');
+  if (lower.includes('leg press')) add('leg press');
+  if (lower.includes('chest press')) add('chest press');
+  if (lower.includes('shoulder press')) add('shoulder press');
+  if (lower.includes('rear delt') || lower.includes('pec fly')) add('rear delt/pec fly');
+  if (lower.includes('pull down') || lower.includes('pulldown')) add('pull down');
+  if (lower.includes('row machine') || lower.includes('seated row')) add('row machine');
+  if (lower.includes('hanging leg raise') || lower.includes('hanging knee raise')) add('hanging leg raise');
+  if (lower.includes('cable')) add('cable');
+  if (lower.includes('band')) add('band');
+  const hamCurlDenied = /(?:no|without|not|wasnt|wasn't|isn'?t|doesn'?t have|dont have|don't have|unavailable)[^.]{0,50}(?:hamstring curl|leg curl)|(?:hamstring curl|leg curl)[^.]{0,50}(?:wasnt|wasn't|not|unavailable|isn'?t|doesn'?t have|dont have|don't have)/.test(lower);
+  if (!hamCurlDenied && (lower.includes('hamstring curl machine') || lower.includes('leg curl machine'))) add('hamstring curl');
+
+  const equipmentMentioned = /\bequipment\b|\baccess\b|\bmachine\b|\bavailable\b|\bhas\b|\bhad\b/.test(lower);
+  const limitedEquipment = /(?:only|limited|restricted|access to|available equipment|no access|doesn'?t have|dont have|don't have)/.test(lower) && allowed.size > 2 && equipmentMentioned;
+  const notes = limitedEquipment
+    ? [`Strict equipment list inferred: ${Array.from(allowed).join(', ')}`]
+    : ['No strict limited-equipment instruction detected; default gym access applies.'];
+  return { limitedEquipment, allowedEquipment: Array.from(allowed), notes };
+}
+
+function collectText(value: unknown, maxChars: number): string {
+  const seen = new Set<unknown>();
+  const walk = (item: unknown): string => {
+    if (item === null || item === undefined) return '';
+    if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') return String(item);
+    if (typeof item !== 'object') return '';
+    if (seen.has(item)) return '';
+    seen.add(item);
+    if (Array.isArray(item)) return item.map(walk).join(' ');
+    return Object.entries(item as Record<string, unknown>).map(([key, val]) => `${key}: ${walk(val)}`).join(' ');
+  };
+  return walk(value).slice(0, maxChars);
+}
+
+function buildWarmupExercises(context: Context, workoutExercises: Exercise[], dayIndex: number, constraints?: GenerationConstraints): Exercise[] {
+  const byNorm = new Map<string, LibraryRow>();
+  for (const row of context.library) byNorm.set(normalise(row.name), row);
+  const selected = selectWarmupNames(workoutExercises, dayIndex);
+  return selected.map((item, index) => {
+    const name = resolveExerciseName(context, item.names, constraints);
+    const row = matchLibrary(name, byNorm, context.library);
+    return {
+      id: `warmup-${dayIndex + 1}-${index + 1}-${slug(name)}`,
+      exercise_id: row?.id ?? null,
+      name: row?.name ?? name,
+      section: 'Warm Up',
+      section_start: index === 0 ? 'Warm Up' : undefined,
+      sets: '1',
+      reps: item.reps,
+      rest: '30 sec',
+      notes: item.notes,
+      video_url: row?.video_url ?? null,
+      cues: row?.cues ?? [],
+      superset_id: null,
+      pattern: sanitizePattern(inferPattern(row?.name ?? name, row)) ?? 'corrective',
+    };
+  });
+}
+
+function normalizeSectionStarts(exercises: Exercise[]): Exercise[] {
+  let lastSection = '';
+  return exercises.map((exercise, index) => {
+    const section = SECTIONS.includes(exercise.section as typeof SECTIONS[number])
+      ? exercise.section!
+      : index < 3
+        ? 'Warm Up'
+        : 'Workout';
+    const sectionStart = section !== lastSection ? section : undefined;
+    lastSection = section;
+    return {
+      ...exercise,
+      section,
+      section_start: sectionStart,
+    };
+  });
+}
+
+function selectWarmupNames(workoutExercises: Exercise[], dayIndex: number) {
+  const patterns = new Set(workoutExercises.map((exercise) => sanitizePattern(exercise.pattern) ?? inferPattern(exercise.name ?? '', null)));
+  const scored = PREFERRED_WARMUPS.map((item, index) => {
+    const patternScore = item.patterns.reduce((score, pattern) => score + (patterns.has(pattern) ? 4 : 0), 0);
+    const rotationScore = (index + dayIndex) % PREFERRED_WARMUPS.length;
+    return { item, score: patternScore - rotationScore * 0.05 };
+  }).sort((a, b) => b.score - a.score);
+  const selected: typeof PREFERRED_WARMUPS = [];
+  const seen = new Set<string>();
+  for (const candidate of scored) {
+    const key = normalise(candidate.item.names[0]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selected.push(candidate.item);
+    if (selected.length === 3) break;
+  }
+  return selected.length === 3 ? selected : PREFERRED_WARMUPS.slice(0, 3);
+}
+
+function isWarmupOnlyName(name: string): boolean {
+  const norm = normalise(name);
+  return WARMUP_ONLY_NAMES.some((warmup) => {
+    const wn = normalise(warmup);
+    return norm === wn || norm.includes(wn) || wn.includes(norm);
+  });
+}
+
+function isExerciseAllowed(name: string, row: LibraryRow | null, constraints?: GenerationConstraints): boolean {
+  if (!constraints?.limitedEquipment) return true;
+  const required = requiredEquipmentForExercise(name, row);
+  if (required.length === 0) return true;
+  return required.every((need) => isEquipmentAvailable(need, constraints.allowedEquipment));
+}
+
+function requiredEquipmentForExercise(name: string, row: LibraryRow | null): string[] {
+  const lower = normalise(`${name} ${row?.equipment ?? ''}`);
+  const required = new Set<string>();
+  if (isWarmupOnlyName(name)) return [];
+  if (lower.includes('hamstring curl') || lower.includes('leg curl')) required.add('hamstring curl');
+  if (lower.includes('cable') || lower.includes('pallof') || lower.includes('face pull')) required.add('cable');
+  if (lower.includes('lat pull') || lower.includes('pulldown') || lower.includes('pull down')) required.add('pull down');
+  if (lower.includes('row machine') || lower.includes('seated row') || lower.includes('machine row')) required.add('row machine');
+  if (lower.includes('leg press')) required.add('leg press');
+  if (lower.includes('chest press')) required.add('chest press');
+  if (lower.includes('shoulder press') && lower.includes('machine')) required.add('shoulder press');
+  if (lower.includes('rear delt') || lower.includes('pec fly')) required.add('rear delt/pec fly');
+  if (lower.includes('hanging knee raise') || lower.includes('hanging leg raise')) required.add('hanging leg raise');
+  if (lower.includes('dumbbell') || lower.includes('single arm dumbbell')) required.add('dumbbell');
+  if (lower.includes('barbell') || lower.includes('back squat') || lower.includes('deadlift') || lower.includes('bench press') || lower.includes('hip thrust')) required.add('barbell');
+  if (lower.includes('kettlebell')) required.add('kettlebell');
+  if (lower.includes('band')) required.add('band');
+  return Array.from(required);
+}
+
+function isEquipmentAvailable(need: string, allowedEquipment: string[]): boolean {
+  const allowed = new Set(allowedEquipment.map(normalise));
+  const has = (term: string) => allowed.has(normalise(term)) || Array.from(allowed).some((item) => item.includes(normalise(term)));
+  if (need === 'dumbbell' || need === 'kettlebell') return has(need) || has('free weights');
+  if (need === 'barbell') return has('barbell') || has('squat rack') || has('free weights');
+  if (need === 'hamstring curl') return has('hamstring curl') || has('leg curl');
+  return has(need);
+}
+
+function replacementCandidates(ex: Exercise): string[] {
+  const pattern = sanitizePattern(ex.pattern) ?? inferPattern(ex.name ?? '', null);
+  if (pattern === 'hinge') return ['Single Leg RDL', 'DB Single-Leg RDL', 'Barbell Hip Thrust', 'Glute Bridge', 'Back Extension'];
+  if (pattern === 'squat' || pattern === 'bilateral_lower') return ['Leg Press', 'Back Squat', 'Goblet Squat', 'Bodyweight Squat'];
+  if (pattern === 'unilateral_lower') return ['Reverse Lunge', 'Split Squat', 'Cossack Squat', 'Single Leg RDL'];
+  if (pattern === 'horizontal_push' || pattern === 'single_arm_push' || pattern === 'two_arm_push') return ['Chest Press', 'DB Bench Press', 'Push Up'];
+  if (pattern === 'vertical_push') return ['Shoulder Press', 'DB Shoulder Press', 'Overhead Press'];
+  if (pattern === 'horizontal_pull' || pattern === 'single_arm_pull' || pattern === 'two_arm_pull') return ['Row Machine', 'Single Arm DB Row', 'Chest Supported Row'];
+  if (pattern === 'vertical_pull') return ['Lat Pulldown', 'Pull-up', 'Pull Up'];
+  if (pattern === 'core') return ['Hanging Knee Raise', 'Side Plank', 'Plank'];
+  return ['Side Plank', 'Plank', 'Bodyweight Squat'];
 }
 
 function summarizeExerciseHistory(setLogs: unknown[]) {
@@ -988,7 +1206,7 @@ async function retrieveKnowledgeContext(
   }
 }
 
-async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Phase, context: Context): Promise<Phase> {
+async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Phase, context: Context, constraints: GenerationConstraints): Promise<Phase> {
   const byNorm = new Map<string, LibraryRow>();
   for (const row of context.library) byNorm.set(normalise(row.name), row);
 
@@ -1025,7 +1243,7 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
     const { data: inserted, error } = await admin
       .from('pt_exercises')
       .insert(toInsert)
-      .select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, tags');
+      .select('id, name, video_url, cues, primary_muscles, secondary_muscles, muscles, equipment, tags');
     if (error) throw new Error(`Could not create missing exercise cards: ${error.message}`);
     for (const row of (inserted ?? []) as LibraryRow[]) {
       resolved.set(row.name, row);
@@ -1038,10 +1256,17 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
   const days = (parsed.days ?? []).map((day, dayIndex) => {
     let lastSection = '';
     const supersetMainLiftSeen = new Set<string>();
-    const exercises = (day.exercises ?? []).map((ex, exIndex) => {
-      const name = String(ex.name ?? '').trim();
-      const row = resolved.get(name) ?? matchLibrary(name, byNorm, context.library);
-      const section = SECTIONS.includes(ex.section as typeof SECTIONS[number]) ? ex.section! : 'Workout';
+    const mappedExercises = (day.exercises ?? []).map((ex, exIndex) => {
+      const originalName = String(ex.name ?? '').trim();
+      let name = originalName;
+      let row = resolved.get(name) ?? matchLibrary(name, byNorm, context.library);
+      const rawSection = SECTIONS.includes(ex.section as typeof SECTIONS[number]) ? ex.section! : 'Workout';
+      const shouldBeWorkout = rawSection === 'Workout' || (!isWarmupOnlyName(name) && rawSection !== 'Warm Up');
+      if (shouldBeWorkout && (isWarmupOnlyName(name) || !isExerciseAllowed(name, row, constraints))) {
+        name = resolveExerciseName(context, replacementCandidates(ex), constraints);
+        row = resolved.get(name) ?? matchLibrary(name, byNorm, context.library);
+      }
+      const section = SECTIONS.includes(rawSection as typeof SECTIONS[number]) ? rawSection : 'Workout';
       const sectionStart = section !== lastSection ? section : undefined;
       lastSection = section;
       const pattern = sanitizePattern(ex.pattern) ?? inferPattern(row?.name ?? name, row);
@@ -1074,6 +1299,16 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
       }
       return exercise;
     });
+    const workoutExercises = mappedExercises.filter((exercise) => {
+      if (sectionOf(exercise) !== 'Workout') return false;
+      if (isWarmupOnlyName(exercise.name ?? '')) return false;
+      const row = matchLibrary(exercise.name ?? '', byNorm, context.library);
+      return isExerciseAllowed(exercise.name ?? '', row, constraints);
+    });
+    const exercises = normalizeSectionStarts([
+      ...buildWarmupExercises(context, workoutExercises, dayIndex, constraints),
+      ...workoutExercises,
+    ]);
     return {
       id: day.id ?? `day-${dayIndex + 1}-${slug(String(day.title ?? 'day'))}`,
       title: String(day.title ?? `Day ${dayIndex + 1}`),
