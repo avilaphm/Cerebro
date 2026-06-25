@@ -197,10 +197,6 @@ export default function PTProgrammeEditView({
   const [editingPhase, setEditingPhase] = useState<number | null>(null);
   const [dragPhaseIdx, setDragPhaseIdx] = useState<number | null>(null);
   const [dragOverPhaseIdx, setDragOverPhaseIdx] = useState<number | null>(null);
-  const [buildText, setBuildText] = useState('');
-  const [buildOpen, setBuildOpen] = useState(false);
-  const [building, setBuilding] = useState(false);
-  const [buildStatus, setBuildStatus] = useState('');
   const [voiceBuildOpen, setVoiceBuildOpen] = useState(false);
   const [voiceBrief, setVoiceBrief] = useState('');
   const [voiceBuildBusy, setVoiceBuildBusy] = useState(false);
@@ -338,36 +334,6 @@ export default function PTProgrammeEditView({
     );
   };
 
-  // Build a phase from freeform text via the build-workout-from-text edge function.
-  // Runs separate from the main generation pipeline: it parses the text, pulls exercises
-  // from the library, researches + creates any missing exercise cards, then appends the
-  // assembled phase so it can be reordered and edited like any other.
-  const buildFromText = async () => {
-    if (buildText.trim().length < 10) { setBuildStatus('Add a workout description first.'); return; }
-    setBuilding(true);
-    setBuildStatus('Reading your text, matching the library, and researching any missing exercises...');
-    const { data, error } = await supabase.functions.invoke('build-workout-from-text', { body: { text: buildText } });
-    setBuilding(false);
-    const payload = data as { phase?: PTProgrammePhase; created_exercises?: { name: string }[]; matched_count?: number; missing_count?: number; error?: string } | null;
-    if (error || payload?.error || !payload?.phase) {
-      setBuildStatus(payload?.error ?? 'Could not build the workout from that text.');
-      return;
-    }
-    const newPhase = { ...payload.phase, id: makeId('phase') };
-    const newIdx = programme.phases.length;
-    update((p) => { p.phases.push(newPhase); return p; });
-    const created = payload.created_exercises?.length ?? 0;
-    setBuildText('');
-    setBuildOpen(false);
-    setActivePhaseTab(newIdx);
-    setActiveDay(null);
-    setBuildStatus(
-      `Added "${newPhase.title}" - ${payload.matched_count ?? 0} matched from library`
-      + (created > 0 ? `, ${created} new card${created === 1 ? '' : 's'} created (add videos later)` : '')
-      + '. Drag it into position and Save changes.',
-    );
-  };
-
   const startVoiceBuildDictation = () => {
     const SR = getSR();
     if (!SR) {
@@ -375,7 +341,7 @@ export default function PTProgrammeEditView({
       return;
     }
     srVoiceBuildRef.current?.abort?.();
-    voiceBuildTranscriptRef.current = voiceBrief;
+    voiceBuildTranscriptRef.current = voiceBrief.trim();
     const recognition = new SR();
     srVoiceBuildRef.current = recognition;
     recognition.continuous = true;
@@ -397,7 +363,15 @@ export default function PTProgrammeEditView({
     recognition.onerror = (event) => {
       if (srVoiceBuildRef.current !== recognition) return;
       setVoiceBuildListening(false);
-      setVoiceBuildStatus(`Could not record voice${event.error ? ` (${event.error})` : ''}. Type the brief or check microphone permission.`);
+      if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+        setVoiceBuildStatus('Microphone is blocked for this site. In Chrome, click the tune/lock icon beside the address bar and allow Microphone, or keep typing the brief here.');
+        return;
+      }
+      if (event.error === 'no-speech') {
+        setVoiceBuildStatus('I did not catch any words. Your typed brief is still here; try recording again or keep typing.');
+        return;
+      }
+      setVoiceBuildStatus(`Could not record voice${event.error ? ` (${event.error})` : ''}. Your typed brief is still here; try again or keep typing.`);
     };
     recognition.onend = () => {
       if (srVoiceBuildRef.current !== recognition) return;
@@ -407,11 +381,15 @@ export default function PTProgrammeEditView({
     try {
       recognition.start();
       setVoiceBuildListening(true);
-      setVoiceBuildStatus('Recording. Speak the phase, then stop and ask the agent to check it.');
+      setVoiceBuildStatus(
+        voiceBrief.trim()
+          ? 'Recording. I will add this to the brief you already typed.'
+          : 'Recording. Speak the phase, then stop and ask the agent to check it.',
+      );
     } catch {
       srVoiceBuildRef.current = null;
       setVoiceBuildListening(false);
-      setVoiceBuildStatus('Could not start dictation. Type the brief or try again.');
+      setVoiceBuildStatus('Could not start dictation. Your typed brief is still here; try again or keep typing.');
     }
   };
 
@@ -1208,23 +1186,10 @@ export default function PTProgrammeEditView({
             </button>
             <button
               type="button"
-              onClick={() => {
-                setVoiceBuildOpen((v) => !v);
-                setBuildOpen(false);
-              }}
+              onClick={() => setVoiceBuildOpen((v) => !v)}
               className={`border px-3 py-1.5 text-xs transition-colors ${voiceBuildOpen ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/35'}`}
             >
-              {voiceBuildOpen ? 'Close voice' : '+ Build with voice'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setBuildOpen((v) => !v);
-                setVoiceBuildOpen(false);
-              }}
-              className="border border-black/15 px-3 py-1.5 text-xs transition-colors hover:border-black/35"
-            >
-              {buildOpen ? 'Close' : '+ Build from text'}
+              {voiceBuildOpen ? 'Close builder' : '+ Build with voice/text'}
             </button>
           </div>
         </div>
@@ -1234,9 +1199,9 @@ export default function PTProgrammeEditView({
           <div className="mb-6 border border-black/15 bg-black/[0.02] p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-medium">Build this phase with voice</p>
+                <p className="text-sm font-medium">Build this phase with voice or text</p>
                 <p className="mt-1 text-xs leading-relaxed text-black/45">
-                  Speak what you want for <span className="font-medium text-black">{phase.title}</span>. The agent checks for missing details, reads client history and 1RM results, then replaces this phase only. Save changes when you are happy.
+                  Type, dictate, or do both for <span className="font-medium text-black">{phase.title}</span>. The agent checks for missing details, reads client history and 1RM results, then replaces this phase only. Save changes when you are happy.
                 </p>
               </div>
               <span className="shrink-0 border border-amber-200 bg-amber-50 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-amber-700">
@@ -1262,7 +1227,7 @@ export default function PTProgrammeEditView({
                   disabled={voiceBuildBusy}
                   className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
                 >
-                  Record voice brief
+                  {voiceBrief.trim() ? 'Add voice to brief' : 'Record voice brief'}
                 </button>
               )}
               <button
@@ -1289,7 +1254,7 @@ export default function PTProgrammeEditView({
                 setVoiceBuildReady(false);
               }}
               rows={8}
-              placeholder={'Example: For Hypertrophy, make it 4 days. Day 1 lower A with back squat main lift, RDL, leg press. Day 2 upper A with bench press and pull-up. Day 3 lower B with deadlift and hip thrust. Day 4 upper B with shoulder press, row, arms. Use Stephen current 1RM percentages and keep week 1 around 65%.'}
+              placeholder={'Type here, record voice, or use both. Example: For Hypertrophy, make it 4 days. Day 1 lower A with back squat main lift, RDL, leg press. Day 2 upper A with bench press and pull-up. Day 3 lower B with deadlift and hip thrust. Day 4 upper B with shoulder press, row, arms. Use current 1RM percentages and keep week 1 around 65%.'}
               className="mt-3 w-full resize-y border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
             />
             {voiceBuildQuestions.length > 0 && (
@@ -1305,36 +1270,6 @@ export default function PTProgrammeEditView({
             {voiceBuildStatus && <p className="mt-3 text-xs text-black/50">{voiceBuildStatus}</p>}
           </div>
         )}
-
-        {buildOpen && (
-          <div className="mb-6 border border-black/15 bg-black/[0.02] p-4">
-            <p className="text-sm font-medium">Build a phase from text</p>
-            <p className="mt-1 text-xs text-black/45">
-              Paste a workout or phase in your own words. The AI structures it, pulls exercises from your
-              library, and researches + creates a card for anything missing (you add the video later). It is
-              added as a new phase you can drag into position.
-            </p>
-            <textarea
-              value={buildText}
-              onChange={(e) => setBuildText(e.target.value)}
-              rows={7}
-              placeholder={'Day 1 - Lower Body.\nWarm up: glute bridge 2x12.\nWorkout: barbell back squat 4x6, RDL 3x8, bulgarian split squat 3x10.\nMetCon: 10 min EMOM kettlebell swings.\nStretches: couch stretch 2x30 sec.'}
-              className="mt-3 w-full resize-y border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
-            />
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => void buildFromText()}
-                disabled={building || buildText.trim().length < 10}
-                className="border border-black bg-black px-4 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30"
-              >
-                {building ? 'Building...' : 'Generate workout'}
-              </button>
-              {buildStatus && <p className="text-xs text-black/50">{buildStatus}</p>}
-            </div>
-          </div>
-        )}
-        {!buildOpen && buildStatus && <p className="mb-4 text-xs text-black/50">{buildStatus}</p>}
         {!voiceBuildOpen && voiceBuildStatus && <p className="mb-4 text-xs text-black/50">{voiceBuildStatus}</p>}
 
         <div className="flex gap-1 mb-6 overflow-x-auto pb-1">

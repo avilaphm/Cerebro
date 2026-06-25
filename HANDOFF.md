@@ -1,12 +1,38 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Synced PT Session swaps into client programme on Finish Session.
+2026-06-25 by Codex - Merged programme builder into one voice/text phase rebuild flow.
 
 ## Last code fix commit
-this commit - sync PT session exercise swaps to programme
+this commit - merge programme voice and text builder
 
 ## What just happened (read first)
+
+### Programme builder voice + text unified (2026-06-25, LATEST)
+
+Pedro reported that he typed a phase brief, then tried to continue with voice, but the UI showed a microphone `not-allowed` error. He also clarified that `Build with voice` and `Build from text` should be the same feature.
+
+Root cause:
+- Programme edit still had two different generation paths:
+  - `+ Build with voice` used the newer selected-phase rebuild agent.
+  - `+ Build from text` used the older append-new-phase text builder.
+- The microphone permission error preserved the textarea, but the copy made it feel like the app could not continue.
+
+Shipped:
+- Programme edit now shows one `+ Build with voice/text` button.
+- The builder panel accepts typed text, dictated voice, or both in the same brief.
+- Starting voice after typing now appends dictated text to the existing brief instead of treating voice as a separate flow.
+- The separate `+ Build from text` panel and old append-phase action were removed from this page.
+- The combined builder still replaces only the selected phase locally; Pedro reviews and presses `Save changes` to persist.
+- Microphone blocked/no-speech states now keep the typed brief and show clearer guidance. Browser permission still has to be allowed in Chrome site settings if Chrome returns `not-allowed`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
+Notes:
+- No schema or Supabase function deploy was needed. This is a UI/client flow change around the existing `rebuild-programme-phase` Edge Function.
 
 ### PT Sessions exercise swaps persist to active programme (2026-06-25, LATEST)
 
