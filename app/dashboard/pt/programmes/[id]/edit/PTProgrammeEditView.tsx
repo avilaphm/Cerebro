@@ -405,19 +405,26 @@ export default function PTProgrammeEditView({
     const recognition = new SR();
     srVoiceBuildRef.current = recognition;
     recognition.continuous = true;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.lang = 'en-AU';
     recognition.onresult = (event) => {
-      let next = voiceBuildTranscriptRef.current;
+      // Commit finalised results to the ref; show any in-progress (interim) words
+      // appended live so the brief fills in as Pedro speaks. Interim text for a
+      // slot is replaced by its final, so nothing is duplicated.
+      let committed = voiceBuildTranscriptRef.current;
+      let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        if (result?.isFinal) {
-          const text = result[0]?.transcript?.trim() ?? '';
-          if (text) next = `${next}${next ? '\n' : ''}${text}`;
+        const text = result?.[0]?.transcript?.trim() ?? '';
+        if (!text) continue;
+        if (result.isFinal) {
+          committed = `${committed}${committed ? '\n' : ''}${text}`;
+        } else {
+          interim = interim ? `${interim} ${text}` : text;
         }
       }
-      voiceBuildTranscriptRef.current = next;
-      setVoiceBrief(next);
+      voiceBuildTranscriptRef.current = committed;
+      setVoiceBrief(interim ? `${committed}${committed ? '\n' : ''}${interim}` : committed);
       setVoiceBuildReady(false);
     };
     recognition.onerror = (event) => {
@@ -1301,27 +1308,31 @@ export default function PTProgrammeEditView({
               </div>
             )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              {voiceBuildListening ? (
-                <>
-                  <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">Recording</span>
-                  <button
-                    type="button"
-                    onClick={stopVoiceBuildDictation}
-                    className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black"
-                  >
+              <button
+                type="button"
+                onClick={() => {
+                  if (voiceBuildListening) stopVoiceBuildDictation();
+                  else void startVoiceBuildDictation();
+                }}
+                disabled={voiceBuildBusy}
+                className={`inline-flex items-center gap-2 border px-3 py-2 text-xs transition-colors disabled:border-black/10 disabled:text-black/30 ${
+                  voiceBuildListening
+                    ? 'border-red-400 bg-red-50 text-red-600 hover:bg-red-100'
+                    : 'border-black/15 hover:border-black/35'
+                }`}
+              >
+                {voiceBuildListening ? (
+                  <>
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
                     Stop recording
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void startVoiceBuildDictation()}
-                  disabled={voiceBuildBusy}
-                  className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:border-black/10 disabled:text-black/30 disabled:hover:border-black/10"
-                >
-                  {voiceBrief.trim() ? 'Add voice to brief' : 'Record voice brief'}
-                </button>
-              )}
+                  </>
+                ) : (
+                  voiceBrief.trim() ? 'Add voice to brief' : 'Record voice brief'
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => void sendVoiceBuildMessage()}
