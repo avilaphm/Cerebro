@@ -126,16 +126,32 @@ function formatHistoryDate(iso: string) {
 }
 
 // The Big-5 lifts Pedro tests for 1RM. Used to auto-calc a target weight from %.
-type LiftKey = 'squat' | 'deadlift' | 'bench' | 'pulldown' | 'pullup';
+type LiftKey = 'squat' | 'deadlift' | 'bench' | 'pulldown' | 'pullup' | 'shoulderpress';
 
 function liftCategory(name: string): LiftKey | null {
   const n = name.toLowerCase();
   if (/pull\s*-?\s*down|pulldown|lat\s*pull/.test(n)) return 'pulldown';
   if (/pull\s*-?\s*ups?|pullups?|chin\s*-?\s*ups?/.test(n)) return 'pullup';
+  if (/shoulder\s*press|overhead\s*press|\bohp\b/.test(n)) return 'shoulderpress';
   if (/squat/.test(n)) return 'squat';
   if (/dead\s*-?\s*lift/.test(n)) return 'deadlift';
   if (/bench/.test(n)) return 'bench';
   return null;
+}
+
+// Only the barbell/cable MAIN lifts carry a %1RM target — accessories that share
+// a keyword (Cossack Squat, RDL, DB Bench, Pallof Press, ...) must not.
+const ACCESSORY_QUALIFIER = /cossack|goblet|split|bulgarian|hack|sissy|pause|box|wall|sumo|single|b-?stance|romanian|\brdl\b|stiff|trap[\s-]?bar|deficit|good\s*morning|\bdb\b|dumbbell|machine|cable|smith|incline|decline|close[\s-]?grip|landmine|arnold|lateral|half\s*kneeling|seated|bodyweight|\bpin\b|floor|pallof/;
+
+function isMainLift(name: string): boolean {
+  const n = name.toLowerCase();
+  if (/lat\s*pull\s*-?\s*down|lat\s*pulldown/.test(n)) return true;
+  if (ACCESSORY_QUALIFIER.test(n)) return false;
+  if (/squat/.test(n)) return true;
+  if (/dead\s*-?\s*lift/.test(n)) return true;
+  if (/bench\s*press/.test(n)) return true;
+  if (/shoulder\s*press|overhead\s*press|\bohp\b/.test(n)) return true;
+  return false;
 }
 
 function parsePct(value?: string | null): number | null {
@@ -869,7 +885,9 @@ export default function PTSessionsView({
                   const sessions = sessionsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
                   const historyExpanded = expandedHistory.has(exercise.id);
                   const shownSessions = historyExpanded ? sessions.slice(0, 3) : sessions.slice(0, 1);
-                  const targetWeight = computeTargetWeight(effective.name, effectiveValues.weight_pct);
+                  const targetWeight = isMainLift(effective.name)
+                    ? computeTargetWeight(effective.name, effectiveValues.weight_pct)
+                    : null;
                   const isDone = doneExercises.has(exercise.id);
                   const wasSwapped = !!exerciseOverrides[exercise.id];
 

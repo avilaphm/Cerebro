@@ -365,16 +365,34 @@ function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
 }
 
 // Big-5 lifts that carry a 1RM, so a % block can be turned into a real target kg.
-type LiftKey = 'squat' | 'deadlift' | 'bench' | 'pulldown' | 'pullup';
+type LiftKey = 'squat' | 'deadlift' | 'bench' | 'pulldown' | 'pullup' | 'shoulderpress';
 
 function liftCategory(name: string): LiftKey | null {
   const n = name.toLowerCase();
   if (/pull\s*-?\s*down|pulldown|lat\s*pull/.test(n)) return 'pulldown';
   if (/pull\s*-?\s*ups?|pullups?|chin\s*-?\s*ups?/.test(n)) return 'pullup';
+  if (/shoulder\s*press|overhead\s*press|\bohp\b/.test(n)) return 'shoulderpress';
   if (/squat/.test(n)) return 'squat';
   if (/dead\s*-?\s*lift/.test(n)) return 'deadlift';
   if (/bench/.test(n)) return 'bench';
   return null;
+}
+
+// The barbell/cable MAIN lifts Pedro programmes a %1RM against: back squat,
+// deadlift, bench press, lat pulldown, shoulder press. Accessories that share a
+// keyword (Cossack Squat, Romanian Deadlift, DB Bench, Pallof Press, ...) must
+// NOT count — the % and target weight only belong on the true main lifts.
+const ACCESSORY_QUALIFIER = /cossack|goblet|split|bulgarian|hack|sissy|pause|box|wall|sumo|single|b-?stance|romanian|\brdl\b|stiff|trap[\s-]?bar|deficit|good\s*morning|\bdb\b|dumbbell|machine|cable|smith|incline|decline|close[\s-]?grip|landmine|arnold|lateral|half\s*kneeling|seated|bodyweight|\bpin\b|floor|pallof/;
+
+function isMainLift(name: string): boolean {
+  const n = name.toLowerCase();
+  if (/lat\s*pull\s*-?\s*down|lat\s*pulldown/.test(n)) return true;
+  if (ACCESSORY_QUALIFIER.test(n)) return false;
+  if (/squat/.test(n)) return true;
+  if (/dead\s*-?\s*lift/.test(n)) return true;
+  if (/bench\s*press/.test(n)) return true;
+  if (/shoulder\s*press|overhead\s*press|\bohp\b/.test(n)) return true;
+  return false;
 }
 
 function parsePct(value?: string | null): number | null {
@@ -2574,7 +2592,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       const { exercise, values, section } = item;
       const count = setCounts[exercise.id] ?? parseSets(values.sets);
       const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
-      const targetWeight = section.title.toLowerCase().includes('workout')
+      const targetWeight = isMainLift(exercise.name)
         ? computeTargetWeight(exercise.name, values.weight_pct)
         : null;
       const richEx = richExerciseMap[exercise.exercise_id ?? ''] ?? richExerciseByName[exercise.name.trim().toLowerCase()];
@@ -2647,7 +2665,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   <h3 className="mt-1 text-[1.02rem] font-semibold leading-tight text-black">{exercise.name}</h3>
                   <p className="mt-1 text-xs leading-relaxed text-black/50">
                     {values.sets || '?'} sets · {values.reps || '?'} reps{exercise.rest ? ` · ${exercise.rest}` : ''}
-                    {values.weight_pct && section.title.toLowerCase().includes('workout') ? ` · ${values.weight_pct} 1RM` : ''}
+                    {values.weight_pct && isMainLift(exercise.name) ? ` · ${values.weight_pct} 1RM` : ''}
                   </p>
                 </div>
                 <button
