@@ -556,6 +556,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const [journeyPopup, setJourneyPopup] = useState<{ key: string; text: string; label: string } | null>(null);
   const [journeyLoadingKey, setJourneyLoadingKey] = useState<string | null>(null);
   const [journeyExplanations, setJourneyExplanations] = useState<Record<string, string>>({});
+  const [journeyPhaseOpen, setJourneyPhaseOpen] = useState<Set<number>>(new Set());
   useEffect(() => {
     document.body.style.overflow = journeyPopup !== null ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -1080,22 +1081,32 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         [key]: { ...currentDraft, ...patch },
       };
 
-      if (patch.weight !== undefined) {
-        const parsed = parseDraftKey(key);
-        const nextWeight = patch.weight.trim();
-        const previousWeight = currentDraft.weight.trim();
-        const count = parsed ? setCounts[parsed.exerciseId] ?? 0 : 0;
-        if (parsed && nextWeight) {
-          for (let i = parsed.setIndex + 1; i < count; i++) {
-            const laterKey = `${parsed.prefix}${i}`;
-            const later = next[laterKey] ?? { reps: '', weight: '' };
-            const laterWeight = later.weight.trim();
-            if (!laterWeight || (previousWeight && laterWeight === previousWeight)) {
-              next[laterKey] = { ...later, weight: patch.weight };
-            }
+      const parsed = parseDraftKey(key);
+      const count = parsed ? setCounts[parsed.exerciseId] ?? 0 : 0;
+
+      // Cascade an edited field forward to later sets the client hasn't diverged,
+      // so weight and reps fill down the column like a spreadsheet — forward only.
+      // A later set is "not diverged" if it's empty or still equals this set's old
+      // value, so editing any set re-flows the ones below it (e.g. bumping set 2's
+      // weight carries to sets 3+), while a hand-set last set stays put.
+      const cascadeField = (field: 'weight' | 'reps') => {
+        const raw = patch[field];
+        if (raw === undefined || !parsed) return;
+        const nextValue = raw.trim();
+        if (!nextValue) return;
+        const previousValue = currentDraft[field].trim();
+        for (let i = parsed.setIndex + 1; i < count; i++) {
+          const laterKey = `${parsed.prefix}${i}`;
+          const later = next[laterKey] ?? { reps: '', weight: '' };
+          const laterValue = later[field].trim();
+          if (!laterValue || (previousValue && laterValue === previousValue)) {
+            next[laterKey] = { ...later, [field]: raw };
           }
         }
-      }
+      };
+
+      cascadeField('weight');
+      cascadeField('reps');
 
       return next;
     });
@@ -1980,19 +1991,28 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         }));
     const phaseCount = journeySteps.length;
     const activePi = hasProgramme ? activePhaseIndex : -1;
+    // The active step is whichever checkpoint the client is on — phase OR test day.
+    // (Previously this only matched 'phase' steps, so a current 1RM test left the
+    //  whole timeline reading as "not started" with no ticks on finished phases.)
     const activeStepIndex = hasProgramme
-      ? journeySteps.findIndex((step) => step.type === 'phase' && step.phaseIndex === activePi)
+      ? journeySteps.findIndex((step) => step.phaseIndex === activePi)
       : -1;
     const doneFill = hasProgramme && phaseCount > 1
       ? `${(Math.max(activeStepIndex, 0) / (phaseCount - 1)) * 100}%`
-      : hasProgramme && (phaseProgress[0]?.allBlocksDone ? '100%' : '0%')
-        ? hasProgramme ? (phaseProgress[0]?.allBlocksDone ? '100%' : '0%') : '0%'
-        : '0%';
+      : '0%';
 
-    const stepState = (step: (typeof journeySteps)[number]) => {
-      if (!hasProgramme) return { isDone: false, isActive: false };
-      const pp = step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
-      return { isDone: pp?.allBlocksDone ?? false, isActive: step.phaseIndex === activePi };
+    // Progress is positional: anything before where you are now counts as done, so
+    // moving forward ticks past checkpoints even if every set wasn't logged. This
+    // matches how Pedro talks about the journey — you're "past" Phase 1, so it's done.
+    const stepState = (index: number) => {
+      if (!hasProgramme || activeStepIndex < 0) {
+        return { isDone: false, isActive: false, isFuture: true };
+      }
+      return {
+        isDone: index < activeStepIndex,
+        isActive: index === activeStepIndex,
+        isFuture: index > activeStepIndex,
+      };
     };
 
     const renderWeekRail = (
@@ -2037,12 +2057,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 const weekPct = block.weight_pct?.trim();
                 return (
                   <div key={`week-${index}`} className="relative flex items-center gap-3 rounded-[0.9rem] px-1 py-1">
+                    {isBlockActive && (
+                      <span className="absolute left-[0.72rem] top-1/2 z-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full bg-black/25" />
+                    )}
                     <div
                       className={`absolute left-[0.72rem] top-1/2 z-10 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all ${
                         isBlockDone
                           ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
                           : isBlockActive
-                            ? 'border-black bg-white shadow-[0_0_0_3px_rgba(0,0,0,0.05)]'
+                            ? 'border-black bg-black shadow-[0_0_0_3px_rgba(0,0,0,0.08)]'
                             : isReachedPhase
                               ? 'border-black/18 bg-white'
                               : 'border-black/[0.08] bg-white/35'
@@ -2108,11 +2131,11 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             />
             <div className="relative flex justify-between">
               {journeySteps.map((step, index) => {
-                const { isDone, isActive } = stepState(step);
+                const { isDone, isActive } = stepState(index);
                 return (
                   <div key={`${step.type}-${index}`} className="relative flex items-center justify-center">
                     {isActive && (
-                      <div className="absolute h-5 w-5 animate-ping rounded-full bg-black/6" />
+                      <div className="absolute h-5 w-5 animate-ping rounded-full bg-black/15" />
                     )}
                     <div
                       className={`relative h-4 w-4 rounded-full border-2 transition-all ${
@@ -2130,8 +2153,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               })}
             </div>
             {(() => {
-              const activeStep = journeySteps.find((s, i) => stepState(s).isActive);
-              const doneCount = journeySteps.filter((s) => stepState(s).isDone).length;
+              const activeStep = journeySteps.find((_, i) => stepState(i).isActive);
+              const doneCount = journeySteps.filter((_, i) => stepState(i).isDone).length;
               return (
                 <div className="mt-3 flex items-center justify-between">
                   <p className="text-[0.62rem] font-medium text-black/55">
@@ -2154,10 +2177,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
               {journeySteps.map((step, index) => {
                 const pp = hasProgramme && step.phaseIndex !== null ? (phaseProgress[step.phaseIndex] ?? null) : null;
-                const isDonePhase = pp?.allBlocksDone ?? false;
-                const state = stepState(step);
-                const isActivePhase = state.isActive;
-                const isDone = state.isDone || isDonePhase;
+                const { isDone, isActive, isFuture } = stepState(index);
                 const isTest = step.type === 'test';
                 const journeyLabel = isTest
                   ? (/re-?test/i.test(step.label) ? '1RM Retest Day' : '1RM Testing Day')
@@ -2168,31 +2188,34 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 const phaseWeekCount = hasProgramme && step.phaseIndex !== null
                   ? Number.parseInt(assignment.programme.phases[step.phaseIndex]?.weeks ?? '', 10)
                   : 0;
+                const weekTotal = blocks.length || (Number.isFinite(phaseWeekCount) ? phaseWeekCount : 0);
                 const stepKey = `${step.type}-${index}`;
                 const isLoadingThis = journeyLoadingKey === stepKey;
+                const futureOpen = journeyPhaseOpen.has(index);
 
                 return (
                   <div
                     key={`${step.type}-detail-${index}`}
-                    className={`flex gap-5 ${isTest ? 'py-4' : 'py-6'}`}
+                    className={`flex gap-5 ${isActive ? 'py-6' : 'py-4'}`}
                   >
                     {/* Dot — fixed 20px column so rail line centers at left-[10px] = left-[0.6rem] */}
                     <div className="relative z-10 flex w-5 shrink-0 justify-center pt-0.5">
+                      {isActive && (
+                        <span className="absolute top-0.5 h-5 w-5 animate-ping rounded-full bg-black/15" />
+                      )}
                       <div
-                        className={`flex items-center justify-center rounded-full transition-all ${
-                          isTest ? 'h-3.5 w-3.5' : 'h-5 w-5'
+                        className={`relative flex items-center justify-center rounded-full transition-all ${
+                          isTest && !isActive ? 'h-3.5 w-3.5' : 'h-5 w-5'
                         } ${
                           isDone
                             ? 'bg-[rgb(46,213,115)]'
-                            : isActivePhase
-                              ? 'border-2 border-black bg-white shadow-[0_0_0_3px_rgba(0,0,0,0.06)]'
-                              : 'border border-black/15 bg-white'
+                            : isActive
+                              ? 'border-2 border-black bg-white shadow-[0_0_0_3px_rgba(0,0,0,0.08)]'
+                              : 'border border-black/12 bg-white'
                         }`}
                       >
-                        {isDone && <Check className={isTest ? 'h-2 w-2 text-white' : 'h-2.5 w-2.5 text-white'} />}
-                        {isActivePhase && !isDone && (
-                          <div className="h-2 w-2 rounded-full bg-black" />
-                        )}
+                        {isDone && <Check className="h-2.5 w-2.5 text-white" />}
+                        {isActive && <div className="h-2 w-2 rounded-full bg-black" />}
                       </div>
                     </div>
 
@@ -2201,27 +2224,28 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <p
                           className={`font-medium leading-snug transition-colors ${
-                            isActivePhase
+                            isActive
                               ? 'text-sm text-black'
                               : isDone
-                                ? 'text-xs text-black/40'
-                                : isTest
-                                  ? 'text-[0.7rem] text-black/18'
-                                  : 'text-xs text-black/22'
+                                ? 'text-xs text-black/45'
+                                : 'text-xs text-black/35'
                           }`}
                         >
                           {journeyLabel}
                         </p>
-                        {isActivePhase && (
+                        {isActive && (
                           <span className="text-[0.5rem] uppercase tracking-[0.14em] text-[rgb(46,213,115)]">
                             Current
                           </span>
+                        )}
+                        {isDone && (
+                          <span className="text-[0.5rem] uppercase tracking-[0.14em] text-black/30">Done</span>
                         )}
                         <button
                           type="button"
                           onClick={() => void explainJourneyStep(
                             stepKey, journeyLabel, step.type, undefined,
-                            step.phaseIndex, journeySteps, isActivePhase, isDone,
+                            step.phaseIndex, journeySteps, isActive, isDone,
                           )}
                           disabled={isLoadingThis}
                           className="journey-info-pill inline-flex items-center rounded-full border border-black/8 bg-white/30 px-2 py-px text-[0.5rem] uppercase tracking-[0.1em] transition-colors hover:bg-white/50 disabled:opacity-50"
@@ -2231,19 +2255,55 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         </button>
                       </div>
 
-                      {isTest && (
-                        <p className="mt-1.5 text-[0.65rem] leading-relaxed text-black/22">
+                      {/* Active test day → single pulsing "Session" (it's one workout, not a week) */}
+                      {isActive && isTest && (
+                        <div className="mt-3 flex items-center gap-2.5 rounded-[1rem] border border-black/10 bg-[#fcfcfa] px-3.5 py-2.5">
+                          <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+                            <span className="absolute h-3.5 w-3.5 animate-ping rounded-full bg-black/25" />
+                            <span className="relative h-3.5 w-3.5 rounded-full border border-black bg-black" />
+                          </span>
+                          <span className="text-[0.74rem] font-medium text-black">Session</span>
+                          <span className="text-[0.52rem] uppercase tracking-[0.14em] text-black/35">single workout</span>
+                        </div>
+                      )}
+
+                      {/* Active training phase → expanded week rail */}
+                      {isActive && !isTest && (
+                        <>
+                          <p className="mt-1.5 text-[0.7rem] leading-relaxed text-black/35">You&apos;re here right now.</p>
+                          {renderWeekRail(blocks, true, false, pp, Number.isFinite(phaseWeekCount) ? phaseWeekCount : 0)}
+                        </>
+                      )}
+
+                      {/* Future training phase → collapsed card, tap to reveal the weeks */}
+                      {isFuture && !isTest && weekTotal > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setJourneyPhaseOpen((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(index)) next.delete(index); else next.add(index);
+                              return next;
+                            })}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-black/12 bg-white/50 px-3 py-1 text-[0.56rem] uppercase tracking-[0.12em] text-black/50 transition-colors hover:border-black/30 hover:text-black"
+                          >
+                            {futureOpen ? 'Hide weeks' : `View ${weekTotal} week${weekTotal === 1 ? '' : 's'}`}
+                            <ChevronDown className={`h-3 w-3 transition-transform ${futureOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {futureOpen && renderWeekRail(blocks, true, false, null, Number.isFinite(phaseWeekCount) ? phaseWeekCount : 0)}
+                        </>
+                      )}
+
+                      {/* Future test day → one-line note */}
+                      {isFuture && isTest && (
+                        <p className="mt-1.5 text-[0.65rem] leading-relaxed text-black/30">
                           {/re-?test/i.test(step.label)
                             ? 'Retest strength after the full training block.'
                             : 'Strength benchmark before the next training phase.'}
                         </p>
                       )}
 
-                      {isActivePhase && !isTest && (
-                        <p className="mt-1.5 text-[0.7rem] leading-relaxed text-black/35">You&apos;re here right now.</p>
-                      )}
-
-                      {renderWeekRail(blocks, isActivePhase, isDonePhase, pp, Number.isFinite(phaseWeekCount) ? phaseWeekCount : 0)}
+                      {/* Done steps stay collapsed — just the title + tick above. */}
                     </div>
                   </div>
                 );
@@ -2315,6 +2375,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const renderWorkoutPreview = () => {
     if (!selectedWorkout || !selectedPhase || !selectedDay) return null;
     const sections = getWorkoutSections(selectedDay, selectedPhase, selectedProgress?.blockIndex ?? 0);
+    const workoutSection = sections.find((s) => s.title.toLowerCase().includes('workout'));
+    const sessionPct = workoutSection?.exercises.map((e) => e.values.weight_pct?.trim()).find((p) => p);
 
     return (
       <div className="mx-auto max-w-3xl">
@@ -2331,6 +2393,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">Workout preview</p>
           <h2 className="mt-2 font-display text-2xl font-light md:text-3xl">{selectedDay.title}</h2>
           {selectedDay.focus && <p className="mt-2 text-sm leading-relaxed text-black/55">{selectedDay.focus}</p>}
+
+          {sessionPct && (
+            <div className="mt-4 rounded-[1rem] border border-black/10 bg-[#fbfbf8] px-4 py-3">
+              <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/40">This session</p>
+              <p className="mt-1 text-sm leading-relaxed text-black/70">
+                Aim to work at <span className="font-semibold text-black">{sessionPct} of your 1RM</span> on the main lifts.
+              </p>
+            </div>
+          )}
 
           <div className="mt-6 space-y-4">
             {sections.map((section) => (
@@ -2349,9 +2420,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         <p className="text-sm font-medium">{exercise.name}</p>
                         <p className="mt-1 text-xs text-black/45">
                           {values.sets || '?'} sets · {values.reps || '?'} reps · {exercise.rest || 'Rest as needed'}
-                          {values.weight_pct && <span className="ml-2 text-amber-700">@ {values.weight_pct} 1RM</span>}
                         </p>
-                        {values.notes && <p className="mt-1 text-xs leading-relaxed text-black/45">{values.notes}</p>}
+                        {values.notes && !/per week block/i.test(values.notes) && (
+                          <p className="mt-1 text-xs leading-relaxed text-black/45">{values.notes}</p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -2498,7 +2570,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       const { exercise, values, section } = item;
       const count = setCounts[exercise.id] ?? parseSets(values.sets);
       const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
-      const targetWeight = computeTargetWeight(exercise.name, values.weight_pct);
+      const targetWeight = section.title.toLowerCase().includes('workout')
+        ? computeTargetWeight(exercise.name, values.weight_pct)
+        : null;
       const richEx = richExerciseMap[exercise.exercise_id ?? ''] ?? richExerciseByName[exercise.name.trim().toLowerCase()];
       const videoId = getYouTubeId(richEx?.video_url ?? exercise.video_url);
       const panelKey = compactPanelKey(section, exercise);
@@ -2523,9 +2597,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
             {exercise.superset_id && (
               <>
                 {(linksPrev || linksNext) && (
-                  <span className={`absolute w-px bg-black/15 ${linksPrev ? 'top-0' : 'top-1/2'} ${linksNext ? 'bottom-0' : 'bottom-1/2'}`} />
+                  <span className={`absolute left-1/2 w-px -translate-x-1/2 bg-black/20 ${linksPrev ? 'top-0' : 'top-1/2'} ${linksNext ? 'bottom-0' : 'bottom-1/2'}`} />
                 )}
-                <span className="relative mt-6 h-2.5 w-2.5 rounded-full border border-black/20 bg-white shadow-sm" />
+                <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/25 bg-white shadow-sm" />
               </>
             )}
           </div>
@@ -2569,7 +2643,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   <h3 className="mt-1 text-[1.02rem] font-semibold leading-tight text-black">{exercise.name}</h3>
                   <p className="mt-1 text-xs leading-relaxed text-black/50">
                     {values.sets || '?'} sets · {values.reps || '?'} reps{exercise.rest ? ` · ${exercise.rest}` : ''}
-                    {values.weight_pct ? ` · ${values.weight_pct} 1RM` : ''}
+                    {values.weight_pct && section.title.toLowerCase().includes('workout') ? ` · ${values.weight_pct} 1RM` : ''}
                   </p>
                 </div>
                 <button
