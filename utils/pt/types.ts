@@ -222,6 +222,7 @@ export interface PTPhaseNutrition {
 
 export interface PTSetLog {
   id: string;
+  workout_log_id: string | null;
   exercise_id: string | null;
   exercise_name: string;
   set_number: number;

@@ -119,6 +119,35 @@ function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
   return exercise.exercise_id ?? exercise.name.toLowerCase();
 }
 
+interface ExerciseSession { id: string; date: string; sets: PTSetLog[]; }
+
+function formatHistoryDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// The Big-5 lifts Pedro tests for 1RM. Used to auto-calc a target weight from %.
+type LiftKey = 'squat' | 'deadlift' | 'bench' | 'pulldown' | 'pullup';
+
+function liftCategory(name: string): LiftKey | null {
+  const n = name.toLowerCase();
+  if (/pull\s*-?\s*down|pulldown|lat\s*pull/.test(n)) return 'pulldown';
+  if (/pull\s*-?\s*ups?|pullups?|chin\s*-?\s*ups?/.test(n)) return 'pullup';
+  if (/squat/.test(n)) return 'squat';
+  if (/dead\s*-?\s*lift/.test(n)) return 'deadlift';
+  if (/bench/.test(n)) return 'bench';
+  return null;
+}
+
+function parsePct(value?: string | null): number | null {
+  if (!value) return null;
+  const match = value.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const n = parseFloat(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+interface OneRMResult { exercise_id: string | null; exercise_name: string; load_kg: number | null; estimated_1rm_kg: number | null; created_at: string; }
+
 function applyExerciseOverridesToProgramme(
   assignment: PTProgramAssignment,
   selectedWorkout: SelectedWorkout,
@@ -186,6 +215,8 @@ export default function PTSessionsView({
   const [assignment, setAssignment] = useState<PTProgramAssignment | null>(null);
   const [setLogs, setSetLogs] = useState<PTSetLog[]>([]);
   const [workoutLogs, setWorkoutLogs] = useState<WorkoutLog[]>([]);
+  const [oneRMResults, setOneRMResults] = useState<OneRMResult[]>([]);
+  const [expandedHistory, setExpandedHistory] = useState<Set<string>>(new Set());
   const [loadingClient, setLoadingClient] = useState(false);
   const [selectedWorkout, setSelectedWorkout] = useState<SelectedWorkout | null>(null);
   const [setDrafts, setSetDrafts] = useState<Record<string, SetDraft>>({});
@@ -249,13 +280,15 @@ export default function PTSessionsView({
     setAssignment(null);
     setSetLogs([]);
     setWorkoutLogs([]);
+    setOneRMResults([]);
+    setExpandedHistory(new Set());
     setSelectedWorkout(null);
     setSetDrafts({});
     setSetCounts({});
     setDoneExercises(new Set());
     setExerciseOverrides({});
 
-    const [assignmentRes, setLogsRes, workoutLogsRes] = await Promise.all([
+    const [assignmentRes, setLogsRes, workoutLogsRes, oneRMRes] = await Promise.all([
       supabase
         .from('pt_program_assignments')
         .select('*')
@@ -274,6 +307,11 @@ export default function PTSessionsView({
         .select('id, phase_index, day_index, week_number, block_index, is_quick_done, created_at')
         .eq('client_id', clientId)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('pt_client_1rm_results')
+        .select('exercise_id, exercise_name, load_kg, estimated_1rm_kg, created_at')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false }),
     ]);
 
     const raw = (assignmentRes.data ?? [])[0];
@@ -288,6 +326,7 @@ export default function PTSessionsView({
     }
     setSetLogs((setLogsRes.data ?? []) as PTSetLog[]);
     setWorkoutLogs((workoutLogsRes.data ?? []) as WorkoutLog[]);
+    setOneRMResults((oneRMRes.data ?? []) as OneRMResult[]);
     setLoadingClient(false);
   }, [supabase]);
 
@@ -317,6 +356,62 @@ export default function PTSessionsView({
     });
     return map;
   }, [setLogs]);
+
+  // Sets grouped into past sessions (newest first), each session's sets sorted S1..Sn.
+  const sessionsByExercise = useMemo(() => {
+    const grouped = new Map<string, Map<string, PTSetLog[]>>();
+    setLogs.forEach((log) => {
+      const key = log.exercise_id ?? log.exercise_name.toLowerCase();
+      const sessionKey = log.workout_log_id ?? log.created_at;
+      if (!grouped.has(key)) grouped.set(key, new Map());
+      const inner = grouped.get(key)!;
+      if (!inner.has(sessionKey)) inner.set(sessionKey, []);
+      inner.get(sessionKey)!.push(log);
+    });
+    const result = new Map<string, ExerciseSession[]>();
+    grouped.forEach((inner, key) => {
+      const sessions: ExerciseSession[] = [];
+      inner.forEach((sets, sessionKey) => {
+        const sorted = [...sets].sort((a, b) => a.set_number - b.set_number);
+        sessions.push({ id: sessionKey, date: sorted[0].created_at, sets: sorted });
+      });
+      sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      result.set(key, sessions);
+    });
+    return result;
+  }, [setLogs]);
+
+  // Best achieved load per Big-5 lift, used to auto-calc target weights from %.
+  const bestOneRMByLift = useMemo(() => {
+    const map = new Map<LiftKey, number>();
+    oneRMResults.forEach((r) => {
+      const cat = liftCategory(r.exercise_name);
+      if (!cat) return;
+      const val = r.load_kg ?? r.estimated_1rm_kg;
+      if (val == null) return;
+      const current = map.get(cat);
+      if (current == null || val > current) map.set(cat, val);
+    });
+    return map;
+  }, [oneRMResults]);
+
+  const computeTargetWeight = useCallback((exerciseName: string, weightPct?: string | null): number | null => {
+    const cat = liftCategory(exerciseName);
+    if (!cat) return null;
+    const pct = parsePct(weightPct);
+    if (pct == null) return null;
+    const best = bestOneRMByLift.get(cat);
+    if (best == null) return null;
+    return Math.round((best * (pct / 100)) / 2.5) * 2.5;
+  }, [bestOneRMByLift]);
+
+  function toggleHistory(exerciseId: string) {
+    setExpandedHistory((prev) => {
+      const next = new Set(prev);
+      if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId);
+      return next;
+    });
+  }
 
   // Pre-fill drafts when workout is selected
   useEffect(() => {
@@ -769,7 +864,10 @@ export default function PTSessionsView({
                     ? getExerciseBlockValues(effective, phase.week_blocks, blockIndex)
                     : values;
                   const count = setCounts[exercise.id] ?? parseSets(effectiveValues.sets);
-                  const history = lastSetsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
+                  const sessions = sessionsByExercise.get(getExerciseHistoryKey(effective)) ?? [];
+                  const historyExpanded = expandedHistory.has(exercise.id);
+                  const shownSessions = historyExpanded ? sessions.slice(0, 3) : sessions.slice(0, 1);
+                  const targetWeight = computeTargetWeight(effective.name, effectiveValues.weight_pct);
                   const isDone = doneExercises.has(exercise.id);
                   const wasSwapped = !!exerciseOverrides[exercise.id];
 
@@ -788,12 +886,10 @@ export default function PTSessionsView({
                           <p className="mt-1 text-xs text-black/45">
                             Target: {effectiveValues.sets || '?'} sets · {effectiveValues.reps || '?'} reps
                             {effectiveValues.weight_pct ? ` · ${effectiveValues.weight_pct}` : ''}
+                            {targetWeight != null && (
+                              <span className="font-semibold text-black"> → {targetWeight}kg</span>
+                            )}
                           </p>
-                          {history.length > 0 && (
-                            <p className="mt-0.5 text-xs text-black/30">
-                              Last: {history[0]?.weight ?? '-'}kg × {history[0]?.reps ?? '-'}
-                            </p>
-                          )}
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <button
@@ -806,26 +902,48 @@ export default function PTSessionsView({
                           <button
                             type="button"
                             onClick={() => toggleDone(exercise.id)}
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
                               isDone
                                 ? 'border-black bg-black text-white'
-                                : 'border-black/20 text-black/30 hover:border-black/50 hover:text-black'
+                                : 'border-black/40 text-black/55 hover:border-black hover:text-black'
                             }`}
                             aria-label={isDone ? 'Mark undone' : 'Mark done'}
                           >
-                            <Check className="h-4 w-4" />
+                            <Check className="h-5 w-5" strokeWidth={2.5} />
                           </button>
                         </div>
                       </div>
 
-                      {history.length > 0 && (
-                        <div className="mt-3 border border-black/8 bg-[#fbfbf8] px-3 py-2">
-                          <p className="text-[0.55rem] uppercase tracking-[0.14em] text-black/30">Last session</p>
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {history.slice(0, Math.max(count, history.length)).map((log) => (
-                              <span key={`${log.id}-${log.set_number}`} className="border border-black/8 bg-white px-2 py-1 text-xs text-black/45">
-                                S{log.set_number}: {log.weight ?? '-'}kg × {log.reps ?? '-'}
-                              </span>
+                      {sessions.length > 0 && (
+                        <div className="mt-3 border border-black/8 bg-[#fbfbf8]">
+                          <button
+                            type="button"
+                            onClick={() => toggleHistory(exercise.id)}
+                            className="flex w-full items-center justify-between px-3 py-2.5"
+                          >
+                            <span className="text-[0.55rem] uppercase tracking-[0.14em] text-black/40">
+                              {historyExpanded ? `Last ${shownSessions.length} sessions` : 'Last session'}
+                            </span>
+                            {sessions.length > 1 && (
+                              <ChevronDown className={`h-4 w-4 text-black/40 transition-transform ${historyExpanded ? 'rotate-180' : ''}`} />
+                            )}
+                          </button>
+                          <div className="space-y-2.5 px-3 pb-3">
+                            {shownSessions.map((session) => (
+                              <div key={session.id}>
+                                {historyExpanded && (
+                                  <p className="mb-1 text-[0.55rem] uppercase tracking-[0.12em] text-black/30">
+                                    {formatHistoryDate(session.date)}
+                                  </p>
+                                )}
+                                <div className="flex flex-wrap gap-1">
+                                  {session.sets.map((log) => (
+                                    <span key={`${log.id}-${log.set_number}`} className="border border-black/8 bg-white px-2 py-1 text-xs text-black/55">
+                                      S{log.set_number}: {log.weight ?? '-'}kg × {log.reps ?? '-'}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -861,24 +979,24 @@ export default function PTSessionsView({
                         })}
                       </div>
 
-                      <div className="mt-2 flex items-center gap-2">
+                      <div className="mt-3 flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => setExerciseCount(exercise.id, count - 1)}
-                          className="inline-flex h-7 w-7 items-center justify-center border border-black/10 text-black/40 hover:border-black/30 hover:text-black disabled:opacity-30"
+                          className="inline-flex items-center gap-1.5 border border-black/20 px-3 py-2 text-xs font-medium text-black/60 hover:border-black hover:text-black disabled:opacity-30"
                           disabled={count <= 1 || isDone}
-                          aria-label="Remove set"
                         >
-                          <Minus className="h-3.5 w-3.5" />
+                          <Minus className="h-4 w-4" strokeWidth={2.5} />
+                          Remove set
                         </button>
                         <button
                           type="button"
                           onClick={() => addExerciseSet(exercise, count)}
-                          className="inline-flex h-7 w-7 items-center justify-center border border-black/10 text-black/40 hover:border-black/30 hover:text-black disabled:opacity-30"
+                          className="inline-flex items-center gap-1.5 border border-black/20 px-3 py-2 text-xs font-medium text-black/60 hover:border-black hover:text-black disabled:opacity-30"
                           disabled={isDone}
-                          aria-label="Add set"
                         >
-                          <Plus className="h-3.5 w-3.5" />
+                          <Plus className="h-4 w-4" strokeWidth={2.5} />
+                          Add set
                         </button>
                       </div>
                     </div>
