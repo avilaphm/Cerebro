@@ -107,10 +107,16 @@ interface WorkoutLog {
   is_quick_done: boolean;
 }
 
+// How ready the client feels today — gates the workout before the preview and
+// scales the prescribed loads (and trims a set at the lowest level).
+type Readiness = 'full' | 'reduced' | 'minimal';
+const READINESS_FACTOR: Record<Readiness, number> = { full: 1, reduced: 0.7, minimal: 0.5 };
+
 interface SelectedWorkout {
   phaseIndex: number;
   dayIndex: number;
   started: boolean;
+  readiness: Readiness | null;
 }
 
 interface WorkoutExerciseView {
@@ -1169,7 +1175,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     const blockIndex = progress?.blockIndex ?? 0;
 
     setStatus('');
-    setSelectedWorkout({ phaseIndex, dayIndex, started: false });
+    setSelectedWorkout({ phaseIndex, dayIndex, started: false, readiness: null });
     setCompactPanels({});
     setActiveContext({ phase_index: phaseIndex, phase_title: phase.title, day_index: dayIndex, day_title: day.title });
 
@@ -1179,7 +1185,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         initialCounts[exercise.id] = parseSets(values.sets);
       });
     });
-    setSetCounts((current) => ({ ...initialCounts, ...current }));
+    // Reset this workout's set counts to the programme default on a fresh open,
+    // so a previous "shorter" (readiness) session doesn't carry reduced sets over.
+    setSetCounts((current) => ({ ...current, ...initialCounts }));
     setSetDrafts((current) => {
       const next = { ...current };
       getWorkoutSections(day, phase, blockIndex).forEach((section) => {
@@ -1205,6 +1213,38 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     setSelectedWorkout(null);
     setCompactPanels({});
     setStatus('');
+  };
+
+  // Record how the client feels, then move on to the preview. At the lowest level
+  // we also drop one working set per exercise (shorter + lighter).
+  const chooseReadiness = (level: Readiness) => {
+    if (!selectedWorkout || !assignment) return;
+    if (level === 'minimal') {
+      const phase = assignment.programme.phases[selectedWorkout.phaseIndex];
+      const day = phase?.days[selectedWorkout.dayIndex];
+      const blockIndex = phaseProgress[selectedWorkout.phaseIndex]?.blockIndex ?? 0;
+      if (day) {
+        setSetCounts((current) => {
+          const next = { ...current };
+          getWorkoutSections(day, phase, blockIndex).forEach((section) => {
+            section.exercises.forEach(({ exercise, values }) => {
+              const base = current[exercise.id] ?? parseSets(values.sets);
+              next[exercise.id] = Math.max(1, base - 1);
+            });
+          });
+          return next;
+        });
+      }
+    }
+    setSelectedWorkout({ ...selectedWorkout, readiness: level });
+  };
+
+  // The heaviest weight the client logged for this exercise last time — the base
+  // we scale from when readiness reduces today's loads.
+  const lastTopWeight = (exercise: PTProgrammeExercise): number | null => {
+    const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
+    const weights = history.map((h) => h.weight).filter((w): w is number => w != null);
+    return weights.length ? Math.max(...weights) : null;
   };
 
   const submitSectionNote = async (section: WorkoutSectionView, noteKey: string) => {
@@ -2394,11 +2434,56 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   );
 
 
+  const renderReadinessGate = () => {
+    if (!selectedWorkout || !selectedDay) return null;
+    const options: { level: Readiness; title: string; sub: string }[] = [
+      { level: 'full', title: "I'm feeling 100%", sub: 'Bring it on — full session as planned.' },
+      { level: 'reduced', title: 'Not feeling 100%, about 75%', sub: 'A bit off today — ease the loads back.' },
+      { level: 'minimal', title: "I'm not feeling it, under 50%", sub: 'Rough day — shorter and lighter, just move.' },
+    ];
+    return (
+      <div className="mx-auto max-w-md">
+        <button
+          type="button"
+          onClick={closeWorkout}
+          className="mb-5 inline-flex items-center gap-2 text-sm text-black/45 hover:text-black"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Back
+        </button>
+        <section className="border border-black/10 bg-white p-5 md:p-6">
+          <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">{selectedDay.title}</p>
+          <h2 className="mt-2 font-display text-2xl font-light md:text-3xl">How are you feeling today?</h2>
+          <p className="mt-2 text-sm leading-relaxed text-black/55">
+            Be honest — we&apos;ll tune today&apos;s session to match.
+          </p>
+          <div className="mt-6 space-y-3">
+            {options.map((opt) => (
+              <button
+                key={opt.level}
+                type="button"
+                onClick={() => chooseReadiness(opt.level)}
+                className="group flex w-full items-center justify-between gap-3 rounded-[1.25rem] border border-black/12 bg-[#fbfbf8] px-4 py-4 text-left transition-colors hover:border-black hover:bg-white"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-black">{opt.title}</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-black/45">{opt.sub}</span>
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-black/25 transition-colors group-hover:text-black" />
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  };
+
   const renderWorkoutPreview = () => {
     if (!selectedWorkout || !selectedPhase || !selectedDay) return null;
     const sections = getWorkoutSections(selectedDay, selectedPhase, selectedProgress?.blockIndex ?? 0);
     const workoutSection = sections.find((s) => s.title.toLowerCase().includes('workout'));
     const sessionPct = workoutSection?.exercises.map((e) => e.values.weight_pct?.trim()).find((p) => p);
+    const readiness = selectedWorkout.readiness ?? 'full';
 
     return (
       <div className="mx-auto max-w-3xl">
@@ -2416,12 +2501,27 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <h2 className="mt-2 font-display text-2xl font-light md:text-3xl">{selectedDay.title}</h2>
           {selectedDay.focus && <p className="mt-2 text-sm leading-relaxed text-black/55">{selectedDay.focus}</p>}
 
-          {sessionPct && (
+          {(sessionPct || readiness !== 'full') && (
             <div className="mt-4 rounded-[1rem] border border-black/10 bg-[#fbfbf8] px-4 py-3">
               <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/40">This session</p>
-              <p className="mt-1 text-sm leading-relaxed text-black/70">
-                Aim to work at <span className="font-semibold text-black">{sessionPct} of your 1RM</span> on the main lifts.
-              </p>
+              {sessionPct && (
+                <p className="mt-1 text-sm leading-relaxed text-black/70">
+                  Aim to work at <span className="font-semibold text-black">{sessionPct} of your 1RM</span> on the main lifts.
+                </p>
+              )}
+              {readiness === 'reduced' && (
+                <p className="mt-2 text-sm leading-relaxed text-black/70">
+                  That&apos;s ok if you&apos;re not feeling it — movement is what matters. Go a little easier:
+                  {' '}<span className="font-semibold text-black">your lifts have been adjusted to about 70% of what they&apos;d normally be.</span>
+                </p>
+              )}
+              {readiness === 'minimal' && (
+                <p className="mt-2 text-sm leading-relaxed text-black/70">
+                  This is progress — you&apos;re here, you&apos;re committed.
+                  {' '}<span className="font-semibold text-black">Your workout&apos;s been adjusted accordingly: shorter and lighter.</span>
+                  {' '}Just keep moving.
+                </p>
+              )}
             </div>
           )}
 
@@ -2592,9 +2692,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       const { exercise, values, section } = item;
       const count = setCounts[exercise.id] ?? parseSets(values.sets);
       const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
-      const targetWeight = isMainLift(exercise.name)
-        ? computeTargetWeight(exercise.name, values.weight_pct)
-        : null;
+      // Readiness scales today's load. At full strength only the main lifts show
+      // a 1RM-based target; when the client eases off, every exercise gets a
+      // number — main lifts from their %1RM target, the rest from last time's
+      // top weight — multiplied by the readiness factor.
+      const readinessLevel = selectedWorkout.readiness ?? 'full';
+      const readinessFactor = READINESS_FACTOR[readinessLevel];
+      const mainTarget = isMainLift(exercise.name) ? computeTargetWeight(exercise.name, values.weight_pct) : null;
+      let targetWeight: number | null;
+      if (readinessFactor < 1) {
+        const base = mainTarget ?? lastTopWeight(exercise);
+        targetWeight = base != null ? Math.round((base * readinessFactor) / 2.5) * 2.5 : null;
+      } else {
+        targetWeight = mainTarget;
+      }
       const richEx = richExerciseMap[exercise.exercise_id ?? ''] ?? richExerciseByName[exercise.name.trim().toLowerCase()];
       const videoId = getYouTubeId(richEx?.video_url ?? exercise.video_url);
       const panelKey = compactPanelKey(section, exercise);
@@ -2721,7 +2832,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   {targetWeight != null && (
                     <div className="mb-4 flex items-center justify-between rounded-[1rem] border border-black/12 bg-white/80 px-3.5 py-2.5">
                       <span className="text-[0.6rem] uppercase tracking-[0.16em] text-black/45">Today&apos;s target</span>
-                      <span className="text-sm font-semibold text-black">{values.weight_pct} · {targetWeight}kg</span>
+                      <span className="text-sm font-semibold text-black">
+                        {readinessLevel === 'reduced' ? 'eased · ' : readinessLevel === 'minimal' ? 'lighter · ' : values.weight_pct ? `${values.weight_pct} · ` : ''}{targetWeight}kg
+                      </span>
                     </div>
                   )}
                   {history.length > 0 && (
@@ -4121,6 +4234,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const renderActiveScreen = () => {
     if (needsNutritionOnboarding && !dismissedOnboarding) return renderNutritionOnboardingScreen();
     if (selectedWorkout?.started) return renderWorkoutLogger();
+    if (selectedWorkout && !selectedWorkout.readiness) return renderReadinessGate();
     if (selectedWorkout) return renderWorkoutPreview();
     if (activeScreen === 'workout') return renderWorkoutHome();
     if (activeScreen === 'nutrition') return renderNutritionScreen();
