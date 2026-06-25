@@ -66,8 +66,17 @@ interface CurrentWorkoutImportResult {
   matched_count?: number;
 }
 
-interface PhaseRebuildCheckPayload {
+interface PhaseRebuildChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  created_at?: string;
+}
+
+interface PhaseRebuildMessagePayload {
+  run_id?: string;
   ready?: boolean;
+  assistant_message?: string;
+  messages?: PhaseRebuildChatMessage[];
   missing_questions?: string[];
   captured?: Record<string, unknown>;
   one_rm_map?: Record<string, number>;
@@ -75,9 +84,17 @@ interface PhaseRebuildCheckPayload {
 }
 
 interface PhaseRebuildPayload {
+  run_id?: string;
   phase?: PTProgrammePhase;
   one_rm_map?: Record<string, number>;
   resolved_loads?: unknown[];
+  weekly_set_volume?: Record<string, number>;
+  movement_pattern_coverage?: Record<string, number>;
+  split_selected?: string;
+  unilateral_bilateral_balance?: unknown;
+  client_needs_applied?: unknown;
+  assumptions?: string[];
+  web_research_used?: boolean;
   questions_answered?: string[];
   review_notes?: string[];
   matched_count?: number;
@@ -92,6 +109,13 @@ interface PhaseNutritionRow {
   training_context: Record<string, unknown>;
   recommendations: Record<string, unknown>;
   review_status: string;
+}
+
+function formatCapturedValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(', ');
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  if (value === null || value === undefined || value === '') return 'Not set';
+  return String(value);
 }
 
 function toNutritionRows(items: unknown[]): PhaseNutritionRow[] {
@@ -199,9 +223,11 @@ export default function PTProgrammeEditView({
   const [dragOverPhaseIdx, setDragOverPhaseIdx] = useState<number | null>(null);
   const [voiceBuildOpen, setVoiceBuildOpen] = useState(false);
   const [voiceBrief, setVoiceBrief] = useState('');
+  const [voiceBuildRunId, setVoiceBuildRunId] = useState<string | null>(null);
+  const [voiceBuildMessages, setVoiceBuildMessages] = useState<PhaseRebuildChatMessage[]>([]);
+  const [voiceBuildCaptured, setVoiceBuildCaptured] = useState<Record<string, unknown>>({});
   const [voiceBuildBusy, setVoiceBuildBusy] = useState(false);
   const [voiceBuildStatus, setVoiceBuildStatus] = useState('');
-  const [voiceBuildQuestions, setVoiceBuildQuestions] = useState<string[]>([]);
   const [voiceBuildReady, setVoiceBuildReady] = useState(false);
   const [voiceBuildListening, setVoiceBuildListening] = useState(false);
   const [boardView, setBoardView] = useState(false);
@@ -398,44 +424,49 @@ export default function PTProgrammeEditView({
     setVoiceBuildListening(false);
   };
 
-  const checkVoiceBuildBrief = async () => {
-    if (voiceBrief.trim().length < 10) {
-      setVoiceBuildStatus('Speak or type what you want for this phase first.');
+  const sendVoiceBuildMessage = async () => {
+    const message = voiceBrief.trim();
+    if (message.length < 2) {
+      setVoiceBuildStatus('Type or record a message for the agent first.');
       return;
     }
     setVoiceBuildBusy(true);
-    setVoiceBuildStatus('Checking what the agent still needs...');
+    setVoiceBuildStatus('Agent is reading the client context and your message...');
     const { data, error } = await supabase.functions.invoke('rebuild-programme-phase', {
       body: {
-        action: 'check',
+        action: 'message',
         assignment_id: initial.id,
         client_id: initial.client_id,
         phase_index: activePhaseTab,
-        transcript: voiceBrief,
+        run_id: voiceBuildRunId,
+        message,
       },
     });
     setVoiceBuildBusy(false);
-    const payload = data as PhaseRebuildCheckPayload | null;
+    const payload = data as PhaseRebuildMessagePayload | null;
     if (error || payload?.error) {
-      setVoiceBuildStatus(payload?.error ?? 'Could not check the phase brief.');
+      setVoiceBuildStatus(payload?.error ?? 'Could not continue the phase-builder chat.');
       return;
     }
+    if (payload?.run_id) setVoiceBuildRunId(payload.run_id);
+    if (payload?.messages) setVoiceBuildMessages(payload.messages);
+    if (payload?.captured) setVoiceBuildCaptured(payload.captured);
     if (payload?.one_rm_map) {
       setValidationSummary((cur) => ({ ...cur, one_rm_map: payload.one_rm_map }));
     }
-    const questions = payload?.missing_questions ?? [];
-    setVoiceBuildQuestions(questions);
-    setVoiceBuildReady(Boolean(payload?.ready) && questions.length === 0);
+    setVoiceBrief('');
+    setVoiceBuildReady(Boolean(payload?.ready));
     setVoiceBuildStatus(
-      questions.length > 0
-        ? 'The agent needs a little more detail before it rebuilds the phase.'
-        : 'The agent has enough detail. Generate the replacement phase when ready.',
+      payload?.ready
+        ? 'The agent has enough detail. Generate the replacement phase when ready.'
+        : 'Answer the agent, then send another message.',
     );
   };
 
   const generateVoiceBuildPhase = async () => {
-    if (voiceBrief.trim().length < 10) {
-      setVoiceBuildStatus('Speak or type what you want for this phase first.');
+    const hasChat = voiceBuildMessages.some((message) => message.role === 'user');
+    if (!hasChat && voiceBrief.trim().length < 2) {
+      setVoiceBuildStatus('Send at least one message to the agent before generating.');
       return;
     }
     const currentPhaseTitle = programme.phases[activePhaseTab]?.title ?? `Phase ${activePhaseTab + 1}`;
@@ -448,7 +479,8 @@ export default function PTProgrammeEditView({
         assignment_id: initial.id,
         client_id: initial.client_id,
         phase_index: activePhaseTab,
-        transcript: voiceBrief,
+        run_id: voiceBuildRunId,
+        transcript: voiceBrief.trim(),
       },
     });
     setVoiceBuildBusy(false);
@@ -467,8 +499,16 @@ export default function PTProgrammeEditView({
     });
     setValidationSummary((cur) => ({
       ...cur,
+      ...(payload.run_id ? { phase_rebuild_chat_run_id: payload.run_id } : {}),
       ...(payload.one_rm_map ? { one_rm_map: payload.one_rm_map } : {}),
       ...(payload.resolved_loads ? { resolved_loads: payload.resolved_loads } : {}),
+      ...(payload.weekly_set_volume ? { weekly_set_volume: payload.weekly_set_volume } : {}),
+      ...(payload.movement_pattern_coverage ? { movement_pattern_coverage: payload.movement_pattern_coverage } : {}),
+      ...(payload.split_selected ? { split_selected: payload.split_selected } : {}),
+      ...(payload.unilateral_bilateral_balance ? { unilateral_bilateral_balance: payload.unilateral_bilateral_balance } : {}),
+      ...(payload.client_needs_applied ? { client_needs_applied: payload.client_needs_applied } : {}),
+      phase_rebuild_assumptions: payload.assumptions ?? [],
+      phase_rebuild_web_research_used: Boolean(payload.web_research_used),
       phase_rebuild_review_notes: payload.review_notes ?? [],
       phase_rebuild_questions_answered: payload.questions_answered ?? [],
     }));
@@ -476,7 +516,7 @@ export default function PTProgrammeEditView({
     setBoardView(true);
     setVoiceBuildReady(false);
     setVoiceBuildOpen(false);
-    setVoiceBuildQuestions([]);
+    setVoiceBrief('');
     setVoiceBuildStatus(
       `Replaced ${currentPhaseTitle} with an editable draft`
       + (payload.matched_count !== undefined ? ` (${payload.matched_count} linked exercise${payload.matched_count === 1 ? '' : 's'})` : '')
@@ -1199,15 +1239,44 @@ export default function PTProgrammeEditView({
           <div className="mb-6 border border-black/15 bg-black/[0.02] p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-medium">Build this phase with voice or text</p>
+                <p className="text-sm font-medium">Chat with the programme agent</p>
                 <p className="mt-1 text-xs leading-relaxed text-black/45">
-                  Type, dictate, or do both for <span className="font-medium text-black">{phase.title}</span>. The agent checks for missing details, reads client history and 1RM results, then replaces this phase only. Save changes when you are happy.
+                  Type, dictate, or do both for <span className="font-medium text-black">{phase.title}</span>. The agent reads client history, movement analysis, injuries, recent training, weekly set volume, movement patterns, and 1RM results before replacing this phase only.
                 </p>
               </div>
               <span className="shrink-0 border border-amber-200 bg-amber-50 px-2 py-1 text-[0.6rem] uppercase tracking-[0.12em] text-amber-700">
                 Replaces selected phase
               </span>
             </div>
+            {voiceBuildMessages.length > 0 && (
+              <div className="mt-4 max-h-72 space-y-2 overflow-y-auto border border-black/10 bg-white p-3">
+                {voiceBuildMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}-${message.content.slice(0, 12)}`}
+                    className={`max-w-[90%] border px-3 py-2 text-xs leading-relaxed ${
+                      message.role === 'user'
+                        ? 'ml-auto border-black bg-black text-white'
+                        : 'mr-auto border-black/10 bg-black/[0.03] text-black/70'
+                    }`}
+                  >
+                    <p className="mb-1 text-[0.58rem] uppercase tracking-[0.14em] opacity-60">
+                      {message.role === 'user' ? 'Pedro' : 'Agent'}
+                    </p>
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {Object.keys(voiceBuildCaptured).length > 0 && (
+              <div className="mt-3 grid gap-2 border border-black/10 bg-white p-3 sm:grid-cols-2">
+                {Object.entries(voiceBuildCaptured).slice(0, 8).map(([key, value]) => (
+                  <div key={key}>
+                    <p className="text-[0.58rem] uppercase tracking-[0.14em] text-black/35">{key.replaceAll('_', ' ')}</p>
+                    <p className="mt-1 text-xs text-black/65">{formatCapturedValue(value)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {voiceBuildListening ? (
                 <>
@@ -1232,16 +1301,16 @@ export default function PTProgrammeEditView({
               )}
               <button
                 type="button"
-                onClick={() => void checkVoiceBuildBrief()}
-                disabled={voiceBuildBusy || voiceBrief.trim().length < 10}
+                onClick={() => void sendVoiceBuildMessage()}
+                disabled={voiceBuildBusy || voiceBrief.trim().length < 2}
                 className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:opacity-30"
               >
-                Ask what is missing
+                Send to agent
               </button>
               <button
                 type="button"
                 onClick={() => void generateVoiceBuildPhase()}
-                disabled={voiceBuildBusy || voiceBrief.trim().length < 10 || voiceBuildQuestions.length > 0}
+                disabled={voiceBuildBusy || (!voiceBuildReady && !voiceBuildMessages.some((message) => message.role === 'user'))}
                 className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:opacity-30"
               >
                 {voiceBuildBusy ? 'Working...' : voiceBuildReady ? 'Generate replacement phase' : 'Generate anyway'}
@@ -1253,20 +1322,10 @@ export default function PTProgrammeEditView({
                 setVoiceBrief(e.target.value);
                 setVoiceBuildReady(false);
               }}
-              rows={8}
-              placeholder={'Type here, record voice, or use both. Example: For Hypertrophy, make it 4 days. Day 1 lower A with back squat main lift, RDL, leg press. Day 2 upper A with bench press and pull-up. Day 3 lower B with deadlift and hip thrust. Day 4 upper B with shoulder press, row, arms. Use current 1RM percentages and keep week 1 around 65%.'}
+              rows={5}
+              placeholder={'Message the agent. Example: Make this a 4-day hypertrophy phase. Lower A back squat, Upper A chest press and pulldown, Lower B single-leg work and hinge, Upper B shoulder press and rows. Consider her movement analysis and keep weekly set volume balanced.'}
               className="mt-3 w-full resize-y border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
             />
-            {voiceBuildQuestions.length > 0 && (
-              <div className="mt-3 border border-amber-200 bg-amber-50 px-3 py-3">
-                <p className="text-xs font-medium text-amber-800">Answer these before generating:</p>
-                <ul className="mt-2 space-y-1">
-                  {voiceBuildQuestions.map((question, index) => (
-                    <li key={`${question}-${index}`} className="text-xs text-amber-800">{index + 1}. {question}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
             {voiceBuildStatus && <p className="mt-3 text-xs text-black/50">{voiceBuildStatus}</p>}
           </div>
         )}

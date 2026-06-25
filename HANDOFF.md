@@ -1,12 +1,85 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Merged programme builder into one voice/text phase rebuild flow.
+2026-06-25 by Codex - Implemented chat-style PT phase rebuild agent.
 
 ## Last code fix commit
-this commit - merge programme voice and text builder
+this commit - implement chat phase rebuild agent
 
 ## What just happened (read first)
+
+### Chat-style PT phase rebuild agent (2026-06-25, LATEST)
+
+Pedro wanted the selected-phase programme builder to feel like chatting with an agent, not a form. The agent needed to read client needs, movement analysis, injuries, weak/tight muscles, recent training, 1RM results, and then build balanced weekly programming around movement patterns and weekly set volume.
+
+Shipped:
+- `rebuild-programme-phase` is now a persisted chat workflow with actions:
+  - `start`
+  - `message`
+  - `generate`
+  - backward-compatible `check`
+- Chat state persists to existing generation tables:
+  - run: `pt_program_generation_runs.task_type = phase_rebuild_chat`
+  - turns/chain steps: `pt_program_generation_steps`
+- Programme editor builder now shows:
+  - chat transcript,
+  - one text/voice input,
+  - `Send to agent`,
+  - captured plan summary,
+  - `Generate replacement phase`.
+- The agent asks one critical question at a time, then returns ready state.
+- Generation reads broader client context:
+  - client profile,
+  - exercise doc and movement assessment fields,
+  - notes,
+  - messages,
+  - client documents,
+  - brain/lifestyle/nutrition docs,
+  - recent workouts and set logs,
+  - highest stored Big 5 1RM map,
+  - exercise library.
+- Generation/audit now records:
+  - split selected,
+  - weekly set volume,
+  - movement-pattern coverage,
+  - unilateral/bilateral balance,
+  - client needs applied,
+  - assumptions,
+  - review notes,
+  - web research usage.
+- Split rules implemented in the prompt and audit:
+  - 2 days = Full Body A/B,
+  - 3 days = Full Body A/B/C,
+  - 4 days = Lower A / Upper A / Lower B / Upper B,
+  - 5 days = Lower A / Upper A / Full Body / Lower B / Upper B.
+- Pattern tags are now written onto generated exercises where possible:
+  - horizontal/vertical push-pull,
+  - squat/hinge,
+  - unilateral/bilateral lower,
+  - single-arm/two-arm push-pull,
+  - core/corrective.
+- Created/updated project skills outside the app git repo:
+  - `pt-phase-rebuild-chat-orchestrator`
+  - `pt-client-needs-reader`
+  - `pt-workout-structure-planner`
+  - `pt-weekly-volume-pattern-auditor`
+  - `pt-phase-programme-writer`
+  - Root `AGENTS.md` now documents the new chain.
+  - `pt-programming-workflow` now has an explicit selected-phase chat exception to the old "Big 5 every day" rule.
+
+Deployment:
+- Deployed `rebuild-programme-phase` ACTIVE v2 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- All five new skills pass `quick_validate.py`.
+- `supabase functions list` confirms `rebuild-programme-phase` ACTIVE v2.
+
+Notes:
+- No schema migration was needed. The feature reuses existing `pt_program_generation_runs` and `pt_program_generation_steps`.
+- No live generation was run against a real client during verification because that would create a real generation run and may create missing exercise cards.
 
 ### Programme builder voice + text unified (2026-06-25, LATEST)
 
