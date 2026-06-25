@@ -473,7 +473,7 @@ export default function PTProgrammeEditView({
     setVoiceBuildBusy(false);
     const payload = data as PhaseRebuildPayload | null;
     if (error || payload?.error || !payload?.phase) {
-      setVoiceBuildStatus(payload?.error ?? 'Could not rebuild that phase.');
+      setVoiceBuildStatus(payload?.error ?? error?.message ?? 'Could not rebuild that phase.');
       return;
     }
     const replacementPhase: PTProgrammePhase = {

@@ -274,14 +274,26 @@ Deno.serve(async (req) => {
       updated_at: new Date().toISOString(),
     }).eq('id', runId);
 
-    const written = await claudeJson<WrittenPhase>(anthropic, {
-      system: WRITE_SYSTEM,
-      user: buildWritePrompt(context, messages, knowledgeContext),
-      maxTokens: 8500,
-    });
+    let written: WrittenPhase | null = null;
+    try {
+      written = await claudeJson<WrittenPhase>(anthropic, {
+        system: WRITE_SYSTEM,
+        user: buildWritePrompt(context, messages, knowledgeContext),
+        maxTokens: 5200,
+        timeoutMs: 55_000,
+      });
+    } catch (error) {
+      const message = isAbortError(error)
+        ? 'The phase builder timed out before finishing. I reduced the generation payload now; send the brief again and generate the phase.'
+        : error instanceof Error
+          ? error.message
+          : 'Could not generate a replacement phase.';
+      await markRunFailed(admin, runId, message);
+      return json({ error: message, run_id: runId });
+    }
     if (!written?.phase?.days || !Array.isArray(written.phase.days)) {
       await markRunFailed(admin, runId, 'Could not generate a replacement phase.');
-      return json({ error: 'Could not generate a replacement phase.' }, 502);
+      return json({ error: 'Could not generate a replacement phase.', run_id: runId });
     }
 
     await appendStep(admin, runId, 'PHASE_STRUCTURE_PLANNER', {
@@ -555,14 +567,14 @@ function buildChatPrompt(context: Context, messages: ChatMessage[]) {
   return JSON.stringify({
     chat_messages: messages,
     selected_phase_index: context.phaseIndex,
-    selected_phase: context.selectedPhase,
+    selected_phase: compactPhase(context.selectedPhase),
     split_rules: {
       two_days: 'Full Body A/B',
       three_days: 'Full Body A/B/C',
       four_days: 'Lower A / Upper A / Lower B / Upper B',
       five_days: 'Lower A / Upper A / Full Body / Lower B / Upper B',
     },
-    client_context: compactClientContext(context),
+    client_context: compactClientContext(context, 1800),
     recent_training_summary: compactTraining(context),
     one_rm_map: context.oneRmMap,
   });
@@ -572,12 +584,12 @@ function buildWritePrompt(context: Context, messages: ChatMessage[], knowledgeCo
   return JSON.stringify({
     chat_messages: messages,
     selected_phase_index: context.phaseIndex,
-    selected_phase: context.selectedPhase,
+    selected_phase: compactPhase(context.selectedPhase),
     existing_programme_outline: compactProgramme(context),
-    client_context: compactClientContext(context),
-    recent_training_summary: compactTraining(context),
+    client_context: compactClientContext(context, 1200),
+    recent_training_summary: compactTraining(context, 0),
     one_rm_map: context.oneRmMap,
-    library_names: context.library.map((e) => e.name).slice(0, 1400),
+    library_names: selectRelevantLibraryNames(context, messages),
     knowledge_context: knowledgeContext,
     programming_method: {
       weekly_set_volume: 'Use weekly sets per muscle group as the main volume control. Pick conservative default targets by client level, injury status, recovery, and phase goal unless Pedro gave exact targets.',
@@ -592,6 +604,32 @@ function buildWritePrompt(context: Context, messages: ChatMessage[], knowledgeCo
   });
 }
 
+function compactPhase(phase: Phase | null) {
+  if (!phase) return null;
+  return {
+    id: phase.id,
+    title: phase.title,
+    focus: phase.focus,
+    weeks: phase.weeks,
+    progression: phase.progression,
+    week_blocks: phase.week_blocks,
+    days: (phase.days ?? []).map((day) => ({
+      title: day.title,
+      focus: day.focus,
+      exercise_count: day.exercises?.length ?? 0,
+      exercises: (day.exercises ?? []).map((ex) => ({
+        name: ex.name,
+        section: ex.section_start ?? ex.section ?? null,
+        sets: ex.sets,
+        reps: ex.reps,
+        rest: ex.rest,
+        superset_id: ex.superset_id ?? null,
+        pattern: ex.pattern ?? null,
+      })),
+    })),
+  };
+}
+
 function compactProgramme(context: Context) {
   const phases = context.assignment?.programme?.phases ?? [];
   return phases.map((phase, index) => ({
@@ -602,12 +640,13 @@ function compactProgramme(context: Context) {
     days: (phase.days ?? []).map((day) => ({
       title: day.title,
       focus: day.focus,
-      exercises: (day.exercises ?? []).map((ex) => ({ name: ex.name, pattern: ex.pattern ?? null })),
+      exercise_count: day.exercises?.length ?? 0,
+      exercises: (day.exercises ?? []).slice(0, 14).map((ex) => ({ name: ex.name, pattern: ex.pattern ?? null })),
     })),
   }));
 }
 
-function compactClientContext(context: Context) {
+function compactClientContext(context: Context, documentChars = 1800) {
   return {
     client: context.client,
     exercise_doc: context.exerciseDoc,
@@ -621,18 +660,51 @@ function compactClientContext(context: Context) {
       return {
         document_type: d.document_type,
         title: d.title,
-        content_text: String(d.content_text ?? '').slice(0, 4500),
+        content_text: String(d.content_text ?? '').slice(0, documentChars),
       };
     }),
   };
 }
 
-function compactTraining(context: Context) {
+function compactTraining(context: Context, rawSetLimit = 30) {
   return {
-    recent_workouts: context.recentWorkoutLogs,
-    recent_sets: context.recentSetLogs,
+    recent_workouts: context.recentWorkoutLogs.slice(0, 12),
+    recent_sets: context.recentSetLogs.slice(0, rawSetLimit),
     exercise_history: summarizeExerciseHistory(context.recentSetLogs),
   };
+}
+
+function selectRelevantLibraryNames(context: Context, messages: ChatMessage[]) {
+  const requestedText = [
+    ...messages.map((message) => message.content),
+    context.selectedPhase?.title ?? '',
+    ...(context.selectedPhase?.days ?? []).flatMap((day) => (day.exercises ?? []).map((ex) => ex.name ?? '')),
+  ].join(' ').toLowerCase();
+  const terms = new Set(normalise(requestedText).split(' ').filter((term) => term.length >= 4));
+  const picked: string[] = [];
+  const seen = new Set<string>();
+  const add = (name: string | undefined) => {
+    const clean = String(name ?? '').trim();
+    const key = normalise(clean);
+    if (!clean || seen.has(key)) return;
+    seen.add(key);
+    picked.push(clean);
+  };
+
+  for (const day of context.selectedPhase?.days ?? []) {
+    for (const ex of day.exercises ?? []) add(ex.name);
+  }
+  for (const row of context.library) {
+    const norm = normalise(row.name);
+    const words = norm.split(' ');
+    if (requestedText.includes(norm) || words.some((word) => terms.has(word))) add(row.name);
+    if (picked.length >= 550) break;
+  }
+  for (const row of context.library) {
+    if (picked.length >= 650) break;
+    add(row.name);
+  }
+  return picked;
 }
 
 function summarizeExerciseHistory(setLogs: unknown[]) {
@@ -1083,23 +1155,24 @@ function slug(s: string): string {
 
 async function claudeText(
   anthropic: Anthropic,
-  opts: { system: string; user: string; maxTokens: number },
+  opts: { system: string; user: string; maxTokens: number; timeoutMs?: number; webSearch?: boolean },
 ): Promise<string> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 90_000);
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 45_000);
+  const tools = opts.webSearch ? [
+    {
+      type: 'web_search_20250305',
+      name: 'web_search',
+      max_uses: 2,
+    },
+  ] : undefined;
   try {
     const msg = await anthropic.messages.create(
       {
         model: 'claude-sonnet-4-6',
         max_tokens: opts.maxTokens,
         system: opts.system,
-        tools: [
-          {
-            type: 'web_search_20250305',
-            name: 'web_search',
-            max_uses: 2,
-          },
-        ],
+        ...(tools ? { tools } : {}),
         messages: [{ role: 'user', content: opts.user }],
       } as any,
       { signal: ctrl.signal },
@@ -1117,7 +1190,10 @@ function extractTextFromBlocks(blocks: unknown[]): string {
   }).join('\n').trim();
 }
 
-async function claudeJson<T>(anthropic: Anthropic, opts: { system: string; user: string; maxTokens: number }): Promise<T | null> {
+async function claudeJson<T>(
+  anthropic: Anthropic,
+  opts: { system: string; user: string; maxTokens: number; timeoutMs?: number; webSearch?: boolean },
+): Promise<T | null> {
   const text = (await claudeText(anthropic, opts)).trim();
   for (const candidate of jsonCandidates(text)) {
     try {
@@ -1128,6 +1204,10 @@ async function claudeJson<T>(anthropic: Anthropic, opts: { system: string; user:
     }
   }
   return null;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && (error.name === 'AbortError' || /abort|timeout/i.test(error.message));
 }
 
 function jsonCandidates(text: string): string[] {
