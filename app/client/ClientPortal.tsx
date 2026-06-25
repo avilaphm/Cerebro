@@ -1073,7 +1073,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     return Math.round((best * (pct / 100)) / 2.5) * 2.5;
   }, [bestOneRMByLift]);
 
-  const updateSetDraft = (key: string, patch: Partial<SetDraft>) => {
+  const updateSetDraft = (key: string, patch: Partial<SetDraft>, totalSets?: number) => {
     setSetDrafts((current) => {
       const currentDraft = current[key] ?? { reps: '', weight: '' };
       const next: Record<string, SetDraft> = {
@@ -1082,7 +1082,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       };
 
       const parsed = parseDraftKey(key);
-      const count = parsed ? setCounts[parsed.exerciseId] ?? 0 : 0;
+      // The number of set rows actually shown comes from the render (totalSets);
+      // setCounts can be empty until the client touches the stepper, which is why
+      // the cascade used to no-op. Fall back to setCounts only when not passed.
+      const count = totalSets ?? (parsed ? setCounts[parsed.exerciseId] ?? 0 : 0);
 
       // Cascade an edited field forward to later sets the client hasn't diverged,
       // so weight and reps fill down the column like a spreadsheet — forward only.
@@ -2275,9 +2278,10 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                         </>
                       )}
 
-                      {/* Future training phase → collapsed card, tap to reveal the weeks */}
+                      {/* Future training phase → collapsed card, tap to reveal the weeks.
+                          Kept at 50% opacity even when open — the client isn't there yet. */}
                       {isFuture && !isTest && weekTotal > 0 && (
-                        <>
+                        <div className="opacity-50">
                           <button
                             type="button"
                             onClick={() => setJourneyPhaseOpen((prev) => {
@@ -2285,13 +2289,13 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                               if (next.has(index)) next.delete(index); else next.add(index);
                               return next;
                             })}
-                            className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-black/12 bg-white/50 px-3 py-1 text-[0.56rem] uppercase tracking-[0.12em] text-black/50 transition-colors hover:border-black/30 hover:text-black"
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-black/12 bg-white/50 px-3 py-1 text-[0.56rem] uppercase tracking-[0.12em] text-black/55 transition-colors hover:border-black/30 hover:text-black"
                           >
                             {futureOpen ? 'Hide weeks' : `View ${weekTotal} week${weekTotal === 1 ? '' : 's'}`}
                             <ChevronDown className={`h-3 w-3 transition-transform ${futureOpen ? 'rotate-180' : ''}`} />
                           </button>
                           {futureOpen && renderWeekRail(blocks, true, false, null, Number.isFinite(phaseWeekCount) ? phaseWeekCount : 0)}
-                        </>
+                        </div>
                       )}
 
                       {/* Future test day → one-line note */}
@@ -2727,14 +2731,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                           </div>
                           <input
                             value={draft.weight}
-                            onChange={(event) => updateSetDraft(key, { weight: event.target.value })}
+                            onChange={(event) => updateSetDraft(key, { weight: event.target.value }, count)}
                             className={`h-12 min-w-0 rounded-[1rem] border px-3 text-base text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
                             placeholder="Kg"
                             inputMode="decimal"
                           />
                           <input
                             value={draft.reps}
-                            onChange={(event) => updateSetDraft(key, { reps: event.target.value })}
+                            onChange={(event) => updateSetDraft(key, { reps: event.target.value }, count)}
                             className={`h-12 min-w-0 rounded-[1rem] border px-3 text-base text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
                             placeholder="Reps"
                             inputMode="decimal"
@@ -3080,14 +3084,14 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                             </div>
                             <input
                               value={draft.weight}
-                              onChange={(event) => updateSetDraft(key, { weight: event.target.value })}
+                              onChange={(event) => updateSetDraft(key, { weight: event.target.value }, count)}
                               className={`min-w-0 rounded-[1.35rem] border px-4 text-lg text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
                               placeholder="Weight"
                               inputMode="decimal"
                             />
                             <input
                               value={draft.reps}
-                              onChange={(event) => updateSetDraft(key, { reps: event.target.value })}
+                              onChange={(event) => updateSetDraft(key, { reps: event.target.value }, count)}
                               className={`min-w-0 rounded-[1.35rem] border px-4 text-lg text-black outline-none placeholder:text-black/35 focus:border-black/35 ${setSurface}`}
                               placeholder="Reps"
                               inputMode="decimal"
