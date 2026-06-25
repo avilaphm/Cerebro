@@ -279,21 +279,33 @@ Deno.serve(async (req) => {
       written = await claudeJson<WrittenPhase>(anthropic, {
         system: WRITE_SYSTEM,
         user: buildWritePrompt(context, messages, knowledgeContext),
-        maxTokens: 5200,
-        timeoutMs: 55_000,
+        maxTokens: 4200,
+        timeoutMs: 32_000,
       });
     } catch (error) {
-      const message = isAbortError(error)
-        ? 'The phase builder timed out before finishing. I reduced the generation payload now; send the brief again and generate the phase.'
+      const fallbackReason = isAbortError(error)
+        ? 'AI writer timed out; deterministic fallback phase was created.'
         : error instanceof Error
-          ? error.message
-          : 'Could not generate a replacement phase.';
-      await markRunFailed(admin, runId, message);
-      return json({ error: message, run_id: runId });
+          ? `AI writer failed: ${error.message}. Deterministic fallback phase was created.`
+          : 'AI writer failed; deterministic fallback phase was created.';
+      written = buildDeterministicPhase(context, messages, fallbackReason);
+      await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
+        reason: fallbackReason,
+      }, {
+        phase: written.phase,
+        assumptions: written.assumptions ?? [],
+        review_notes: written.review_notes ?? [],
+      });
     }
     if (!written?.phase?.days || !Array.isArray(written.phase.days)) {
-      await markRunFailed(admin, runId, 'Could not generate a replacement phase.');
-      return json({ error: 'Could not generate a replacement phase.', run_id: runId });
+      written = buildDeterministicPhase(context, messages, 'AI writer returned an incomplete phase; deterministic fallback phase was created.');
+      await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
+        reason: 'AI writer returned an incomplete phase.',
+      }, {
+        phase: written.phase,
+        assumptions: written.assumptions ?? [],
+        review_notes: written.review_notes ?? [],
+      });
     }
 
     await appendStep(admin, runId, 'PHASE_STRUCTURE_PLANNER', {
@@ -705,6 +717,229 @@ function selectRelevantLibraryNames(context: Context, messages: ChatMessage[]) {
     add(row.name);
   }
   return picked;
+}
+
+function buildDeterministicPhase(context: Context, messages: ChatMessage[], reason: string): WrittenPhase {
+  const dayCount = inferRequestedDayCount(messages, context.selectedPhase);
+  const phaseTitle = context.selectedPhase?.title ?? `${dayCount}-day rebuilt phase`;
+  const phaseFocus = context.selectedPhase?.focus || `${inferSplit(dayCount)} with main lifts separated into their own supersets.`;
+  const days = dayCount <= 3
+    ? buildFullBodyFallbackDays(context, dayCount)
+    : dayCount === 4
+      ? buildUpperLowerFallbackDays(context)
+      : buildFiveDayFallbackDays(context);
+
+  return {
+    phase: {
+      id: context.selectedPhase?.id,
+      title: phaseTitle,
+      focus: phaseFocus,
+      weeks: context.selectedPhase?.weeks ?? '4',
+      progression: context.selectedPhase?.progression ?? 'Deterministic fallback draft created from Pedro chat, client context, and selected phase structure.',
+      week_blocks: context.selectedPhase?.week_blocks,
+      days,
+    },
+    split_selected: inferSplit(dayCount),
+    weekly_set_volume: {},
+    movement_pattern_coverage: {},
+    questions_answered: messages.filter((message) => message.role === 'user').map((message) => message.content).slice(-3),
+    assumptions: [
+      `Requested ${dayCount} training day${dayCount === 1 ? '' : 's'} from the chat, or carried over from the selected phase.`,
+      'Main lifts are separated by default and paired with smaller core, corrective, mobility, or accessory work.',
+      'Review exercise selection manually before saving.',
+    ],
+    review_notes: [
+      reason,
+      'Fallback draft prioritises reliability, Big 5 spread, no two main lifts in the same superset, and coach-editable structure.',
+    ],
+    web_research_used: false,
+  };
+}
+
+function inferRequestedDayCount(messages: ChatMessage[], selectedPhase: Phase | null): number {
+  const text = messages.map((message) => message.content).join('\n').toLowerCase();
+  const match = text.match(/\b([2-5])\s*(?:day|days|workout|workouts|session|sessions)\b/);
+  if (match) return clampDayCount(Number(match[1]));
+  const perWeekMatch = text.match(/\b([2-5])\s*(?:x|times)\s*(?:per|a)?\s*week\b/);
+  if (perWeekMatch) return clampDayCount(Number(perWeekMatch[1]));
+  const selectedCount = selectedPhase?.days?.length ?? 0;
+  return clampDayCount(selectedCount || 3);
+}
+
+function clampDayCount(value: number) {
+  if (!Number.isFinite(value)) return 3;
+  return Math.min(5, Math.max(2, Math.round(value)));
+}
+
+function buildFullBodyFallbackDays(context: Context, dayCount: number): Day[] {
+  const templates = [
+    {
+      title: 'Day 1 - Full Body A',
+      focus: 'Squat main lift, horizontal push, single-arm pull, core and stability.',
+      workout: [
+        mainExercise(context, ['Back Squat', 'BB Back Squat', 'Barbell Back Squat'], 'squat', 'A'),
+        smallExercise(context, ['Pallof Press', 'Dead Bug'], 'core', 'A'),
+        mainExercise(context, ['Barbell Bench Press', 'BB Bench Press', 'Chest Press'], 'horizontal_push', 'B'),
+        smallExercise(context, ['Hamstring Curl', 'Leg Curl', 'Cable Crunch'], 'hinge', 'B'),
+        smallExercise(context, ['Single Arm DB Row', 'Single-Arm DB Row', 'Row Machine'], 'single_arm_pull', 'C'),
+        smallExercise(context, ['Cossack Squat', 'Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'C'),
+        smallExercise(context, ['Hanging Knee Raise', 'Cable Crunch'], 'core', 'D'),
+      ],
+    },
+    {
+      title: 'Day 2 - Full Body B',
+      focus: 'Deadlift main lift, vertical push, vertical pull, unilateral lower support.',
+      workout: [
+        mainExercise(context, ['Conventional Deadlift', 'BB Deadlift', 'Barbell Deadlift'], 'hinge', 'A'),
+        smallExercise(context, ['Dead Bug', 'Side Plank'], 'core', 'A'),
+        mainExercise(context, ['Overhead Press', 'BB Shoulder Press', 'Shoulder Press', 'DB Shoulder Press'], 'vertical_push', 'B'),
+        smallExercise(context, ['Split Squat', 'Rear Foot Elevated Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'B'),
+        mainExercise(context, ['Lat Pulldown', 'Pull-up', 'Pull Up'], 'vertical_pull', 'C'),
+        smallExercise(context, ['Hip Airplanes', '90/90 Hip Switch', 'Active Thoracic Extension'], 'corrective', 'C'),
+        smallExercise(context, ['Cable Crunch', 'Hanging Knee Raise'], 'core', 'D'),
+      ],
+    },
+    {
+      title: 'Day 3 - Full Body C',
+      focus: 'Hip thrust or pull main lift, lower accessory, posterior chain and trunk.',
+      workout: [
+        mainExercise(context, ['Barbell Hip Thrust', 'BB Hip Thrust', 'Hip Thrust'], 'hinge', 'A'),
+        smallExercise(context, ['Side Plank', 'Pallof Press'], 'core', 'A'),
+        mainExercise(context, ['Pull-up', 'Pull Up', 'Lat Pulldown'], 'vertical_pull', 'B'),
+        smallExercise(context, ['Leg Press', 'Goblet Squat', 'Bodyweight Squat'], 'squat', 'C'),
+        smallExercise(context, ['Single Leg RDL', 'DB Single-Leg RDL', 'Single Leg Romanian Deadlift'], 'unilateral_lower', 'D'),
+        smallExercise(context, ['Rear Delt Fly', 'Face Pull', 'Pec Fly'], 'horizontal_pull', 'D'),
+        smallExercise(context, ['Hanging Knee Raise', 'Dead Bug'], 'core', 'E'),
+      ],
+    },
+  ];
+  return templates.slice(0, dayCount).map((template, index) => fallbackDay(context, template, index));
+}
+
+function buildUpperLowerFallbackDays(context: Context): Day[] {
+  return [
+    fallbackDay(context, {
+      title: 'Day 1 - Lower A',
+      focus: 'Squat main lift with unilateral and trunk support.',
+      workout: [
+        mainExercise(context, ['Back Squat', 'BB Back Squat', 'Barbell Back Squat'], 'squat', 'A'),
+        smallExercise(context, ['Pallof Press', 'Dead Bug'], 'core', 'A'),
+        smallExercise(context, ['Split Squat', 'Reverse Lunge'], 'unilateral_lower', 'B'),
+        smallExercise(context, ['Hamstring Curl', 'Single Leg RDL'], 'hinge', 'B'),
+        smallExercise(context, ['Cable Crunch', 'Hanging Knee Raise'], 'core', 'C'),
+      ],
+    }, 0),
+    fallbackDay(context, {
+      title: 'Day 2 - Upper A',
+      focus: 'Horizontal push and pull with shoulder support.',
+      workout: [
+        mainExercise(context, ['Barbell Bench Press', 'BB Bench Press', 'Chest Press'], 'horizontal_push', 'A'),
+        smallExercise(context, ['Face Pull', 'Rear Delt Fly'], 'horizontal_pull', 'A'),
+        mainExercise(context, ['Lat Pulldown', 'Pull-up'], 'vertical_pull', 'B'),
+        smallExercise(context, ['Tricep Extension', 'Cable Tricep Extension'], 'vertical_push', 'B'),
+        smallExercise(context, ['Bicep Curl', 'Cable Bicep Curl'], 'single_arm_pull', 'C'),
+      ],
+    }, 1),
+    fallbackDay(context, {
+      title: 'Day 3 - Lower B',
+      focus: 'Deadlift or hip thrust main lift with single-leg work.',
+      workout: [
+        mainExercise(context, ['Conventional Deadlift', 'BB Deadlift', 'Barbell Deadlift'], 'hinge', 'A'),
+        smallExercise(context, ['Dead Bug', 'Side Plank'], 'core', 'A'),
+        mainExercise(context, ['Barbell Hip Thrust', 'Hip Thrust'], 'hinge', 'B'),
+        smallExercise(context, ['Cossack Squat', 'Split Squat'], 'unilateral_lower', 'C'),
+        smallExercise(context, ['Pallof Press', 'Cable Crunch'], 'core', 'D'),
+      ],
+    }, 2),
+    fallbackDay(context, {
+      title: 'Day 4 - Upper B',
+      focus: 'Vertical push with row and single-arm support.',
+      workout: [
+        mainExercise(context, ['Overhead Press', 'BB Shoulder Press', 'Shoulder Press'], 'vertical_push', 'A'),
+        smallExercise(context, ['Hamstring Curl', 'Calf Raise'], 'hinge', 'A'),
+        mainExercise(context, ['Row Machine', 'Seated Row', 'Chest Supported Row'], 'horizontal_pull', 'B'),
+        smallExercise(context, ['Single Arm DB Bench Press', 'DB Bench Press'], 'single_arm_push', 'C'),
+        smallExercise(context, ['Face Pull', 'Rear Delt Fly'], 'horizontal_pull', 'D'),
+      ],
+    }, 3),
+  ];
+}
+
+function buildFiveDayFallbackDays(context: Context): Day[] {
+  const days = buildUpperLowerFallbackDays(context);
+  days.splice(2, 0, fallbackDay(context, {
+    title: 'Day 3 - Full Body',
+    focus: 'Efficient full-body stability day with no paired main lifts.',
+    workout: [
+      mainExercise(context, ['Leg Press', 'Goblet Squat', 'Bodyweight Squat'], 'squat', 'A'),
+      smallExercise(context, ['Dead Bug', 'Pallof Press'], 'core', 'A'),
+      mainExercise(context, ['Lat Pulldown', 'Pull-up'], 'vertical_pull', 'B'),
+      smallExercise(context, ['Single Leg RDL', 'Reverse Lunge'], 'unilateral_lower', 'C'),
+      smallExercise(context, ['Cable Crunch', 'Hanging Knee Raise'], 'core', 'D'),
+    ],
+  }, 2));
+  return days.slice(0, 5).map((day, index) => ({ ...day, id: `fallback-day-${index + 1}-${slug(day.title ?? 'day')}` }));
+}
+
+function fallbackDay(
+  context: Context,
+  template: { title: string; focus: string; workout: Exercise[] },
+  index: number,
+): Day {
+  return {
+    id: `fallback-day-${index + 1}-${slug(template.title)}`,
+    title: template.title,
+    focus: template.focus,
+    exercises: [
+      smallExercise(context, ['Dead Bug', 'Cat Cow'], 'core', ''),
+      smallExercise(context, ['Active Thoracic Extension', '90/90 Hip Switch'], 'corrective', ''),
+      smallExercise(context, ['Hip Airplanes', 'Bodyweight Squat'], 'corrective', ''),
+      ...template.workout,
+    ].map((exercise, exerciseIndex) => ({
+      ...exercise,
+      id: `fallback-ex-${index + 1}-${exerciseIndex + 1}-${slug(exercise.name ?? 'exercise')}`,
+      section: exerciseIndex < 3 ? 'Warm Up' : 'Workout',
+      section_start: exerciseIndex === 0 ? 'Warm Up' : exerciseIndex === 3 ? 'Workout' : undefined,
+    })),
+  };
+}
+
+function mainExercise(context: Context, names: string[], pattern: string, supersetLabel: string): Exercise {
+  const name = resolveExerciseName(context, names);
+  return {
+    name,
+    section: 'Workout',
+    sets: '3',
+    reps: pattern === 'squat' || pattern === 'hinge' ? '5-8' : '6-10',
+    rest: '90 sec',
+    notes: 'Main lift. Use RPE and the phase percentage tag when available.',
+    superset_label: `Main ${supersetLabel}`,
+    pattern,
+  };
+}
+
+function smallExercise(context: Context, names: string[], pattern: string, supersetLabel: string): Exercise {
+  const name = resolveExerciseName(context, names);
+  return {
+    name,
+    section: 'Workout',
+    sets: '2',
+    reps: pattern === 'core' || pattern === 'corrective' ? '10-12' : '8-12',
+    rest: '45-60 sec',
+    notes: pattern === 'core' || pattern === 'corrective' ? 'Control and quality.' : 'Accessory support work.',
+    superset_label: supersetLabel ? `Main ${supersetLabel}` : '',
+    pattern,
+  };
+}
+
+function resolveExerciseName(context: Context, candidates: string[]) {
+  const byNorm = new Map<string, LibraryRow>();
+  for (const row of context.library) byNorm.set(normalise(row.name), row);
+  for (const candidate of candidates) {
+    const hit = matchLibrary(candidate, byNorm, context.library);
+    if (hit?.name) return hit.name;
+  }
+  return candidates[0];
 }
 
 function summarizeExerciseHistory(setLogs: unknown[]) {

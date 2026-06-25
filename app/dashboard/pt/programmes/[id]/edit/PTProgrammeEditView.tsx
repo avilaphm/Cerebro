@@ -101,6 +101,8 @@ interface PhaseRebuildPayload {
   error?: string;
 }
 
+type VoiceBuildBusyMode = 'chat' | 'generate' | null;
+
 interface PhaseNutritionRow {
   id?: string;
   phase_index: number;
@@ -227,6 +229,8 @@ export default function PTProgrammeEditView({
   const [voiceBuildStatus, setVoiceBuildStatus] = useState('');
   const [voiceBuildReady, setVoiceBuildReady] = useState(false);
   const [voiceBuildListening, setVoiceBuildListening] = useState(false);
+  const [voiceBuildProgress, setVoiceBuildProgress] = useState(0);
+  const [voiceBuildBusyMode, setVoiceBuildBusyMode] = useState<VoiceBuildBusyMode>(null);
   const [boardView, setBoardView] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
@@ -290,6 +294,23 @@ export default function PTProgrammeEditView({
     }
   }, [initial.id]);
 
+  useEffect(() => {
+    if (!voiceBuildBusy) {
+      setVoiceBuildProgress(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const targetSeconds = voiceBuildBusyMode === 'generate' ? 55 : 18;
+    setVoiceBuildProgress(voiceBuildBusyMode === 'generate' ? 6 : 12);
+    const timer = window.setInterval(() => {
+      const elapsedSeconds = (Date.now() - startedAt) / 1000;
+      const curved = 1 - Math.exp(-elapsedSeconds / Math.max(1, targetSeconds / 3));
+      const cap = voiceBuildBusyMode === 'generate' ? 94 : 88;
+      setVoiceBuildProgress(Math.min(cap, Math.max(6, Math.round(curved * cap))));
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [voiceBuildBusy, voiceBuildBusyMode]);
+
   const patchPhase = (i: number, patch: Partial<PTProgrammePhase>) => update((p) => {
     p.phases[i] = { ...p.phases[i], ...patch }; return p;
   });
@@ -347,12 +368,30 @@ export default function PTProgrammeEditView({
     );
   };
 
-  const startVoiceBuildDictation = () => {
+  const requestVoiceBuildMicrophone = async () => {
+    if (!window.isSecureContext) {
+      setVoiceBuildStatus('Microphone needs a secure HTTPS page. Keep typing the brief here.');
+      return false;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) return true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      return true;
+    } catch {
+      setVoiceBuildStatus('Microphone is blocked for this site. In Chrome, click the tune/lock icon beside the address bar, allow Microphone, then press Record voice brief again. You can keep typing here meanwhile.');
+      return false;
+    }
+  };
+
+  const startVoiceBuildDictation = async () => {
     const SR = getSR();
     if (!SR) {
       setVoiceBuildStatus('Browser dictation is not available. Use Chrome desktop/Android, or type the brief.');
       return;
     }
+    const hasMicAccess = await requestVoiceBuildMicrophone();
+    if (!hasMicAccess) return;
     srVoiceBuildRef.current?.abort?.();
     voiceBuildTranscriptRef.current = voiceBrief.trim();
     const recognition = new SR();
@@ -418,6 +457,7 @@ export default function PTProgrammeEditView({
       return;
     }
     setVoiceBuildBusy(true);
+    setVoiceBuildBusyMode('chat');
     setVoiceBuildStatus('Agent is reading the client context and your message...');
     const { data, error } = await supabase.functions.invoke('rebuild-programme-phase', {
       body: {
@@ -430,6 +470,7 @@ export default function PTProgrammeEditView({
       },
     });
     setVoiceBuildBusy(false);
+    setVoiceBuildBusyMode(null);
     const payload = data as PhaseRebuildMessagePayload | null;
     if (error || payload?.error) {
       setVoiceBuildStatus(payload?.error ?? 'Could not continue the phase-builder chat.');
@@ -459,6 +500,7 @@ export default function PTProgrammeEditView({
     const currentPhaseTitle = programme.phases[activePhaseTab]?.title ?? `Phase ${activePhaseTab + 1}`;
     if (!window.confirm(`Replace "${currentPhaseTitle}" with an AI draft from this brief? You can still review it before saving.`)) return;
     setVoiceBuildBusy(true);
+    setVoiceBuildBusyMode('generate');
     setVoiceBuildStatus(`Rebuilding ${currentPhaseTitle} from the brief, client history, and 1RM results...`);
     const { data, error } = await supabase.functions.invoke('rebuild-programme-phase', {
       body: {
@@ -471,6 +513,7 @@ export default function PTProgrammeEditView({
       },
     });
     setVoiceBuildBusy(false);
+    setVoiceBuildBusyMode(null);
     const payload = data as PhaseRebuildPayload | null;
     if (error || payload?.error || !payload?.phase) {
       setVoiceBuildStatus(payload?.error ?? error?.message ?? 'Could not rebuild that phase.');
@@ -1264,7 +1307,7 @@ export default function PTProgrammeEditView({
               ) : (
                 <button
                   type="button"
-                  onClick={startVoiceBuildDictation}
+                  onClick={() => void startVoiceBuildDictation()}
                   disabled={voiceBuildBusy}
                   className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/35 disabled:border-black/10 disabled:text-black/30 disabled:hover:border-black/10"
                 >
@@ -1298,6 +1341,20 @@ export default function PTProgrammeEditView({
               placeholder={'Message the agent. Example: Make this a 4-day hypertrophy phase. Lower A back squat, Upper A chest press and pulldown, Lower B single-leg work and hinge, Upper B shoulder press and rows. Consider her movement analysis and keep weekly set volume balanced.'}
               className="mt-3 w-full resize-y border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/40"
             />
+            {voiceBuildBusy && (
+              <div className="mt-3 border border-black/10 bg-white/80 p-3">
+                <div className="flex items-center justify-between gap-3 text-[0.65rem] uppercase tracking-[0.14em] text-black/45">
+                  <span>{voiceBuildBusyMode === 'generate' ? 'Building phase' : 'Reading context'}</span>
+                  <span>{voiceBuildProgress}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/10">
+                  <div
+                    className="h-full rounded-full bg-black transition-all duration-700"
+                    style={{ width: `${voiceBuildProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
             {voiceBuildStatus && <p className="mt-3 text-xs text-black/50">{voiceBuildStatus}</p>}
           </div>
         )}
