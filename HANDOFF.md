@@ -1,12 +1,44 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Implemented chat-style PT phase rebuild agent.
+2026-06-25 by Codex - Streamlined programme edit page around one selected phase.
 
 ## Last code fix commit
-this commit - implement chat phase rebuild agent
+this commit - streamline programme phase editor
 
 ## What just happened (read first)
+
+### Programme edit page streamlined around one phase selection (2026-06-25, LATEST)
+
+Pedro reported the programme edit page had become messy: phases were selected in multiple places, nutrition listed every phase at once, and workouts required selecting the phase again.
+
+Shipped:
+- Replaced the large all-phase card stack with a compact horizontal programme stepper.
+- The selected phase now drives the whole page:
+  - phase setup,
+  - nutrition card,
+  - programme agent,
+  - workout list/board.
+- Phase setup is now a single active-phase card with the existing editable fields:
+  - name,
+  - weeks,
+  - focus,
+  - progression notes,
+  - progressive overload / week blocks,
+  - voice input for week blocks.
+- Phase nutrition is now a card for the selected phase only.
+  - It stays collapsed by default.
+  - Clicking opens training context, editable recommendations, approve action, and apply daily targets when all phases are approved.
+- Removed the duplicate phase selector from the Workouts section. The top programme stepper is the only phase selector.
+- Removed unused phase drag/edit state from the component.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+
+Notes:
+- No schema or Supabase deploy was needed. This is a UI-only workflow cleanup in the programme edit page.
 
 ### Chat-style PT phase rebuild agent (2026-06-25, LATEST)
 

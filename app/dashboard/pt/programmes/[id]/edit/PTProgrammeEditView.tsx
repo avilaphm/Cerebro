@@ -218,9 +218,6 @@ export default function PTProgrammeEditView({
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
 
-  const [editingPhase, setEditingPhase] = useState<number | null>(null);
-  const [dragPhaseIdx, setDragPhaseIdx] = useState<number | null>(null);
-  const [dragOverPhaseIdx, setDragOverPhaseIdx] = useState<number | null>(null);
   const [voiceBuildOpen, setVoiceBuildOpen] = useState(false);
   const [voiceBrief, setVoiceBrief] = useState('');
   const [voiceBuildRunId, setVoiceBuildRunId] = useState<string | null>(null);
@@ -314,16 +311,6 @@ export default function PTProgrammeEditView({
   });
 
   const removePhase = (i: number) => update((p) => { p.phases.splice(i, 1); return p; });
-
-  const movePhase = (from: number, to: number) => {
-    if (from === to) return;
-    update((p) => {
-      const [moved] = p.phases.splice(from, 1);
-      p.phases.splice(to, 0, moved);
-      return p;
-    });
-    setEditingPhase((cur) => (cur === from ? to : cur));
-  };
 
   const moveExerciseToDay = (fromDay: number, exId: string, toDay: number, beforeExId?: string) => {
     update((p) => {
@@ -786,6 +773,8 @@ export default function PTProgrammeEditView({
   };
 
   const phase = programme.phases[activePhaseTab] ?? null;
+  const activePhaseStartWeek = phase ? getPhaseStartWeeks(programme.phases)[activePhaseTab] ?? 1 : 1;
+  const activeNutritionRow = nutritionRows.find((row) => row.phase_index === activePhaseTab) ?? null;
   const currentDay = phase && activeDay !== null ? phase.days[activeDay] ?? null : null;
   const oneRmMap = typeof validationSummary.one_rm_map === 'object' && validationSummary.one_rm_map !== null
     ? validationSummary.one_rm_map as Record<string, number>
@@ -949,238 +938,218 @@ export default function PTProgrammeEditView({
         </div>
       )}
 
-      {/* Phases section */}
-      <div className="mb-8">
-        <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Phases</p>
-        <div className="space-y-3">
-          {programme.phases.map((ph, i) => {
-            const startWeek = getPhaseStartWeeks(programme.phases)[i] ?? 1;
-            return (
-            <div key={ph.id}>
-              {editingPhase === i ? (
-                <div className="border border-black/20 p-5 space-y-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Phase name</label>
-                      <input value={ph.title} onChange={(e) => patchPhase(i, { title: e.target.value })}
-                        className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                    </div>
-                    <div>
-                      <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Duration (weeks)</label>
-                      <input value={ph.weeks} onChange={(e) => patchPhase(i, { weeks: e.target.value })}
-                        className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                    </div>
+      <div className="mb-6">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Programme steps</p>
+          <button onClick={addPhase} className="border border-black/15 px-3 py-1.5 text-xs text-black/45 transition-colors hover:border-black/35 hover:text-black">
+            + Add phase
+          </button>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {programme.phases.map((ph, i) => (
+            <button
+              key={ph.id}
+              type="button"
+              onClick={() => {
+                setActivePhaseTab(i);
+                setActiveDay(null);
+                setSelectedDays(new Set());
+                setSelectMode(false);
+              }}
+              className={`flex min-w-[10.5rem] shrink-0 items-center gap-2 border px-3 py-2 text-left transition-colors ${
+                activePhaseTab === i ? 'border-black bg-black text-white' : 'border-black/10 bg-white hover:border-black/30'
+              }`}
+            >
+              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[0.65rem] ${
+                activePhaseTab === i ? 'border-white/40 text-white' : 'border-black/15 text-black/45'
+              }`}>
+                {i + 1}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-medium">{ph.title || `Phase ${i + 1}`}</span>
+                <span className={`block truncate text-[0.58rem] ${activePhaseTab === i ? 'text-white/55' : 'text-black/35'}`}>
+                  {ph.weeks ? `${ph.weeks} weeks` : 'Duration not set'}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {phase && (
+        <div className="mb-6 border border-black/15 bg-white p-5">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Selected phase</p>
+              <p className="mt-1 text-lg font-medium">{phase.title || `Phase ${activePhaseTab + 1}`}</p>
+              <p className="mt-1 text-xs text-black/40">Starts week {activePhaseStartWeek}. Edit this phase, then adjust nutrition and workouts below.</p>
+            </div>
+            {programme.phases.length > 1 && (
+              <button type="button" onClick={() => removePhase(activePhaseTab)}
+                className="self-start text-xs text-red-400 transition-colors hover:text-red-600">Remove phase</button>
+            )}
+          </div>
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Phase name</label>
+                <input value={phase.title} onChange={(e) => patchPhase(activePhaseTab, { title: e.target.value })}
+                  className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Duration (weeks)</label>
+                <input value={phase.weeks} onChange={(e) => patchPhase(activePhaseTab, { weeks: e.target.value })}
+                  className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Focus</label>
+              <input value={phase.focus} onChange={(e) => patchPhase(activePhaseTab, { focus: e.target.value })}
+                className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Progression notes</label>
+              <input value={phase.progression} onChange={(e) => patchPhase(activePhaseTab, { progression: e.target.value })}
+                className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[0.6rem] uppercase tracking-[0.15em] text-black/35">
+                Progressive overload — sets or % per block
+              </label>
+              <p className="mb-2 text-[0.6rem] text-black/30">e.g. &quot;2 sets for 2 weeks...&quot; or &quot;75% for 1 week, 85% for 3 weeks&quot;</p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={weekBlocksInput[activePhaseTab] ?? formatWeekBlocks(phase.week_blocks)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWeekBlocksInput((cur) => ({ ...cur, [activePhaseTab]: val }));
+                    const parsed = parseWeekBlocks(val);
+                    if (parsed.length > 0) {
+                      const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
+                      patchPhase(activePhaseTab, { week_blocks: parsed, weeks: String(totalWeeks) });
+                    } else if (val === '') {
+                      patchPhase(activePhaseTab, { week_blocks: undefined });
+                    }
+                  }}
+                  onBlur={() => applyWeekBlocksInput(activePhaseTab)}
+                  placeholder="2 sets for 2 weeks... or 75% for 1 week..."
+                  className="flex-1 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40"
+                />
+                {listeningForPhase === activePhaseTab ? (
+                  <div className="flex gap-1">
+                    <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">Recording</span>
+                    <button type="button" onClick={stopPhraseDictation}
+                      className="border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black">
+                      Done
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Focus</label>
-                    <input value={ph.focus} onChange={(e) => patchPhase(i, { focus: e.target.value })}
-                      className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                  </div>
-                  <div>
-                    <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">Progression notes</label>
-                    <input value={ph.progression} onChange={(e) => patchPhase(i, { progression: e.target.value })}
-                      className="w-full border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40" />
-                  </div>
-                  <div>
-                    <label className="block text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1.5">
-                      Progressive overload — sets or % per block
-                    </label>
-                    <p className="text-[0.6rem] text-black/30 mb-2">e.g. &quot;2 sets for 2 weeks...&quot; or &quot;75% for 1 week, 85% for 3 weeks&quot;</p>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <input
-                        value={weekBlocksInput[i] ?? formatWeekBlocks(ph.week_blocks)}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setWeekBlocksInput((cur) => ({ ...cur, [i]: val }));
-                          const parsed = parseWeekBlocks(val);
-                          if (parsed.length > 0) {
-                            const totalWeeks = parsed.reduce((sum, b) => sum + b.weeks, 0);
-                            patchPhase(i, { week_blocks: parsed, weeks: String(totalWeeks) });
-                          } else if (val === '') {
-                            patchPhase(i, { week_blocks: undefined });
-                          }
-                        }}
-                        placeholder="2 sets for 2 weeks... or 75% for 1 week..."
-                        className="flex-1 border border-black/10 px-3 py-2 text-sm outline-none focus:border-black/40"
-                      />
-                      {listeningForPhase === i ? (
-                        <div className="flex gap-1">
-                          <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">● Recording</span>
-                          <button type="button" onClick={stopPhraseDictation}
-                            className="border border-black bg-black text-white px-3 py-2 text-xs hover:bg-white hover:text-black transition-colors">
-                            Done
-                          </button>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => startDictationForPhase(i)}
-                          className="border border-black/15 px-3 py-2 text-xs hover:border-black/30 transition-colors">
-                          Voice
-                        </button>
-                      )}
-                    </div>
-                    {ph.week_blocks && ph.week_blocks.length > 0 && (
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {ph.week_blocks.map((block, bi) => {
-                          const oneRmMap = typeof validationSummary.one_rm_map === 'object' && validationSummary.one_rm_map !== null ? validationSummary.one_rm_map as Record<string, number> : null;
-                          const kgHints = oneRmMap && block.weight_pct
-                            ? Object.entries(oneRmMap).map(([ex, oneRm]) => {
-                                const pct = parseFloat(block.weight_pct!.replace('%', ''));
-                                if (!Number.isFinite(pct)) return null;
-                                const kg = Math.round(oneRm * (pct / 100) * 4) / 4;
-                                const short = ex.replace('BB ', '').replace('Pull-up', 'PU');
-                                return `${short} ~${kg}kg`;
-                              }).filter(Boolean).join(' | ')
-                            : null;
-                          return (
-                            <span key={bi} className="flex items-center gap-1">
-                              <span className="flex flex-col border border-black/15 bg-black/3 px-2.5 py-1 text-[0.6rem] uppercase tracking-[0.1em]">
-                                <span>{block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w</span>
-                                {kgHints && <span className="text-amber-700 normal-case tracking-normal">{kgHints}</span>}
-                              </span>
-                              {bi < (ph.week_blocks?.length ?? 0) - 1 && (
-                                <span className="text-black/25 text-xs">→</span>
-                              )}
-                            </span>
-                          );
-                        })}
-                        <span className="text-[0.6rem] text-black/30 ml-1">= {ph.weeks}w total</span>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => {
-                      applyWeekBlocksInput(i);
-                      setEditingPhase(null);
-                    }}
-                    className="text-xs border border-black/15 px-4 py-1.5 hover:bg-black/5"
-                  >
-                    Done
+                ) : (
+                  <button type="button" onClick={() => startDictationForPhase(activePhaseTab)}
+                    className="border border-black/15 px-3 py-2 text-xs transition-colors hover:border-black/30">
+                    Voice
                   </button>
-                </div>
-              ) : (
-                <div
-                  draggable
-                  onDragStart={(e) => { setDragPhaseIdx(i); e.dataTransfer.effectAllowed = 'move'; }}
-                  onDragOver={(e) => { e.preventDefault(); if (dragOverPhaseIdx !== i) setDragOverPhaseIdx(i); }}
-                  onDragLeave={() => setDragOverPhaseIdx((cur) => (cur === i ? null : cur))}
-                  onDrop={(e) => { e.preventDefault(); if (dragPhaseIdx !== null) movePhase(dragPhaseIdx, i); setDragPhaseIdx(null); setDragOverPhaseIdx(null); }}
-                  onDragEnd={() => { setDragPhaseIdx(null); setDragOverPhaseIdx(null); }}
-                  className={`flex flex-col gap-3 border px-4 py-4 transition-colors sm:flex-row sm:items-center sm:justify-between sm:px-5 ${dragPhaseIdx === i ? 'opacity-40' : ''} ${dragOverPhaseIdx === i && dragPhaseIdx !== null && dragPhaseIdx !== i ? 'border-black/40 bg-black/[0.03]' : 'border-black/10 hover:border-black/25'}`}
-                >
-                  <button type="button" className="flex-1 text-left" onClick={() => setEditingPhase(i)}>
-                    <div className="flex items-center gap-2">
-                      <span className="cursor-grab text-[0.7rem] text-black/30 select-none" title="Drag to reorder phase">☰</span>
-                      <p className="font-medium text-sm">{ph.title || `Phase ${i + 1}`}</p>
-                      <span className="text-[0.55rem] text-black/25 ml-auto">starts week {startWeek}</span>
-                    </div>
-                    <p className="text-xs text-black/40 mt-0.5">
-                      {ph.weeks ? `${ph.weeks} weeks` : 'Duration not set'}{ph.focus ? ` · ${ph.focus}` : ''}
-                    </p>
-                    {ph.week_blocks && ph.week_blocks.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                        {ph.week_blocks.map((block, bi) => (
-                          <span key={bi} className="flex items-center gap-1">
-                            <span className="text-[0.55rem] text-black/40 border border-black/10 px-1.5 py-0.5">
-                              {block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w
-                            </span>
-                            {bi < (ph.week_blocks?.length ?? 0) - 1 && (
-                              <span className="text-black/20 text-[0.6rem]">→</span>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </button>
-                  <div className="flex flex-wrap items-center gap-3 sm:ml-4">
-                    <button type="button" onClick={() => setEditingPhase(i)}
-                      className="text-xs text-black/40 hover:text-black border border-black/15 px-3 py-1 hover:bg-black/5 transition-colors">Edit</button>
-                    <button type="button" onClick={() => removePhase(i)}
-                      className="text-xs text-red-400 hover:text-red-600">Remove</button>
-                  </div>
+                )}
+              </div>
+              {phase.week_blocks && phase.week_blocks.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {phase.week_blocks.map((block, bi) => {
+                    const currentOneRmMap = typeof validationSummary.one_rm_map === 'object' && validationSummary.one_rm_map !== null ? validationSummary.one_rm_map as Record<string, number> : null;
+                    const kgHints = currentOneRmMap && block.weight_pct
+                      ? Object.entries(currentOneRmMap).map(([ex, oneRm]) => {
+                          const pct = parseFloat(block.weight_pct!.replace('%', ''));
+                          if (!Number.isFinite(pct)) return null;
+                          const kg = Math.round(oneRm * (pct / 100) * 4) / 4;
+                          const short = ex.replace('BB ', '').replace('Pull-up', 'PU');
+                          return `${short} ~${kg}kg`;
+                        }).filter(Boolean).join(' | ')
+                      : null;
+                    return (
+                      <span key={bi} className="flex items-center gap-1">
+                        <span className="flex flex-col border border-black/15 bg-black/[0.03] px-2.5 py-1 text-[0.6rem] uppercase tracking-[0.1em]">
+                          <span>{block.sets ? `${block.sets} sets` : block.weight_pct} · {block.weeks}w</span>
+                          {kgHints && <span className="text-amber-700 normal-case tracking-normal">{kgHints}</span>}
+                        </span>
+                        {bi < (phase.week_blocks?.length ?? 0) - 1 && (
+                          <span className="text-xs text-black/25">→</span>
+                        )}
+                      </span>
+                    );
+                  })}
+                  <span className="ml-1 text-[0.6rem] text-black/30">= {phase.weeks}w total</span>
                 </div>
               )}
             </div>
-            );
-          })}
+          </div>
         </div>
-        <button onClick={addPhase} className="mt-3 border border-black/15 border-dashed px-5 py-3 text-sm text-black/40 hover:border-black/30 hover:text-black transition-colors w-full text-center">
-          + Add phase
-        </button>
-      </div>
+      )}
 
-      {/* Phase Nutrition section */}
-      {nutritionRows.length > 0 && (
-        <div className="mb-8">
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Phase Nutrition</p>
-          <div className="space-y-2">
-            {nutritionRows.map((row) => {
-              const approved = row.review_status === 'approved';
-              const expanded = nutritionExpanded[row.phase_index] ?? false;
-              const recText = extractRecText(row.recommendations);
-              return (
-                <div key={row.phase_index} className={`border ${approved ? 'border-green-200' : 'border-black/10'}`}>
+      {activeNutritionRow && (
+        <div className={`mb-6 border bg-white ${activeNutritionRow.review_status === 'approved' ? 'border-green-200' : 'border-black/15'}`}>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-5 py-4 text-left transition-colors hover:bg-black/[0.02]"
+            onClick={() => setNutritionExpanded((cur) => ({ ...cur, [activeNutritionRow.phase_index]: !cur[activeNutritionRow.phase_index] }))}
+          >
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Nutrition</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                {activeNutritionRow.review_status === 'approved' && <span className="text-xs font-medium text-green-600">✓</span>}
+                <span className="text-sm font-medium">{activeNutritionRow.phase_title}</span>
+                <span className="text-[0.55rem] uppercase tracking-[0.1em] text-black/30">{activeNutritionRow.phase_type}</span>
+              </div>
+            </div>
+            <span className="text-[0.65rem] uppercase tracking-[0.14em] text-black/35">
+              {nutritionExpanded[activeNutritionRow.phase_index] ? 'Hide' : 'Open'}
+            </span>
+          </button>
+          {nutritionExpanded[activeNutritionRow.phase_index] && (
+            <div className="space-y-3 border-t border-black/10 px-5 py-4">
+              {Object.keys(activeNutritionRow.training_context).length > 0 && (
+                <div>
+                  <p className="mb-1 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Training context</p>
+                  <p className="text-xs text-black/50">
+                    {Object.entries(activeNutritionRow.training_context).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                  </p>
+                </div>
+              )}
+              <div>
+                <p className="mb-1 text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Recommendations</p>
+                <textarea
+                  value={extractRecText(activeNutritionRow.recommendations)}
+                  onChange={(e) => {
+                    setNutritionRows((cur) => cur.map((r) =>
+                      r.phase_index === activeNutritionRow.phase_index
+                        ? { ...r, recommendations: { notes: e.target.value }, review_status: 'draft' }
+                        : r
+                    ));
+                  }}
+                  rows={3}
+                  className="w-full resize-none border border-black/10 px-3 py-2 text-xs outline-none focus:border-black/40"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {activeNutritionRow.review_status === 'approved' ? (
+                  <span className="text-xs text-green-600">Phase approved</span>
+                ) : (
                   <button
                     type="button"
-                    className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-black/2 transition-colors"
-                    onClick={() => setNutritionExpanded((cur) => ({ ...cur, [row.phase_index]: !cur[row.phase_index] }))}
+                    onClick={() => void approvePhase(activeNutritionRow.phase_index)}
+                    className="border border-green-600 px-4 py-1.5 text-xs text-green-700 transition-colors hover:bg-green-50"
                   >
-                    <div className="flex items-center gap-3">
-                      {approved && <span className="text-green-600 text-xs font-medium">✓</span>}
-                      <span className="text-sm font-medium">{row.phase_title}</span>
-                      <span className="text-[0.55rem] text-black/30 uppercase tracking-[0.1em]">{row.phase_type}</span>
-                    </div>
-                    <span className="text-black/25 text-[0.6rem]">{expanded ? '▲' : '▼'}</span>
+                    Approve this phase
                   </button>
-                  {expanded && (
-                    <div className="border-t border-black/10 px-4 py-4 space-y-3">
-                      {Object.keys(row.training_context).length > 0 && (
-                        <div>
-                          <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Training context</p>
-                          <p className="text-xs text-black/50">
-                            {Object.entries(row.training_context).map(([k, v]) => `${k}: ${v}`).join(' · ')}
-                          </p>
-                        </div>
-                      )}
-                      <div>
-                        <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35 mb-1">Recommendations</p>
-                        <textarea
-                          value={recText}
-                          onChange={(e) => {
-                            setNutritionRows((cur) => cur.map((r) =>
-                              r.phase_index === row.phase_index
-                                ? { ...r, recommendations: { notes: e.target.value }, review_status: 'draft' }
-                                : r
-                            ));
-                          }}
-                          rows={3}
-                          className="w-full border border-black/10 px-3 py-2 text-xs outline-none focus:border-black/40 resize-none"
-                        />
-                      </div>
-                      {approved ? (
-                        <span className="text-xs text-green-600">Phase approved</span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => void approvePhase(row.phase_index)}
-                          className="text-xs border border-green-600 text-green-700 px-4 py-1.5 hover:bg-green-50 transition-colors"
-                        >
-                          Approve this phase
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {nutritionRows.every((r) => r.review_status === 'approved') && (
-            <button
-              type="button"
-              onClick={() => void openApplyTargets(activePhaseTab)}
-              className="mt-3 w-full border border-black bg-black text-white px-5 py-3 text-sm hover:bg-white hover:text-black transition-colors"
-            >
-              Apply to client daily targets
-            </button>
+                )}
+                {nutritionRows.every((r) => r.review_status === 'approved') && (
+                  <button
+                    type="button"
+                    onClick={() => void openApplyTargets(activePhaseTab)}
+                    className="border border-black bg-black px-4 py-1.5 text-xs text-white transition-colors hover:bg-white hover:text-black"
+                  >
+                    Apply to client daily targets
+                  </button>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -1188,7 +1157,10 @@ export default function PTProgrammeEditView({
       {/* Workouts section */}
       <div>
         <div className="mb-4 flex items-center justify-between gap-3">
-          <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Workouts</p>
+          <div>
+            <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Workouts</p>
+            {phase && <p className="mt-1 text-sm font-medium">{phase.title || `Phase ${activePhaseTab + 1}`}</p>}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {phase && phase.days.length > 0 && (
               <>
@@ -1330,21 +1302,6 @@ export default function PTProgrammeEditView({
           </div>
         )}
         {!voiceBuildOpen && voiceBuildStatus && <p className="mb-4 text-xs text-black/50">{voiceBuildStatus}</p>}
-
-        <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
-          {programme.phases.map((ph, i) => (
-            <button
-              key={ph.id}
-              type="button"
-              onClick={() => { setActivePhaseTab(i); setActiveDay(null); setSelectedDays(new Set()); setSelectMode(false); }}
-              className={`shrink-0 px-4 py-2 text-xs border transition-colors ${
-                activePhaseTab === i ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/30'
-              }`}
-            >
-              {ph.title || `Phase ${i + 1}`}
-            </button>
-          ))}
-        </div>
 
         {phase && (
           boardView ? (
