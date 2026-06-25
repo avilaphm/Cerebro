@@ -382,18 +382,20 @@ export default function PTSessionsView({
   }, [setLogs]);
 
   // Best achieved load per Big-5 lift, used to auto-calc target weights from %.
+  // Pedro logs 1RM testing as a normal workout, so the heaviest set logged for a
+  // lift is the 1RM. We take the max across both the formal 1RM panel and set logs.
   const bestOneRMByLift = useMemo(() => {
     const map = new Map<LiftKey, number>();
-    oneRMResults.forEach((r) => {
-      const cat = liftCategory(r.exercise_name);
-      if (!cat) return;
-      const val = r.load_kg ?? r.estimated_1rm_kg;
-      if (val == null) return;
+    const consider = (name: string, val: number | null | undefined) => {
+      const cat = liftCategory(name);
+      if (!cat || val == null) return;
       const current = map.get(cat);
       if (current == null || val > current) map.set(cat, val);
-    });
+    };
+    oneRMResults.forEach((r) => consider(r.exercise_name, r.load_kg ?? r.estimated_1rm_kg));
+    setLogs.forEach((log) => consider(log.exercise_name, log.weight));
     return map;
-  }, [oneRMResults]);
+  }, [oneRMResults, setLogs]);
 
   const computeTargetWeight = useCallback((exerciseName: string, weightPct?: string | null): number | null => {
     const cat = liftCategory(exerciseName);
