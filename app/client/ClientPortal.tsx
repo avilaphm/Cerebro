@@ -364,6 +364,27 @@ function getExerciseHistoryKey(exercise: PTProgrammeExercise) {
   return exercise.exercise_id ?? exercise.name.toLowerCase();
 }
 
+// Big-5 lifts that carry a 1RM, so a % block can be turned into a real target kg.
+type LiftKey = 'squat' | 'deadlift' | 'bench' | 'pulldown' | 'pullup';
+
+function liftCategory(name: string): LiftKey | null {
+  const n = name.toLowerCase();
+  if (/pull\s*-?\s*down|pulldown|lat\s*pull/.test(n)) return 'pulldown';
+  if (/pull\s*-?\s*ups?|pullups?|chin\s*-?\s*ups?/.test(n)) return 'pullup';
+  if (/squat/.test(n)) return 'squat';
+  if (/dead\s*-?\s*lift/.test(n)) return 'deadlift';
+  if (/bench/.test(n)) return 'bench';
+  return null;
+}
+
+function parsePct(value?: string | null): number | null {
+  if (!value) return null;
+  const match = value.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const n = parseFloat(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
 function getYouTubeId(url: string | null) {
   if (!url) return null;
   try {
@@ -1027,6 +1048,29 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     map.forEach((logs) => logs.sort((a, b) => a.set_number - b.set_number));
     return map;
   }, [setLogs]);
+
+  // Heaviest logged set per Big-5 lift = the client's working 1RM. Used to turn a
+  // phase's "% 1RM" into a concrete target kg the client can actually load.
+  const bestOneRMByLift = useMemo(() => {
+    const map = new Map<LiftKey, number>();
+    setLogs.forEach((log) => {
+      const cat = liftCategory(log.exercise_name);
+      if (!cat || log.weight == null) return;
+      const current = map.get(cat);
+      if (current == null || log.weight > current) map.set(cat, log.weight);
+    });
+    return map;
+  }, [setLogs]);
+
+  const computeTargetWeight = useCallback((exerciseName: string, weightPct?: string | null): number | null => {
+    const cat = liftCategory(exerciseName);
+    if (!cat) return null;
+    const pct = parsePct(weightPct);
+    if (pct == null) return null;
+    const best = bestOneRMByLift.get(cat);
+    if (best == null) return null;
+    return Math.round((best * (pct / 100)) / 2.5) * 2.5;
+  }, [bestOneRMByLift]);
 
   const updateSetDraft = (key: string, patch: Partial<SetDraft>) => {
     setSetDrafts((current) => {
@@ -2454,6 +2498,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       const { exercise, values, section } = item;
       const count = setCounts[exercise.id] ?? parseSets(values.sets);
       const history = lastSetsByExercise.get(getExerciseHistoryKey(exercise)) ?? [];
+      const targetWeight = computeTargetWeight(exercise.name, values.weight_pct);
       const richEx = richExerciseMap[exercise.exercise_id ?? ''] ?? richExerciseByName[exercise.name.trim().toLowerCase()];
       const videoId = getYouTubeId(richEx?.video_url ?? exercise.video_url);
       const panelKey = compactPanelKey(section, exercise);
@@ -2519,7 +2564,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-[0.62rem] uppercase tracking-[0.14em] text-black/35">
-                    {section.title} · {absoluteIndex + 1}/{exerciseScreens.length}
+                    {absoluteIndex + 1} / {exerciseScreens.length}
                   </p>
                   <h3 className="mt-1 text-[1.02rem] font-semibold leading-tight text-black">{exercise.name}</h3>
                   <p className="mt-1 text-xs leading-relaxed text-black/50">
@@ -2577,13 +2622,22 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                   transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                   className="mx-2 mt-[-0.65rem] overflow-hidden rounded-b-[1.5rem] border border-black/10 bg-white/68 px-3 pb-3 pt-5 shadow-[0_16px_34px_-28px_rgba(0,0,0,0.42)] backdrop-blur-xl"
                 >
+                  {targetWeight != null && (
+                    <div className="mb-4 flex items-center justify-between rounded-[1rem] border border-black/12 bg-white/80 px-3.5 py-2.5">
+                      <span className="text-[0.6rem] uppercase tracking-[0.16em] text-black/45">Today&apos;s target</span>
+                      <span className="text-sm font-semibold text-black">{values.weight_pct} · {targetWeight}kg</span>
+                    </div>
+                  )}
                   {history.length > 0 && (
-                    <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
-                      {history.slice(0, Math.max(count, history.length)).map((log) => (
-                        <span key={`${log.id}-${log.set_number}`} className="liquid-chip shrink-0 border px-2.5 py-1 text-[0.68rem] text-black/65">
-                          Set {log.set_number}: {log.weight ?? '-'}kg x {log.reps ?? '-'}
-                        </span>
-                      ))}
+                    <div className="mb-4">
+                      <p className="mb-1.5 text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Last time</p>
+                      <div className="flex gap-1.5 overflow-x-auto pb-2.5">
+                        {history.slice(0, Math.max(count, history.length)).map((log) => (
+                          <span key={`${log.id}-${log.set_number}`} className="liquid-chip shrink-0 border px-2.5 py-1 text-[0.68rem] text-black/65">
+                            Set {log.set_number}: {log.weight ?? '-'}kg x {log.reps ?? '-'}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   )}
                   <div className="space-y-2">
@@ -2675,19 +2729,17 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       );
     };
 
-    const renderCompactSection = (section: WorkoutSectionView, label: string) => {
+    const renderCompactSection = (section: WorkoutSectionView) => {
       const sectionItems = exerciseScreens.filter((screen) => screen.section.id === section.id);
       if (sectionItems.length === 0) return null;
       return (
-        <div key={section.id} className="space-y-2.5">
-          <div className="flex items-end justify-between gap-3 px-1">
-            <div>
-              <p className="text-[0.62rem] uppercase tracking-[0.14em] text-black/35">{label}</p>
-              <h3 className="text-lg font-semibold text-black">{section.title}</h3>
-            </div>
-            <span className="liquid-chip shrink-0 border px-2.5 py-1 text-xs text-black/60">
-              {sectionItems.length} exercise{sectionItems.length === 1 ? '' : 's'}
+        <div key={section.id} className="space-y-3">
+          <div className="flex items-center gap-3 px-1">
+            <span className="h-px flex-1 bg-black/12" />
+            <span className="liquid-chip shrink-0 border px-4 py-1.5 text-sm font-semibold uppercase tracking-[0.16em] text-black/70">
+              {section.title}
             </span>
+            <span className="h-px flex-1 bg-black/12" />
           </div>
           <div className="space-y-2.5">
             {sectionItems.map((item, localIndex) => (
@@ -2745,24 +2797,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           <div className="space-y-7">
             {warmupSections.length > 0 && (
               <div className="space-y-5">
-                {warmupSections.map((section) => renderCompactSection(section, 'Warm up'))}
-              </div>
-            )}
-
-            {warmupSections.length > 0 && mainSections.length > 0 && (
-              <div className="flex items-center gap-3 px-1">
-                <span className="h-px flex-1 bg-black/10" />
-                <span className="liquid-chip border px-3 py-1 text-[0.62rem] uppercase tracking-[0.14em] text-black/55">
-                  Workout
-                </span>
-                <span className="h-px flex-1 bg-black/10" />
+                {warmupSections.map((section) => renderCompactSection(section))}
               </div>
             )}
 
             <div className="space-y-5">
-              {compactMainSections.map((section) => (
-                renderCompactSection(section, warmupSectionIds.has(section.id) ? 'Warm up' : 'Workout')
-              ))}
+              {compactMainSections.map((section) => renderCompactSection(section))}
             </div>
 
             <div className="rounded-[1.5rem] border border-white/70 bg-white/70 p-4 shadow-[0_14px_36px_-26px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-xl">
