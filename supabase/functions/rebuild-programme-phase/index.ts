@@ -366,56 +366,62 @@ Deno.serve(async (req) => {
       review_notes: written.review_notes ?? [],
     });
 
-    const assembled = await assemblePhase(admin, written.phase, context, constraints);
-    const resolvedLoads = resolveLoads(assembled, context.oneRmMap);
-    const audit = auditPhase(assembled, context, written, runId);
+    try {
+      const assembled = await assemblePhase(admin, written.phase, context, constraints);
+      const resolvedLoads = resolveLoads(assembled, context.oneRmMap);
+      const audit = auditPhase(assembled, context, written, runId);
 
-    await appendStep(admin, runId, 'PHASE_VOLUME_PATTERN_AUDIT', {
-      phase_id: assembled.id,
-    }, audit);
-    await appendStep(admin, runId, 'PHASE_GENERATE_REPLACEMENT', {
-      phase_index: phaseIndex,
-      generation_mode: generationMode,
-    }, {
-      phase: assembled,
-      resolved_loads: resolvedLoads,
-      review_notes: written.review_notes ?? [],
-    });
-
-    await admin.from('pt_program_generation_runs').update({
-      current_command: 'PHASE_REBUILD_READY_FOR_REVIEW',
-      status: 'needs_review',
-      programme_draft: { phases: [assembled] },
-      validation_summary: audit,
-      coaching_reasoning: {
-        captured_chat: summarizeMessages(messages),
+      await appendStep(admin, runId, 'PHASE_VOLUME_PATTERN_AUDIT', {
+        phase_id: assembled.id,
+      }, audit);
+      await appendStep(admin, runId, 'PHASE_GENERATE_REPLACEMENT', {
+        phase_index: phaseIndex,
         generation_mode: generationMode,
+      }, {
+        phase: assembled,
+        resolved_loads: resolvedLoads,
+        review_notes: written.review_notes ?? [],
+      });
+
+      await admin.from('pt_program_generation_runs').update({
+        current_command: 'PHASE_REBUILD_READY_FOR_REVIEW',
+        status: 'needs_review',
+        programme_draft: { phases: [assembled] },
+        validation_summary: audit,
+        coaching_reasoning: {
+          captured_chat: summarizeMessages(messages),
+          generation_mode: generationMode,
+          questions_answered: written.questions_answered ?? [],
+          assumptions: written.assumptions ?? [],
+          review_notes: written.review_notes ?? [],
+        },
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', runId);
+
+      return json({
+        ok: true,
+        run_id: runId,
+        phase: assembled,
+        one_rm_map: context.oneRmMap,
+        resolved_loads: resolvedLoads,
         questions_answered: written.questions_answered ?? [],
         assumptions: written.assumptions ?? [],
         review_notes: written.review_notes ?? [],
-      },
-      completed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).eq('id', runId);
-
-    return json({
-      ok: true,
-      run_id: runId,
-      phase: assembled,
-      one_rm_map: context.oneRmMap,
-      resolved_loads: resolvedLoads,
-      questions_answered: written.questions_answered ?? [],
-      assumptions: written.assumptions ?? [],
-      review_notes: written.review_notes ?? [],
-      weekly_set_volume: audit.weekly_set_volume,
-      movement_pattern_coverage: audit.movement_pattern_coverage,
-      generation_mode: generationMode,
-      split_selected: audit.split_selected,
-      unilateral_bilateral_balance: audit.unilateral_bilateral_balance,
-      client_needs_applied: audit.client_needs_applied,
-      web_research_used: Boolean(written.web_research_used),
-      matched_count: assembled.days.flatMap((d) => d.exercises).filter((e) => e.exercise_id).length,
-    });
+        weekly_set_volume: audit.weekly_set_volume,
+        movement_pattern_coverage: audit.movement_pattern_coverage,
+        generation_mode: generationMode,
+        split_selected: audit.split_selected,
+        unilateral_bilateral_balance: audit.unilateral_bilateral_balance,
+        client_needs_applied: audit.client_needs_applied,
+        web_research_used: Boolean(written.web_research_used),
+        matched_count: assembled.days.flatMap((d) => d.exercises).filter((e) => e.exercise_id).length,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Could not assemble the adapted phase.';
+      await markRunFailed(admin, runId, reason);
+      return json({ error: reason }, 500);
+    }
   } catch (error) {
     console.error('rebuild-programme-phase error:', error);
     return json({ error: error instanceof Error ? error.message : 'Phase rebuild failed.' }, 500);
@@ -1357,6 +1363,7 @@ async function assemblePhase(admin: ReturnType<typeof createClient>, parsed: Pha
         id: `ex-${dayIndex + 1}-${exIndex + 1}-${slug(row?.name ?? name)}`,
         exercise_id: row?.id ?? null,
         name: row?.name ?? name,
+        section,
         sets: String(ex.sets ?? '3'),
         reps: String(ex.reps ?? '8-12'),
         rest: String(ex.rest ?? ''),
@@ -1451,7 +1458,7 @@ function calculateWeeklySetVolume(phase: Phase, library: LibraryRow[]): Record<s
 }
 
 function musclesFor(ex: Exercise, row: LibraryRow | null): string[] {
-  const direct = [...(row?.primary_muscles ?? []), ...(row?.muscles ?? [])].map((m) => normalMuscle(m)).filter(Boolean);
+  const direct = [...asStringArray(row?.primary_muscles), ...asStringArray(row?.muscles)].map((m) => normalMuscle(m)).filter(Boolean);
   if (direct.length > 0) return [...new Set(direct)];
   const pattern = sanitizePattern(ex.pattern) ?? inferPattern(ex.name ?? '', row);
   if (pattern.includes('push')) return ['chest', 'shoulders', 'triceps'];
@@ -1464,7 +1471,7 @@ function musclesFor(ex: Exercise, row: LibraryRow | null): string[] {
 }
 
 function normalMuscle(muscle: string): string {
-  const lower = muscle.toLowerCase();
+  const lower = String(muscle ?? '').toLowerCase();
   if (lower.includes('quad')) return 'quads';
   if (lower.includes('ham')) return 'hamstrings';
   if (lower.includes('glute')) return 'glutes';
@@ -1523,9 +1530,20 @@ function sanitizePattern(value: unknown): string | null {
   return (PATTERNS as readonly string[]).includes(text) ? text : null;
 }
 
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item ?? '')).filter(Boolean);
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  return [];
+}
+
 function inferPattern(name: string, row: LibraryRow | null): string {
   const lower = name.toLowerCase();
-  const tags = [...(row?.tags ?? []), ...(row?.primary_muscles ?? []), ...(row?.secondary_muscles ?? []), ...(row?.muscles ?? [])].join(' ').toLowerCase();
+  const tags = [
+    ...asStringArray(row?.tags),
+    ...asStringArray(row?.primary_muscles),
+    ...asStringArray(row?.secondary_muscles),
+    ...asStringArray(row?.muscles),
+  ].join(' ').toLowerCase();
   const haystack = `${lower} ${tags}`;
   if (haystack.includes('single arm') || haystack.includes('single-arm') || haystack.includes('one arm')) {
     if (haystack.includes('row') || haystack.includes('pull')) return 'single_arm_pull';

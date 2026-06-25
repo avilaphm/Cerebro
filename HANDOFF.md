@@ -1,12 +1,46 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Added adapt-current mode to the programme phase agent.
+2026-06-25 by Codex - Fixed adapt-current phase assembly crash.
 
 ## Last code fix commit
-this commit - add adapt-current mode to phase agent
+this commit - fix adapt-current phase assembly
 
 ## What just happened (read first)
+
+### Adapt-current non-2xx fix (2026-06-25, LATEST)
+
+Pedro clicked `Adapt current phase` for Olga and the UI showed `Edge Function returned a non-2xx status code`.
+
+Observed in Supabase:
+- `rebuild-programme-phase` v7 returned HTTP 500.
+- The run `0139557e-0bb4-4b9e-aa87-f8951b480eb2` reached:
+  - `PHASE_CONTEXT_READER`
+  - `PHASE_ADAPT_CURRENT`
+  - `PHASE_STRUCTURE_PLANNER`
+- It crashed after that during final assembly/audit/response and was left stuck as `running`.
+
+Shipped:
+- Final assembly now stores `section` on every mapped exercise, not only `section_start`, so old programme JSON with section carry-forward is classified correctly.
+- Muscle/tag metadata parsing is defensive; malformed/non-array exercise metadata cannot crash the audit.
+- The post-adapter assembly/audit/update block now has its own catch:
+  - marks the run as `failed`,
+  - saves the exact error to `failure_reason`,
+  - returns `{ error: reason }` instead of a generic non-2xx.
+- Marked the stale v7 Olga run as failed with a retry note.
+
+Deployment:
+- Deployed `rebuild-programme-phase` ACTIVE v8 on Supabase project `otcnrkfvgyvwolironoz`.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes.
+- `git diff --check` passes.
+- `supabase functions list` confirms `rebuild-programme-phase` ACTIVE v8.
+
+Notes:
+- No schema migration was needed.
+- Retry `Adapt current phase`; if any hidden issue remains, v8 will show the exact assembly error instead of the generic Edge Function message.
 
 ### Phase agent adapt-current mode (2026-06-25, LATEST)
 
