@@ -1,12 +1,41 @@
 # Handoff
 
 ## Last updated
-2026-06-25 by Codex - Fixed adapt-current duplicate exercise failure with per-exercise resolver.
+2026-06-27 by Codex - Enforced requested phase day counts, hardened saves, and fixed board overflow.
 
 ## Last code fix commit
-this commit - make adapt-current missing exercise creation non-fatal
+this commit - enforce programme day count and reliable saves
 
 ## What just happened (read first)
+
+### Programme day-count, save, and board reliability (2026-06-27, LATEST)
+
+Pedro asked the programme agent for three full-body days for Annalise Knight. The chat captured three days, but the writer timed out and the deterministic fallback returned five. Manual corrections then failed to save with `TypeError: Failed to fetch`, and five equal-width board columns compressed exercise cards beyond their day columns.
+
+Shipped:
+- `rebuild-programme-phase` now treats the structured chat `days_requested` value as authoritative.
+- Day-count parsing checks the latest coach messages first and supports numeric words plus phrases such as `3 times per week`, `3-day`, and `three full-body days`.
+- Writer output has an exact-day contract, and a post-generation guard replaces mismatched output with the deterministic exact-count fallback.
+- Added an authenticated same-origin programme PATCH route. It saves the programme first, retries transient browser failures once, and reports optional nutrition/note/event failures as warnings instead of losing the main save.
+- Board view uses fixed 17rem day columns inside horizontal overflow, with wrapping and width containment on exercise cards.
+- Corrected Annalise Knight's live Phase 2 to three full-body days with 27 linked exercise cards, three warm-ups per day, and no superset containing two main lifts.
+
+Deployment:
+- Deployed `rebuild-programme-phase` to Supabase.
+- Deployed the production app to `https://cerebroai.au`.
+
+Verification:
+- Annalise's assignment has exactly 3 days: Full Body A, B, and C.
+- All 27 exercises have library IDs.
+- Each day has exactly 3 warm-ups.
+- Main-lift superset conflict query returns zero rows.
+- `npx tsc --noEmit --pretty false` passes.
+- `npm run build` passes.
+- New production PATCH route is live and rejects unauthenticated writes with HTTP 401.
+- `git diff --check` passes.
+
+Notes:
+- The browser used by automated Playwright does not share Pedro's authenticated Chrome session, so authenticated visual interaction was not available. Production data, route availability, type checking, and the production build were verified directly.
 
 ### Adapt-current duplicate exercise non-fatal resolver (2026-06-25, LATEST)
 

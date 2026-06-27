@@ -279,6 +279,8 @@ Deno.serve(async (req) => {
     if (messages.filter((message) => message.role === 'user').length === 0) {
       return json({ error: 'Send at least one message before generating.' }, 400);
     }
+    const captured = await loadChatCaptured(admin, runId);
+    const requestedDayCount = inferRequestedDayCount(messages, context.selectedPhase, captured);
     const constraints = inferGenerationConstraints(context, messages);
     const generationMode = inferGenerationMode(messages, constraints);
 
@@ -326,7 +328,7 @@ Deno.serve(async (req) => {
       try {
         written = await claudeJson<WrittenPhase>(anthropic, {
           system: WRITE_SYSTEM,
-          user: buildWritePrompt(context, messages, knowledgeContext, constraints),
+          user: buildWritePrompt(context, messages, knowledgeContext, constraints, captured, requestedDayCount),
           maxTokens: 4200,
           timeoutMs: 32_000,
         });
@@ -336,9 +338,10 @@ Deno.serve(async (req) => {
           : error instanceof Error
             ? `AI writer failed: ${error.message}. Deterministic fallback phase was created.`
             : 'AI writer failed; deterministic fallback phase was created.';
-        written = buildDeterministicPhase(context, messages, fallbackReason, constraints);
+        written = buildDeterministicPhase(context, messages, fallbackReason, constraints, requestedDayCount);
         await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
           reason: fallbackReason,
+          requested_day_count: requestedDayCount,
         }, {
           phase: written.phase,
           assumptions: written.assumptions ?? [],
@@ -347,9 +350,38 @@ Deno.serve(async (req) => {
       }
     }
     if (!written?.phase?.days || !Array.isArray(written.phase.days)) {
-      written = buildDeterministicPhase(context, messages, 'AI writer returned an incomplete phase; deterministic fallback phase was created.', constraints);
+      written = buildDeterministicPhase(
+        context,
+        messages,
+        'AI writer returned an incomplete phase; deterministic fallback phase was created.',
+        constraints,
+        requestedDayCount,
+      );
       await appendStep(admin, runId, 'PHASE_WRITER_FALLBACK', {
         reason: 'AI writer returned an incomplete phase.',
+        requested_day_count: requestedDayCount,
+      }, {
+        phase: written.phase,
+        assumptions: written.assumptions ?? [],
+        review_notes: written.review_notes ?? [],
+      });
+    }
+    if (
+      generationMode === 'rebuild_phase'
+      && written.phase.days.length !== requestedDayCount
+    ) {
+      const returnedDayCount = written.phase.days.length;
+      written = buildDeterministicPhase(
+        context,
+        messages,
+        `Generated ${returnedDayCount} days, but Pedro requested ${requestedDayCount}. A corrected deterministic phase was created.`,
+        constraints,
+        requestedDayCount,
+      );
+      await appendStep(admin, runId, 'PHASE_DAY_COUNT_CORRECTION', {
+        requested_day_count: requestedDayCount,
+        returned_day_count: returnedDayCount,
+        captured_days_requested: captured.days_requested ?? null,
       }, {
         phase: written.phase,
         assumptions: written.assumptions ?? [],
@@ -359,6 +391,8 @@ Deno.serve(async (req) => {
 
     await appendStep(admin, runId, 'PHASE_STRUCTURE_PLANNER', {
       messages,
+      captured,
+      requested_day_count: requestedDayCount,
       knowledge_context: knowledgeContext,
       equipment_constraints: constraints,
       generation_mode: generationMode,
@@ -642,6 +676,24 @@ async function loadChatMessages(admin: ReturnType<typeof createClient>, runId: s
   });
 }
 
+async function loadChatCaptured(admin: ReturnType<typeof createClient>, runId: string): Promise<Record<string, unknown>> {
+  const { data } = await admin
+    .from('pt_program_generation_steps')
+    .select('input_json')
+    .eq('run_id', runId)
+    .eq('command_name', 'PHASE_CHAT_AGENT_QUESTION')
+    .order('step_order', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const input = typeof data?.input_json === 'object' && data.input_json !== null
+    ? data.input_json as Record<string, unknown>
+    : {};
+  return typeof input.captured === 'object' && input.captured !== null
+    ? input.captured as Record<string, unknown>
+    : {};
+}
+
 function buildChatPrompt(context: Context, messages: ChatMessage[]) {
   return JSON.stringify({
     chat_messages: messages,
@@ -659,9 +711,22 @@ function buildChatPrompt(context: Context, messages: ChatMessage[]) {
   });
 }
 
-function buildWritePrompt(context: Context, messages: ChatMessage[], knowledgeContext: Record<string, unknown>, constraints: GenerationConstraints) {
+function buildWritePrompt(
+  context: Context,
+  messages: ChatMessage[],
+  knowledgeContext: Record<string, unknown>,
+  constraints: GenerationConstraints,
+  captured: Record<string, unknown>,
+  requestedDayCount: number,
+) {
   return JSON.stringify({
     chat_messages: messages,
+    captured_plan: captured,
+    requested_day_count: requestedDayCount,
+    hard_output_contract: {
+      exact_day_count: requestedDayCount,
+      reject_other_day_counts: true,
+    },
     selected_phase_index: context.phaseIndex,
     selected_phase: compactPhase(context.selectedPhase),
     existing_programme_outline: compactProgramme(context),
@@ -792,8 +857,14 @@ function selectRelevantLibraryNames(context: Context, messages: ChatMessage[]) {
   return picked;
 }
 
-function buildDeterministicPhase(context: Context, messages: ChatMessage[], reason: string, constraints: GenerationConstraints): WrittenPhase {
-  const dayCount = inferRequestedDayCount(messages, context.selectedPhase);
+function buildDeterministicPhase(
+  context: Context,
+  messages: ChatMessage[],
+  reason: string,
+  constraints: GenerationConstraints,
+  requestedDayCount?: number,
+): WrittenPhase {
+  const dayCount = requestedDayCount ?? inferRequestedDayCount(messages, context.selectedPhase);
   const phaseTitle = context.selectedPhase?.title ?? `${dayCount}-day rebuilt phase`;
   const phaseFocus = context.selectedPhase?.focus || `${inferSplit(dayCount)} with main lifts separated into their own supersets.`;
   const days = dayCount <= 3
@@ -867,14 +938,41 @@ function clonePhase(phase: Phase | null): Phase | null {
   return JSON.parse(JSON.stringify(phase)) as Phase;
 }
 
-function inferRequestedDayCount(messages: ChatMessage[], selectedPhase: Phase | null): number {
-  const text = messages.map((message) => message.content).join('\n').toLowerCase();
-  const match = text.match(/\b([2-5])\s*(?:day|days|workout|workouts|session|sessions)\b/);
-  if (match) return clampDayCount(Number(match[1]));
-  const perWeekMatch = text.match(/\b([2-5])\s*(?:x|times)\s*(?:per|a)?\s*week\b/);
-  if (perWeekMatch) return clampDayCount(Number(perWeekMatch[1]));
+function inferRequestedDayCount(
+  messages: ChatMessage[],
+  selectedPhase: Phase | null,
+  captured: Record<string, unknown> = {},
+): number {
+  const userMessages = messages.filter((message) => message.role === 'user').reverse();
+  for (const message of userMessages) {
+    const text = normaliseCountWords(message.content.toLowerCase());
+    const patterns = [
+      /\b(?:only\s+)?([2-5])\s*(?:days?|workouts?|sessions?)\s*(?:per|a)\s*week\b/,
+      /\b(?:only\s+)?([2-5])\s*(?:x|times)\s*(?:per|a)?\s*week\b/,
+      /\b(?:only\s+)?([2-5])[-\s]*(?:day|days)\s*(?:workout|training|programme|program)?\s*(?:week)?\b/,
+      /\b(?:only\s+)?([2-5])\s+(?:full[-\s]?body\s+)?days?\b/,
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) return clampDayCount(Number(match[1]));
+    }
+  }
+  const capturedCount = Number(captured.days_requested);
+  if (Number.isFinite(capturedCount) && capturedCount >= 2 && capturedCount <= 5) {
+    return clampDayCount(capturedCount);
+  }
   const selectedCount = selectedPhase?.days?.length ?? 0;
   return clampDayCount(selectedCount || 3);
+}
+
+function normaliseCountWords(value: string): string {
+  const numbers: Record<string, string> = {
+    two: '2',
+    three: '3',
+    four: '4',
+    five: '5',
+  };
+  return value.replace(/\b(two|three|four|five)\b/g, (word) => numbers[word] ?? word);
 }
 
 function clampDayCount(value: number) {

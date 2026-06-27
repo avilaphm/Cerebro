@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import {
   appendDaysToFoundationPhase,
-  countProgrammeWeeks,
   formatWeekBlocks,
   getCursorForWeeksLeft,
   getPhaseStartWeeks,
@@ -102,6 +101,12 @@ interface PhaseRebuildPayload {
   error?: string;
 }
 
+interface ProgrammeSavePayload {
+  ok?: boolean;
+  warnings?: string[];
+  error?: string;
+}
+
 type VoiceBuildBusyMode = 'chat' | 'generate' | null;
 
 interface PhaseNutritionRow {
@@ -146,6 +151,45 @@ async function resolveFunctionErrorMessage(error: unknown, fallback: string): Pr
     }
   }
   return err.message ?? fallback;
+}
+
+async function saveProgrammeWithRetry(
+  assignmentId: string,
+  body: Record<string, unknown>,
+): Promise<ProgrammeSavePayload> {
+  const requestBody = JSON.stringify(body);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch(`/api/pt/programmes/${assignmentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody,
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({})) as ProgrammeSavePayload;
+      if (response.ok && payload.ok) return payload;
+
+      const error = new Error(payload.error || `Could not save the programme (${response.status}).`);
+      if (attempt === 0 && response.status >= 500) {
+        lastError = error;
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        continue;
+      }
+      throw error;
+    } catch (error) {
+      const caught = error instanceof Error ? error : new Error('Could not save the programme.');
+      if (attempt === 0 && (caught instanceof TypeError || /failed to fetch/i.test(caught.message))) {
+        lastError = caught;
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        continue;
+      }
+      throw caught;
+    }
+  }
+
+  throw lastError ?? new Error('Could not save the programme.');
 }
 
 function inferPhaseBuilderMode(messages: PhaseRebuildChatMessage[], brief = ''): 'adapt_current' | 'rebuild_phase' {
@@ -715,83 +759,37 @@ export default function PTProgrammeEditView({
     setSaving(true);
     const publishing = nextStatus === 'active' && assignmentStatus !== 'active';
     setStatus(publishing ? 'Publishing…' : 'Saving…');
-    if (publishing) {
-      await supabase
-        .from('pt_program_assignments')
-        .update({ status: 'paused' })
-        .eq('client_id', initial.client_id)
-        .eq('status', 'active')
-        .neq('id', initial.id);
-    }
-    const { error } = await supabase
-      .from('pt_program_assignments')
-      .update({
+    try {
+      const result = await saveProgrammeWithRetry(initial.id, {
         name: progName.trim(),
         goal: progGoal.trim() || null,
-        duration_weeks: countProgrammeWeeks(programme),
-        phase_count: programme.phases.length,
         status: nextStatus,
         programme,
         generation_run_id: generationRunId,
-        coach_review_status: 'approved',
         validation_summary: validationSummary,
-        ...(cursorChanged ? {
-          current_phase_index: cursor.phaseIndex,
-          current_block_index: cursor.blockIndex,
-          current_week: cursor.week,
-        } : {}),
-      })
-      .eq('id', initial.id);
-    if (error) {
-      setStatus(`Error: ${error.message}`);
-      setSaving(false);
-    } else {
-      if (nutritionRows.length > 0) {
-        await supabase.from('pt_phase_nutrition').upsert(
-          nutritionRows.map((row) => ({
-            ...(row.id ? { id: row.id } : {}),
-            client_id: initial.client_id,
-            assignment_id: initial.id,
-            generation_run_id: generationRunId,
-            phase_index: row.phase_index,
-            phase_title: row.phase_title,
-            phase_type: row.phase_type,
-            training_context: row.training_context,
-            recommendations: row.recommendations,
-            review_status: row.review_status,
-          })),
-          { onConflict: 'assignment_id,phase_index' },
-        );
-      }
-      if (highlight?.note) {
-        await supabase.from('pt_client_notes').update({ is_active: false }).eq('id', highlight.note);
-      }
-      if (cursorChanged) {
-        await supabase.from('pt_events').insert({
-          client_id: initial.client_id,
-          assignment_id: initial.id,
-          event_type: 'programme_position_changed',
-          metadata: {
-            source: 'programme_edit',
-            assignment_name: progName.trim(),
-            from: {
-              phase_index: initial.current_phase_index,
-              block_index: initial.current_block_index,
-              week: initial.current_week,
-            },
-            to: {
-              phase_index: cursor.phaseIndex,
-              phase_title: programme.phases[cursor.phaseIndex]?.title ?? null,
-              block_index: cursor.blockIndex,
-              week: cursor.week,
-              weeks_left: boundedCursorWeeksLeft,
-            },
-          },
-        });
-      }
+        cursor: {
+          changed: cursorChanged,
+          phase_index: cursor.phaseIndex,
+          block_index: cursor.blockIndex,
+          week: cursor.week,
+          weeks_left: boundedCursorWeeksLeft,
+        },
+        nutrition_rows: nutritionRows,
+        highlight_note_id: highlight?.note ?? null,
+      });
       setAssignmentStatus(nextStatus);
-      setStatus(publishing ? 'Published to client.' : 'Saved.');
+      const warning = result.warnings?.[0];
+      setStatus(warning || (publishing ? 'Published to client.' : 'Saved.'));
       setTimeout(() => router.push(`/dashboard/pt/clients/${initial.client_id}`), 800);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save the programme.';
+      setStatus(
+        /failed to fetch/i.test(message)
+          ? 'Connection failed while saving. Your edits are still here; press Save changes to retry.'
+          : `Could not save: ${message}`,
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1444,13 +1442,14 @@ export default function PTProgrammeEditView({
                 const dayBands = phase.days.map((d) => groupBands(d.exercises));
                 const maxBands = Math.max(1, ...dayBands.map((b) => b.length));
                 return (
-              <div
-                className="grid gap-x-3"
-                style={{
-                  gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(0, 1fr))`,
-                  gridTemplateRows: `auto repeat(${maxBands}, auto)`,
-                }}
-              >
+              <div className="overflow-x-auto pb-3">
+                <div
+                  className="grid min-w-max gap-x-3"
+                  style={{
+                    gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, 17rem)`,
+                    gridTemplateRows: `auto repeat(${maxBands}, auto)`,
+                  }}
+                >
                 {phase.days.map((day, di) => (
                   <div
                     key={day.id}
@@ -1458,7 +1457,7 @@ export default function PTProgrammeEditView({
                     onDragLeave={() => setDragOverDay((c) => (c === di ? null : c))}
                     onDrop={(e) => { e.preventDefault(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di); setDragEx(null); setDragOverDay(null); }}
                     style={{ gridRow: `1 / span ${maxBands + 1}`, gridTemplateRows: 'subgrid' }}
-                    className={`grid rounded-lg border p-2 transition-colors ${
+                    className={`grid min-w-0 rounded-lg border p-2 transition-colors ${
                       selectedDays.has(di) ? 'border-black/35 bg-black/[0.03]' :
                       dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' :
                       'border-black/10 bg-black/[0.01]'
@@ -1513,12 +1512,12 @@ export default function PTProgrammeEditView({
                                 setDragEx(null);
                                 setDragOverDay(null);
                               }}
-                              className={`relative rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${isEditing ? 'border-black/30' : dragEx?.exId === ex.id ? 'cursor-grab opacity-40 border-black/10' : 'cursor-grab border-black/10 hover:border-black/25'}`}
+                              className={`relative max-w-full min-w-0 rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${isEditing ? 'border-black/30' : dragEx?.exId === ex.id ? 'cursor-grab opacity-40 border-black/10' : 'cursor-grab border-black/10 hover:border-black/25'}`}
                             >
                               {isEditing ? (
                                 <div onMouseDown={(e) => e.stopPropagation()}>
                                   <div className="flex items-center gap-1">
-                                    <div className="relative flex-1">
+                                    <div className="relative min-w-0 flex-1">
                                       <input
                                         autoFocus
                                         draggable={false}
@@ -1567,9 +1566,9 @@ export default function PTProgrammeEditView({
                                 </div>
                               ) : (
                                 <>
-                                  <div className="flex items-start gap-1.5 leading-tight">
+                                  <div className="flex min-w-0 flex-wrap items-start gap-1.5 leading-tight">
                                     <p
-                                      className="font-medium cursor-text hover:text-black/60"
+                                      className="min-w-0 flex-1 cursor-text break-words font-medium [overflow-wrap:anywhere] hover:text-black/60"
                                       onMouseDown={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
@@ -1610,6 +1609,7 @@ export default function PTProgrammeEditView({
                     )}
                   </div>
                 ))}
+                </div>
               </div>
                 );
               })()}
