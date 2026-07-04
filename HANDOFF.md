@@ -1,12 +1,28 @@
 # Handoff
 
 ## Last updated
-2026-06-27 by Codex - Enforced requested phase day counts, hardened saves, and fixed board overflow.
+2026-07-04 by Claude - Cerebro Studio Phase 1 built (screen+camera recorder, /dashboard/studio). Awaiting Pedro's browser test.
 
 ## Last code fix commit
-this commit - enforce programme day count and reliable saves
+this commit - Cerebro Studio Phase 1: capture + compositing + Layout 1 + record + download
 
 ## What just happened (read first)
+
+### Cerebro Studio Phase 1 (2026-07-04, LATEST)
+
+New self-contained in-browser screen + camera recorder for the MAIN dashboard (not PT). PRD: `Cerebro Knowledge/cerebro-studio-prd.md`.
+
+Route decision: PRD says `/studio`; built at **`/dashboard/studio`** so it inherits the dashboard admin gate + sidebar without restructuring routing (flagged to Pedro). Only two existing files touched beyond the feature folder: `app/dashboard/Sidebar.tsx` (added Studio nav item, glyph `⏺`) and `app/globals.css` (added a `.cerebro-studio`-scoped block so the recorder's square controls opt out of the global pill-button rules; it is scoped and cannot affect other pages).
+
+Feature folder `app/dashboard/studio/`: `page.tsx`, `StudioApp.tsx` (orchestrator + setup/recording/review UI), hooks `useMediaStreams` / `useCompositor` / `useRecorder`, plus `layouts.ts`, `audio.ts`, `types.ts`. No PT code, no Supabase, no backend, no DB changes.
+
+Phase 1 scope shipped: camera/mic device pickers (`enumerateDevices`), screen share via `getDisplayMedia`, system-audio toggle (default off, silent-fail), live canvas compositing of Layout 1 (screen letterboxed + rounded camera bubble, cover-cropped, bottom-right), merged mic audio via Web Audio, `MediaRecorder` vp9→vp8 fallback @ 8 Mbps, record/stop, review with playback + duration + size, download `cerebro-studio-YYYY-MM-DD-HHmm.webm`, WebM→MP4 note, inline permission errors with Retry, native "Stop sharing" finalizes gracefully. Landscape 1080p only in Phase 1. `layouts.ts` already draws layouts 2/3 (pure fns) but no UI/hotkeys reach them yet.
+
+All capture tracks stopped on unmount / discard / record-again / screen-end (no orphaned camera light). Canvas is the single preview+record source, so it is deliberately NOT mirrored (recorded output must never mirror).
+
+Verification: `npx tsc --noEmit` clean, `npx eslint` clean (fixed two React 19 set-state-in-effect findings properly), `npm run build` passes with `/dashboard/studio` registered. Browser recording flow (real camera/screen permissions) is UNVERIFIED by me; that is Pedro's test now.
+
+NEXT (do not start until Pedro confirms Phase 1): Phase 2 = Layouts 2 & 3, hotkeys 1/2/3, spacebar cycle, countdown, pause/resume, Esc-to-stop, keyboard legend. Then Phase 3 = orientation picker (portrait), camera position + size pickers, Document PiP control panel, review polish.
 
 ### Programme day-count, save, and board reliability (2026-06-27, LATEST)
 

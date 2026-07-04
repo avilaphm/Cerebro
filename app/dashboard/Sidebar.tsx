@@ -12,6 +12,7 @@ const NAV = [
   { label: 'Templates', href: '/dashboard/templates', icon: '✉' },
   { label: 'Bookings',  href: '/dashboard/bookings',  icon: '⌖' },
   { label: 'Blog',      href: '/dashboard/blog',      icon: '◻' },
+  { label: 'Studio',    href: '/dashboard/studio',    icon: '⏺' },
   { label: 'Social',    href: '/dashboard/social',    icon: '◇' },
   { label: 'Settings',  href: '/dashboard/social/settings', icon: '◉' },
 ];

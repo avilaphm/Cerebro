@@ -608,3 +608,16 @@ body::before {
 .liquid-dashboard main .ml-dossier-record-button * {
   color: inherit !important;
 }
+
+/* Cerebro Studio — self-contained screen + camera recorder. Scoped entirely
+   under .cerebro-studio so it cannot affect any other dashboard page. The
+   recorder is a media tool with square controls, so it opts out of the global
+   pill-button radius and the enforced 2.35rem min-height; the buttons carry
+   their own Tailwind padding. */
+.liquid-dashboard main .cerebro-studio button {
+  border-radius: 12px;
+  min-height: 0;
+}
+.liquid-dashboard main .cerebro-studio select {
+  border-radius: 12px !important;
+}
