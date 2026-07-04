@@ -207,15 +207,34 @@ export default function StudioApp() {
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         {/* Stage — the exact frame that records */}
         <div className="relative overflow-hidden rounded-2xl bg-[#111] shadow-[0_18px_45px_-28px_rgba(0,0,0,0.6)]">
+          {/* Source feeds the compositor draws from. Mounted full-size and
+              fully opaque so Chrome keeps decoding the camera (a hidden or
+              transparent camera feed is suspended); the opaque canvas paints
+              on top, so these are never actually seen. */}
+          <video
+            ref={screenVideoRef}
+            autoPlay
+            muted
+            playsInline
+            className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
+          />
+          <video
+            ref={cameraVideoRef}
+            autoPlay
+            muted
+            playsInline
+            className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
+          />
+
           <canvas
             ref={canvasRef}
             width={1920}
             height={1080}
-            className="block aspect-video w-full"
+            className="relative z-10 block aspect-video w-full"
           />
 
           {phase !== 'review' && !screenStream && (
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
+            <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 text-center">
               <Monitor className="h-8 w-8 text-white/50" strokeWidth={1.4} />
               <p className="max-w-xs px-6 text-sm text-white/70">
                 Share your screen to see the full Layout 1 preview.
@@ -224,7 +243,7 @@ export default function StudioApp() {
           )}
 
           {phase === 'recording' && (
-            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 backdrop-blur-sm">
+            <div className="absolute left-4 top-4 z-20 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 backdrop-blur-sm">
               <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
               <span className="font-mono text-sm tabular-nums text-white">
                 {formatDuration(recorder.elapsedMs)}
@@ -295,23 +314,6 @@ export default function StudioApp() {
         </div>
       )}
 
-      {/* Off-screen capture sources for the compositor. Rendered (NOT
-          display:none) so Chrome keeps decoding the camera feed — a hidden
-          camera video stalls below readyState 2 and never draws. */}
-      <video
-        ref={cameraVideoRef}
-        autoPlay
-        muted
-        playsInline
-        className="pointer-events-none fixed bottom-0 right-0 h-px w-px opacity-0"
-      />
-      <video
-        ref={screenVideoRef}
-        autoPlay
-        muted
-        playsInline
-        className="pointer-events-none fixed bottom-0 right-0 h-px w-px opacity-0"
-      />
     </div>
   );
 }
