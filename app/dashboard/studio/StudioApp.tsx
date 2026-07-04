@@ -295,9 +295,23 @@ export default function StudioApp() {
         </div>
       )}
 
-      {/* Hidden capture sources for the compositor */}
-      <video ref={cameraVideoRef} className="hidden" playsInline muted />
-      <video ref={screenVideoRef} className="hidden" playsInline muted />
+      {/* Off-screen capture sources for the compositor. Rendered (NOT
+          display:none) so Chrome keeps decoding the camera feed — a hidden
+          camera video stalls below readyState 2 and never draws. */}
+      <video
+        ref={cameraVideoRef}
+        autoPlay
+        muted
+        playsInline
+        className="pointer-events-none fixed bottom-0 right-0 h-px w-px opacity-0"
+      />
+      <video
+        ref={screenVideoRef}
+        autoPlay
+        muted
+        playsInline
+        className="pointer-events-none fixed bottom-0 right-0 h-px w-px opacity-0"
+      />
     </div>
   );
 }

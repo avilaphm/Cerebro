@@ -1,14 +1,22 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening Phase 1 laptop-first build checklist persisted. Implementation not started.
+2026-07-04 by Claude - Cerebro Studio camera-bubble bugfix. (Codex also active on Movement Screening, entry below.)
 
 ## Last code fix commit
-0485aca - Cerebro Studio Phase 1: screen + camera recorder (/dashboard/studio)
+this commit - Cerebro Studio: fix missing camera bubble (off-screen video decode)
 
 ## What just happened (read first)
 
-### Movement Screening Phase 1 persistent plan (2026-07-04, LATEST)
+### Cerebro Studio camera-bubble bugfix (2026-07-04, Claude)
+
+Studio has its own live tracker: `Cerebro Knowledge/cerebro-studio-todo.md` (read that to resume Studio work; this is just a pointer).
+
+Phase 1 shipped in 0485aca. Pedro tested: screen + audio work; recording other Chrome tabs/windows while the Studio tab stays open works with no freeze; navigating the Cerebro app in the same tab stops recording (accepted limitation). Bug found: the camera face bubble never rendered. Cause: the hidden (display:none) camera source `<video>` stalled below readyState 2 in Chrome (a hidden camera feed is deprioritised, unlike the screen-capture feed which keeps decoding). Fix: the off-screen source videos are now rendered (1px, opacity 0, not display:none) with autoPlay, so the camera decodes and the bubble draws. tsc/eslint/build clean. Awaiting Pedro's retest of the bubble.
+
+NEXT for Studio: Phase 2 (Layouts 2 & 3, hotkeys 1/2/3, spacebar cycle, countdown, pause/resume, Esc, legend) once Pedro signs off the bubble.
+
+### Movement Screening Phase 1 persistent plan (2026-07-04, Codex)
 
 Pedro changed the Phase 1 execution order for the self-serve movement-screening PRD.
 
