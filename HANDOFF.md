@@ -1,14 +1,60 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Claude - Cerebro Studio now has a camera-only portrait mode for mobile browsers; Pedro iPhone retest pending.
+2026-07-04 by Codex - Movement Screening iPhone worker-loader fix deployed; Pedro retry pending.
 
 ## Last code fix commit
-ece3169 - feat(studio): camera-only portrait mode for mobile browsers
+4e34078 - fix(movement): use classic WASM loader
 
 ## What just happened (read first)
 
-### Cerebro Studio mobile / camera-only mode (2026-07-04, LATEST)
+### Movement Screening iPhone worker-loader fix (2026-07-04, LATEST)
+
+Pedro's first iPhone 16 Pro test reached the camera workflow but MediaPipe failed
+before either delegate initialized:
+
+`GPU: import.meta is only valid inside modules | CPU: import.meta is only valid inside modules`
+
+Root cause:
+- The prior desktop fix correctly left Turbopack's generated worker bootstrap as
+  a classic worker because that bootstrap loads chunks with `importScripts()`.
+- The pose worker still explicitly selected MediaPipe's ES-module WASM loader.
+- On iOS Chrome, the classic worker parsed that loader through `importScripts()`
+  and rejected its `import.meta` syntax. GPU and CPU both use the same loader,
+  so both failed before inference began.
+
+Shipped:
+- Explicitly selected MediaPipe's official classic WASM loader inside the
+  classic Turbopack worker.
+- Added a regression test locking that worker/loader pairing.
+- Updated the root `pose-extraction` skill with the verified iOS guardrail.
+- Metrics, rules, thresholds, model, capture, and evidence handling are
+  unchanged.
+
+Verification:
+- `npm run test:movement-screening`: 16/16 pass.
+- `npx tsc --noEmit`: pass.
+- Targeted movement-screening ESLint: pass.
+- `npm run build`: pass.
+- Emitted worker uses a classic Turbopack bootstrap, exports
+  `MEDIAPIPE_WASM_USE_MODULE=false`, and contains neither the module-loader
+  filename nor `import.meta`.
+- Classic JS/WASM asset hashes match the checked-in manifest.
+- Production deployment `dpl_6iohx8rtY5yQxfzG1vEdrz5qdRN3` is Ready and
+  aliased to `https://cerebroai.au`.
+- Protected route returns 307 to login with `Permissions-Policy: camera=(self)`.
+- Production classic loader and WASM return 200 over HTTPS with immutable
+  caching; WASM uses `application/wasm`.
+
+NEXT:
+1. On iPhone Chrome, fully reload
+   `https://cerebroai.au/dashboard/pt/movement-screening`.
+2. Tap `Enable camera`.
+3. Confirm the model reaches `Ready to record` and the green overlay appears.
+4. If another red error appears, send its exact text or a screenshot.
+5. Do not calibrate thresholds until all three phone technical trials pass.
+
+### Cerebro Studio mobile / camera-only mode (2026-07-04)
 
 Pedro hit "Could not start your screen. Retry." on his iPhone when trying to
 record. Root cause is a platform limit, not a layout bug: `getDisplayMedia`
@@ -111,7 +157,7 @@ Implemented:
 - New authenticated PT route `/dashboard/pt/movement-screening`, directly after M & L Assessment.
 - User-gesture laptop front camera, mirrored preview plus bright-green landmark overlay, exact three-rep flow, live baseline/rep counter, automatic completion, local WebM recording, result JSON, and matched calibration-bundle download.
 - Exact-pinned `@mediapipe/tasks-vision@0.10.35`; Google Full float16 v1 model and required WASM variants are checksum-verified and self-hosted under `/public/vendor/mediapipe/0.10.35`.
-- MediaPipe runs only in a module worker: one transferred bitmap in flight, no queue, GPU first, CPU-worker fallback, no accepted main-thread path.
+- MediaPipe runs only in a dedicated classic worker with its classic WASM loader: one transferred bitmap in flight, no queue, GPU first, CPU-worker fallback, no accepted main-thread path.
 - Shared device-independent contracts for `live_camera`, `uploaded_video`, and `self_screening`; only live camera is implemented in Phase 1.
 - Deterministic pixel-space metrics: neutral-offset hip translation / neutral hip width and front-view hip-knee vertical margin / neutral femur length.
 - Pure validated JSON rules engine with no executable rules, explicit provenance, comparison bounds, anatomical direction, and uncalibrated labelling.
