@@ -1,14 +1,51 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening Phase 1 iPhone capture deployed; Pedro phone acceptance pending.
+2026-07-04 by Claude - Cerebro Studio now has a camera-only portrait mode for mobile browsers; Pedro iPhone retest pending.
 
 ## Last code fix commit
-56c973c - Add iPhone Movement Screening capture and evidence transfer
+ece3169 - feat(studio): camera-only portrait mode for mobile browsers
 
 ## What just happened (read first)
 
-### Movement Screening iPhone capture (2026-07-04, LATEST)
+### Cerebro Studio mobile / camera-only mode (2026-07-04, LATEST)
+
+Pedro hit "Could not start your screen. Retry." on his iPhone when trying to
+record. Root cause is a platform limit, not a layout bug: `getDisplayMedia`
+(screen capture) does not exist in any iOS browser (or some mobile browsers),
+so the Share-screen step can never succeed on a phone. The front camera worked
+(that's `getUserMedia`), so mobile Studio is now a camera recorder.
+
+Shipped (only `app/dashboard/studio/StudioApp.tsx` touched):
+- Feature-detect screen capture via `useSyncExternalStore` (server snapshot =
+  supported → desktop layout; client re-renders to the real value with no
+  hydration mismatch, no setState-in-effect).
+- When absent → camera-only mode: force Layout 2 (camera fills) + portrait
+  orientation, canvas dims from `ORIENTATION_DIMS` (1080×1920), 6 Mbps bitrate.
+- Record enabled with just the camera (`canRecord = !!camMicStream`); Share-
+  screen + System-audio controls and the "share your screen" overlay hidden.
+- Front/back **Flip camera** button (shown when ≥2 cameras), plus a note that
+  screen + camera needs a laptop. Mode-aware recording/header copy.
+- Portrait 9:16 stage (`aspect-[9/16] h-[68vh]`) and matching review player;
+  mobile padding polish (`p-4 sm:p-6 md:p-8`). Desktop landscape path unchanged.
+
+Verification (Playwright, throwaway public `/studio-preview` route with media
+stubbed, then deleted):
+- `npx tsc --noEmit`: pass. Studio ESLint: pass.
+- Camera-only branch renders portrait stage + Flip/mic/note; Share-screen hidden.
+- Record → stop → review produced a real **1080×1920 portrait** WebM (~12 MB);
+  Download / Record again / Discard present; Record again returns to setup live.
+- Flip camera fires without error; no console errors, no hydration warnings.
+- Desktop landscape path (Share screen + camera bubble) confirmed still rendering.
+
+NEXT:
+1. Pedro retest on iPhone at `/dashboard/studio` (log in first). Expect: no
+   screen error, portrait camera preview, record + download a portrait clip.
+2. If good, Phase 1 sign-off still pending on the desktop bubble retest too.
+3. Not yet done: real front/back swap couldn't be exercised (test stub can't
+   switch devices), so a quick real-device check that Flip changes cameras is worth doing.
+
+### Movement Screening iPhone capture (2026-07-04)
 
 Pedro's laptop webcam is not working. Pedro explicitly changed the Phase 1 capture/calibration device to the iPhone 16 Pro front camera. The laptop remains the place to inspect transferred evidence and calibrate rule JSON.
 
