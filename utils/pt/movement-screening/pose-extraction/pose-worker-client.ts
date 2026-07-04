@@ -35,28 +35,36 @@ export class PoseWorkerClient {
   }
 
   async initialize(): Promise<InferenceDelegate> {
-    let lastError = 'Pose worker initialization failed.';
+    const delegateErrors: string[] = [];
     for (const delegate of ['GPU', 'CPU'] as const) {
       try {
         await this.initializeDelegate(delegate);
         return delegate;
       } catch (error) {
-        lastError = error instanceof Error ? error.message : lastError;
+        delegateErrors.push(
+          `${delegate}: ${
+            error instanceof Error
+              ? error.message
+              : 'Pose worker initialization failed.'
+          }`,
+        );
         this.worker?.terminate();
         this.worker = null;
       }
     }
     throw new Error(
-      `MediaPipe could not initialize in a worker with GPU or CPU. ${lastError}`,
+      `MediaPipe could not initialize in a worker with GPU or CPU. ${delegateErrors.join(' | ')}`,
     );
   }
 
   private initializeDelegate(delegate: InferenceDelegate): Promise<void> {
     this.ready = false;
     this.busy = false;
+    // Next 16 Turbopack emits a classic worker bootstrap that loads the bundled
+    // worker chunks with importScripts(). Forcing type: "module" makes Chrome
+    // reject that bootstrap before the pose worker can report an error.
     const worker = new Worker(
       new URL('./pose-landmarker.worker.ts', import.meta.url),
-      { type: 'module' },
     );
     this.worker = worker;
 
@@ -68,6 +76,10 @@ export class PoseWorkerClient {
       worker.onerror = (event) => {
         window.clearTimeout(timeout);
         reject(new Error(event.message || `${delegate} worker failed.`));
+      };
+      worker.onmessageerror = () => {
+        window.clearTimeout(timeout);
+        reject(new Error(`${delegate} worker returned an unreadable message.`));
       };
       worker.onmessage = (event: MessageEvent<PoseWorkerResponse>) => {
         const message = event.data;

@@ -137,7 +137,8 @@ These rules make the later phone step additive:
 - Store direction as the subject's anatomical left or right.
 - Keep overlay sizing derived from the source frame.
 - Keep metrics in body-relative ratios, not pixels or centimetres.
-- Run MediaPipe through a browser module worker.
+- Run MediaPipe through a dedicated browser worker.
+- Under Next.js 16 Turbopack, allow the generated worker bootstrap to remain classic because it loads bundled chunks with `importScripts()`; forcing `type: "module"` prevents Chrome from starting it.
 - Keep GPU and CPU-worker delegates interchangeable.
 - Do not use desktop-only file paths or browser APIs without capability checks.
 - Keep camera controls usable with touch even though Phase 1 is tested with a laptop.
@@ -301,7 +302,7 @@ Create all skills under the workspace root `skills/` directory with `skill-creat
 ### 6. Implement worker-based pose extraction
 
 - [x] Lazy-load MediaPipe after camera activation.
-- [x] Initialise it inside a module Web Worker.
+- [x] Initialise it inside a dedicated Web Worker compatible with the Next.js 16 Turbopack bootstrap.
 - [x] Use `VIDEO` running mode.
 - [x] Set `numPoses` to 1.
 - [x] Disable segmentation output.
@@ -568,12 +569,13 @@ Last completed:
 - Laptop-first plan persisted.
 - Six-skill chain created and validated; only the first three are functional.
 - Isolated PT route, worker pose extraction, two-metric pipeline, JSON rules engine, local recording/export, and versioned Supabase rule storage implemented.
-- Thirteen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
+- Fourteen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
+- Fixed the real-browser startup failure where Next.js 16 Turbopack emitted a classic `importScripts()` worker bootstrap but the app forced Chrome to treat it as a module worker.
 
 Next action:
 
-1. Reinstall the Chrome plugin from the Codex plugin UI, then restart Codex if prompted.
-2. Retry browser control in Pedro's authenticated desktop Chrome session.
+1. Hard-refresh the authenticated movement-screening page against the corrected Next.js 16.2.10 server.
+2. Confirm the camera preview remains visible, `Loading pose model` reaches `Ready to record`, and green landmarks appear.
 3. Follow `docs/movement-screening/LAPTOP-TEST-GUIDE.md` and complete three technical trials.
 4. Record the camera label and verify overlay alignment, anatomical direction, worker FPS, automatic three-rep detection, WebM playback, JSON alignment, camera cleanup, and network privacy.
 5. Only after that gate passes, record Pedro's clean and faulted calibration examples.
@@ -581,6 +583,7 @@ Next action:
 Current blockers:
 
 - Automated browser control still cannot attach to Pedro's Chrome extension session. Chrome is running, the Codex Chrome Extension 1.1.5 is installed and enabled in the selected Default profile, and the native-host manifest is valid. The approved fresh-window helper failed at macOS LaunchServices, and the required one-time connection retry still failed. Chrome plugin reinstallation from the Codex plugin UI is now required before another automated attempt.
+- Pedro's real-camera retest of the corrected Turbopack worker startup is pending.
 - Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical laptop acceptance passes.
 
 ## Session Continuation Log
@@ -591,6 +594,7 @@ Current blockers:
 | 2026-07-04 | Implementation authorised at start commit `163619f9bf5f`; six skills created and root chain documented | `quick_validate.py` passed all six; unrelated concurrent Studio changes identified and preserved | Verify and install exact-pinned MediaPipe assets | Final movement thresholds intentionally deferred |
 | 2026-07-04 | Laptop-first technical build implemented through the manual camera gate; active uncalibrated rules v1 applied to Supabase | 13/13 tests, TypeScript, targeted lint, Next 16.2.10 build, production audit 0, RLS/read-only checks, hashes, auth redirect, and asset headers pass | Pedro runs `LAPTOP-TEST-GUIDE.md` | Controlled browser surfaces unavailable; final thresholds deferred |
 | 2026-07-04 | Captured the laptop, OS, and Chrome environment and completed Chrome-control diagnostics | MacBookPro15,1; macOS 15.7.7 build 24G720; Chrome 149.0.7827.198; extension installed/enabled; native-host manifest valid | Reinstall the Chrome plugin from the Codex plugin UI, then retry the authenticated camera test | Browser control cannot attach; approved fresh-window helper failed in macOS LaunchServices |
+| 2026-07-04 | Fixed Chrome camera shutdown during pose startup by removing the incompatible module-worker flag from the Turbopack-generated classic worker bootstrap; preserved module WASM loading and added per-delegate errors | 14/14 tests, TypeScript, targeted lint, skill validation, production build, and compiled-worker inspection pass | Pedro hard-refreshes and reruns the real-camera startup | Real camera confirmation pending |
 
 ## Research references
 

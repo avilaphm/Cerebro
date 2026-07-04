@@ -1,12 +1,40 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening Phase 1 Chrome acceptance diagnostics persisted.
+2026-07-04 by Codex - Movement Screening Phase 1 Turbopack worker startup fixed; Pedro camera retest pending.
 
 ## Last code fix commit
-6435e4e - Movement Screening Phase 1 laptop pipeline and calibration capture
+this commit - Fix Movement Screening Turbopack worker startup
 
 ## What just happened (read first)
+
+### Movement Screening Chrome startup fix (2026-07-04, LATEST)
+
+Pedro's built-in camera light turned on, the preview stayed black, and the light then turned off. `getUserMedia()` was succeeding; the failure occurred when pose initialization began.
+
+Root cause:
+- Next.js 16.2.10 Turbopack compiles the worker entry through a classic bootstrap that loads bundled chunks with `importScripts()`.
+- `PoseWorkerClient` forced `{ type: "module" }`.
+- Chrome does not permit `importScripts()` inside a module worker, so the worker failed before MediaPipe could initialise and the camera cleanup path stopped the stream.
+
+Shipped:
+- Removed the incompatible module-worker option from the Turbopack-generated worker constructor.
+- Kept MediaPipe's versioned module WASM loader enabled inside the dedicated worker.
+- Added readable GPU and CPU initialization errors plus a message-deserialization failure path.
+- Updated the root `pose-extraction` skill and Phase 1 checklist with the bundler guardrail.
+
+Verification:
+- `quick_validate.py` passes for `pose-extraction`.
+- `npm run test:movement-screening`: 14/14 pass.
+- `npx tsc --noEmit`: pass.
+- Targeted movement-screening ESLint: pass.
+- `npm run build`: pass.
+- Compiled client code now constructs the Turbopack worker without `{ type: "module" }`.
+
+NEXT:
+1. Pedro hard-refreshes `/dashboard/pt/movement-screening` on the fresh Next.js 16.2.10 server.
+2. Confirm the camera image remains visible, model status reaches `Ready to record`, and green landmarks render.
+3. Continue the laptop test guide only after this startup gate passes.
 
 ### Movement Screening Phase 1 technical build (2026-07-04, LATEST)
 
