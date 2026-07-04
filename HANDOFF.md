@@ -1,12 +1,48 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Claude - Cerebro Studio camera-bubble bugfix. (Codex also active on Movement Screening, entry below.)
+2026-07-04 by Codex - Movement Screening Phase 1 technical build complete through the Pedro laptop-camera gate.
 
 ## Last code fix commit
-this commit - Cerebro Studio: fix missing camera bubble (off-screen video decode)
+this commit - Movement Screening Phase 1 laptop pipeline and calibration capture
 
 ## What just happened (read first)
+
+### Movement Screening Phase 1 technical build (2026-07-04, LATEST)
+
+Source of truth: `docs/movement-screening/PHASE-1-CHECKLIST.md`. Pedro test steps: `docs/movement-screening/LAPTOP-TEST-GUIDE.md`.
+
+Implemented:
+- New authenticated PT route `/dashboard/pt/movement-screening`, directly after M & L Assessment.
+- User-gesture laptop front camera, mirrored preview plus bright-green landmark overlay, exact three-rep flow, live baseline/rep counter, automatic completion, local WebM recording, result JSON, and matched calibration-bundle download.
+- Exact-pinned `@mediapipe/tasks-vision@0.10.35`; Google Full float16 v1 model and required WASM variants are checksum-verified and self-hosted under `/public/vendor/mediapipe/0.10.35`.
+- MediaPipe runs only in a module worker: one transferred bitmap in flight, no queue, GPU first, CPU-worker fallback, no accepted main-thread path.
+- Shared device-independent contracts for `live_camera`, `uploaded_video`, and `self_screening`; only live camera is implemented in Phase 1.
+- Deterministic pixel-space metrics: neutral-offset hip translation / neutral hip width and front-view hip-knee vertical margin / neutral femur length.
+- Pure validated JSON rules engine with no executable rules, explicit provenance, comparison bounds, anatomical direction, and uncalibrated labelling.
+- New RLS-protected `pt_movement_screening_rule_versions` Supabase table. App users have Pedro/admin read-only access; anon and browser writes are blocked; one immutable active version is enforced. Active v1 is intentionally `uncalibrated`.
+- Six root skills created/validated. Only `pose-extraction`, `metrics-extraction`, and `rules-engine` are functional; commentary/report/refinement remain hard-stop stubs.
+- Next patched from 16.2.4 to 16.2.10, with exact patched PostCSS and ws resolutions. Production dependency audit excluding the unused optional PDF canvas path is zero.
+
+Verification:
+- `npm run test:movement-screening`: 13/13 pass.
+- `npx tsc --noEmit`: pass.
+- Targeted movement-screening ESLint: pass.
+- `npm run build`: pass; route registered and worker emitted as a separate chunk.
+- Unauthenticated route returns 307 to `/login`.
+- Versioned model/WASM responses return 200 with immutable one-year caching.
+- Model SHA-256 and all WASM hashes match the checked-in manifest.
+- Supabase: RLS enabled, one policy, anon select false, authenticated select true, authenticated write false, five indexes. Security advisor added no movement-screening finding.
+- Full-repo ESLint still has pre-existing errors outside this feature; no unrelated lint cleanup was mixed in.
+
+NEXT:
+1. Pedro opens the route in authenticated desktop Chrome and follows `docs/movement-screening/LAPTOP-TEST-GUIDE.md`.
+2. Confirm real camera permission, overlay alignment, anatomical direction, GPU/CPU-worker FPS, exact three-rep completion, WebM playback, JSON/video alignment, camera shutdown, and no capture upload.
+3. If technical acceptance passes, record clean, left/right shift, adequate/borderline/insufficient-depth calibration pairs.
+4. Do not begin phone work or later skills. Pedro's labelled videos/JSON define rules v2; activate it as data without deploying.
+
+Known blocker:
+- Automated browser control could not access the in-app browser or Pedro's Chrome extension session, so the real camera/permission/WebM flow is intentionally unverified until Pedro runs the guide.
 
 ### Cerebro Studio camera-bubble bugfix (2026-07-04, Claude)
 
@@ -15,29 +51,6 @@ Studio has its own live tracker: `Cerebro Knowledge/cerebro-studio-todo.md` (rea
 Phase 1 shipped in 0485aca. Pedro tested: screen + audio work; recording other Chrome tabs/windows while the Studio tab stays open works with no freeze; navigating the Cerebro app in the same tab stops recording (accepted limitation). Bug found: the camera face bubble never rendered. Cause: the hidden (display:none) camera source `<video>` stalled below readyState 2 in Chrome (a hidden camera feed is deprioritised, unlike the screen-capture feed which keeps decoding). Fix: the off-screen source videos are now rendered (1px, opacity 0, not display:none) with autoPlay, so the camera decodes and the bubble draws. tsc/eslint/build clean. Awaiting Pedro's retest of the bubble.
 
 NEXT for Studio: Phase 2 (Layouts 2 & 3, hotkeys 1/2/3, spacebar cycle, countdown, pause/resume, Esc, legend) once Pedro signs off the bubble.
-
-### Movement Screening Phase 1 persistent plan (2026-07-04, Codex)
-
-Pedro changed the Phase 1 execution order for the self-serve movement-screening PRD.
-
-Current decisions:
-- Build and calibrate on Pedro's laptop in desktop Chrome using the built-in front camera.
-- Do not test or optimise for the phone yet.
-- Keep the pipeline and camera contracts device-independent so phone support remains additive later.
-- Build local laptop video recording plus a matching landmark, metrics, rules, and findings JSON bundle.
-- Pedro will provide clean ceiling, lateral-shift, squat-depth, and severity definitions only after the interface and recording pipeline work.
-- Provisional research thresholds are not Pedro's final rules.
-- No application implementation has started.
-
-Mandatory source of truth:
-- `docs/movement-screening/PHASE-1-CHECKLIST.md`
-
-NEXT:
-1. Wait for Pedro to authorise implementation.
-2. Read the PRD and the full checklist.
-3. Start at the first unchecked item: create the six-skill chain.
-4. Update the checklist and this handoff after every session.
-5. Do not start later phases or phone work until laptop Phase 1 passes every gate.
 
 ### Cerebro Studio Phase 1 (2026-07-04, LATEST)
 

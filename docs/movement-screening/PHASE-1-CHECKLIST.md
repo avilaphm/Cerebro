@@ -3,10 +3,11 @@
 ## Status
 
 - Current phase: Phase 1 only
-- Current state: Plan persisted, implementation not started
+- Current state: Technical build implemented and automated checks passing; Pedro laptop-camera acceptance is next
 - Current target: Pedro's laptop, desktop Chrome, built-in front camera
-- Next action: Wait for Pedro to authorize implementation, then start at the first unchecked item
+- Next action: Follow `LAPTOP-TEST-GUIDE.md` in Pedro's authenticated desktop Chrome session
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
+- Pedro test guide: `docs/movement-screening/LAPTOP-TEST-GUIDE.md`
 - Route: `/dashboard/pt/movement-screening`
 - Later phases: Locked until every Phase 1 completion gate passes
 
@@ -177,19 +178,19 @@ Create all skills under the workspace root `skills/` directory with `skill-creat
 
 ### Functional Phase 1 skills
 
-- [ ] `pose-extraction`
+- [x] `pose-extraction`
   - Input: camera or video frame source.
   - Output: timestamped landmark series and quality metadata.
   - Owns MediaPipe loading, worker lifecycle, landmark coordinates, and pose-quality gates.
   - Does not know squat rules or Pedro's thresholds.
 
-- [ ] `metrics-extraction`
+- [x] `metrics-extraction`
   - Input: landmark series plus movement and angle.
   - Output: per-repetition and aggregate movement metrics.
   - Owns filtering, neutral baseline, repetition segmentation, hip translation, and depth proxy.
   - Does not create prose or decide coaching meaning.
 
-- [ ] `rules-engine`
+- [x] `rules-engine`
   - Input: movement metrics plus validated rules config.
   - Output: structured findings.
   - Owns JSON validation, condition evaluation, severity mapping, direction, and provenance.
@@ -197,25 +198,25 @@ Create all skills under the workspace root `skills/` directory with `skill-creat
 
 ### Required stubs
 
-- [ ] `commentary-parser`
+- [x] `commentary-parser`
   - Valid skill scaffold.
   - Hard stop stating it is unavailable in Phase 1.
 
-- [ ] `report-generator`
+- [x] `report-generator`
   - Valid skill scaffold.
   - Hard stop stating it is unavailable in Phase 1.
 
-- [ ] `refinement-proposer`
+- [x] `refinement-proposer`
   - Valid skill scaffold.
   - Hard stop stating it is unavailable in Phase 1.
 
 ### Skill validation gate
 
-- [ ] Every skill contains a valid `SKILL.md`.
-- [ ] Every skill contains generated `agents/openai.yaml`.
-- [ ] `quick_validate.py` passes for all six.
-- [ ] Root `AGENTS.md` documents the chain and the Phase 1 limit.
-- [ ] No later-phase runtime code exists.
+- [x] Every skill contains a valid `SKILL.md`.
+- [x] Every skill contains generated `agents/openai.yaml`.
+- [x] `quick_validate.py` passes for all six.
+- [x] Root `AGENTS.md` documents the chain and the Phase 1 limit.
+- [x] No later-phase runtime code exists.
 
 ## Implementation checklist
 
@@ -226,111 +227,111 @@ Create all skills under the workspace root `skills/` directory with `skill-creat
 - [x] Complete movement-science research.
 - [x] Complete Cerebro architecture and blast-radius review.
 - [x] Persist the laptop-first decision in this checklist.
-- [ ] Receive Pedro's authorization to begin implementation.
-- [ ] Confirm a clean or understood worktree.
-- [ ] Record the starting commit in the Session Continuation Log.
-- [ ] Re-read the current Next.js 16 local documentation before writing code.
+- [x] Receive Pedro's authorization to begin implementation.
+- [x] Confirm a clean or understood worktree.
+- [x] Record the starting commit in the Session Continuation Log.
+- [x] Re-read the current Next.js 16 local documentation before writing code.
 
 ### 1. Create the skill chain
 
-- [ ] Run `skill-creator` initialisation for all six skills.
-- [ ] Implement the three Phase 1 skill instructions.
-- [ ] Stub the three later skills.
-- [ ] Validate all skills.
-- [ ] Update root `AGENTS.md`.
-- [ ] Stop if any skill contract overlaps another skill's responsibility.
+- [x] Run `skill-creator` initialisation for all six skills.
+- [x] Implement the three Phase 1 skill instructions.
+- [x] Stub the three later skills.
+- [x] Validate all skills.
+- [x] Update root `AGENTS.md`.
+- [x] Stop if any skill contract overlaps another skill's responsibility.
 
 ### 2. Verify and install MediaPipe
 
-- [ ] Re-run npm registry provenance checks.
-- [ ] Re-run package dry-run inspection.
-- [ ] Confirm exact package integrity.
-- [ ] Install only `@mediapipe/tasks-vision@0.10.35` with exact pinning.
-- [ ] Review `package.json` and lockfile diff.
-- [ ] Reject unexpected packages, scripts, or transitive dependencies.
-- [ ] Download official Full v1 model.
-- [ ] Verify the model SHA-256.
-- [ ] Copy only required official WASM, loader, model, and licence assets to a versioned same-origin path.
-- [ ] Add immutable caching only for the versioned MediaPipe asset path.
-- [ ] Run dependency audit.
+- [x] Re-run npm registry provenance checks.
+- [x] Re-run package dry-run inspection.
+- [x] Confirm exact package integrity.
+- [x] Install only `@mediapipe/tasks-vision@0.10.35` with exact pinning.
+- [x] Review `package.json` and lockfile diff.
+- [x] Reject unexpected packages, scripts, or transitive dependencies.
+- [x] Download official Full v1 model.
+- [x] Verify the model SHA-256.
+- [x] Copy only required official WASM, loader, model, and licence assets to a versioned same-origin path.
+- [x] Add immutable caching only for the versioned MediaPipe asset path.
+- [x] Run dependency audit.
 
 ### 3. Add isolated route and navigation
 
-- [ ] Add `/dashboard/pt/movement-screening`.
-- [ ] Add Movement Screening directly after M & L Assessment in PT navigation.
-- [ ] Confirm dashboard authentication and Pedro admin authorization are inherited.
-- [ ] Keep the server page shell separate from the client camera runtime.
-- [ ] Add a route-level loading state.
-- [ ] Add a route-level error boundary.
-- [ ] Do not modify M & L implementation files.
-- [ ] Do not modify global CSS unless a feature-scoped rule is unavoidable.
+- [x] Add `/dashboard/pt/movement-screening`.
+- [x] Add Movement Screening directly after M & L Assessment in PT navigation.
+- [x] Confirm dashboard authentication and Pedro admin authorization are inherited.
+- [x] Keep the server page shell separate from the client camera runtime.
+- [x] Add a route-level loading state.
+- [x] Add a route-level error boundary.
+- [x] Do not modify M & L implementation files.
+- [x] Do not modify global CSS unless a feature-scoped rule is unavoidable.
 
 ### 4. Define shared contracts
 
-- [ ] Define `EntryPoint`.
-- [ ] Define `FrameSource`.
-- [ ] Define `InputFrame`.
-- [ ] Define `PoseFrame`.
-- [ ] Define `LandmarkSeries`.
-- [ ] Define `MovementContext`.
-- [ ] Define `MovementMetrics`.
-- [ ] Define `RulesConfig`.
-- [ ] Define `StructuredFinding`.
-- [ ] Define `ScreeningResult`.
-- [ ] Include explicit schema versions.
-- [ ] Include `AbortSignal` and cleanup contracts.
-- [ ] Include calibration status and complete provenance.
-- [ ] Add a fake frame source for pipeline tests.
+- [x] Define `EntryPoint`.
+- [x] Define `FrameSource`.
+- [x] Define `InputFrame`.
+- [x] Define `PoseFrame`.
+- [x] Define `LandmarkSeries`.
+- [x] Define `MovementContext`.
+- [x] Define `MovementMetrics`.
+- [x] Define `RulesConfig`.
+- [x] Define `StructuredFinding`.
+- [x] Define `ScreeningResult`.
+- [x] Include explicit schema versions.
+- [x] Include `AbortSignal` and cleanup contracts.
+- [x] Include calibration status and complete provenance.
+- [x] Add a fake frame source for pipeline tests.
 
 ### 5. Implement laptop camera and overlay
 
-- [ ] Request camera only after a user gesture.
-- [ ] Request `facingMode: user`.
-- [ ] Set `audio: false` for analysis capture.
-- [ ] Use `playsInline`, muted preview, and `object-contain`.
-- [ ] Read actual source dimensions.
-- [ ] Show clear permission-denied and no-camera errors.
-- [ ] Draw minimalist bright-green landmarks.
-- [ ] Draw thin green pose connections.
-- [ ] Keep preview and overlay visually mirrored together.
-- [ ] Keep inference coordinates unmirrored.
+- [x] Request camera only after a user gesture.
+- [x] Request `facingMode: user`.
+- [x] Set `audio: false` for analysis capture.
+- [x] Use `playsInline`, muted preview, and `object-contain`.
+- [x] Read actual source dimensions.
+- [x] Show clear permission-denied and no-camera errors.
+- [x] Draw minimalist bright-green landmarks.
+- [x] Draw thin green pose connections.
+- [x] Keep preview and overlay visually mirrored together.
+- [x] Keep inference coordinates unmirrored.
 - [ ] Verify anatomical left and right using a deliberate hand-raise test.
-- [ ] Stop every media track on completion, error, navigation, page hiding, and unmount.
+- [x] Stop every media track on completion, error, navigation, page hiding, and unmount.
 
 ### 6. Implement worker-based pose extraction
 
-- [ ] Lazy-load MediaPipe after camera activation.
-- [ ] Initialise it inside a module Web Worker.
-- [ ] Use `VIDEO` running mode.
-- [ ] Set `numPoses` to 1.
-- [ ] Disable segmentation output.
-- [ ] Try GPU delegate first.
-- [ ] Retry in the worker with CPU on GPU or WebGL failure.
-- [ ] Transfer one image bitmap at a time.
-- [ ] Skip new frames while the worker is busy.
-- [ ] Never build an inference queue.
-- [ ] Record inference time and effective FPS.
-- [ ] Require at least 15 effective FPS for a valid trial.
-- [ ] Add geometric plausibility checks in addition to confidence scores.
-- [ ] Treat main-thread inference as diagnostic only.
-- [ ] Do not allow Phase 1 acceptance through a main-thread fallback.
+- [x] Lazy-load MediaPipe after camera activation.
+- [x] Initialise it inside a module Web Worker.
+- [x] Use `VIDEO` running mode.
+- [x] Set `numPoses` to 1.
+- [x] Disable segmentation output.
+- [x] Try GPU delegate first.
+- [x] Retry in the worker with CPU on GPU or WebGL failure.
+- [x] Transfer one image bitmap at a time.
+- [x] Skip new frames while the worker is busy.
+- [x] Never build an inference queue.
+- [x] Record inference time and effective FPS.
+- [x] Require at least 15 effective FPS for a valid trial.
+- [x] Add geometric plausibility checks in addition to confidence scores.
+- [x] Treat main-thread inference as diagnostic only.
+- [x] Do not allow Phase 1 acceptance through a main-thread fallback.
 
 ### 7. Implement laptop calibration recording
 
 The recording exists to create Pedro's calibration evidence, not to create a client screening record.
 
-- [ ] Record the same live-camera trial used by pose extraction.
-- [ ] Use a browser-supported local format, expected to be WebM in desktop Chrome.
-- [ ] Do not upload the video.
-- [ ] Keep the video in browser memory until Pedro downloads or discards it.
-- [ ] Generate a stable trial ID.
-- [ ] Download the raw camera recording with the trial ID.
-- [ ] Download a matching JSON bundle with the same trial ID.
-- [ ] Include frame timestamps and landmark series in the JSON bundle.
-- [ ] Include quality gates, per-repetition metrics, aggregate metrics, rules version, and findings.
-- [ ] Mark all pre-calibration output as `uncalibrated`.
-- [ ] Allow Pedro to discard and redo a capture.
-- [ ] Stop and release recording resources after download, discard, or redo.
+- [x] Record the same live-camera trial used by pose extraction.
+- [x] Use a browser-supported local format, expected to be WebM in desktop Chrome.
+- [x] Do not upload the video.
+- [x] Keep the video in browser memory until Pedro downloads or discards it.
+- [x] Generate a stable trial ID.
+- [x] Download the raw camera recording with the trial ID.
+- [x] Download a matching JSON bundle with the same trial ID.
+- [x] Include frame timestamps and landmark series in the JSON bundle.
+- [x] Include quality gates, per-repetition metrics, aggregate metrics, rules version, and findings.
+- [x] Mark all pre-calibration output as `uncalibrated`.
+- [x] Allow Pedro to discard and redo a capture.
+- [x] Stop and release recording resources after download, discard, or redo.
 - [ ] Confirm a downloaded video plays correctly in desktop Chrome.
 - [ ] Confirm video and JSON timestamps align.
 
@@ -338,114 +339,114 @@ The recording exists to create Pedro's calibration evidence, not to create a cli
 
 #### Shared preprocessing
 
-- [ ] Convert normalised landmarks into source-frame pixel coordinates before mixed-axis geometry.
-- [ ] Capture a stable three-second standing baseline.
-- [ ] Use medians across the baseline.
-- [ ] Freeze baseline body dimensions for the trial.
-- [ ] Filter noisy landmark trajectories deterministically.
-- [ ] Segment exactly three squat repetitions.
-- [ ] Reject incomplete or ambiguous repetition sets.
-- [ ] Detect bottom positions from filtered hip descent and direction reversal.
-- [ ] Preserve raw and filtered values in the calibration bundle.
+- [x] Convert normalised landmarks into source-frame pixel coordinates before mixed-axis geometry.
+- [x] Capture a stable three-second standing baseline.
+- [x] Use medians across the baseline.
+- [x] Freeze baseline body dimensions for the trial.
+- [x] Filter noisy landmark trajectories deterministically.
+- [x] Segment exactly three squat repetitions.
+- [x] Reject incomplete or ambiguous repetition sets.
+- [x] Detect bottom positions from filtered hip descent and direction reversal.
+- [x] Preserve raw and filtered values in the calibration bundle.
 
 #### Lateral hip or pelvis translation
 
-- [ ] Calculate hip midpoint.
-- [ ] Calculate ankle midpoint.
-- [ ] Subtract the neutral standing hip-to-ankle offset.
-- [ ] Divide by neutral standing hip width.
-- [ ] Calculate a robust peak for each repetition.
-- [ ] Preserve sign for anatomical direction.
-- [ ] Aggregate using the median across three repetitions.
-- [ ] Return `variable` direction when repetitions do not agree.
-- [ ] Name the metric `hip_lateral_translation_ratio`.
-- [ ] Never label the metric as weakness, imbalance, or injury risk.
+- [x] Calculate hip midpoint.
+- [x] Calculate ankle midpoint.
+- [x] Subtract the neutral standing hip-to-ankle offset.
+- [x] Divide by neutral standing hip width.
+- [x] Calculate a robust peak for each repetition.
+- [x] Preserve sign for anatomical direction.
+- [x] Aggregate using the median across three repetitions.
+- [x] Return `variable` direction when repetitions do not agree.
+- [x] Name the metric `hip_lateral_translation_ratio`.
+- [x] Never label the metric as weakness, imbalance, or injury risk.
 
 #### Front-view squat-depth proxy
 
-- [ ] Calculate hip midpoint and knee midpoint.
-- [ ] Divide the vertical hip-knee margin by neutral femur length.
-- [ ] Calculate the bottom-window value for each repetition.
-- [ ] Aggregate using the median across three repetitions.
-- [ ] Name the metric `hip_knee_vertical_margin_ratio`.
-- [ ] Label it explicitly as a front-view proxy.
-- [ ] Support `pass`, `finding`, and `indeterminate` configuration bands.
-- [ ] Never claim that the front camera directly measures the anatomical hip crease.
+- [x] Calculate hip midpoint and knee midpoint.
+- [x] Divide the vertical hip-knee margin by neutral femur length.
+- [x] Calculate the bottom-window value for each repetition.
+- [x] Aggregate using the median across three repetitions.
+- [x] Name the metric `hip_knee_vertical_margin_ratio`.
+- [x] Label it explicitly as a front-view proxy.
+- [x] Support `pass`, `finding`, and `indeterminate` configuration bands.
+- [x] Never claim that the front camera directly measures the anatomical hip crease.
 
 ### 9. Implement versioned JSON rules data
 
-- [ ] Create a dedicated versioned movement-screening rules table.
-- [ ] Store the full rules document in JSONB.
-- [ ] Enable RLS.
-- [ ] Permit authenticated Pedro/admin reads only.
-- [ ] Expose no browser write policy.
-- [ ] Enforce one active version.
-- [ ] Keep versions immutable.
-- [ ] Include parent version, creator, timestamp, and config hash.
-- [ ] Seed an `uncalibrated` Phase 1 config from a checked-in local JSON fixture.
-- [ ] Load the active config server-side.
-- [ ] Validate it before passing it to the client runtime.
-- [ ] Lock the loaded rules version when a trial begins.
-- [ ] Fail closed when the config is missing or invalid.
-- [ ] Confirm threshold changes can be made by adding and activating JSON data without an application deploy.
-- [ ] Run Supabase security advisors after the schema change.
+- [x] Create a dedicated versioned movement-screening rules table.
+- [x] Store the full rules document in JSONB.
+- [x] Enable RLS.
+- [x] Permit authenticated Pedro/admin reads only.
+- [x] Expose no browser write policy.
+- [x] Enforce one active version.
+- [x] Keep versions immutable.
+- [x] Include parent version, creator, timestamp, and config hash.
+- [x] Seed an `uncalibrated` Phase 1 config from a checked-in local JSON fixture.
+- [x] Load the active config server-side.
+- [x] Validate it before passing it to the client runtime.
+- [x] Lock the loaded rules version when a trial begins.
+- [x] Fail closed when the config is missing or invalid.
+- [x] Confirm threshold changes can be made by adding and activating JSON data without an application deploy.
+- [x] Run Supabase security advisors after the schema change.
 
 ### 10. Implement the pure rules engine
 
-- [ ] Accept only metrics and validated config.
-- [ ] Support explicit enumerated conditions.
-- [ ] Never evaluate arbitrary code or expressions from JSON.
-- [ ] Reject invalid metric names and malformed severity bands.
-- [ ] Reject non-monotonic thresholds.
-- [ ] Skip findings when metric quality is invalid.
-- [ ] Add rule ID and rules version to every finding.
-- [ ] Add observed value, comparison, and threshold to every finding.
-- [ ] Add anatomical direction where relevant.
-- [ ] Produce structured fields only.
-- [ ] Render findings JSON on screen.
-- [ ] Keep uncalibrated findings visibly marked as provisional.
+- [x] Accept only metrics and validated config.
+- [x] Support explicit enumerated conditions.
+- [x] Never evaluate arbitrary code or expressions from JSON.
+- [x] Reject invalid metric names and malformed severity bands.
+- [x] Reject non-monotonic thresholds.
+- [x] Skip findings when metric quality is invalid.
+- [x] Add rule ID and rules version to every finding.
+- [x] Add observed value, comparison, and threshold to every finding.
+- [x] Add anatomical direction where relevant.
+- [x] Produce structured fields only.
+- [x] Render findings JSON on screen.
+- [x] Keep uncalibrated findings visibly marked as provisional.
 
 ### 11. Build the one-page laptop workflow
 
-- [ ] Show simple setup instructions.
-- [ ] Add Enable camera.
-- [ ] Show camera and live overlay.
-- [ ] Show full-body framing and tracking status.
-- [ ] Show model-loading progress.
-- [ ] Show a three-second neutral-baseline countdown.
-- [ ] Prompt for three overhead squats.
-- [ ] Show detected repetition count.
-- [ ] Automatically finish after the third valid repetition, with a manual stop fallback.
-- [ ] Show processing progress.
-- [ ] Show quality result.
-- [ ] Show metrics JSON.
-- [ ] Show findings JSON.
-- [ ] Show active rules version and calibration status.
-- [ ] Add Download video.
-- [ ] Add Download calibration JSON.
-- [ ] Add Copy result JSON.
-- [ ] Add Redo trial.
-- [ ] Keep one primary action visible at a time.
+- [x] Show simple setup instructions.
+- [x] Add Enable camera.
+- [x] Show camera and live overlay.
+- [x] Show full-body framing and tracking status.
+- [x] Show model-loading progress.
+- [x] Show a three-second neutral-baseline countdown.
+- [x] Prompt for three overhead squats.
+- [x] Show detected repetition count.
+- [x] Automatically finish after the third valid repetition, with a manual stop fallback.
+- [x] Show processing progress.
+- [x] Show quality result.
+- [x] Show metrics JSON.
+- [x] Show findings JSON.
+- [x] Show active rules version and calibration status.
+- [x] Add Download video.
+- [x] Add Download calibration JSON.
+- [x] Add Copy result JSON.
+- [x] Add Redo trial.
+- [x] Keep one primary action visible at a time.
 
 ### 12. Automated tests
 
-- [ ] Test pipeline source independence with a fake source.
-- [ ] Test clean synthetic landmark series.
-- [ ] Test left-shift series.
-- [ ] Test right-shift series.
-- [ ] Test shallow-depth series.
-- [ ] Test adequate-depth series.
-- [ ] Test borderline depth.
-- [ ] Test low-confidence frames.
-- [ ] Test missing hip, knee, or ankle landmarks.
-- [ ] Test phone or camera movement simulation.
-- [ ] Test fewer and more than three repetitions.
-- [ ] Test exact rule-boundary values.
-- [ ] Test invalid JSON config.
-- [ ] Test non-monotonic thresholds.
-- [ ] Test provenance and rules version in findings.
-- [ ] Test cancellation and cleanup.
-- [ ] Use the smallest safe test setup and avoid an unnecessary test-framework dependency.
+- [x] Test pipeline source independence with a fake source.
+- [x] Test clean synthetic landmark series.
+- [x] Test left-shift series.
+- [x] Test right-shift series.
+- [x] Test shallow-depth series.
+- [x] Test adequate-depth series.
+- [x] Test borderline depth.
+- [x] Test low-confidence frames.
+- [x] Test missing hip, knee, or ankle landmarks.
+- [x] Test phone or camera movement simulation.
+- [x] Test fewer and more than three repetitions.
+- [x] Test exact rule-boundary values.
+- [x] Test invalid JSON config.
+- [x] Test non-monotonic thresholds.
+- [x] Test provenance and rules version in findings.
+- [x] Test cancellation and cleanup.
+- [x] Use the smallest safe test setup and avoid an unnecessary test-framework dependency.
 
 ### 13. Laptop browser technical acceptance
 
@@ -469,10 +470,10 @@ This gate proves the software before Pedro defines final movement rules.
 - [ ] Navigating away turns the camera off.
 - [ ] No video, image frame, or landmark payload is uploaded.
 - [ ] Network inspection documents any MediaPipe telemetry.
-- [ ] TypeScript passes.
-- [ ] Targeted lint passes.
-- [ ] Production build passes.
-- [ ] Dependency audit has no new high or critical vulnerability.
+- [x] TypeScript passes.
+- [x] Targeted lint passes.
+- [x] Production build passes.
+- [x] Dependency audit has no new high or critical vulnerability.
 
 ## Pedro calibration workflow
 
@@ -543,8 +544,8 @@ Run only after Pedro approves the calibrated laptop rules.
 
 ### Phase completion
 
-- [ ] All six skills validate.
-- [ ] All automated tests pass.
+- [x] All six skills validate.
+- [x] All automated tests pass.
 - [ ] Laptop technical acceptance passes.
 - [ ] Pedro calibration is stored and versioned.
 - [ ] Hip-translation acceptance passes 5 out of 5 both ways.
@@ -562,23 +563,29 @@ Last completed:
 - PRD read and researched.
 - Package, science, browser, Supabase, and repository due diligence completed.
 - Laptop-first plan persisted.
+- Six-skill chain created and validated; only the first three are functional.
+- Isolated PT route, worker pose extraction, two-metric pipeline, JSON rules engine, local recording/export, and versioned Supabase rule storage implemented.
+- Thirteen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
 
 Next action:
 
-1. Pedro authorises implementation.
-2. Re-read the required project files.
-3. Start at Implementation Checklist item 1: Create the skill chain.
+1. Pedro follows `docs/movement-screening/LAPTOP-TEST-GUIDE.md` in his authenticated desktop Chrome session.
+2. Record the laptop/Chrome/camera environment and complete three technical trials.
+3. Verify overlay alignment, anatomical direction, worker FPS, automatic three-rep detection, WebM playback, JSON alignment, camera cleanup, and network privacy.
+4. Only after that gate passes, record Pedro's clean and faulted calibration examples.
 
 Current blockers:
 
-- No implementation blocker.
-- Pedro's final ceiling, hip-shift, and squat-depth definitions are intentionally deferred until the laptop interface and recording bundle work.
+- Automated browser control could not access either the in-app browser or Pedro's Chrome extension session, so the real camera/permission/worker/WebM flow still requires Pedro's manual laptop test.
+- Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical laptop acceptance passes.
 
 ## Session Continuation Log
 
 | Date | Completed | Verification | Next action | Blockers |
 | --- | --- | --- | --- | --- |
 | 2026-07-04 | Phase 1 plan persisted with laptop-first calibration workflow | Planning review only, no application code changed | Wait for implementation authorization, then create six skills | Final movement thresholds intentionally deferred |
+| 2026-07-04 | Implementation authorised at start commit `163619f9bf5f`; six skills created and root chain documented | `quick_validate.py` passed all six; unrelated concurrent Studio changes identified and preserved | Verify and install exact-pinned MediaPipe assets | Final movement thresholds intentionally deferred |
+| 2026-07-04 | Laptop-first technical build implemented through the manual camera gate; active uncalibrated rules v1 applied to Supabase | 13/13 tests, TypeScript, targeted lint, Next 16.2.10 build, production audit 0, RLS/read-only checks, hashes, auth redirect, and asset headers pass | Pedro runs `LAPTOP-TEST-GUIDE.md` | Controlled browser surfaces unavailable; final thresholds deferred |
 
 ## Research references
 

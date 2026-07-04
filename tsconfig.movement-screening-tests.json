@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": "./utils/pt/movement-screening",
+    "outDir": "./.movement-screening-test-dist",
+    "noEmit": false,
+    "incremental": false,
+    "allowJs": false
+  },
+  "include": [
+    "utils/pt/movement-screening/contracts.ts",
+    "utils/pt/movement-screening/constants.ts",
+    "utils/pt/movement-screening/canonical-json.ts",
+    "utils/pt/movement-screening/pipeline.ts",
+    "utils/pt/movement-screening/metrics-extraction/**/*.ts",
+    "utils/pt/movement-screening/pose-extraction/landmark-series.ts",
+    "utils/pt/movement-screening/pose-extraction/worker-protocol.ts",
+    "utils/pt/movement-screening/rules-engine/**/*.ts",
+    "utils/pt/movement-screening/fixtures/**/*.json",
+    "utils/pt/movement-screening/__tests__/**/*.ts"
+  ]
+}
