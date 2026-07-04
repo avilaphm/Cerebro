@@ -117,6 +117,48 @@ function drawBubble(
 }
 
 /**
+ * Portrait (9:16) repurpose of a screen + camera recording: the screen sits
+ * full-width and fully readable as a rounded card across the top, and the
+ * camera fills the larger lower portion (the "you talking" band). Used for the
+ * second, vertical export that records alongside the landscape take. Pure and
+ * defensive like drawLayout — missing sources are skipped.
+ */
+export function drawPortraitStacked(
+  ctx: CanvasRenderingContext2D,
+  dims: CanvasDims,
+  screen: HTMLVideoElement | null,
+  camera: HTMLVideoElement | null,
+) {
+  const { width: W, height: H } = dims;
+  const scale = W / 1080;
+
+  ctx.fillStyle = STAGE_BG;
+  ctx.fillRect(0, 0, W, H);
+
+  const sideMargin = W * 0.04;
+  const topMargin = H * 0.045;
+  const cardW = W - sideMargin * 2;
+  const cardH = cardW * (9 / 16);
+  const radius = 24 * scale;
+
+  // Screen card, top. Black fill under it covers any letterbox if the shared
+  // surface isn't a clean 16:9.
+  ctx.save();
+  roundRectPath(ctx, sideMargin, topMargin, cardW, cardH, radius);
+  ctx.clip();
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(sideMargin, topMargin, cardW, cardH);
+  if (isReady(screen)) drawContain(ctx, screen, sideMargin, topMargin, cardW, cardH);
+  ctx.restore();
+
+  // Camera fills everything below the card, full-bleed (cover-cropped).
+  const gap = H * 0.03;
+  const faceTop = topMargin + cardH + gap;
+  const faceH = H - faceTop;
+  if (isReady(camera)) drawCover(ctx, camera, 0, faceTop, W, faceH);
+}
+
+/**
  * Draws the current layout onto the canvas for a single frame. Pure and
  * defensive: missing / not-yet-ready videos are simply skipped so the loop
  * never throws. The same canvas is both the on-screen preview and the

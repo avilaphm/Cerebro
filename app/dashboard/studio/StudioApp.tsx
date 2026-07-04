@@ -9,6 +9,7 @@ import {
   Mic,
   Monitor,
   RotateCcw,
+  Smartphone,
   Square,
   SwitchCamera,
   Trash2,
@@ -24,6 +25,7 @@ import { ORIENTATION_DIMS } from './types';
 
 const LANDSCAPE_BITRATE = 8_000_000;
 const PORTRAIT_BITRATE = 6_000_000;
+const PORTRAIT_DIMS = ORIENTATION_DIMS.portrait;
 
 const noopSubscribe = () => () => {};
 // Screen capture (getDisplayMedia) is absent in all iOS browsers and some
@@ -58,11 +60,12 @@ function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
-function makeFilename(): string {
+function makeFilename(kind?: string): string {
   const d = new Date();
-  return `cerebro-studio-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(
     d.getHours(),
-  )}${pad(d.getMinutes())}.webm`;
+  )}${pad(d.getMinutes())}`;
+  return `cerebro-studio-${stamp}${kind ? `-${kind}` : ''}.webm`;
 }
 
 function formatDuration(ms: number): string {
@@ -85,10 +88,14 @@ export default function StudioApp() {
   const [selectedCamera, setSelectedCamera] = useState('');
   const [selectedMic, setSelectedMic] = useState('');
   const [systemAudio, setSystemAudio] = useState(false);
+  // Also record a portrait (9:16) cut alongside the landscape take. Desktop
+  // (screen+face) only — camera-only mode is already a single portrait video.
+  const [makePortrait, setMakePortrait] = useState(true);
   // Camera-only mode: mobile browsers have no getDisplayMedia (screen capture),
   // so Studio becomes a portrait talking-head recorder instead of dead-ending.
   const cameraOnly = !useScreenCaptureSupported();
   const config = cameraOnly ? CAMERA_ONLY_CONFIG : LANDSCAPE_CONFIG;
+  const dualExport = !cameraOnly && makePortrait;
 
   const {
     cameras,
@@ -104,14 +111,25 @@ export default function StudioApp() {
   } = useMediaStreams();
 
   const recorder = useRecorder();
+  const portraitRecorder = useRecorder();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const portraitCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const configRef = useRef(config);
   const phaseRef = useRef<StudioPhase>(phase);
   const recordingStreamRef = useRef<MediaStream | null>(null);
+  const portraitStreamRef = useRef<MediaStream | null>(null);
+  const pendingStopsRef = useRef(0);
   const audioCleanupRef = useRef<(() => void) | null>(null);
+
+  // Stop both takes together. Safe when portrait wasn't started — an unstarted
+  // recorder's stop() is a no-op.
+  const stopRecording = useCallback(() => {
+    recorder.stop();
+    portraitRecorder.stop();
+  }, [recorder, portraitRecorder]);
 
   useEffect(() => {
     configRef.current = config;
@@ -126,6 +144,8 @@ export default function StudioApp() {
     cameraVideoRef,
     configRef,
     active: phase === 'setup' || phase === 'recording',
+    portraitCanvasRef,
+    portraitActive: dualExport,
   });
 
   // Acquire camera + mic on first mount.
@@ -154,21 +174,30 @@ export default function StudioApp() {
   // Native "Stop sharing" → finalize gracefully instead of losing footage.
   useEffect(() => {
     registerScreenEnded(() => {
-      if (phaseRef.current === 'recording') recorder.stop();
+      if (phaseRef.current === 'recording') stopRecording();
     });
     return () => registerScreenEnded(null);
-  }, [registerScreenEnded, recorder]);
+  }, [registerScreenEnded, stopRecording]);
 
-  // Called from the recorder's stop event: review the take and free every
+  // Called once both recordings have stopped: review the take and free every
   // capture source so no camera light lingers.
   const finalizeRecording = useCallback(() => {
     audioCleanupRef.current?.();
     audioCleanupRef.current = null;
     recordingStreamRef.current?.getTracks().forEach((t) => t.stop());
     recordingStreamRef.current = null;
+    portraitStreamRef.current?.getTracks().forEach((t) => t.stop());
+    portraitStreamRef.current = null;
     stopAll();
     setPhase('review');
   }, [stopAll]);
+
+  // Landscape and portrait recorders stop independently; finalize only after
+  // the last one has flushed its blob so neither take is truncated.
+  const handleRecorderComplete = useCallback(() => {
+    pendingStopsRef.current -= 1;
+    if (pendingStopsRef.current <= 0) finalizeRecording();
+  }, [finalizeRecording]);
 
   const handleShareScreen = useCallback(() => {
     void startScreen(systemAudio);
@@ -179,16 +208,37 @@ export default function StudioApp() {
     if (!canvas || !camMicStream) return;
     if (!cameraOnly && !screenStream) return;
 
-    const canvasStream = canvas.captureStream(30);
-    const audio = mergeAudioTracks([camMicStream, systemAudio ? screenStream : null]);
-    audioCleanupRef.current = audio.cleanup;
-    if (audio.track) canvasStream.addTrack(audio.track);
-    recordingStreamRef.current = canvasStream;
+    const portraitCanvas = portraitCanvasRef.current as CanvasWithCapture | null;
+    const portraitStream = dualExport && portraitCanvas ? portraitCanvas.captureStream(30) : null;
+    const primaryStream = canvas.captureStream(30);
 
-    const bitrate = config.orientation === 'portrait' ? PORTRAIT_BITRATE : LANDSCAPE_BITRATE;
-    recorder.start(canvasStream, bitrate, finalizeRecording);
+    const audio = mergeAudioTracks(
+      [camMicStream, systemAudio ? screenStream : null],
+      portraitStream ? 2 : 1,
+    );
+    audioCleanupRef.current = audio.cleanup;
+    if (audio.tracks[0]) primaryStream.addTrack(audio.tracks[0]);
+    if (portraitStream && audio.tracks[1]) portraitStream.addTrack(audio.tracks[1]);
+
+    recordingStreamRef.current = primaryStream;
+    portraitStreamRef.current = portraitStream;
+
+    const primaryBitrate = config.orientation === 'portrait' ? PORTRAIT_BITRATE : LANDSCAPE_BITRATE;
+    pendingStopsRef.current = portraitStream ? 2 : 1;
+    recorder.start(primaryStream, primaryBitrate, handleRecorderComplete);
+    if (portraitStream) portraitRecorder.start(portraitStream, PORTRAIT_BITRATE, handleRecorderComplete);
     setPhase('recording');
-  }, [camMicStream, screenStream, systemAudio, cameraOnly, config.orientation, recorder, finalizeRecording]);
+  }, [
+    camMicStream,
+    screenStream,
+    systemAudio,
+    cameraOnly,
+    dualExport,
+    config.orientation,
+    recorder,
+    portraitRecorder,
+    handleRecorderComplete,
+  ]);
 
   // Front/back toggle on phones — pick the camera that isn't the live one.
   const flipCamera = useCallback(() => {
@@ -201,19 +251,19 @@ export default function StudioApp() {
 
   const returnToSetup = useCallback(() => {
     recorder.reset();
+    portraitRecorder.reset();
     setPhase('setup');
     void startCamMic(selectedCamera || undefined, selectedMic || undefined);
-  }, [recorder, startCamMic, selectedCamera, selectedMic]);
+  }, [recorder, portraitRecorder, startCamMic, selectedCamera, selectedMic]);
 
-  const download = useCallback(() => {
-    if (!recorder.result) return;
+  const downloadBlob = useCallback((url: string, kind?: string) => {
     const a = document.createElement('a');
-    a.href = recorder.result.url;
-    a.download = makeFilename();
+    a.href = url;
+    a.download = makeFilename(kind);
     document.body.appendChild(a);
     a.click();
     a.remove();
-  }, [recorder.result]);
+  }, []);
 
   const canRecord = cameraOnly ? !!camMicStream : !!camMicStream && !!screenStream;
 
@@ -255,6 +305,8 @@ export default function StudioApp() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+        {/* Left column: landscape stage + optional portrait-cut preview */}
+        <div className="space-y-4">
         {/* Stage — the exact frame that records */}
         <div
           className={`relative overflow-hidden rounded-2xl bg-[#111] shadow-[0_18px_45px_-28px_rgba(0,0,0,0.6)] ${stageBox}`}
@@ -311,6 +363,25 @@ export default function StudioApp() {
           )}
         </div>
 
+          {dualExport && phase !== 'review' && (
+            <div className="flex items-center gap-3 rounded-2xl border border-black/10 bg-black/[0.02] p-3">
+              <canvas
+                ref={portraitCanvasRef}
+                width={PORTRAIT_DIMS.width}
+                height={PORTRAIT_DIMS.height}
+                className="h-40 w-auto shrink-0 rounded-lg bg-[#111]"
+              />
+              <div className="text-xs leading-relaxed text-black/55">
+                <p className="font-medium text-black/70">Portrait cut</p>
+                <p>
+                  Auto-created alongside the landscape recording. You&apos;ll download both when
+                  you stop.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Controls */}
         <div className="cb-card rounded-2xl border border-black/10 p-5">
           {phase === 'setup' && (
@@ -323,6 +394,7 @@ export default function StudioApp() {
               screenShared={!!screenStream}
               canRecord={canRecord}
               cameraOnly={cameraOnly}
+              makePortrait={makePortrait}
               onCameraChange={(id) => {
                 setSelectedCamera(id);
                 void startCamMic(id, selectedMic || undefined);
@@ -332,6 +404,7 @@ export default function StudioApp() {
                 void startCamMic(selectedCamera || undefined, id);
               }}
               onToggleSystemAudio={() => setSystemAudio((v) => !v)}
+              onTogglePortrait={() => setMakePortrait((v) => !v)}
               onShareScreen={handleShareScreen}
               onFlipCamera={flipCamera}
               onRecord={startRecording}
@@ -346,9 +419,11 @@ export default function StudioApp() {
               <p className="text-sm text-black/60">
                 {cameraOnly
                   ? 'Camera only — portrait. Mic audio is being captured.'
-                  : 'Layout 1 — screen with camera bubble. Mic audio is being captured.'}
+                  : dualExport
+                    ? 'Screen with camera bubble, plus a portrait cut. Mic audio is being captured.'
+                    : 'Screen with camera bubble. Mic audio is being captured.'}
               </p>
-              <button type="button" onClick={recorder.stop} className={`w-full ${DARK_BTN}`}>
+              <button type="button" onClick={stopRecording} className={`w-full ${DARK_BTN}`}>
                 <Square className="h-4 w-4" fill="currentColor" /> Stop recording
               </button>
             </div>
@@ -357,8 +432,17 @@ export default function StudioApp() {
           {phase === 'review' && recorder.result && (
             <ReviewControls
               durationMs={recorder.elapsedMs}
-              sizeBytes={recorder.result.blob.size}
-              onDownload={download}
+              primaryLabel={cameraOnly ? 'Video' : 'Landscape'}
+              primarySizeBytes={recorder.result.blob.size}
+              onDownloadPrimary={() =>
+                downloadBlob(recorder.result!.url, cameraOnly ? 'portrait' : 'landscape')
+              }
+              portraitSizeBytes={portraitRecorder.result?.blob.size ?? null}
+              onDownloadPortrait={
+                portraitRecorder.result
+                  ? () => downloadBlob(portraitRecorder.result!.url, 'portrait')
+                  : null
+              }
               onRecordAgain={returnToSetup}
               onDiscard={returnToSetup}
             />
@@ -376,9 +460,23 @@ export default function StudioApp() {
               className={`block ${isPortrait ? 'aspect-[9/16] h-[68vh] max-w-full' : 'aspect-video w-full'}`}
             />
           </div>
-          <p className="self-start rounded-xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/55">
-            WebM downloads. Convert to MP4 for LinkedIn with CapCut or ffmpeg.
-          </p>
+          <div className="space-y-4 self-start">
+            {portraitRecorder.result && (
+              <div className="flex justify-center overflow-hidden rounded-2xl bg-black">
+                <video
+                  src={portraitRecorder.result.url}
+                  controls
+                  playsInline
+                  className="block aspect-[9/16] max-h-[70vh] max-w-full"
+                />
+              </div>
+            )}
+            <p className="rounded-xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/55">
+              {portraitRecorder.result
+                ? 'Two WebM files — landscape and portrait. Convert to MP4 for LinkedIn with CapCut or ffmpeg.'
+                : 'WebM downloads. Convert to MP4 for LinkedIn with CapCut or ffmpeg.'}
+            </p>
+          </div>
         </div>
       )}
 
@@ -411,9 +509,11 @@ interface SetupControlsProps {
   screenShared: boolean;
   canRecord: boolean;
   cameraOnly: boolean;
+  makePortrait: boolean;
   onCameraChange: (id: string) => void;
   onMicChange: (id: string) => void;
   onToggleSystemAudio: () => void;
+  onTogglePortrait: () => void;
   onShareScreen: () => void;
   onFlipCamera: () => void;
   onRecord: () => void;
@@ -428,9 +528,11 @@ function SetupControls({
   screenShared,
   canRecord,
   cameraOnly,
+  makePortrait,
   onCameraChange,
   onMicChange,
   onToggleSystemAudio,
+  onTogglePortrait,
   onShareScreen,
   onFlipCamera,
   onRecord,
@@ -550,6 +652,22 @@ function SetupControls({
 
       <button
         type="button"
+        onClick={onTogglePortrait}
+        className="flex w-full items-center justify-between border border-black/10 px-3 py-2.5 text-sm text-black/70 hover:bg-black/5"
+      >
+        <span className="flex items-center gap-2">
+          <Smartphone className="h-4 w-4" />
+          Portrait cut
+        </span>
+        <span
+          className={`text-xs font-medium ${makePortrait ? 'text-emerald-600' : 'text-black/40'}`}
+        >
+          {makePortrait ? 'On' : 'Off'}
+        </span>
+      </button>
+
+      <button
+        type="button"
         onClick={onShareScreen}
         className={`w-full ${screenShared ? LIGHT_BTN : DARK_BTN}`}
       >
@@ -578,19 +696,26 @@ function SetupControls({
 
 interface ReviewControlsProps {
   durationMs: number;
-  sizeBytes: number;
-  onDownload: () => void;
+  primaryLabel: string;
+  primarySizeBytes: number;
+  onDownloadPrimary: () => void;
+  portraitSizeBytes: number | null;
+  onDownloadPortrait: (() => void) | null;
   onRecordAgain: () => void;
   onDiscard: () => void;
 }
 
 function ReviewControls({
   durationMs,
-  sizeBytes,
-  onDownload,
+  primaryLabel,
+  primarySizeBytes,
+  onDownloadPrimary,
+  portraitSizeBytes,
+  onDownloadPortrait,
   onRecordAgain,
   onDiscard,
 }: ReviewControlsProps) {
+  const hasPortrait = !!onDownloadPortrait;
   return (
     <div className="space-y-5">
       <p className="text-[0.65rem] font-medium uppercase tracking-[0.2em] text-black/40">Review</p>
@@ -601,14 +726,21 @@ function ReviewControls({
           <p className="text-xs text-black/45">Duration</p>
         </div>
         <div>
-          <p className="font-mono tabular-nums text-black">{formatBytes(sizeBytes)}</p>
-          <p className="text-xs text-black/45">Size</p>
+          <p className="font-mono tabular-nums text-black">
+            {formatBytes(primarySizeBytes + (portraitSizeBytes ?? 0))}
+          </p>
+          <p className="text-xs text-black/45">{hasPortrait ? 'Total size' : 'Size'}</p>
         </div>
       </div>
 
-      <button type="button" onClick={onDownload} className={`w-full ${DARK_BTN}`}>
-        <Download className="h-4 w-4" /> Download
+      <button type="button" onClick={onDownloadPrimary} className={`w-full ${DARK_BTN}`}>
+        <Download className="h-4 w-4" /> Download {hasPortrait ? primaryLabel.toLowerCase() : ''}
       </button>
+      {hasPortrait && onDownloadPortrait && (
+        <button type="button" onClick={onDownloadPortrait} className={`w-full ${LIGHT_BTN}`}>
+          <Smartphone className="h-4 w-4" /> Download portrait
+        </button>
+      )}
       <button type="button" onClick={onRecordAgain} className={`w-full ${LIGHT_BTN}`}>
         <RotateCcw className="h-4 w-4" /> Record again
       </button>
