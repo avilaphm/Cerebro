@@ -1,14 +1,53 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening portrait phone capture deployed; Pedro visual check pending.
+2026-07-04 by Claude - Studio desktop dual export (landscape + portrait cut) shipped; Pedro real-camera check pending.
 
 ## Last code fix commit
-5782298 - feat(movement): add portrait phone capture
+8c8ffea - feat(studio): dual landscape + portrait export on desktop
 
 ## What just happened (read first)
 
-### Movement Screening portrait phone capture (2026-07-04, LATEST)
+### Cerebro Studio desktop dual export (2026-07-04, LATEST)
+
+Pedro wanted, from a laptop recording, to get BOTH a landscape and a portrait
+(9:16) version so he can download both. (Mobile screen+facecam is off the table
+for now: iOS blocks web screen capture, so a phone recording your screen across
+apps with a facecam bubble needs a native ReplayKit app, not the web. Kept mobile
+as the camera-only recorder.)
+
+Shipped (four files in app/dashboard/studio/):
+- Record once, get two cuts. While recording, the compositor paints a second
+  portrait canvas every frame and a second MediaRecorder encodes it, so Stop
+  produces both files with no processing wait.
+- Portrait framing Pedro chose: screen full-width as a readable rounded card on
+  top, camera filling the larger band below (`drawPortraitStacked` in layouts.ts).
+- `mergeAudioTracks(streams, outputs)` now fans the mixed mic/system audio into N
+  independent tracks so each recorder gets its own audio.
+- `useCompositor` takes an optional portrait canvas + active flag.
+- StudioApp: second `useRecorder`, a 'Portrait cut' On/Off toggle (default on,
+  desktop only), a live portrait preview thumbnail under the stage, dual download
+  buttons (landscape / portrait) in review, and a completion coordinator that
+  finalizes only after BOTH takes flush so neither is truncated.
+- Camera-only mobile path unchanged (single portrait video, no toggle).
+
+Verification (Playwright, throwaway public /studio-preview with screen+camera
+faked, then deleted):
+- tsc + Studio ESLint: pass.
+- Setup shows Portrait cut On + a live 9:16 preview of the stacked layout.
+- Record -> stop produced a real 1920x1080 landscape AND 1080x1920 portrait, both
+  playable; review shows both videos + both download buttons; 0 console errors.
+
+NEXT:
+1. Pedro test on the laptop at /dashboard/studio: share screen, record, confirm
+   BOTH downloads and that the portrait cut frames the screen+face well with a
+   real camera (fake cam only proved the mechanics).
+2. Perf note: two simultaneous VP9 MediaRecorders (8 + 6 Mbps) on a laptop; fine
+   in testing, but watch on lower-end machines. Toggle Portrait cut off to skip it.
+3. Mobile screen+facecam intentionally deferred (native-only). Desktop bubble
+   sign-off still open.
+
+### Movement Screening portrait phone capture (2026-07-04)
 
 Pedro confirmed the iPhone 16 Pro camera, worker, and green pose overlay now
 start successfully after the classic-loader fix. The remaining usability issue
