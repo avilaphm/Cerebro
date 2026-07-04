@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   AlertCircle,
   Camera,
@@ -10,6 +10,7 @@ import {
   Monitor,
   RotateCcw,
   Square,
+  SwitchCamera,
   Trash2,
   Volume2,
   VolumeX,
@@ -19,8 +20,39 @@ import { useCompositor } from './useCompositor';
 import { useRecorder } from './useRecorder';
 import { mergeAudioTracks } from './audio';
 import type { CompositorConfig, CanvasWithCapture, StudioPhase } from './types';
+import { ORIENTATION_DIMS } from './types';
 
 const LANDSCAPE_BITRATE = 8_000_000;
+const PORTRAIT_BITRATE = 6_000_000;
+
+const noopSubscribe = () => () => {};
+// Screen capture (getDisplayMedia) is absent in all iOS browsers and some
+// mobile browsers. Read it via an external store: the server snapshot assumes
+// support (desktop layout), then the client re-renders to the real value with
+// no hydration mismatch and no setState-in-effect.
+function useScreenCaptureSupported(): boolean {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () =>
+      typeof navigator !== 'undefined' &&
+      !!navigator.mediaDevices &&
+      typeof navigator.mediaDevices.getDisplayMedia === 'function',
+    () => true,
+  );
+}
+
+const LANDSCAPE_CONFIG: CompositorConfig = {
+  layout: 1,
+  orientation: 'landscape',
+  bubblePosition: 'bottom-right',
+  bubbleSize: 'medium',
+};
+const CAMERA_ONLY_CONFIG: CompositorConfig = {
+  layout: 2,
+  orientation: 'portrait',
+  bubblePosition: 'bottom-right',
+  bubbleSize: 'medium',
+};
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
@@ -53,12 +85,10 @@ export default function StudioApp() {
   const [selectedCamera, setSelectedCamera] = useState('');
   const [selectedMic, setSelectedMic] = useState('');
   const [systemAudio, setSystemAudio] = useState(false);
-  const [config] = useState<CompositorConfig>({
-    layout: 1,
-    orientation: 'landscape',
-    bubblePosition: 'bottom-right',
-    bubbleSize: 'medium',
-  });
+  // Camera-only mode: mobile browsers have no getDisplayMedia (screen capture),
+  // so Studio becomes a portrait talking-head recorder instead of dead-ending.
+  const cameraOnly = !useScreenCaptureSupported();
+  const config = cameraOnly ? CAMERA_ONLY_CONFIG : LANDSCAPE_CONFIG;
 
   const {
     cameras,
@@ -146,7 +176,8 @@ export default function StudioApp() {
 
   const startRecording = useCallback(() => {
     const canvas = canvasRef.current as CanvasWithCapture | null;
-    if (!canvas || !camMicStream || !screenStream) return;
+    if (!canvas || !camMicStream) return;
+    if (!cameraOnly && !screenStream) return;
 
     const canvasStream = canvas.captureStream(30);
     const audio = mergeAudioTracks([camMicStream, systemAudio ? screenStream : null]);
@@ -154,9 +185,19 @@ export default function StudioApp() {
     if (audio.track) canvasStream.addTrack(audio.track);
     recordingStreamRef.current = canvasStream;
 
-    recorder.start(canvasStream, LANDSCAPE_BITRATE, finalizeRecording);
+    const bitrate = config.orientation === 'portrait' ? PORTRAIT_BITRATE : LANDSCAPE_BITRATE;
+    recorder.start(canvasStream, bitrate, finalizeRecording);
     setPhase('recording');
-  }, [camMicStream, screenStream, systemAudio, recorder, finalizeRecording]);
+  }, [camMicStream, screenStream, systemAudio, cameraOnly, config.orientation, recorder, finalizeRecording]);
+
+  // Front/back toggle on phones — pick the camera that isn't the live one.
+  const flipCamera = useCallback(() => {
+    if (cameras.length < 2) return;
+    const currentId = camMicStream?.getVideoTracks()[0]?.getSettings().deviceId;
+    const next = cameras.find((c) => c.deviceId !== currentId) ?? cameras[0];
+    setSelectedCamera(next.deviceId);
+    void startCamMic(next.deviceId, selectedMic || undefined);
+  }, [cameras, camMicStream, selectedMic, startCamMic]);
 
   const returnToSetup = useCallback(() => {
     recorder.reset();
@@ -174,7 +215,15 @@ export default function StudioApp() {
     a.remove();
   }, [recorder.result]);
 
-  const canRecord = !!camMicStream && !!screenStream;
+  const canRecord = cameraOnly ? !!camMicStream : !!camMicStream && !!screenStream;
+
+  // Portrait stage on mobile hugs a 9:16 box capped to the viewport height;
+  // landscape fills the grid cell at 16:9 as before.
+  const isPortrait = config.orientation === 'portrait';
+  const stageBox = isPortrait
+    ? 'mx-auto aspect-[9/16] h-[68vh] max-w-full'
+    : 'w-full aspect-video';
+  const canvasDims = ORIENTATION_DIMS[config.orientation];
 
   // Derive the dropdown selection from the live stream so it reflects the
   // browser's default device until the user explicitly picks one.
@@ -182,15 +231,16 @@ export default function StudioApp() {
   const micValue = selectedMic || camMicStream?.getAudioTracks()[0]?.getSettings().deviceId || '';
 
   return (
-    <div className="cerebro-studio p-6 md:p-8">
+    <div className="cerebro-studio p-4 sm:p-6 md:p-8">
       <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black/40 mb-2">
         Cerebro
       </p>
-      <div className="mb-8 flex items-end justify-between gap-4">
+      <div className="mb-6 flex items-end justify-between gap-4 sm:mb-8">
         <h1 className="font-display text-3xl font-light tracking-[-0.02em] text-black">Studio</h1>
         <p className="hidden max-w-xs text-right text-xs leading-relaxed text-black/45 sm:block">
-          Record your screen with your face in a bubble. Everything stays in your browser — no
-          uploads.
+          {cameraOnly
+            ? 'Record your camera, right here in your browser — nothing is uploaded.'
+            : 'Record your screen with your face in a bubble. Everything stays in your browser — no uploads.'}
         </p>
       </div>
 
@@ -200,13 +250,15 @@ export default function StudioApp() {
           onRetry={() => void startCamMic(selectedCamera || undefined, selectedMic || undefined)}
         />
       )}
-      {screenError && phase !== 'recording' && (
+      {screenError && !cameraOnly && phase !== 'recording' && (
         <ErrorBanner message={screenError} onRetry={handleShareScreen} />
       )}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
         {/* Stage — the exact frame that records */}
-        <div className="relative overflow-hidden rounded-2xl bg-[#111] shadow-[0_18px_45px_-28px_rgba(0,0,0,0.6)]">
+        <div
+          className={`relative overflow-hidden rounded-2xl bg-[#111] shadow-[0_18px_45px_-28px_rgba(0,0,0,0.6)] ${stageBox}`}
+        >
           {/* Source feeds the compositor draws from. Mounted full-size and
               fully opaque so Chrome keeps decoding the camera (a hidden or
               transparent camera feed is suspended); the opaque canvas paints
@@ -228,17 +280,24 @@ export default function StudioApp() {
 
           <canvas
             ref={canvasRef}
-            width={1920}
-            height={1080}
-            className="relative z-10 block aspect-video w-full"
+            width={canvasDims.width}
+            height={canvasDims.height}
+            className="absolute inset-0 z-10 block h-full w-full"
           />
 
-          {phase !== 'review' && !screenStream && (
+          {phase !== 'review' && !cameraOnly && !screenStream && (
             <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 text-center">
               <Monitor className="h-8 w-8 text-white/50" strokeWidth={1.4} />
               <p className="max-w-xs px-6 text-sm text-white/70">
                 Share your screen to see the full Layout 1 preview.
               </p>
+            </div>
+          )}
+
+          {phase !== 'review' && cameraOnly && !camMicStream && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 text-center">
+              <Camera className="h-8 w-8 text-white/50" strokeWidth={1.4} />
+              <p className="max-w-xs px-6 text-sm text-white/70">Starting your camera…</p>
             </div>
           )}
 
@@ -263,6 +322,7 @@ export default function StudioApp() {
               systemAudio={systemAudio}
               screenShared={!!screenStream}
               canRecord={canRecord}
+              cameraOnly={cameraOnly}
               onCameraChange={(id) => {
                 setSelectedCamera(id);
                 void startCamMic(id, selectedMic || undefined);
@@ -273,6 +333,7 @@ export default function StudioApp() {
               }}
               onToggleSystemAudio={() => setSystemAudio((v) => !v)}
               onShareScreen={handleShareScreen}
+              onFlipCamera={flipCamera}
               onRecord={startRecording}
             />
           )}
@@ -283,7 +344,9 @@ export default function StudioApp() {
                 Recording
               </p>
               <p className="text-sm text-black/60">
-                Layout 1 — screen with camera bubble. Mic audio is being captured.
+                {cameraOnly
+                  ? 'Camera only — portrait. Mic audio is being captured.'
+                  : 'Layout 1 — screen with camera bubble. Mic audio is being captured.'}
               </p>
               <button type="button" onClick={recorder.stop} className={`w-full ${DARK_BTN}`}>
                 <Square className="h-4 w-4" fill="currentColor" /> Stop recording
@@ -305,8 +368,13 @@ export default function StudioApp() {
 
       {phase === 'review' && recorder.result && (
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_20rem]">
-          <div className="overflow-hidden rounded-2xl bg-black">
-            <video src={recorder.result.url} controls className="block aspect-video w-full" />
+          <div className={`overflow-hidden rounded-2xl bg-black ${isPortrait ? 'flex justify-center' : ''}`}>
+            <video
+              src={recorder.result.url}
+              controls
+              playsInline
+              className={`block ${isPortrait ? 'aspect-[9/16] h-[68vh] max-w-full' : 'aspect-video w-full'}`}
+            />
           </div>
           <p className="self-start rounded-xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/55">
             WebM downloads. Convert to MP4 for LinkedIn with CapCut or ffmpeg.
@@ -342,10 +410,12 @@ interface SetupControlsProps {
   systemAudio: boolean;
   screenShared: boolean;
   canRecord: boolean;
+  cameraOnly: boolean;
   onCameraChange: (id: string) => void;
   onMicChange: (id: string) => void;
   onToggleSystemAudio: () => void;
   onShareScreen: () => void;
+  onFlipCamera: () => void;
   onRecord: () => void;
 }
 
@@ -357,12 +427,87 @@ function SetupControls({
   systemAudio,
   screenShared,
   canRecord,
+  cameraOnly,
   onCameraChange,
   onMicChange,
   onToggleSystemAudio,
   onShareScreen,
+  onFlipCamera,
   onRecord,
 }: SetupControlsProps) {
+  const micSelect = (
+    <label className="block space-y-1.5">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-black/60">
+        <Mic className="h-3.5 w-3.5" /> Microphone
+      </span>
+      <select
+        value={selectedMic}
+        onChange={(e) => onMicChange(e.target.value)}
+        className="w-full border border-black/10 px-3 py-2.5 text-sm"
+      >
+        {mics.length === 0 && <option value="">Detecting…</option>}
+        {mics.map((m) => (
+          <option key={m.deviceId} value={m.deviceId}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  if (cameraOnly) {
+    return (
+      <div className="space-y-5">
+        <p className="text-[0.65rem] font-medium uppercase tracking-[0.2em] text-black/40">Setup</p>
+
+        {cameras.length >= 2 ? (
+          <button type="button" onClick={onFlipCamera} className={`w-full ${LIGHT_BTN}`}>
+            <SwitchCamera className="h-4 w-4" /> Flip camera
+          </button>
+        ) : (
+          <label className="block space-y-1.5">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-black/60">
+              <Camera className="h-3.5 w-3.5" /> Camera
+            </span>
+            <select
+              value={selectedCamera}
+              onChange={(e) => onCameraChange(e.target.value)}
+              className="w-full border border-black/10 px-3 py-2.5 text-sm"
+            >
+              {cameras.length === 0 && <option value="">Detecting…</option>}
+              {cameras.map((c) => (
+                <option key={c.deviceId} value={c.deviceId}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {micSelect}
+
+        <div className="border-t border-black/10 pt-4">
+          <button
+            type="button"
+            onClick={onRecord}
+            disabled={!canRecord}
+            className="inline-flex w-full items-center justify-center gap-2 bg-[#dc2626] px-4 py-3.5 text-sm font-medium text-white transition-colors hover:bg-[#b91c1c] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Circle className="h-4 w-4" fill="currentColor" /> Start recording
+          </button>
+          {!canRecord && (
+            <p className="mt-2 text-center text-xs text-black/45">Waiting for camera…</p>
+          )}
+        </div>
+
+        <p className="rounded-xl border border-black/10 bg-black/[0.02] p-3 text-xs leading-relaxed text-black/50">
+          Screen recording isn&apos;t available in phone browsers. For screen + camera, open
+          Studio on a laptop.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <p className="text-[0.65rem] font-medium uppercase tracking-[0.2em] text-black/40">Setup</p>
@@ -385,23 +530,7 @@ function SetupControls({
         </select>
       </label>
 
-      <label className="block space-y-1.5">
-        <span className="flex items-center gap-1.5 text-xs font-medium text-black/60">
-          <Mic className="h-3.5 w-3.5" /> Microphone
-        </span>
-        <select
-          value={selectedMic}
-          onChange={(e) => onMicChange(e.target.value)}
-          className="w-full border border-black/10 px-3 py-2 text-sm"
-        >
-          {mics.length === 0 && <option value="">Detecting…</option>}
-          {mics.map((m) => (
-            <option key={m.deviceId} value={m.deviceId}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {micSelect}
 
       <button
         type="button"
