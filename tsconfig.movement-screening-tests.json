@@ -13,6 +13,7 @@
   "include": [
     "utils/pt/movement-screening/contracts.ts",
     "utils/pt/movement-screening/constants.ts",
+    "utils/pt/movement-screening/capture-format.ts",
     "utils/pt/movement-screening/canonical-json.ts",
     "utils/pt/movement-screening/pipeline.ts",
     "utils/pt/movement-screening/metrics-extraction/**/*.ts",

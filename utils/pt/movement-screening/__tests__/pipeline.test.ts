@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fixtureJson from '../fixtures/phase-1-uncalibrated-v1.json';
 import { sha256CanonicalJson } from '../canonical-json';
+import {
+  jsonFileNameForVideo,
+  selectRecorderFormat,
+  videoExtensionForMimeType,
+} from '../capture-format';
 import type {
   EntryPoint,
   FrameSource,
@@ -29,6 +34,29 @@ const source: SourceMetadata = {
   browser: 'synthetic-test',
   device: 'synthetic-test',
 };
+
+test('capture format supports WebM and iPhone MP4 evidence pairs', () => {
+  assert.deepEqual(
+    selectRecorderFormat((mimeType) => mimeType === 'video/mp4'),
+    {
+      mimeType: 'video/mp4',
+      extension: 'mp4',
+    },
+  );
+  assert.equal(
+    videoExtensionForMimeType('video/mp4;codecs=avc1.42E01E'),
+    'mp4',
+  );
+  assert.equal(videoExtensionForMimeType('video/webm;codecs=vp8'), 'webm');
+  assert.equal(
+    jsonFileNameForVideo('cerebro-ohs-trial.mp4'),
+    'cerebro-ohs-trial.json',
+  );
+  assert.equal(
+    jsonFileNameForVideo('cerebro-ohs-trial.webm'),
+    'cerebro-ohs-trial.json',
+  );
+});
 
 function landmark(
   index: number,

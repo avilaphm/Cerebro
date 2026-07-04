@@ -1,14 +1,41 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening Phase 1 Turbopack worker startup fixed; Pedro camera retest pending.
+2026-07-04 by Codex - Movement Screening Phase 1 adapted for iPhone capture; HTTPS deployment pending.
 
 ## Last code fix commit
-this commit - Fix Movement Screening Turbopack worker startup
+this commit - Add iPhone Movement Screening capture and evidence transfer
 
 ## What just happened (read first)
 
-### Movement Screening Chrome startup fix (2026-07-04, LATEST)
+### Movement Screening iPhone capture (2026-07-04, LATEST)
+
+Pedro's laptop webcam is not working. Pedro explicitly changed the Phase 1 capture/calibration device to the iPhone 16 Pro front camera. The laptop remains the place to inspect transferred evidence and calibrate rule JSON.
+
+Shipped:
+- Kept the same `live_camera -> pose -> metrics -> rules` pipeline; no phone-specific metric or rule branch was added.
+- Added runtime MediaRecorder selection for WebM and iPhone-compatible MP4, with the correct file extension carried into the matched JSON filename.
+- Added a first-painted-frame gate so pose initialization does not begin over a black camera preview.
+- Camera provenance now includes the browser-visible front-camera label.
+- Added `Share evidence` for transferring the matching video and JSON together through the iOS share sheet. Separate Video and JSON downloads remain as fallback.
+- Replaced laptop-specific interface copy with device-neutral front-camera copy.
+- Added `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`.
+- Updated the persisted Phase 1 checklist. This device change does not unlock the later client phone flow or any later PRD phase.
+
+Verification:
+- `npm run test:movement-screening`: 15/15 pass, including MP4/WebM evidence-pair naming.
+- `npx tsc --noEmit`: pass.
+- Targeted movement-screening ESLint: pass.
+- `npm run build`: pass with the PT movement-screening route registered.
+- Compiled worker still uses the corrected Turbopack worker constructor without the incompatible module flag.
+
+NEXT:
+1. Commit and deploy this build to Cerebro HTTPS.
+2. On iPhone Chrome, log in at `https://cerebroai.au` and open `/dashboard/pt/movement-screening`.
+3. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`.
+4. Do not calibrate thresholds until three phone technical trials pass.
+
+### Movement Screening Chrome startup fix (2026-07-04)
 
 Pedro's built-in camera light turned on, the preview stayed black, and the light then turned off. `getUserMedia()` was succeeding; the failure occurred when pose initialization began.
 

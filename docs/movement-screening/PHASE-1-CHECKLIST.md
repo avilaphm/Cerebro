@@ -3,11 +3,11 @@
 ## Status
 
 - Current phase: Phase 1 only
-- Current state: Technical build implemented and automated checks passing; Pedro laptop-camera acceptance is next
-- Current target: Pedro's laptop, desktop Chrome, built-in front camera
-- Next action: Reinstall the Chrome plugin from the Codex plugin UI, then retry browser control and follow `LAPTOP-TEST-GUIDE.md` in Pedro's authenticated desktop Chrome session
+- Current state: iPhone capture compatibility implemented and automated checks passing; HTTPS deployment is next
+- Current target: Pedro's iPhone 16 Pro, Chrome, front camera, authenticated Cerebro HTTPS deployment
+- Next action: Deploy the verified build, then follow `PHONE-CAPTURE-TEST-GUIDE.md`
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
-- Pedro test guide: `docs/movement-screening/LAPTOP-TEST-GUIDE.md`
+- Pedro test guide: `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`
 - Route: `/dashboard/pt/movement-screening`
 - Later phases: Locked until every Phase 1 completion gate passes
 
@@ -15,14 +15,15 @@ This file is the durable source of truth for the build. Update it after every wo
 
 ## Pedro's decisions that override the draft PRD
 
-1. Build and calibrate on Pedro's laptop before testing a phone.
-2. Use the laptop's front camera through desktop Chrome.
-3. Build the interface, camera pipeline, recording, pose extraction, metrics pipeline, and rules workflow before asking Pedro for final movement thresholds.
-4. Pedro will then record clean and deliberately faulted overhead squats on the laptop.
-5. Those recordings, landmark data, metrics, and Pedro's judgement will define the ceiling, squat-depth boundary, hip-shift thresholds, and severity bands.
-6. Do not treat provisional research values as Pedro's final rules.
-7. Keep the capture and pipeline interfaces device-independent so a phone camera can be added later without replacing metrics or rules code.
-8. Phone testing is not part of the current Phase 1 acceptance gate.
+1. Pedro's laptop webcam is unavailable, so the Phase 1 capture and calibration device is now his iPhone 16 Pro front camera.
+2. Use Chrome on the authenticated Cerebro HTTPS deployment; do not use the laptop's insecure LAN URL.
+3. The phone records and processes the live trial. The matching video and JSON evidence pair is transferred to the laptop for calibration review.
+4. Keep the existing device-independent live-camera pipeline. Do not fork phone metrics or rules logic.
+5. Build the interface, camera pipeline, recording, pose extraction, metrics pipeline, and rules workflow before asking Pedro for final movement thresholds.
+6. Pedro will record clean and deliberately faulted overhead squats on the phone.
+7. Those recordings, landmark data, metrics, and Pedro's judgement will define the ceiling, squat-depth boundary, hip-shift thresholds, and severity bands.
+8. Do not treat provisional research values as Pedro's final rules.
+9. This does not unlock the later client self-screening flow or any post-Phase-1 feature.
 
 ## Mandatory new-session protocol
 
@@ -53,11 +54,11 @@ Before ending any implementation session:
 Phase 1 will contain:
 
 - One authenticated PT dashboard page beside M & L Assessment.
-- Desktop Chrome and laptop front-camera capture.
+- Chrome on iPhone 16 Pro with front-camera capture through HTTPS.
 - A live bright-green MediaPipe landmark overlay.
 - One movement: overhead squat, front view.
 - Three repetitions per trial.
-- A locally downloadable calibration video from the same live-camera session.
+- A locally downloadable or shareable MP4/WebM calibration video from the same live-camera session.
 - A matching JSON calibration bundle with timestamps, landmark quality, metrics, rules version, and findings.
 - Two movement metrics:
   - Lateral hip or pelvis translation.
@@ -72,7 +73,7 @@ Phase 1 will contain:
 Phase 1 will not contain:
 
 - Client screening links.
-- A phone-specific interface or phone acceptance testing.
+- A client-facing guided phone-screening flow.
 - The other eight screening movements.
 - Video upload to Supabase.
 - Persistent client screening records.
@@ -127,9 +128,9 @@ Every result must preserve:
 
 ## Device-independence guardrails
 
-These rules make the later phone step additive:
+These rules keep phone capture and later browser/video adapters on one pipeline:
 
-- Never hardcode laptop camera dimensions.
+- Never hardcode camera dimensions.
 - Read the actual stream width and height.
 - Keep video capture behind the `FrameSource` interface.
 - Process unmirrored source frames.
@@ -141,8 +142,8 @@ These rules make the later phone step additive:
 - Under Next.js 16 Turbopack, allow the generated worker bootstrap to remain classic because it loads bundled chunks with `importScripts()`; forcing `type: "module"` prevents Chrome from starting it.
 - Keep GPU and CPU-worker delegates interchangeable.
 - Do not use desktop-only file paths or browser APIs without capability checks.
-- Keep camera controls usable with touch even though Phase 1 is tested with a laptop.
-- Do not change metrics or rules when a phone adapter is added.
+- Keep camera controls usable with touch.
+- Do not change metrics or rules for iPhone capture.
 
 ## Package and security decision
 
@@ -227,7 +228,7 @@ Create all skills under the workspace root `skills/` directory with `skill-creat
 - [x] Complete MediaPipe repository and package due diligence.
 - [x] Complete movement-science research.
 - [x] Complete Cerebro architecture and blast-radius review.
-- [x] Persist the laptop-first decision in this checklist.
+- [x] Persist the initial laptop-first decision and Pedro's later iPhone-camera override in this checklist.
 - [x] Receive Pedro's authorization to begin implementation.
 - [x] Confirm a clean or understood worktree.
 - [x] Record the starting commit in the Session Continuation Log.
@@ -284,7 +285,7 @@ Create all skills under the workspace root `skills/` directory with `skill-creat
 - [x] Include calibration status and complete provenance.
 - [x] Add a fake frame source for pipeline tests.
 
-### 5. Implement laptop camera and overlay
+### 5. Implement live front camera and overlay
 
 - [x] Request camera only after a user gesture.
 - [x] Request `facingMode: user`.
@@ -317,23 +318,24 @@ Create all skills under the workspace root `skills/` directory with `skill-creat
 - [x] Treat main-thread inference as diagnostic only.
 - [x] Do not allow Phase 1 acceptance through a main-thread fallback.
 
-### 7. Implement laptop calibration recording
+### 7. Implement local calibration recording
 
 The recording exists to create Pedro's calibration evidence, not to create a client screening record.
 
 - [x] Record the same live-camera trial used by pose extraction.
-- [x] Use a browser-supported local format, expected to be WebM in desktop Chrome.
+- [x] Detect a browser-supported local format at runtime: WebM on compatible Chromium and MP4 fallback for iPhone/WebKit.
 - [x] Do not upload the video.
 - [x] Keep the video in browser memory until Pedro downloads or discards it.
 - [x] Generate a stable trial ID.
 - [x] Download the raw camera recording with the trial ID.
 - [x] Download a matching JSON bundle with the same trial ID.
+- [x] Offer a phone share-sheet action containing the matching video and JSON files.
 - [x] Include frame timestamps and landmark series in the JSON bundle.
 - [x] Include quality gates, per-repetition metrics, aggregate metrics, rules version, and findings.
 - [x] Mark all pre-calibration output as `uncalibrated`.
 - [x] Allow Pedro to discard and redo a capture.
 - [x] Stop and release recording resources after download, discard, or redo.
-- [ ] Confirm a downloaded video plays correctly in desktop Chrome.
+- [ ] Confirm the phone-exported MP4/WebM plays correctly on the laptop.
 - [ ] Confirm video and JSON timestamps align.
 
 ### 8. Implement metrics extraction without final Pedro thresholds
@@ -407,7 +409,7 @@ The recording exists to create Pedro's calibration evidence, not to create a cli
 - [x] Render findings JSON on screen.
 - [x] Keep uncalibrated findings visibly marked as provisional.
 
-### 11. Build the one-page laptop workflow
+### 11. Build the one-page live-camera workflow
 
 - [x] Show simple setup instructions.
 - [x] Add Enable camera.
@@ -449,15 +451,15 @@ The recording exists to create Pedro's calibration evidence, not to create a cli
 - [x] Test cancellation and cleanup.
 - [x] Use the smallest safe test setup and avoid an unnecessary test-framework dependency.
 
-### 13. Laptop browser technical acceptance
+### 13. iPhone browser technical acceptance
 
 This gate proves the software before Pedro defines final movement rules.
 
-- Detected environment: MacBook Pro `MacBookPro15,1`, macOS 15.7.7 build 24G720, Chrome 149.0.7827.198.
-- Camera label remains pending because the authenticated browser connection did not attach.
+- Target environment: iPhone 16 Pro front camera, Chrome, authenticated HTTPS Cerebro deployment.
+- Exact iOS version, Chrome version, camera label, source resolution, delegate, and FPS remain pending the first phone trial.
 
 - [ ] Test through an authenticated HTTPS deployment or an approved secure local setup.
-- [ ] Record laptop model, operating-system version, Chrome version, and camera label.
+- [ ] Record iPhone model, iOS version, Chrome version, and camera label.
 - [ ] Camera permission succeeds.
 - [ ] Full body remains visible.
 - [ ] Green landmarks and connections align with the body.
@@ -467,8 +469,9 @@ This gate proves the software before Pedro defines final movement rules.
 - [ ] No main-thread fallback is used for acceptance.
 - [ ] Three repetitions are detected consistently.
 - [ ] Recording starts and stops correctly.
-- [ ] Downloaded WebM plays correctly.
+- [ ] Exported MP4/WebM plays correctly on the laptop.
 - [ ] Matching JSON downloads correctly.
+- [ ] `Share evidence` presents both matching files on iPhone.
 - [ ] JSON and video timestamps align.
 - [ ] Redo releases the previous camera and recording resources.
 - [ ] Navigating away turns the camera off.
@@ -481,9 +484,9 @@ This gate proves the software before Pedro defines final movement rules.
 
 ## Pedro calibration workflow
 
-Do not begin this section until the laptop browser technical acceptance gate passes.
+Do not begin this section until the iPhone browser technical acceptance gate passes.
 
-Pedro will provide the source-of-truth examples using the laptop front camera.
+Pedro will provide the source-of-truth examples using the iPhone front camera.
 
 ### A. Clean ceiling recordings
 
@@ -519,15 +522,15 @@ Pedro will provide the source-of-truth examples using the laptop front camera.
 ### D. Freeze the calibrated Phase 1 rules
 
 - [ ] Create a new immutable rules version.
-- [ ] Mark it `calibrated` for Pedro's laptop setup only.
+- [ ] Mark it `calibrated` for Pedro's iPhone 16 Pro setup only.
 - [ ] Activate it without deploying the app.
 - [ ] Preserve the previous uncalibrated version.
 - [ ] Record the calibration fixture IDs and Pedro's reasons in the config metadata.
-- [ ] Do not generalise the thresholds to clients or phones.
+- [ ] Do not generalise the thresholds to clients or other devices.
 
 ## Final Phase 1 functional acceptance
 
-Run only after Pedro approves the calibrated laptop rules.
+Run only after Pedro approves the calibrated iPhone rules.
 
 ### Hip translation
 
@@ -550,7 +553,7 @@ Run only after Pedro approves the calibrated laptop rules.
 
 - [x] All six skills validate.
 - [x] All automated tests pass.
-- [ ] Laptop technical acceptance passes.
+- [ ] iPhone technical acceptance passes.
 - [ ] Pedro calibration is stored and versioned.
 - [ ] Hip-translation acceptance passes 5 out of 5 both ways.
 - [ ] Squat-depth acceptance passes 5 out of 5 both ways.
@@ -558,7 +561,7 @@ Run only after Pedro approves the calibrated laptop rules.
 - [ ] No unrelated Cerebro feature is affected.
 - [ ] `HANDOFF.md` and this checklist show the final verified state.
 - [ ] Commit and push the completed Phase 1.
-- [ ] Only then discuss the next phase or phone validation.
+- [ ] Only then discuss the next phase or broader client/device validation.
 
 ## Current Resume Point
 
@@ -566,25 +569,25 @@ Last completed:
 
 - PRD read and researched.
 - Package, science, browser, Supabase, and repository due diligence completed.
-- Laptop-first plan persisted.
+- Initial laptop-first plan and later iPhone-camera override persisted.
 - Six-skill chain created and validated; only the first three are functional.
 - Isolated PT route, worker pose extraction, two-metric pipeline, JSON rules engine, local recording/export, and versioned Supabase rule storage implemented.
-- Fourteen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
+- Fifteen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
 - Fixed the real-browser startup failure where Next.js 16 Turbopack emitted a classic `importScripts()` worker bootstrap but the app forced Chrome to treat it as a module worker.
 
 Next action:
 
-1. Hard-refresh the authenticated movement-screening page against the corrected Next.js 16.2.10 server.
-2. Confirm the camera preview remains visible, `Loading pose model` reaches `Ready to record`, and green landmarks appear.
-3. Follow `docs/movement-screening/LAPTOP-TEST-GUIDE.md` and complete three technical trials.
-4. Record the camera label and verify overlay alignment, anatomical direction, worker FPS, automatic three-rep detection, WebM playback, JSON alignment, camera cleanup, and network privacy.
+1. Finish automated verification and deploy the current commit to Cerebro HTTPS.
+2. Open the authenticated movement-screening route in Chrome on the iPhone 16 Pro.
+3. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
+4. Record the iOS/Chrome/camera environment and verify overlay alignment, anatomical direction, worker FPS, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
 5. Only after that gate passes, record Pedro's clean and faulted calibration examples.
 
 Current blockers:
 
 - Automated browser control still cannot attach to Pedro's Chrome extension session. Chrome is running, the Codex Chrome Extension 1.1.5 is installed and enabled in the selected Default profile, and the native-host manifest is valid. The approved fresh-window helper failed at macOS LaunchServices, and the required one-time connection retry still failed. Chrome plugin reinstallation from the Codex plugin UI is now required before another automated attempt.
-- Pedro's real-camera retest of the corrected Turbopack worker startup is pending.
-- Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical laptop acceptance passes.
+- Pedro's real-camera test now depends on the phone-compatible build reaching the HTTPS deployment.
+- Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical iPhone acceptance passes.
 
 ## Session Continuation Log
 
@@ -595,6 +598,7 @@ Current blockers:
 | 2026-07-04 | Laptop-first technical build implemented through the manual camera gate; active uncalibrated rules v1 applied to Supabase | 13/13 tests, TypeScript, targeted lint, Next 16.2.10 build, production audit 0, RLS/read-only checks, hashes, auth redirect, and asset headers pass | Pedro runs `LAPTOP-TEST-GUIDE.md` | Controlled browser surfaces unavailable; final thresholds deferred |
 | 2026-07-04 | Captured the laptop, OS, and Chrome environment and completed Chrome-control diagnostics | MacBookPro15,1; macOS 15.7.7 build 24G720; Chrome 149.0.7827.198; extension installed/enabled; native-host manifest valid | Reinstall the Chrome plugin from the Codex plugin UI, then retry the authenticated camera test | Browser control cannot attach; approved fresh-window helper failed in macOS LaunchServices |
 | 2026-07-04 | Fixed Chrome camera shutdown during pose startup by removing the incompatible module-worker flag from the Turbopack-generated classic worker bootstrap; preserved module WASM loading and added per-delegate errors | 14/14 tests, TypeScript, targeted lint, skill validation, production build, and compiled-worker inspection pass | Pedro hard-refreshes and reruns the real-camera startup | Real camera confirmation pending |
+| 2026-07-04 | Pedro replaced the unavailable laptop webcam with iPhone 16 Pro front-camera capture; added runtime MP4/WebM selection, first-frame gating, phone-safe copy, and matched evidence sharing | 15/15 movement tests, TypeScript, targeted lint, production build, and compiled-worker inspection pass | Deploy, then run `PHONE-CAPTURE-TEST-GUIDE.md` | Final thresholds remain deferred |
 
 ## Research references
 

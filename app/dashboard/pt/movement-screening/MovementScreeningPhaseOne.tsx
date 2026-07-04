@@ -23,6 +23,11 @@ import {
   WORKER_MODEL_PROVENANCE,
 } from '@/utils/pt/movement-screening/constants';
 import {
+  jsonFileNameForVideo,
+  selectRecorderFormat,
+  videoExtensionForMimeType,
+} from '@/utils/pt/movement-screening/capture-format';
+import {
   type CalibrationBundle,
   type LandmarkSeries,
   type PipelineOutcome,
@@ -61,15 +66,6 @@ type ExportBundle = CalibrationBundle | DiagnosticBundle;
 const MAX_CAPTURE_SECONDS = 25;
 const OVERLAY_GREEN = '#42ff88';
 
-function selectRecorderMimeType(): string | undefined {
-  if (typeof MediaRecorder === 'undefined') return undefined;
-  return [
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm',
-  ].find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
-}
-
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -77,6 +73,43 @@ function downloadBlob(blob: Blob, fileName: string) {
   anchor.download = fileName;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function makeJsonBlob(exportBundle: ExportBundle): Blob {
+  return new Blob([JSON.stringify(exportBundle, null, 2)], {
+    type: 'application/json',
+  });
+}
+
+async function waitForFirstVideoFrame(video: HTMLVideoElement): Promise<void> {
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('The camera opened but did not provide a video frame.'));
+    }, 5_000);
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('error', handleError);
+    };
+    const handleCanPlay = () => {
+      cleanup();
+      requestAnimationFrame(() => resolve());
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error('The camera preview could not start.'));
+    };
+    video.addEventListener('canplay', handleCanPlay, { once: true });
+    video.addEventListener('error', handleError, { once: true });
+  });
 }
 
 function runtimeLabel(state: RuntimeState): string {
@@ -134,6 +167,7 @@ export default function MovementScreeningPhaseOne({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [detectedRepetitions, setDetectedRepetitions] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<PipelineOutcome | null>(null);
   const [exportBundle, setExportBundle] = useState<ExportBundle | null>(null);
@@ -361,7 +395,7 @@ export default function MovementScreeningPhaseOne({
       confidenceMin: rules.config.qualityGates.landmarkConfidenceMin,
     });
     const nextOutcome = runMovementScreeningPipeline(landmarks, rules);
-    const videoFileName = `cerebro-ohs-${trialId}.webm`;
+    const videoFileName = `cerebro-ohs-${trialId}.${videoExtensionForMimeType(blob.type)}`;
     const exportedAt = new Date().toISOString();
 
     if (nextOutcome.ok) {
@@ -434,10 +468,12 @@ export default function MovementScreeningPhaseOne({
         });
       }
       await video.play();
+      await waitForFirstVideoFrame(video);
       if (video.videoWidth === 0 || video.videoHeight === 0) {
         throw new Error('Camera returned an invalid video resolution.');
       }
 
+      const cameraTrack = stream.getVideoTracks()[0];
       const nextSource: SourceMetadata = {
         width: video.videoWidth,
         height: video.videoHeight,
@@ -445,7 +481,10 @@ export default function MovementScreeningPhaseOne({
         previewMirrored: true,
         inferenceMirrored: false,
         browser: navigator.userAgent,
-        device: navigator.platform || 'unknown',
+        device: [
+          navigator.platform || 'unknown',
+          cameraTrack?.label || 'front camera',
+        ].join(' · '),
       };
       sourceRef.current = nextSource;
       setSource(nextSource);
@@ -485,6 +524,7 @@ export default function MovementScreeningPhaseOne({
     setOutcome(null);
     setExportBundle(null);
     setCopied(false);
+    setShared(false);
     setDetectedRepetitions(0);
     setElapsedSeconds(0);
     setVideoBlob(null);
@@ -499,10 +539,17 @@ export default function MovementScreeningPhaseOne({
     autoFinishingRef.current = false;
     recorderChunksRef.current = [];
 
-    const mimeType = selectRecorderMimeType();
+    const recorderFormat = selectRecorderFormat((mimeType) =>
+      MediaRecorder.isTypeSupported(mimeType),
+    );
     const recorder = new MediaRecorder(
       stream,
-      mimeType ? { mimeType, videoBitsPerSecond: 4_000_000 } : undefined,
+      recorderFormat
+        ? {
+            mimeType: recorderFormat.mimeType,
+            videoBitsPerSecond: 4_000_000,
+          }
+        : { videoBitsPerSecond: 4_000_000 },
     );
     const trialId = crypto.randomUUID();
     trialIdRef.current = trialId;
@@ -529,6 +576,7 @@ export default function MovementScreeningPhaseOne({
     setOutcome(null);
     setExportBundle(null);
     setCopied(false);
+    setShared(false);
     setDetectedRepetitions(0);
     setVideoBlob(null);
     if (videoUrlRef.current) {
@@ -589,12 +637,44 @@ export default function MovementScreeningPhaseOne({
   const downloadJson = useCallback(() => {
     if (!exportBundle) return;
     downloadBlob(
-      new Blob([JSON.stringify(exportBundle, null, 2)], {
-        type: 'application/json',
-      }),
-      exportBundle.videoFileName.replace(/\.webm$/, '.json'),
+      makeJsonBlob(exportBundle),
+      jsonFileNameForVideo(exportBundle.videoFileName),
     );
   }, [exportBundle]);
+
+  const shareEvidence = useCallback(async () => {
+    if (!videoBlob || !exportBundle || !('share' in navigator)) return;
+    const files = [
+      new File([videoBlob], exportBundle.videoFileName, {
+        type: videoBlob.type || 'application/octet-stream',
+      }),
+      new File(
+        [makeJsonBlob(exportBundle)],
+        jsonFileNameForVideo(exportBundle.videoFileName),
+        { type: 'application/json' },
+      ),
+    ];
+    if (navigator.canShare && !navigator.canShare({ files })) {
+      setErrorMessage(
+        'This browser cannot share both evidence files. Download Video and JSON bundle separately.',
+      );
+      return;
+    }
+    try {
+      await navigator.share({
+        title: 'Cerebro movement-screening evidence',
+        files,
+      });
+      setShared(true);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'The evidence pair could not be shared.',
+      );
+    }
+  }, [exportBundle, videoBlob]);
 
   const copyResultJson = useCallback(async () => {
     if (!visibleJson) return;
@@ -627,13 +707,13 @@ export default function MovementScreeningPhaseOne({
             <span className="text-black/35"> measured in-browser.</span>
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-black/52">
-            Laptop front camera · front view · three repetitions · hip
+            Front camera · front view · three repetitions · hip
             translation and squat-depth proxy.
           </p>
         </div>
         <div className="flex items-center gap-2 border border-black/10 bg-white/60 px-3 py-2 text-xs text-black/55">
           <LockKeyhole className="h-3.5 w-3.5 text-black/45" />
-          Video and landmarks stay on this laptop
+          Video and landmarks stay on this device
         </div>
       </header>
 
@@ -642,6 +722,7 @@ export default function MovementScreeningPhaseOne({
           <div className="relative aspect-video min-h-[300px] overflow-hidden rounded-[20px] bg-[#080b09] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
             <video
               ref={videoRef}
+              autoPlay
               muted
               playsInline
               className="absolute inset-0 h-full w-full -scale-x-100 object-contain"
@@ -720,7 +801,7 @@ export default function MovementScreeningPhaseOne({
                 <p className="truncate text-xs text-black/43">
                   {source
                     ? `${source.width} × ${source.height} · ${delegate ?? 'model loading'} worker`
-                    : 'Built-in front camera · actual resolution detected at runtime'}
+                    : 'Front camera · actual resolution detected at runtime'}
                 </p>
               </div>
             </div>
@@ -891,6 +972,17 @@ export default function MovementScreeningPhaseOne({
                 {copied ? <Check className="h-3.5 w-3.5" /> : null}
                 {copied ? 'Copied' : 'Copy JSON'}
               </button>
+              {typeof navigator !== 'undefined' && 'share' in navigator && (
+                <button
+                  type="button"
+                  onClick={() => void shareEvidence()}
+                  disabled={!videoBlob || !exportBundle}
+                  className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-xs font-medium text-white transition hover:border-white/35 disabled:opacity-30"
+                >
+                  {shared ? <Check className="h-3.5 w-3.5" /> : null}
+                  {shared ? 'Shared' : 'Share evidence'}
+                </button>
+              )}
             </div>
           </div>
           <pre className="max-h-[32rem] overflow-auto p-4 font-mono text-[0.7rem] leading-5 text-white/70">
