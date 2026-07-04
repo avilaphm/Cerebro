@@ -3,6 +3,7 @@ import type { PoseModelProvenance } from './contracts';
 export const MEDIAPIPE_PACKAGE_VERSION = '0.10.35' as const;
 export const MEDIAPIPE_ASSET_BASE = '/vendor/mediapipe/0.10.35';
 export const MEDIAPIPE_WASM_BASE = `${MEDIAPIPE_ASSET_BASE}/wasm`;
+export const MEDIAPIPE_WASM_USE_MODULE = false as const;
 export const MEDIAPIPE_MODEL_PATH =
   `${MEDIAPIPE_ASSET_BASE}/models/pose_landmarker_full_float16_v1.task`;
 

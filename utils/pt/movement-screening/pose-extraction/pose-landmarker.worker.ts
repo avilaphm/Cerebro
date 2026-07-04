@@ -2,6 +2,7 @@ import {
   FilesetResolver,
   PoseLandmarker,
 } from '@mediapipe/tasks-vision';
+import { MEDIAPIPE_WASM_USE_MODULE } from '../constants';
 import {
   copyWorkerLandmarks,
   type PoseWorkerRequest,
@@ -22,7 +23,7 @@ self.onmessage = async (event: MessageEvent<PoseWorkerRequest>) => {
       poseLandmarker?.close();
       const fileset = await FilesetResolver.forVisionTasks(
         message.wasmBaseUrl,
-        true,
+        MEDIAPIPE_WASM_USE_MODULE,
       );
       poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
         baseOptions: {

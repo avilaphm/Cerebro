@@ -7,6 +7,7 @@ import {
   selectRecorderFormat,
   videoExtensionForMimeType,
 } from '../capture-format';
+import { MEDIAPIPE_WASM_USE_MODULE } from '../constants';
 import type {
   EntryPoint,
   FrameSource,
@@ -56,6 +57,10 @@ test('capture format supports WebM and iPhone MP4 evidence pairs', () => {
     jsonFileNameForVideo('cerebro-ohs-trial.webm'),
     'cerebro-ohs-trial.json',
   );
+});
+
+test('MediaPipe uses its classic WASM loader inside the classic Turbopack worker', () => {
+  assert.equal(MEDIAPIPE_WASM_USE_MODULE, false);
 });
 
 function landmark(
