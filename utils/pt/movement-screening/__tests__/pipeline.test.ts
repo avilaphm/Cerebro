@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fixtureJson from '../fixtures/phase-1-uncalibrated-v1.json';
+import { createFrontCameraConstraints } from '../camera-constraints';
 import { sha256CanonicalJson } from '../canonical-json';
 import {
   jsonFileNameForVideo,
@@ -61,6 +62,23 @@ test('capture format supports WebM and iPhone MP4 evidence pairs', () => {
 
 test('MediaPipe uses its classic WASM loader inside the classic Turbopack worker', () => {
   assert.equal(MEDIAPIPE_WASM_USE_MODULE, false);
+});
+
+test('front camera constraints follow the screen orientation', () => {
+  assert.deepEqual(createFrontCameraConstraints(true), {
+    facingMode: 'user',
+    width: { ideal: 720 },
+    height: { ideal: 1280 },
+    aspectRatio: { ideal: 9 / 16 },
+    frameRate: { ideal: 30, max: 30 },
+  });
+  assert.deepEqual(createFrontCameraConstraints(false), {
+    facingMode: 'user',
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    aspectRatio: { ideal: 16 / 9 },
+    frameRate: { ideal: 30, max: 30 },
+  });
 });
 
 function landmark(

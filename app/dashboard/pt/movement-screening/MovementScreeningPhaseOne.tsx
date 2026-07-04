@@ -22,6 +22,7 @@ import {
   POSE_CONNECTIONS,
   WORKER_MODEL_PROVENANCE,
 } from '@/utils/pt/movement-screening/constants';
+import { createFrontCameraConstraints } from '@/utils/pt/movement-screening/camera-constraints';
 import {
   jsonFileNameForVideo,
   selectRecorderFormat,
@@ -442,14 +443,12 @@ export default function MovementScreeningPhaseOne({
     }
 
     try {
+      const portraitCapture = window.matchMedia(
+        '(orientation: portrait)',
+      ).matches;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: {
-          facingMode: 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30, max: 30 },
-        },
+        video: createFrontCameraConstraints(portraitCapture),
       });
       streamRef.current = stream;
       const video = videoRef.current;
@@ -691,7 +690,7 @@ export default function MovementScreeningPhaseOne({
     runtimeState === 'ready' && trackingReady && Boolean(delegate);
 
   return (
-    <div className="min-h-full rounded-[24px] border border-black/8 bg-[rgba(255,255,255,0.62)] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.06)] backdrop-blur-xl md:p-7">
+    <div className="min-h-full w-full max-w-full overflow-hidden rounded-[18px] border border-black/8 bg-[rgba(255,255,255,0.62)] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:rounded-[24px] sm:p-4 md:p-7">
       <header className="flex flex-col gap-5 border-b border-black/8 pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -702,7 +701,7 @@ export default function MovementScreeningPhaseOne({
               Rules uncalibrated
             </span>
           </div>
-          <h1 className="mt-3 max-w-3xl text-3xl font-medium tracking-[-0.045em] text-black md:text-5xl">
+          <h1 className="mt-3 max-w-3xl text-[2rem] font-medium leading-[1.02] tracking-[-0.045em] text-black md:text-5xl">
             Overhead squat,
             <span className="text-black/35"> measured in-browser.</span>
           </h1>
@@ -711,7 +710,7 @@ export default function MovementScreeningPhaseOne({
             translation and squat-depth proxy.
           </p>
         </div>
-        <div className="flex items-center gap-2 border border-black/10 bg-white/60 px-3 py-2 text-xs text-black/55">
+        <div className="flex w-full items-center gap-2 border border-black/10 bg-white/60 px-3 py-2 text-xs text-black/55 sm:w-auto">
           <LockKeyhole className="h-3.5 w-3.5 text-black/45" />
           Video and landmarks stay on this device
         </div>
@@ -719,28 +718,28 @@ export default function MovementScreeningPhaseOne({
 
       <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <section className="min-w-0">
-          <div className="relative aspect-video min-h-[300px] overflow-hidden rounded-[20px] bg-[#080b09] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
+          <div className="relative mx-auto aspect-[9/16] w-full max-w-[24rem] overflow-hidden rounded-[20px] bg-[#080b09] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] md:aspect-video md:max-w-none">
             <video
               ref={videoRef}
               autoPlay
               muted
               playsInline
-              className="absolute inset-0 h-full w-full -scale-x-100 object-contain"
+              className="absolute inset-0 h-full w-full -scale-x-100 object-cover md:object-contain"
             />
             <canvas
               ref={overlayRef}
               aria-label="Live pose tracking overlay"
-              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-contain"
+              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover md:object-contain"
             />
 
-            <div className="pointer-events-none absolute inset-x-[20%] bottom-[7%] top-[8%] border border-white/20">
+            <div className="pointer-events-none absolute inset-x-[10%] bottom-[5%] top-[5%] border border-white/20 md:inset-x-[20%] md:bottom-[7%] md:top-[8%]">
               <span className="absolute -left-px -top-px h-7 w-7 border-l-2 border-t-2 border-[#42ff88]" />
               <span className="absolute -right-px -top-px h-7 w-7 border-r-2 border-t-2 border-[#42ff88]" />
               <span className="absolute -bottom-px -left-px h-7 w-7 border-b-2 border-l-2 border-[#42ff88]" />
               <span className="absolute -bottom-px -right-px h-7 w-7 border-b-2 border-r-2 border-[#42ff88]" />
             </div>
 
-            <div className="absolute left-3 top-3 flex items-center gap-2 bg-black/65 px-3 py-2 text-[0.68rem] font-medium text-white backdrop-blur">
+            <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] items-center gap-2 bg-black/65 px-3 py-2 text-[0.68rem] font-medium text-white backdrop-blur">
               <span
                 className={`h-2 w-2 rounded-full ${
                   runtimeState === 'capturing'
@@ -754,7 +753,7 @@ export default function MovementScreeningPhaseOne({
             </div>
 
             {runtimeState === 'capturing' && (
-              <div className="absolute right-3 top-3 bg-black/65 px-3 py-2 font-mono text-xs text-white backdrop-blur">
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/65 px-3 py-2 font-mono text-xs text-white backdrop-blur sm:bottom-auto sm:left-auto sm:right-3 sm:top-3 sm:translate-x-0">
                 {elapsedSeconds < rules.config.segmentation.neutralBaselineDurationMs / 1000
                   ? `HOLD ${Math.max(0, rules.config.segmentation.neutralBaselineDurationMs / 1000 - elapsedSeconds).toFixed(1)}s`
                   : `${detectedRepetitions} / 3 REPS`}
@@ -806,13 +805,13 @@ export default function MovementScreeningPhaseOne({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
               {runtimeState === 'idle' || runtimeState === 'error' ? (
                 <button
                   type="button"
                   onClick={() => void startCamera()}
                   disabled={isBusy}
-                  className="inline-flex items-center gap-2 bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
                 >
                   <Camera className="h-4 w-4" />
                   Enable camera
@@ -821,7 +820,7 @@ export default function MovementScreeningPhaseOne({
                 <button
                   type="button"
                   onClick={() => void finishTrial()}
-                  className="inline-flex items-center gap-2 bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 sm:w-auto"
                 >
                   <CircleStop className="h-4 w-4" />
                   Stop & analyse
@@ -830,7 +829,7 @@ export default function MovementScreeningPhaseOne({
                 <button
                   type="button"
                   onClick={resetTrial}
-                  className="inline-flex items-center gap-2 bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 sm:w-auto"
                 >
                   <RefreshCw className="h-4 w-4" />
                   New trial
@@ -840,7 +839,7 @@ export default function MovementScreeningPhaseOne({
                   type="button"
                   onClick={startTrial}
                   disabled={!canStartTrial || isBusy}
-                  className="inline-flex items-center gap-2 bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-35"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-35 sm:w-auto"
                 >
                   <Video className="h-4 w-4" />
                   Start 3-rep trial
@@ -851,7 +850,7 @@ export default function MovementScreeningPhaseOne({
                   type="button"
                   onClick={stopCamera}
                   disabled={runtimeState === 'capturing' || !source}
-                  className="border border-black/12 px-3 py-2.5 text-sm text-black/55 transition hover:border-black/25 hover:text-black disabled:opacity-30"
+                  className="min-h-11 w-full border border-black/12 px-3 py-2.5 text-sm text-black/55 transition hover:border-black/25 hover:text-black disabled:opacity-30 sm:w-auto"
                 >
                   Camera off
                 </button>
@@ -945,7 +944,7 @@ export default function MovementScreeningPhaseOne({
                   : 'Rejected trial · fix the quality gate before calibration'}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={downloadVideo}
