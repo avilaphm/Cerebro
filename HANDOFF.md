@@ -1,12 +1,35 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Claude - Cerebro Studio Phase 1 built (screen+camera recorder, /dashboard/studio). Awaiting Pedro's browser test.
+2026-07-04 by Codex - Movement Screening Phase 1 laptop-first build checklist persisted. Implementation not started.
 
 ## Last code fix commit
-this commit - Cerebro Studio Phase 1: capture + compositing + Layout 1 + record + download
+0485aca - Cerebro Studio Phase 1: screen + camera recorder (/dashboard/studio)
 
 ## What just happened (read first)
+
+### Movement Screening Phase 1 persistent plan (2026-07-04, LATEST)
+
+Pedro changed the Phase 1 execution order for the self-serve movement-screening PRD.
+
+Current decisions:
+- Build and calibrate on Pedro's laptop in desktop Chrome using the built-in front camera.
+- Do not test or optimise for the phone yet.
+- Keep the pipeline and camera contracts device-independent so phone support remains additive later.
+- Build local laptop video recording plus a matching landmark, metrics, rules, and findings JSON bundle.
+- Pedro will provide clean ceiling, lateral-shift, squat-depth, and severity definitions only after the interface and recording pipeline work.
+- Provisional research thresholds are not Pedro's final rules.
+- No application implementation has started.
+
+Mandatory source of truth:
+- `docs/movement-screening/PHASE-1-CHECKLIST.md`
+
+NEXT:
+1. Wait for Pedro to authorise implementation.
+2. Read the PRD and the full checklist.
+3. Start at the first unchecked item: create the six-skill chain.
+4. Update the checklist and this handoff after every session.
+5. Do not start later phases or phone work until laptop Phase 1 passes every gate.
 
 ### Cerebro Studio Phase 1 (2026-07-04, LATEST)
 
