@@ -5,7 +5,7 @@
 - Current phase: Phase 1 only
 - Current state: Technical build implemented and automated checks passing; Pedro laptop-camera acceptance is next
 - Current target: Pedro's laptop, desktop Chrome, built-in front camera
-- Next action: Follow `LAPTOP-TEST-GUIDE.md` in Pedro's authenticated desktop Chrome session
+- Next action: Reinstall the Chrome plugin from the Codex plugin UI, then retry browser control and follow `LAPTOP-TEST-GUIDE.md` in Pedro's authenticated desktop Chrome session
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
 - Pedro test guide: `docs/movement-screening/LAPTOP-TEST-GUIDE.md`
 - Route: `/dashboard/pt/movement-screening`
@@ -452,6 +452,9 @@ The recording exists to create Pedro's calibration evidence, not to create a cli
 
 This gate proves the software before Pedro defines final movement rules.
 
+- Detected environment: MacBook Pro `MacBookPro15,1`, macOS 15.7.7 build 24G720, Chrome 149.0.7827.198.
+- Camera label remains pending because the authenticated browser connection did not attach.
+
 - [ ] Test through an authenticated HTTPS deployment or an approved secure local setup.
 - [ ] Record laptop model, operating-system version, Chrome version, and camera label.
 - [ ] Camera permission succeeds.
@@ -569,14 +572,15 @@ Last completed:
 
 Next action:
 
-1. Pedro follows `docs/movement-screening/LAPTOP-TEST-GUIDE.md` in his authenticated desktop Chrome session.
-2. Record the laptop/Chrome/camera environment and complete three technical trials.
-3. Verify overlay alignment, anatomical direction, worker FPS, automatic three-rep detection, WebM playback, JSON alignment, camera cleanup, and network privacy.
-4. Only after that gate passes, record Pedro's clean and faulted calibration examples.
+1. Reinstall the Chrome plugin from the Codex plugin UI, then restart Codex if prompted.
+2. Retry browser control in Pedro's authenticated desktop Chrome session.
+3. Follow `docs/movement-screening/LAPTOP-TEST-GUIDE.md` and complete three technical trials.
+4. Record the camera label and verify overlay alignment, anatomical direction, worker FPS, automatic three-rep detection, WebM playback, JSON alignment, camera cleanup, and network privacy.
+5. Only after that gate passes, record Pedro's clean and faulted calibration examples.
 
 Current blockers:
 
-- Automated browser control could not access either the in-app browser or Pedro's Chrome extension session, so the real camera/permission/worker/WebM flow still requires Pedro's manual laptop test.
+- Automated browser control still cannot attach to Pedro's Chrome extension session. Chrome is running, the Codex Chrome Extension 1.1.5 is installed and enabled in the selected Default profile, and the native-host manifest is valid. The approved fresh-window helper failed at macOS LaunchServices, and the required one-time connection retry still failed. Chrome plugin reinstallation from the Codex plugin UI is now required before another automated attempt.
 - Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical laptop acceptance passes.
 
 ## Session Continuation Log
@@ -586,6 +590,7 @@ Current blockers:
 | 2026-07-04 | Phase 1 plan persisted with laptop-first calibration workflow | Planning review only, no application code changed | Wait for implementation authorization, then create six skills | Final movement thresholds intentionally deferred |
 | 2026-07-04 | Implementation authorised at start commit `163619f9bf5f`; six skills created and root chain documented | `quick_validate.py` passed all six; unrelated concurrent Studio changes identified and preserved | Verify and install exact-pinned MediaPipe assets | Final movement thresholds intentionally deferred |
 | 2026-07-04 | Laptop-first technical build implemented through the manual camera gate; active uncalibrated rules v1 applied to Supabase | 13/13 tests, TypeScript, targeted lint, Next 16.2.10 build, production audit 0, RLS/read-only checks, hashes, auth redirect, and asset headers pass | Pedro runs `LAPTOP-TEST-GUIDE.md` | Controlled browser surfaces unavailable; final thresholds deferred |
+| 2026-07-04 | Captured the laptop, OS, and Chrome environment and completed Chrome-control diagnostics | MacBookPro15,1; macOS 15.7.7 build 24G720; Chrome 149.0.7827.198; extension installed/enabled; native-host manifest valid | Reinstall the Chrome plugin from the Codex plugin UI, then retry the authenticated camera test | Browser control cannot attach; approved fresh-window helper failed in macOS LaunchServices |
 
 ## Research references
 

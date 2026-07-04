@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening Phase 1 technical build complete through the Pedro laptop-camera gate.
+2026-07-04 by Codex - Movement Screening Phase 1 Chrome acceptance diagnostics persisted.
 
 ## Last code fix commit
-this commit - Movement Screening Phase 1 laptop pipeline and calibration capture
+6435e4e - Movement Screening Phase 1 laptop pipeline and calibration capture
 
 ## What just happened (read first)
 
@@ -35,14 +35,22 @@ Verification:
 - Supabase: RLS enabled, one policy, anon select false, authenticated select true, authenticated write false, five indexes. Security advisor added no movement-screening finding.
 - Full-repo ESLint still has pre-existing errors outside this feature; no unrelated lint cleanup was mixed in.
 
+Latest browser-acceptance evidence:
+- Test environment identified as MacBook Pro `MacBookPro15,1`, macOS 15.7.7 build 24G720, Chrome 149.0.7827.198.
+- Chrome is running. The Codex Chrome Extension 1.1.5 is installed and enabled in the selected Default profile, and its native-host manifest is valid.
+- Browser control still cannot attach. Pedro approved opening a fresh Chrome window, but the plugin helper failed in macOS LaunchServices; the required connection retry also failed.
+- Per the Chrome plugin recovery contract, reinstall the Chrome plugin from the Codex plugin UI before retrying. Do not use AppleScript or another browser-control workaround.
+
 NEXT:
-1. Pedro opens the route in authenticated desktop Chrome and follows `docs/movement-screening/LAPTOP-TEST-GUIDE.md`.
-2. Confirm real camera permission, overlay alignment, anatomical direction, GPU/CPU-worker FPS, exact three-rep completion, WebM playback, JSON/video alignment, camera shutdown, and no capture upload.
-3. If technical acceptance passes, record clean, left/right shift, adequate/borderline/insufficient-depth calibration pairs.
-4. Do not begin phone work or later skills. Pedro's labelled videos/JSON define rules v2; activate it as data without deploying.
+1. Reinstall the Chrome plugin from the Codex plugin UI, then restart Codex if prompted.
+2. Retry browser control in Pedro's authenticated desktop Chrome session.
+3. Open `/dashboard/pt/movement-screening` and follow `docs/movement-screening/LAPTOP-TEST-GUIDE.md`.
+4. Confirm real camera permission, camera label, overlay alignment, anatomical direction, GPU/CPU-worker FPS, exact three-rep completion, WebM playback, JSON/video alignment, camera shutdown, and no capture upload.
+5. If technical acceptance passes, record clean, left/right shift, adequate/borderline/insufficient-depth calibration pairs.
+6. Do not begin phone work or later skills. Pedro's labelled videos/JSON define rules v2; activate it as data without deploying.
 
 Known blocker:
-- Automated browser control could not access the in-app browser or Pedro's Chrome extension session, so the real camera/permission/WebM flow is intentionally unverified until Pedro runs the guide.
+- Automated browser control cannot attach to Pedro's Chrome session despite valid extension and native-host checks. Reinstall the Chrome plugin from the Codex plugin UI before another automated attempt. The real camera/permission/WebM flow remains intentionally unverified.
 
 ### Cerebro Studio camera-bubble bugfix (2026-07-04, Claude)
 
