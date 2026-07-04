@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening Phase 1 adapted for iPhone capture; HTTPS deployment pending.
+2026-07-04 by Codex - Movement Screening Phase 1 iPhone capture deployed; Pedro phone acceptance pending.
 
 ## Last code fix commit
-this commit - Add iPhone Movement Screening capture and evidence transfer
+56c973c - Add iPhone Movement Screening capture and evidence transfer
 
 ## What just happened (read first)
 
@@ -28,11 +28,14 @@ Verification:
 - Targeted movement-screening ESLint: pass.
 - `npm run build`: pass with the PT movement-screening route registered.
 - Compiled worker still uses the corrected Turbopack worker constructor without the incompatible module flag.
+- Git push triggered production deployment `dpl_gKCxQZugPt3tgkQpxmEQoB4T8Cfq`, which is Ready and aliased to `https://cerebroai.au`.
+- Production protected route returns 307 to `/login` with `Permissions-Policy: camera=(self)`.
+- Production model and module WASM return 200 over HTTPS with immutable one-year caching; WASM uses `application/wasm`.
 
 NEXT:
-1. Commit and deploy this build to Cerebro HTTPS.
-2. On iPhone Chrome, log in at `https://cerebroai.au` and open `/dashboard/pt/movement-screening`.
-3. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`.
+1. On iPhone Chrome, open `https://cerebroai.au/dashboard/pt/movement-screening` and log in if required.
+2. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`.
+3. Report the exact status/error if the camera does not reach `Ready to record`.
 4. Do not calibrate thresholds until three phone technical trials pass.
 
 ### Movement Screening Chrome startup fix (2026-07-04)
