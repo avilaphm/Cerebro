@@ -3,9 +3,9 @@
 ## Status
 
 - Current phase: Phase 1 only
-- Current state: iPhone classic-worker loader fix deployed after Pedro's first runtime error; phone retry is next
+- Current state: iPhone camera, worker, and green overlay confirmed; portrait mobile capture deployed and awaiting visual acceptance
 - Current target: Pedro's iPhone 16 Pro, Chrome, front camera, authenticated Cerebro HTTPS deployment
-- Next action: Fully reload the production route on iPhone Chrome, confirm `Ready to record`, then continue `PHONE-CAPTURE-TEST-GUIDE.md`
+- Next action: Fully reload the production route, confirm the portrait viewfinder and overlay alignment, then complete three technical trials
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
 - Pedro test guide: `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`
 - Route: `/dashboard/pt/movement-screening`
@@ -460,15 +460,15 @@ This gate proves the software before Pedro defines final movement rules.
 - Target environment: iPhone 16 Pro front camera, Chrome, authenticated HTTPS Cerebro deployment.
 - Exact iOS version, Chrome version, camera label, source resolution, delegate, and FPS remain pending the first phone trial.
 
-- [ ] Test through an authenticated HTTPS deployment or an approved secure local setup.
+- [x] Test through an authenticated HTTPS deployment or an approved secure local setup.
 - [ ] Record iPhone model, iOS version, Chrome version, and camera label.
-- [ ] Camera permission succeeds.
+- [x] Camera permission succeeds.
 - [ ] Full body remains visible.
 - [ ] Green landmarks and connections align with the body.
 - [ ] Anatomical left and right are correct.
-- [ ] Worker inference runs.
+- [x] Worker inference runs.
 - [ ] GPU works, or CPU-worker fallback sustains at least 15 FPS.
-- [ ] No main-thread fallback is used for acceptance.
+- [x] No main-thread fallback is used for acceptance.
 - [ ] Three repetitions are detected consistently.
 - [ ] Recording starts and stops correctly.
 - [ ] Exported MP4/WebM plays correctly on the laptop.
@@ -574,22 +574,24 @@ Last completed:
 - Initial laptop-first plan and later iPhone-camera override persisted.
 - Six-skill chain created and validated; only the first three are functional.
 - Isolated PT route, worker pose extraction, two-metric pipeline, JSON rules engine, local recording/export, and versioned Supabase rule storage implemented.
-- Sixteen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
+- Seventeen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
 - Fixed the real-browser startup failure where Next.js 16 Turbopack emitted a classic `importScripts()` worker bootstrap but the app forced Chrome to treat it as a module worker.
 - Fixed the first iPhone runtime failure where that classic worker still selected MediaPipe's ES-module WASM loader and iOS rejected its `import.meta` syntax.
+- Confirmed the iPhone camera, worker, and green overlay start successfully, then deployed a portrait 9:16 phone viewfinder with orientation-aware camera constraints and touch-safe controls.
 
 Next action:
 
 1. Fully reload `https://cerebroai.au/dashboard/pt/movement-screening` in Chrome on the iPhone 16 Pro.
-2. Tap `Enable camera` and confirm the model reaches `Ready to record` with a green landmark overlay.
-3. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
-4. Record the iOS/Chrome/camera environment and verify overlay alignment, anatomical direction, worker FPS, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
-5. Only after that gate passes, record Pedro's clean and faulted calibration examples.
+2. Confirm the viewfinder is portrait, contained within the phone width, and the green overlay follows the body.
+3. Record the iOS/Chrome/camera environment, source resolution, delegate, and FPS.
+4. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
+5. Verify anatomical direction, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
+6. Only after that gate passes, record Pedro's clean and faulted calibration examples.
 
 Current blockers:
 
 - Automated browser control still cannot attach to Pedro's Chrome extension session. Chrome is running, the Codex Chrome Extension 1.1.5 is installed and enabled in the selected Default profile, and the native-host manifest is valid. The approved fresh-window helper failed at macOS LaunchServices, and the required one-time connection retry still failed. Chrome plugin reinstallation from the Codex plugin UI is now required before another automated attempt.
-- Pedro's iPhone retry after the deployed classic-loader fix is the remaining current gate.
+- Pedro's portrait viewfinder check and three complete iPhone trials are the remaining current gate.
 - Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical iPhone acceptance passes.
 
 ## Session Continuation Log
@@ -604,6 +606,7 @@ Current blockers:
 | 2026-07-04 | Pedro replaced the unavailable laptop webcam with iPhone 16 Pro front-camera capture; added runtime MP4/WebM selection, first-frame gating, phone-safe copy, and matched evidence sharing | 15/15 movement tests, TypeScript, targeted lint, production build, and compiled-worker inspection pass | Deploy, then run `PHONE-CAPTURE-TEST-GUIDE.md` | Final thresholds remain deferred |
 | 2026-07-04 | Deployed iPhone capture commit `56c973c` to Cerebro production | Vercel deployment `dpl_gKCxQZugPt3tgkQpxmEQoB4T8Cfq` Ready; `cerebroai.au` aliases it; protected route returns 307 to login; camera policy, model, and WASM HTTPS headers verified | Pedro runs the phone technical acceptance guide | Real iPhone camera evidence pending |
 | 2026-07-04 | Fixed Pedro's first iPhone startup error by pairing Turbopack's classic worker with MediaPipe's classic WASM loader; commit `4e34078` deployed | 16/16 tests, TypeScript, targeted lint, production build, emitted-worker inspection, asset hashes, deployment state, route protection, and classic JS/WASM HTTPS headers pass | Pedro fully reloads the phone route and retries `Enable camera` | Real iPhone confirmation pending |
+| 2026-07-04 | Pedro confirmed iPhone camera, worker, and green overlay startup; deployed portrait 9:16 mobile capture and touch-safe controls in commit `5782298` | 17/17 tests, TypeScript, targeted lint, production build, and Vercel deployment `dpl_CeG6qq43WT5c7u4rLbpxNmzJ2Cst` pass | Pedro verifies the portrait viewfinder, then completes three technical trials | Local browser screenshot unavailable; real iPhone visual/trial acceptance pending |
 
 ## Research references
 

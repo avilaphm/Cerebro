@@ -1,14 +1,55 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Codex - Movement Screening iPhone worker-loader fix deployed; Pedro retry pending.
+2026-07-04 by Codex - Movement Screening portrait phone capture deployed; Pedro visual check pending.
 
 ## Last code fix commit
-4e34078 - fix(movement): use classic WASM loader
+5782298 - feat(movement): add portrait phone capture
 
 ## What just happened (read first)
 
-### Movement Screening iPhone worker-loader fix (2026-07-04, LATEST)
+### Movement Screening portrait phone capture (2026-07-04, LATEST)
+
+Pedro confirmed the iPhone 16 Pro camera, worker, and green pose overlay now
+start successfully after the classic-loader fix. The remaining usability issue
+was that the capture stage still used the desktop landscape treatment on the
+portrait phone.
+
+Shipped:
+- Phone portrait orientation now requests a 720 x 1280 front-camera stream with
+  a 9:16 ideal aspect ratio; landscape screens retain 1280 x 720 and 16:9.
+- Mobile capture uses a centered 9:16 viewfinder with matching `object-cover`
+  transforms on the video and landmark canvas, preserving overlay alignment.
+- Desktop retains its current wide `object-contain` stage.
+- Expanded the portrait green framing guide and moved the live rep counter away
+  from the top status badge.
+- Reduced phone container/title spacing, prevented horizontal overflow, made
+  primary controls full-width touch targets, and allowed result actions to
+  wrap.
+- Added a deterministic orientation-constraint test. Pose metrics, rules,
+  mirroring, and anatomical coordinates are unchanged.
+
+Verification:
+- `npm run test:movement-screening`: 17/17 pass.
+- `npx tsc --noEmit`: pass.
+- Targeted movement-screening ESLint: pass.
+- `npm run build`: pass.
+- Production deployment `dpl_CeG6qq43WT5c7u4rLbpxNmzJ2Cst` is Ready and
+  aliased to `https://cerebroai.au`.
+- Local responsive browser screenshot validation was unavailable; Pedro's
+  iPhone is the visual acceptance surface.
+
+NEXT:
+1. Fully reload the iPhone Movement Screening route and confirm the camera
+   viewfinder is portrait, contained, and the green overlay follows the body.
+2. Record the iOS version, Chrome version, camera label, source resolution,
+   worker delegate, and inference FPS.
+3. Complete three ordinary technical trials and transfer each video/JSON pair.
+4. Verify exact three-rep detection, playback, timestamp alignment, sharing,
+   camera cleanup, and no capture upload.
+5. Only after those three trials pass, begin Pedro-labelled calibration.
+
+### Movement Screening iPhone worker-loader fix (2026-07-04)
 
 Pedro's first iPhone 16 Pro test reached the camera workflow but MediaPipe failed
 before either delegate initialized:
