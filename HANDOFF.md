@@ -1,14 +1,40 @@
 # Handoff
 
 ## Last updated
-2026-07-05 by Codex + Claude - Movement Screening hands-free capture and Studio screen-picker/Continuity Camera fixes shipped; real-device checks pending.
+2026-07-05 by Claude - Studio compositor fixes (background-tab freeze + screen dead space); iPhone Continuity Camera confirmed working. (Also live: Codex Movement Screening hands-free capture.)
 
 ## Last code fix commit
-e1f1dd3 - fix(studio): populate camera list even when the default camera fails
+13d7e2f - fix(studio): keep recording live on tab switch + fill screen to edges
 
 ## What just happened (read first)
 
-### Cerebro Studio: screen picker + phone-as-webcam (2026-07-05, LATEST)
+### Cerebro Studio: compositor freeze + dead space (2026-07-05, LATEST)
+
+Pedro tested on real hardware. iPhone via Continuity Camera works and looks great,
+and the portrait cut looks good. Two issues he raised, both fixed in commit
+13d7e2f:
+
+1. Tab-switch freeze (useCompositor.ts + new tick.worker.ts): switching to another
+   tab/app (Excel) mid-recording showed the new content several seconds late. Root
+   cause: the compositor draw loop used requestAnimationFrame, which Chrome
+   throttles to ~1fps on a HIDDEN tab, so the canvas (and the MediaRecorder reading
+   it) stopped updating until he switched back. Fix: a Web Worker setInterval ticks
+   at 30fps regardless of tab visibility and posts to the main thread, which renders
+   on each tick. rAF kept only as a fallback if Worker creation fails. Same worker
+   pattern the pose pipeline uses (new URL(..., import.meta.url)). NOTE: if a future
+   need arises for the Studio tab hidden 5+ min continuously, consider
+   OffscreenCanvas-in-worker or MediaStreamTrackProcessor for full immunity.
+
+2. Screen dead space (layouts.ts): landscape layouts 1 and 3 letterboxed the 16:10
+   laptop screen inside the 16:9 canvas (black bars). Now drawCover fills the canvas
+   edge to edge, cropping a few pixels top/bottom. Portrait card kept on drawContain
+   deliberately (Pedro likes the portrait; cover there would crop spreadsheet rows).
+
+tsc + Studio ESLint clean. NOT yet re-confirmed on hardware: Pedro to verify the tab
+switch is now instant while recording and that the filled screen framing looks right
+(the macOS menu bar / dock edges may be cropped by cover).
+
+### Cerebro Studio: screen picker + phone-as-webcam (2026-07-05)
 
 Pedro reported (1) screen recording no longer captured another Chrome tab he had
 open, and (2) his laptop webcam wasn't working, so he wants to use his iPhone as the
