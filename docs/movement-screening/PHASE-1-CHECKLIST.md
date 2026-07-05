@@ -3,9 +3,9 @@
 ## Status
 
 - Current phase: Phase 1 only
-- Current state: bodyweight-squat rules v2 and arms-forward hands-free flow implemented locally; safe deployment and Pedro's iPhone trial acceptance are next
+- Current state: bodyweight-squat rules v2 and arms-forward hands-free flow are live; Pedro's three iPhone technical trials are next
 - Current target: Pedro's iPhone 16 Pro, Chrome, front camera, authenticated Cerebro HTTPS deployment
-- Next action: Deploy code before activating rules v2, then run three ordinary iPhone bodyweight-squat trials
+- Next action: Run three ordinary iPhone bodyweight-squat trials using the phone guide
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
 - Pedro test guide: `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`
 - Route: `/dashboard/pt/movement-screening`
@@ -593,8 +593,8 @@ Last completed:
 
 Next action:
 
-1. Deploy the compatibility code while rules v1 remains active, then apply the immutable rules v2 migration.
-2. Fully reload `https://cerebroai.au/dashboard/pt/movement-screening` in Chrome on the iPhone 16 Pro.
+1. Fully reload `https://cerebroai.au/dashboard/pt/movement-screening` in Chrome on the iPhone 16 Pro.
+2. Confirm the page shows `Bodyweight squat` and rules v2.
 3. Stand tall with arms straight forward at shoulder height and confirm staying ready for three seconds auto-starts.
 4. Confirm leaving the guide or dropping the ready posture resets the countdown.
 5. Run one slow bodyweight-squat trial using 2 seconds down, 1 second pause, and 2 seconds up.
@@ -625,6 +625,7 @@ Current blockers:
 | 2026-07-04 | Pedro confirmed iPhone camera, worker, and green overlay startup; deployed portrait 9:16 mobile capture and touch-safe controls in commit `5782298` | 17/17 tests, TypeScript, targeted lint, production build, and Vercel deployment `dpl_CeG6qq43WT5c7u4rLbpxNmzJ2Cst` pass | Pedro verifies the portrait viewfinder, then completes three technical trials | Local browser screenshot unavailable; real iPhone visual/trial acceptance pending |
 | 2026-07-05 | Added full-body capture rectangle, contained all overlay labels, and added a tested 2-1-2 tempo cue in commit `27b7d7c` | 18/18 tests, TypeScript, targeted lint, production build, and Vercel deployment `dpl_B2DekrHWxF57T8qVnDx4KBVpWxgw` pass | Pedro verifies rectangle/text containment and runs one slow three-rep trial | Automated browser preview unavailable; real iPhone visual acceptance pending |
 | 2026-07-05 | Added distance-readable framing plus three-second hands-free start and post-rep stillness finish in commit `0bf3518` | 20/20 tests, TypeScript, targeted lint, and production build pass | Pedro verifies both interrupted-hold resets and one complete hands-free iPhone trial | In-app browser preview unavailable; real iPhone visual/camera acceptance pending |
+| 2026-07-05 | Replaced the Phase 1 movement with a front-view bodyweight squat; added arms-forward ready/finish gates; deployed compatible code before activating immutable rules v2 in commit `672075d` | 22/22 tests, full TypeScript, targeted lint, production build, rule/fixture hash parity, Vercel deployment `dpl_9YUKdnTC3SpaBYsaxxchTLjcLfBs`, one active rules row, route protection, camera policy, and model asset headers pass | Pedro completes three iPhone technical trials from the phone guide | Real iPhone posture tolerance, repetition detection, export, and cleanup acceptance remain pending |
 
 ## Research references
 

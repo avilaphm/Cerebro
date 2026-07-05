@@ -1,14 +1,69 @@
 # Handoff
 
 ## Last updated
-2026-07-05 by Claude - Studio floating self-view (Document PiP) shipped; compositor freeze + dead-space fixes confirmed working by Pedro. (Also live: Codex Movement Screening hands-free capture.)
+2026-07-05 by Codex - Movement Screening bodyweight-squat rules v2 shipped safely; three real iPhone trials are the remaining gate. Studio floating self-view work remains unchanged.
 
 ## Last code fix commit
-2e2a3e9 - feat(studio): floating self-view (Document PiP) with cross-tab controls
+672075d - feat(screening): use bodyweight squat
 
 ## What just happened (read first)
 
-### Cerebro Studio: floating self-view / Document PiP (2026-07-05, LATEST)
+### Movement Screening: bodyweight-squat rules v2 (2026-07-05, LATEST)
+
+Pedro simplified the current technical test from an overhead squat to a
+front-view bodyweight squat before movement ordering or calibration work.
+
+Shipped in commit `672075d`:
+
+- The distance-readable camera guide now names `Bodyweight squat`, front view,
+  and three repetitions.
+- Full-body framing alone no longer starts the test. Pedro must stand tall with
+  both arms straight forward at shoulder height for three continuous seconds.
+- The same arms-forward standing posture plus three seconds of stillness is
+  required after rep three before the recording saves automatically.
+- Dropping the ready posture, leaving the guide, or moving during the finish
+  hold resets the relevant countdown.
+- The overhead-only arm quality gate was removed from bodyweight-squat metrics.
+  Legacy rules v1 remains readable so rollout order was safe.
+- Rules/metrics/result schemas moved to 1.1.0. Immutable rules v2 is active in
+  Supabase; overhead rules v1 is retained as retired history.
+- The first three movement-screening skills and both test guides now use the
+  bodyweight-squat contract. Later commentary/report/refinement skills remain
+  locked until Phase 1 passes.
+
+Safe rollout:
+
+1. Compatibility code deployed while overhead rules v1 remained active.
+2. Vercel deployment `dpl_9YUKdnTC3SpaBYsaxxchTLjcLfBs` became Ready and
+   `cerebroai.au` resolved to it.
+3. Only then was the immutable rules v2 migration applied.
+4. Database verification shows exactly one active row: v2,
+   `bodyweight_squat_front`, hash
+   `62c7807db75597d843f8caf2a320bf27f723e0157a9d045b1c1abbd0bc757c88`.
+
+Verification:
+
+- 22/22 movement-screening tests pass.
+- Full TypeScript, targeted ESLint, and production build pass.
+- Migration JSON equals the checked-in fixture and its canonical SHA-256.
+- Production route remains authenticated (307 to login when signed out),
+  camera permission policy remains `camera=(self)`, and the pinned pose model
+  returns 200 with immutable caching.
+- `npm audit --omit=dev` reports two pre-existing high advisories through
+  `@mapbox/node-pre-gyp -> tar`; this change added no dependency.
+
+NEXT:
+
+1. Pedro fully reloads the movement-screening route on iPhone 16 Pro Chrome.
+2. Confirm rules v2 and `Bodyweight squat` appear.
+3. Complete three ordinary trials using
+   `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`.
+4. Report whether arms-forward start/finish tolerance, all three repetitions,
+   automatic save, evidence export, and camera cleanup pass.
+5. Do not build movement ordering, calibration, or the proposed five-edit
+   self-learning checker until these three real-device trials pass.
+
+### Cerebro Studio: floating self-view / Document PiP (2026-07-05)
 
 Pedro confirmed the compositor fixes work ("perfect"). New ask: while recording,
 when he switches to another tab/app he wants to keep seeing himself (the recorded
