@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-05 by Claude - Studio screen-picker fix (tab switches now record); Continuity Camera path chosen for phone-as-webcam.
+2026-07-05 by Codex + Claude - Movement Screening hands-free capture and Studio screen-picker/Continuity Camera fixes shipped; real-device checks pending.
 
 ## Last code fix commit
-68464b4 - fix(studio): default screen picker to full screen so tab switches record
+e1f1dd3 - fix(studio): populate camera list even when the default camera fails
 
 ## What just happened (read first)
 
@@ -34,6 +34,10 @@ No code needed. The in-app QR/WebRTC bridge was offered as a Phase 3 alternative
 and declined for now; revisit only if he wants a cross-platform, OS-setup-free
 flow later.
 
+Follow-up commit `e1f1dd3` also refreshes the device list when the default camera
+fails, so a busy/broken built-in webcam no longer leaves the dropdown empty and
+blocks selection of the iPhone Continuity Camera.
+
 NEXT:
 1. Pedro: enable Continuity Camera (iPhone near, unlocked-not-required, WiFi+BT on,
    same Apple ID), then pick "iPhone Camera" in Studio's Camera dropdown. Confirm
@@ -42,6 +46,47 @@ NEXT:
    tab switch is captured.
 3. (Optional) Diagnose why the built-in laptop webcam failed; likely a Chrome
    permission or another app holding the camera (NotReadableError).
+
+### Movement Screening hands-free capture flow (2026-07-05, LATEST)
+
+Pedro could not see the capture rectangle or reach the start button after
+stepping far enough away to fit his full body in the iPhone frame.
+
+Shipped in commit `0bf3518`:
+- Replaced the low-opacity 1px guide with a solid 3px bright-green rectangle,
+  heavy 6px corners, black contrast outline, and green glow.
+- Full-body readiness now requires tracked shoulders, wrists, hips, knees, and
+  ankles to remain inside the guide for three continuous seconds.
+- The trial starts automatically after that three-second framing hold. `Start
+  now` remains available only as a nearby fallback.
+- Added a distance-readable camera prompt that always names `Overhead squat`,
+  `Front view`, and `3 reps`, then changes through framing, neutral baseline,
+  repetition, finish-hold, processing, success, and redo states.
+- After rep three, recording continues until Pedro remains still with arms
+  overhead for three seconds. Movement or lost framing resets the hold. The
+  recording then stops, validates, and shows an explicit success or redo state.
+- Phase 1 remains one movement only. Success is labelled `Movement 1 of 1` and
+  advances to the existing result; later screening movements remain locked.
+- Added pure tested capture-guide, continuous-hold, and pose-stillness helpers.
+
+Verification:
+- `npm run test:movement-screening`: 20/20 pass.
+- `npx tsc --noEmit`: pass.
+- Targeted movement-screening ESLint: pass.
+- `npm run build`: pass.
+- In-app browser preview was unavailable, so the real iPhone remains the visual
+  and camera-behaviour acceptance surface.
+
+NEXT:
+1. Fully reload the route on the iPhone and tap `Enable camera` while near the
+   phone.
+2. Step back with arms overhead and confirm the brighter guide remains visible.
+3. Confirm the three-second in-frame countdown starts and resets if Pedro steps
+   outside the guide.
+4. Let the trial auto-start, hold the baseline, complete three 2-1-2 squats,
+   then stand still for the final three-second auto-save.
+5. Confirm `Recording successful`, camera shutdown, and the matched evidence
+   pair before continuing the remaining technical acceptance.
 
 
 

@@ -49,7 +49,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 4. Wait for `Loading pose model` to change to `Ready to record`.
 5. Confirm your front-camera image remains visible.
 6. Stand inside the green corners with both arms overhead.
-7. Confirm the status changes to `Required landmarks visible`.
+7. Confirm the status changes to `Auto start in 3.0 seconds`, then step outside before it reaches zero.
 8. Confirm the green dots and thin lines follow the wrists, shoulders, hips, knees, and ankles.
 9. Raise only your anatomical left hand. The visible preview is mirrored, but stored direction must remain anatomical left.
 10. Repeat with your anatomical right hand.
@@ -64,16 +64,19 @@ Stop here and report the exact red message if:
 
 ## B. Record one technical trial
 
-1. Stand upright with both arms overhead.
-2. Tap `Start 3-rep trial`.
-3. Hold completely still during the `HOLD 3.0s` countdown.
-4. Perform exactly three controlled overhead squats.
-5. Return fully upright after every repetition.
-6. Watch the counter move from `0 / 3 REPS` to `3 / 3 REPS`.
-7. Let Cerebro stop automatically after the third repetition.
-8. Use `Stop & analyse` only if automatic stopping fails.
-9. Wait for `Trial complete`.
-10. Confirm the camera indicator turns off after analysis.
+1. With the camera still ready, stand upright inside the green rectangle with both arms overhead.
+2. If the camera was turned off after the technical check, tap `Enable camera` before stepping back.
+3. Hold inside the rectangle for three continuous seconds. Confirm stepping outside resets the auto-start countdown.
+4. Let Cerebro start the trial automatically. Use `Start now` only as a fallback.
+5. Hold completely still during the second three-second neutral-baseline countdown.
+6. Perform exactly three controlled overhead squats.
+7. Return fully upright after every repetition.
+8. Watch the counter move from `0 / 3` to `3 / 3`.
+9. After rep three, keep your arms overhead and stand still for three seconds.
+10. Confirm movement resets the finish countdown and stillness resumes it.
+11. Let Cerebro save and analyse automatically. Use `Stop early & analyse` only if automatic stopping fails.
+12. Wait for `Recording successful` or a clear redo instruction.
+13. Confirm the camera indicator turns off after analysis.
 
 ## C. Check the result
 

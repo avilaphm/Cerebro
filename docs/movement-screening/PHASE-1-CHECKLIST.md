@@ -3,9 +3,9 @@
 ## Status
 
 - Current phase: Phase 1 only
-- Current state: full-body capture rectangle and 2-1-2 tempo overlay deployed; Pedro's iPhone visual and trial acceptance is next
+- Current state: hands-free framing/start/finish flow implemented and pushed; Pedro's iPhone visual and trial acceptance is next
 - Current target: Pedro's iPhone 16 Pro, Chrome, front camera, authenticated Cerebro HTTPS deployment
-- Next action: Fully reload the production route, confirm every label stays inside the green rectangle, then run one slow three-rep trial
+- Next action: Fully reload production, verify the brighter rectangle plus both three-second holds, then run one slow three-rep trial
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
 - Pedro test guide: `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`
 - Route: `/dashboard/pt/movement-screening`
@@ -418,13 +418,18 @@ The recording exists to create Pedro's calibration evidence, not to create a cli
 - [x] Show camera and live overlay.
 - [x] Show full-body framing and tracking status.
 - [x] Show a complete full-body capture rectangle with a centre-placement guide.
+- [x] Make the capture rectangle readable from the subject's full-body standing distance.
 - [x] Keep every camera-overlay label inside the capture rectangle.
+- [x] Keep movement name, camera angle, and rep target visible in the camera guide.
+- [x] Automatically start after the full tracked body remains inside the guide for three continuous seconds.
 - [x] Show a persistent 2-second down, 1-second pause, 2-second up tempo cue.
 - [x] Show model-loading progress.
 - [x] Show a three-second neutral-baseline countdown.
 - [x] Prompt for three overhead squats.
 - [x] Show detected repetition count.
 - [x] Automatically finish after the third valid repetition, with a manual stop fallback.
+- [x] Require three seconds of tracked stillness after rep three before automatic finish.
+- [x] Reset the framing or finish hold when the relevant gate is interrupted.
 - [x] Show processing progress.
 - [x] Show quality result.
 - [x] Show metrics JSON.
@@ -578,22 +583,24 @@ Last completed:
 - Initial laptop-first plan and later iPhone-camera override persisted.
 - Six-skill chain created and validated; only the first three are functional.
 - Isolated PT route, worker pose extraction, two-metric pipeline, JSON rules engine, local recording/export, and versioned Supabase rule storage implemented.
-- Eighteen deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
+- Twenty deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
 - Fixed the real-browser startup failure where Next.js 16 Turbopack emitted a classic `importScripts()` worker bootstrap but the app forced Chrome to treat it as a module worker.
 - Fixed the first iPhone runtime failure where that classic worker still selected MediaPipe's ES-module WASM loader and iOS rejected its `import.meta` syntax.
 - Confirmed the iPhone camera, worker, and green overlay start successfully, then deployed a portrait 9:16 phone viewfinder with orientation-aware camera constraints and touch-safe controls.
 - Deployed a full-body green capture rectangle with all overlay text contained inside it and a tested 2-1-2 slow-tempo instruction.
+- Implemented and pushed a distance-readable guide, three-second in-frame auto-start, explicit movement/rep guidance, and three-second post-rep stillness auto-save.
 
 Next action:
 
 1. Fully reload `https://cerebroai.au/dashboard/pt/movement-screening` in Chrome on the iPhone 16 Pro.
-2. Confirm the green full-body rectangle is clear and every overlay label remains inside it.
-3. Confirm the green landmarks align while standing inside the rectangle.
+2. Confirm the brighter green rectangle stays visible at full-body distance and every overlay label remains inside it.
+3. Confirm staying inside for three seconds auto-starts, while leaving the guide resets the countdown.
 4. Run one slow trial using 2 seconds down, 1 second pause, and 2 seconds up.
-5. Record the iOS/Chrome/camera environment, source resolution, delegate, and FPS.
-6. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
-7. Verify anatomical direction, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
-8. Only after that gate passes, record Pedro's clean and faulted calibration examples.
+5. After rep three, confirm three seconds of arms-overhead stillness auto-saves and movement resets that countdown.
+6. Confirm the success/redo state, then record the iOS/Chrome/camera environment, source resolution, delegate, and FPS.
+7. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
+8. Verify anatomical direction, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
+9. Only after that gate passes, record Pedro's clean and faulted calibration examples.
 
 Current blockers:
 
@@ -615,6 +622,7 @@ Current blockers:
 | 2026-07-04 | Fixed Pedro's first iPhone startup error by pairing Turbopack's classic worker with MediaPipe's classic WASM loader; commit `4e34078` deployed | 16/16 tests, TypeScript, targeted lint, production build, emitted-worker inspection, asset hashes, deployment state, route protection, and classic JS/WASM HTTPS headers pass | Pedro fully reloads the phone route and retries `Enable camera` | Real iPhone confirmation pending |
 | 2026-07-04 | Pedro confirmed iPhone camera, worker, and green overlay startup; deployed portrait 9:16 mobile capture and touch-safe controls in commit `5782298` | 17/17 tests, TypeScript, targeted lint, production build, and Vercel deployment `dpl_CeG6qq43WT5c7u4rLbpxNmzJ2Cst` pass | Pedro verifies the portrait viewfinder, then completes three technical trials | Local browser screenshot unavailable; real iPhone visual/trial acceptance pending |
 | 2026-07-05 | Added full-body capture rectangle, contained all overlay labels, and added a tested 2-1-2 tempo cue in commit `27b7d7c` | 18/18 tests, TypeScript, targeted lint, production build, and Vercel deployment `dpl_B2DekrHWxF57T8qVnDx4KBVpWxgw` pass | Pedro verifies rectangle/text containment and runs one slow three-rep trial | Automated browser preview unavailable; real iPhone visual acceptance pending |
+| 2026-07-05 | Added distance-readable framing plus three-second hands-free start and post-rep stillness finish in commit `0bf3518` | 20/20 tests, TypeScript, targeted lint, and production build pass | Pedro verifies both interrupted-hold resets and one complete hands-free iPhone trial | In-app browser preview unavailable; real iPhone visual/camera acceptance pending |
 
 ## Research references
 
