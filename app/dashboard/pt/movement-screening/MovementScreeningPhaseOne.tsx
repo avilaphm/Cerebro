@@ -24,6 +24,13 @@ import {
 } from '@/utils/pt/movement-screening/constants';
 import { createFrontCameraConstraints } from '@/utils/pt/movement-screening/camera-constraints';
 import {
+  continuousHoldElapsedMs,
+  FINISH_HOLD_DURATION_MS,
+  FRAMING_HOLD_DURATION_MS,
+  poseFrameFitsCaptureGuide,
+  poseFramesAreStill,
+} from '@/utils/pt/movement-screening/capture-guidance';
+import {
   jsonFileNameForVideo,
   selectRecorderFormat,
   videoExtensionForMimeType,
@@ -38,7 +45,7 @@ import {
 } from '@/utils/pt/movement-screening/contracts';
 import { estimateCompletedRepetitions } from '@/utils/pt/movement-screening/metrics-extraction';
 import { runMovementScreeningPipeline } from '@/utils/pt/movement-screening/pipeline';
-import { createLandmarkSeries, poseFrameHasRequiredLandmarks } from '@/utils/pt/movement-screening/pose-extraction/landmark-series';
+import { createLandmarkSeries } from '@/utils/pt/movement-screening/pose-extraction/landmark-series';
 import { PoseWorkerClient } from '@/utils/pt/movement-screening/pose-extraction/pose-worker-client';
 
 type RuntimeState =
@@ -67,6 +74,7 @@ type ExportBundle = CalibrationBundle | DiagnosticBundle;
 const MAX_CAPTURE_SECONDS = 25;
 const OVERLAY_GREEN = '#42ff88';
 const TEMPO_CUE = '2s down · 1s pause · 2s up';
+const EXPECTED_REPETITIONS = 3;
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -157,8 +165,15 @@ export default function MovementScreeningPhaseOne({
   const bitmapPendingRef = useRef(false);
   const lastFrameRequestRef = useRef(0);
   const lastRepEstimateRef = useRef(0);
+  const detectedRepetitionsRef = useRef(0);
   const autoFinishingRef = useRef(false);
+  const autoStartingRef = useRef(false);
+  const framingHoldStartRef = useRef<number | null>(null);
+  const finishHoldStartRef = useRef<number | null>(null);
+  const finishHoldAnchorRef = useRef<PoseFrame | null>(null);
   const sourceRef = useRef<SourceMetadata | null>(null);
+  const runtimeStateRef = useRef<RuntimeState>('idle');
+  const startTrialRef = useRef<() => void>(() => {});
   const finishTrialRef = useRef<() => Promise<void>>(async () => {});
   const videoUrlRef = useRef<string | null>(null);
 
@@ -166,6 +181,8 @@ export default function MovementScreeningPhaseOne({
   const [source, setSource] = useState<SourceMetadata | null>(null);
   const [delegate, setDelegate] = useState<'GPU' | 'CPU' | null>(null);
   const [trackingReady, setTrackingReady] = useState(false);
+  const [framingHoldMs, setFramingHoldMs] = useState(0);
+  const [finishHoldMs, setFinishHoldMs] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [detectedRepetitions, setDetectedRepetitions] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -175,6 +192,11 @@ export default function MovementScreeningPhaseOne({
   const [exportBundle, setExportBundle] = useState<ExportBundle | null>(null);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+
+  const transitionRuntimeState = useCallback((nextState: RuntimeState) => {
+    runtimeStateRef.current = nextState;
+    setRuntimeState(nextState);
+  }, []);
 
   const drawPose = useCallback((frame: PoseFrame) => {
     const canvas = overlayRef.current;
@@ -230,12 +252,41 @@ export default function MovementScreeningPhaseOne({
   const handlePoseFrame = useCallback(
     (frame: PoseFrame) => {
       drawPose(frame);
-      setTrackingReady(
-        poseFrameHasRequiredLandmarks(
-          frame,
-          rules.config.qualityGates.landmarkConfidenceMin,
-        ),
+      const fitsCaptureGuide = poseFrameFitsCaptureGuide(
+        frame,
+        rules.config.qualityGates.landmarkConfidenceMin,
       );
+      setTrackingReady(fitsCaptureGuide);
+
+      if (!capturingRef.current) {
+        if (runtimeStateRef.current === 'ready') {
+          const hold = continuousHoldElapsedMs(
+            framingHoldStartRef.current,
+            frame.timestampMs,
+            fitsCaptureGuide,
+          );
+          framingHoldStartRef.current = hold.startedAtMs;
+          setFramingHoldMs(
+            Math.min(
+              FRAMING_HOLD_DURATION_MS,
+              Math.floor(hold.elapsedMs / 100) * 100,
+            ),
+          );
+
+          if (
+            hold.elapsedMs >= FRAMING_HOLD_DURATION_MS &&
+            !autoStartingRef.current
+          ) {
+            autoStartingRef.current = true;
+            startTrialRef.current();
+          }
+        } else if (framingHoldStartRef.current !== null) {
+          framingHoldStartRef.current = null;
+          setFramingHoldMs(0);
+        }
+        return;
+      }
+
       if (capturingRef.current) {
         const capturedFrame = {
           ...frame,
@@ -255,11 +306,49 @@ export default function MovementScreeningPhaseOne({
             sourceRef.current,
             rules.config,
           );
-          setDetectedRepetitions(count);
-          if (count >= 3 && !autoFinishingRef.current) {
+          detectedRepetitionsRef.current = count;
+          setDetectedRepetitions(Math.min(count, EXPECTED_REPETITIONS));
+        }
+
+        if (detectedRepetitionsRef.current >= EXPECTED_REPETITIONS) {
+          const remainsStill =
+            fitsCaptureGuide &&
+            (!finishHoldAnchorRef.current ||
+              poseFramesAreStill(finishHoldAnchorRef.current, capturedFrame));
+
+          if (!remainsStill) {
+            finishHoldAnchorRef.current = capturedFrame;
+            finishHoldStartRef.current = capturedFrame.timestampMs;
+            setFinishHoldMs(0);
+            return;
+          }
+
+          if (!finishHoldAnchorRef.current) {
+            finishHoldAnchorRef.current = capturedFrame;
+          }
+          const hold = continuousHoldElapsedMs(
+            finishHoldStartRef.current,
+            capturedFrame.timestampMs,
+            true,
+          );
+          finishHoldStartRef.current = hold.startedAtMs;
+          setFinishHoldMs(
+            Math.min(
+              FINISH_HOLD_DURATION_MS,
+              Math.floor(hold.elapsedMs / 100) * 100,
+            ),
+          );
+          if (
+            hold.elapsedMs >= FINISH_HOLD_DURATION_MS &&
+            !autoFinishingRef.current
+          ) {
             autoFinishingRef.current = true;
             void finishTrialRef.current();
           }
+        } else if (finishHoldStartRef.current !== null) {
+          finishHoldStartRef.current = null;
+          finishHoldAnchorRef.current = null;
+          setFinishHoldMs(0);
         }
       }
     },
@@ -355,6 +444,11 @@ export default function MovementScreeningPhaseOne({
     const canvas = overlayRef.current;
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     setTrackingReady(false);
+    framingHoldStartRef.current = null;
+    finishHoldStartRef.current = null;
+    finishHoldAnchorRef.current = null;
+    setFramingHoldMs(0);
+    setFinishHoldMs(0);
     setDelegate(null);
     setSource(null);
     sourceRef.current = null;
@@ -364,7 +458,7 @@ export default function MovementScreeningPhaseOne({
     if (!capturingRef.current) return;
     capturingRef.current = false;
     clearCaptureTimers();
-    setRuntimeState('processing');
+    transitionRuntimeState('processing');
 
     const blob = await stopRecorder();
     recorderRef.current = null;
@@ -378,7 +472,7 @@ export default function MovementScreeningPhaseOne({
     const worker = workerRef.current;
     const trialId = trialIdRef.current;
     if (!currentSource || !worker || !trialId) {
-      setRuntimeState('error');
+      transitionRuntimeState('error');
       setErrorMessage('Trial metadata was lost before analysis.');
       return;
     }
@@ -422,8 +516,14 @@ export default function MovementScreeningPhaseOne({
     }
     setOutcome(nextOutcome);
     releaseCameraDevices();
-    setRuntimeState('complete');
-  }, [clearCaptureTimers, releaseCameraDevices, rules, stopRecorder]);
+    transitionRuntimeState('complete');
+  }, [
+    clearCaptureTimers,
+    releaseCameraDevices,
+    rules,
+    stopRecorder,
+    transitionRuntimeState,
+  ]);
 
   useEffect(() => {
     finishTrialRef.current = finishTrial;
@@ -431,14 +531,17 @@ export default function MovementScreeningPhaseOne({
 
   const startCamera = useCallback(async () => {
     setErrorMessage(null);
-    setRuntimeState('starting_camera');
+    autoStartingRef.current = false;
+    framingHoldStartRef.current = null;
+    setFramingHoldMs(0);
+    transitionRuntimeState('starting_camera');
     if (!window.isSecureContext) {
-      setRuntimeState('error');
+      transitionRuntimeState('error');
       setErrorMessage('Camera access requires HTTPS or localhost.');
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      setRuntimeState('error');
+      transitionRuntimeState('error');
       setErrorMessage('This browser does not expose camera capture.');
       return;
     }
@@ -488,7 +591,7 @@ export default function MovementScreeningPhaseOne({
       };
       sourceRef.current = nextSource;
       setSource(nextSource);
-      setRuntimeState('loading_model');
+      transitionRuntimeState('loading_model');
 
       const worker = new PoseWorkerClient({
         onFrame: handlePoseFrame,
@@ -498,24 +601,29 @@ export default function MovementScreeningPhaseOne({
       const selectedDelegate = await worker.initialize();
       setDelegate(selectedDelegate);
       beginInferenceLoop();
-      setRuntimeState('ready');
+      transitionRuntimeState('ready');
     } catch (error) {
       releaseCameraDevices();
-      setRuntimeState('error');
+      transitionRuntimeState('error');
       setErrorMessage(
         error instanceof Error
           ? error.message
           : 'Camera or pose tracking could not start.',
       );
     }
-  }, [beginInferenceLoop, handlePoseFrame, releaseCameraDevices]);
+  }, [
+    beginInferenceLoop,
+    handlePoseFrame,
+    releaseCameraDevices,
+    transitionRuntimeState,
+  ]);
 
   const startTrial = useCallback(() => {
     const stream = streamRef.current;
     const worker = workerRef.current;
-    if (!stream || !worker || runtimeState === 'capturing') return;
+    if (!stream || !worker || capturingRef.current) return;
     if (typeof MediaRecorder === 'undefined') {
-      setRuntimeState('error');
+      transitionRuntimeState('error');
       setErrorMessage('This browser cannot record the calibration video.');
       return;
     }
@@ -526,6 +634,12 @@ export default function MovementScreeningPhaseOne({
     setCopied(false);
     setShared(false);
     setDetectedRepetitions(0);
+    detectedRepetitionsRef.current = 0;
+    framingHoldStartRef.current = null;
+    finishHoldStartRef.current = null;
+    finishHoldAnchorRef.current = null;
+    setFramingHoldMs(0);
+    setFinishHoldMs(0);
     setElapsedSeconds(0);
     setVideoBlob(null);
     if (videoUrlRef.current) {
@@ -560,7 +674,7 @@ export default function MovementScreeningPhaseOne({
     captureStartRef.current = performance.now();
     capturingRef.current = true;
     recorder.start(1000);
-    setRuntimeState('capturing');
+    transitionRuntimeState('capturing');
 
     captureIntervalRef.current = window.setInterval(() => {
       setElapsedSeconds(
@@ -570,7 +684,11 @@ export default function MovementScreeningPhaseOne({
     captureTimerRef.current = window.setTimeout(() => {
       void finishTrialRef.current();
     }, MAX_CAPTURE_SECONDS * 1000);
-  }, [runtimeState]);
+  }, [transitionRuntimeState]);
+
+  useEffect(() => {
+    startTrialRef.current = startTrial;
+  }, [startTrial]);
 
   const resetTrial = useCallback(() => {
     setOutcome(null);
@@ -578,6 +696,14 @@ export default function MovementScreeningPhaseOne({
     setCopied(false);
     setShared(false);
     setDetectedRepetitions(0);
+    detectedRepetitionsRef.current = 0;
+    autoStartingRef.current = false;
+    autoFinishingRef.current = false;
+    framingHoldStartRef.current = null;
+    finishHoldStartRef.current = null;
+    finishHoldAnchorRef.current = null;
+    setFramingHoldMs(0);
+    setFinishHoldMs(0);
     setVideoBlob(null);
     if (videoUrlRef.current) {
       URL.revokeObjectURL(videoUrlRef.current);
@@ -586,16 +712,16 @@ export default function MovementScreeningPhaseOne({
     setVideoUrl(null);
     setElapsedSeconds(0);
     setErrorMessage(null);
-    setRuntimeState('idle');
-  }, []);
+    transitionRuntimeState('idle');
+  }, [transitionRuntimeState]);
 
   const stopCamera = useCallback(() => {
     capturingRef.current = false;
     clearCaptureTimers();
     recorderRef.current = null;
     releaseCameraDevices();
-    setRuntimeState('idle');
-  }, [clearCaptureTimers, releaseCameraDevices]);
+    transitionRuntimeState('idle');
+  }, [clearCaptureTimers, releaseCameraDevices, transitionRuntimeState]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -605,12 +731,12 @@ export default function MovementScreeningPhaseOne({
         return;
       }
       releaseCameraDevices();
-      setRuntimeState('idle');
+      transitionRuntimeState('idle');
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () =>
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [releaseCameraDevices]);
+  }, [releaseCameraDevices, transitionRuntimeState]);
 
   useEffect(() => {
     return () => {
@@ -689,6 +815,92 @@ export default function MovementScreeningPhaseOne({
     runtimeState === 'processing';
   const canStartTrial =
     runtimeState === 'ready' && trackingReady && Boolean(delegate);
+  const neutralBaselineSeconds =
+    rules.config.segmentation.neutralBaselineDurationMs / 1000;
+  const baselineRemainingSeconds = Math.max(
+    0,
+    neutralBaselineSeconds - elapsedSeconds,
+  );
+  const framingRemainingSeconds = Math.max(
+    0,
+    (FRAMING_HOLD_DURATION_MS - framingHoldMs) / 1000,
+  );
+  const finishRemainingSeconds = Math.max(
+    0,
+    (FINISH_HOLD_DURATION_MS - finishHoldMs) / 1000,
+  );
+  const isNeutralBaseline =
+    runtimeState === 'capturing' &&
+    elapsedSeconds < neutralBaselineSeconds;
+  const isFinishHold =
+    runtimeState === 'capturing' &&
+    detectedRepetitions >= EXPECTED_REPETITIONS;
+  const statusSuccessful = runtimeState === 'complete' && outcome?.ok;
+
+  const guideEyebrow =
+    runtimeState === 'ready'
+      ? 'Overhead squat · Front view · 3 reps'
+      : runtimeState === 'capturing'
+        ? isFinishHold
+          ? 'All 3 reps detected'
+          : isNeutralBaseline
+            ? 'Recording started'
+            : 'Overhead squat · Front view · 3 reps'
+        : runtimeState === 'processing'
+          ? 'Recording finished'
+          : runtimeState === 'complete'
+            ? 'Movement 1 of 1'
+            : 'Overhead squat · Front view · 3 reps';
+  const guideTitle =
+    runtimeState === 'ready'
+      ? trackingReady
+        ? 'Hold your position'
+        : 'Fit your full body inside'
+      : runtimeState === 'capturing'
+        ? isFinishHold
+          ? 'Stand still'
+          : isNeutralBaseline
+            ? 'Hold the start position'
+            : 'Overhead squat'
+        : runtimeState === 'processing'
+          ? 'Checking recording'
+          : runtimeState === 'complete'
+            ? outcome?.ok
+              ? 'Recording successful'
+              : 'Recording needs another try'
+            : runtimeState === 'idle'
+              ? 'Overhead squat'
+              : 'Get ready';
+  const guideValue =
+    runtimeState === 'ready' && trackingReady
+      ? `${framingRemainingSeconds.toFixed(1)}s`
+      : isNeutralBaseline
+        ? `${baselineRemainingSeconds.toFixed(1)}s`
+        : isFinishHold
+          ? `${finishRemainingSeconds.toFixed(1)}s`
+          : runtimeState === 'capturing'
+            ? `Rep ${Math.min(detectedRepetitions + 1, EXPECTED_REPETITIONS)} of ${EXPECTED_REPETITIONS}`
+            : null;
+  const guideDetail =
+    runtimeState === 'ready'
+      ? trackingReady
+        ? 'The test starts automatically after 3 seconds.'
+        : 'Step back. Keep raised wrists and both ankles inside the green frame.'
+      : runtimeState === 'capturing'
+        ? isFinishHold
+          ? 'Keep your arms overhead and body still. The recording saves automatically.'
+          : isNeutralBaseline
+            ? 'Arms overhead. Do not move until the countdown ends.'
+            : `Move slowly · ${TEMPO_CUE}`
+        : runtimeState === 'processing'
+          ? 'Stay close. Your three repetitions are being verified.'
+          : runtimeState === 'complete'
+            ? outcome?.ok
+              ? 'The Phase 1 screen is complete. Your result is ready below.'
+              : 'Review the quality note below, then redo this movement.'
+            : runtimeState === 'idle'
+              ? 'Front view · 3 repetitions'
+              : 'The pose model is preparing your hands-free test.';
 
   return (
     <div className="min-h-full w-full max-w-full overflow-hidden rounded-[18px] border border-black/8 bg-[rgba(255,255,255,0.62)] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:rounded-[24px] sm:p-4 md:p-7">
@@ -733,17 +945,23 @@ export default function MovementScreeningPhaseOne({
               className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover md:object-contain"
             />
 
-            <div className="pointer-events-none absolute inset-x-[10%] bottom-[5%] top-[5%] border border-[#42ff88]/55 bg-[#42ff88]/[0.02] md:inset-x-[20%] md:bottom-[7%] md:top-[8%]">
-              <span className="absolute -left-px -top-px h-7 w-7 border-l-2 border-t-2 border-[#42ff88]" />
-              <span className="absolute -right-px -top-px h-7 w-7 border-r-2 border-t-2 border-[#42ff88]" />
-              <span className="absolute -bottom-px -left-px h-7 w-7 border-b-2 border-l-2 border-[#42ff88]" />
-              <span className="absolute -bottom-px -right-px h-7 w-7 border-b-2 border-r-2 border-[#42ff88]" />
-              <span className="absolute bottom-8 left-1/2 top-12 border-l border-dashed border-[#42ff88]/20" />
+            <div
+              className={`pointer-events-none absolute inset-x-[8%] bottom-[4%] top-[4%] border-[3px] border-[#42ff88] bg-[#42ff88]/[0.025] outline outline-1 outline-black/70 transition-shadow duration-200 md:inset-x-[20%] md:bottom-[7%] md:top-[8%] ${
+                trackingReady
+                  ? 'shadow-[0_0_30px_rgba(66,255,136,0.8),inset_0_0_24px_rgba(66,255,136,0.16)]'
+                  : 'shadow-[0_0_18px_rgba(66,255,136,0.55),inset_0_0_16px_rgba(66,255,136,0.1)]'
+              }`}
+            >
+              <span className="absolute -left-[3px] -top-[3px] h-12 w-12 border-l-[6px] border-t-[6px] border-[#42ff88]" />
+              <span className="absolute -right-[3px] -top-[3px] h-12 w-12 border-r-[6px] border-t-[6px] border-[#42ff88]" />
+              <span className="absolute -bottom-[3px] -left-[3px] h-12 w-12 border-b-[6px] border-l-[6px] border-[#42ff88]" />
+              <span className="absolute -bottom-[3px] -right-[3px] h-12 w-12 border-b-[6px] border-r-[6px] border-[#42ff88]" />
+              <span className="absolute bottom-10 left-1/2 top-14 border-l-2 border-dashed border-[#42ff88]/40" />
 
               <div className="absolute inset-x-2 top-2 flex items-start justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2 bg-black/75 px-2.5 py-2 text-[0.62rem] font-medium text-white backdrop-blur">
+                <div className="flex min-w-0 items-center gap-2 bg-black/85 px-3 py-2.5 text-xs font-semibold text-white shadow-lg backdrop-blur">
                   <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                       runtimeState === 'capturing'
                         ? 'animate-pulse bg-red-500'
                         : trackingReady
@@ -754,43 +972,48 @@ export default function MovementScreeningPhaseOne({
                   <span className="truncate">{runtimeLabel(runtimeState)}</span>
                 </div>
 
-                {runtimeState === 'capturing' && (
-                  <div className="shrink-0 bg-black/75 px-2.5 py-2 font-mono text-[0.62rem] text-white backdrop-blur">
-                    {elapsedSeconds < rules.config.segmentation.neutralBaselineDurationMs / 1000
-                      ? `HOLD ${Math.max(0, rules.config.segmentation.neutralBaselineDurationMs / 1000 - elapsedSeconds).toFixed(1)}s`
-                      : `${detectedRepetitions} / 3 REPS`}
-                  </div>
-                )}
+                <div className="shrink-0 bg-[#42ff88] px-3 py-2.5 font-mono text-xs font-bold text-black shadow-lg">
+                  {runtimeState === 'capturing'
+                    ? `${detectedRepetitions} / ${EXPECTED_REPETITIONS}`
+                    : '1 / 1'}
+                </div>
               </div>
 
-              {runtimeState === 'idle' ? (
-                <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 text-center text-white">
-                  <Camera className="mx-auto h-8 w-8 text-[#42ff88]" />
-                  <p className="mt-4 text-base font-medium tracking-[-0.02em]">
-                    Stand inside this rectangle
+              <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 bg-black/82 px-4 py-5 text-center text-white shadow-[0_14px_40px_rgba(0,0,0,0.45)] backdrop-blur-sm">
+                <p className="text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[#42ff88]">
+                  {guideEyebrow}
+                </p>
+                <p
+                  aria-live="polite"
+                  className="mt-2 text-xl font-bold leading-tight tracking-[-0.03em] sm:text-2xl"
+                >
+                  {guideTitle}
+                </p>
+                {guideValue && (
+                  <p className="mt-2 font-mono text-4xl font-bold leading-none text-[#42ff88] sm:text-5xl">
+                    {guideValue}
                   </p>
-                  <p className="mt-2 text-xs leading-5 text-white/58">
-                    Keep your raised wrists and both ankles visible.
-                  </p>
-                  <p className="mx-auto mt-4 w-fit bg-[#42ff88] px-2.5 py-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-black">
-                    Move slowly · {TEMPO_CUE}
-                  </p>
-                </div>
-              ) : (
-                <div className="absolute inset-x-2 bottom-2 bg-black/75 px-3 py-2 text-center text-white backdrop-blur">
-                  <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-[#42ff88]">
-                    Full-body capture zone
-                  </p>
-                  <p className="mt-1 text-[0.68rem] leading-4 text-white/75">
-                    {trackingReady
-                      ? 'Stay centred with raised wrists and ankles inside.'
-                      : 'Step back until raised wrists and ankles are visible.'}
-                  </p>
-                  <p className="mt-1 font-mono text-[0.62rem] text-white">
-                    Slow tempo · {TEMPO_CUE}
-                  </p>
-                </div>
-              )}
+                )}
+                <p className="mx-auto mt-3 max-w-[17rem] text-xs font-medium leading-5 text-white/80 sm:text-sm">
+                  {guideDetail}
+                </p>
+              </div>
+
+              <div className="absolute inset-x-2 bottom-2 bg-black/88 px-3 py-2.5 text-center text-white shadow-lg backdrop-blur">
+                <p className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[#42ff88]">
+                  {runtimeState === 'ready'
+                    ? 'Hands-free auto start'
+                    : runtimeState === 'capturing'
+                      ? isFinishHold
+                        ? 'Hands-free auto save'
+                        : 'Keep your body inside the frame'
+                      : runtimeState === 'complete'
+                        ? statusSuccessful
+                          ? 'Screen complete'
+                          : 'Redo required'
+                        : 'Full-body capture zone'}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -798,12 +1021,12 @@ export default function MovementScreeningPhaseOne({
             <div className="flex min-w-0 items-center gap-3">
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                  trackingReady
+                  trackingReady || statusSuccessful
                     ? 'bg-[#d9ffe8] text-emerald-800'
                     : 'bg-black/5 text-black/35'
                 }`}
               >
-                {trackingReady ? (
+                {trackingReady || statusSuccessful ? (
                   <Check className="h-4 w-4" />
                 ) : (
                   <ScanLine className="h-4 w-4" />
@@ -811,12 +1034,20 @@ export default function MovementScreeningPhaseOne({
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-black">
-                  {trackingReady
-                    ? 'Required landmarks visible'
-                    : 'Waiting for full-body tracking'}
+                  {runtimeState === 'complete'
+                    ? outcome?.ok
+                      ? 'Recording successful'
+                      : 'Recording finished · quality check failed'
+                    : runtimeState === 'ready' && trackingReady
+                      ? `Auto start in ${framingRemainingSeconds.toFixed(1)} seconds`
+                      : trackingReady
+                        ? 'Full body is inside the capture zone'
+                        : 'Waiting for full-body tracking'}
                 </p>
                 <p className="truncate text-xs text-black/43">
-                  {source
+                  {runtimeState === 'complete'
+                    ? 'Movement 1 of 1 · result available below'
+                    : source
                     ? `${source.width} × ${source.height} · ${delegate ?? 'model loading'} worker`
                     : 'Front camera · actual resolution detected at runtime'}
                 </p>
@@ -841,7 +1072,7 @@ export default function MovementScreeningPhaseOne({
                   className="inline-flex min-h-11 w-full items-center justify-center gap-2 bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 sm:w-auto"
                 >
                   <CircleStop className="h-4 w-4" />
-                  Stop & analyse
+                  Stop early & analyse
                 </button>
               ) : runtimeState === 'complete' ? (
                 <button
@@ -860,10 +1091,10 @@ export default function MovementScreeningPhaseOne({
                   className="inline-flex min-h-11 w-full items-center justify-center gap-2 bg-black px-4 py-2.5 text-sm font-medium text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-35 sm:w-auto"
                 >
                   <Video className="h-4 w-4" />
-                  Start 3-rep trial
+                  Start now
                 </button>
               )}
-              {runtimeState !== 'idle' && (
+              {runtimeState !== 'idle' && runtimeState !== 'complete' && (
                 <button
                   type="button"
                   onClick={stopCamera}
@@ -892,18 +1123,28 @@ export default function MovementScreeningPhaseOne({
             {[
               {
                 number: '01',
-                title: 'Frame the body',
-                copy: 'Face the camera. Keep both wrists and ankles inside the green corners.',
+                title: 'Enable camera nearby',
+                copy: 'Tap once, then step back. You will not need to reach the phone again.',
               },
               {
                 number: '02',
-                title: 'Hold neutral',
-                copy: 'After recording starts, stand still with arms overhead for three seconds.',
+                title: 'Enter the green frame',
+                copy: 'Face the camera with arms overhead. Hold inside the rectangle for three seconds to start automatically.',
               },
               {
                 number: '03',
-                title: 'Move slowly for 3 reps',
+                title: 'Hold the start position',
+                copy: 'Once recording starts, stay still for the three-second neutral baseline.',
+              },
+              {
+                number: '04',
+                title: 'Complete 3 slow reps',
                 copy: 'Use 2 seconds down, pause for 1 second, then take 2 seconds to stand. Repeat exactly three times.',
+              },
+              {
+                number: '05',
+                title: 'Finish standing still',
+                copy: 'After rep three, hold still for three seconds. The recording saves and checks itself.',
               },
             ].map((step) => (
               <li key={step.number} className="grid grid-cols-[2rem_1fr] gap-3">

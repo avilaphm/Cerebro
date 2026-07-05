@@ -8,6 +8,11 @@ import {
   selectRecorderFormat,
   videoExtensionForMimeType,
 } from '../capture-format';
+import {
+  continuousHoldElapsedMs,
+  poseFrameFitsCaptureGuide,
+  poseFramesAreStill,
+} from '../capture-guidance';
 import { MEDIAPIPE_WASM_USE_MODULE } from '../constants';
 import type {
   EntryPoint,
@@ -79,6 +84,48 @@ test('front camera constraints follow the screen orientation', () => {
     aspectRatio: { ideal: 16 / 9 },
     frameRate: { ideal: 30, max: 30 },
   });
+});
+
+test('capture guidance requires the full tracked pose inside the guide', () => {
+  const framed = makeFrame({
+    timestampMs: 0,
+    phase: 0,
+    bottomHipY: 0.64,
+    hipShift: 0,
+  });
+  assert.equal(poseFrameFitsCaptureGuide(framed, 0.7), true);
+
+  const outsideGuide = structuredClone(framed);
+  outsideGuide.landmarks[15].x = 0.03;
+  assert.equal(poseFrameFitsCaptureGuide(outsideGuide, 0.7), false);
+});
+
+test('capture guidance resets interrupted holds and detects stillness', () => {
+  const anchor = makeFrame({
+    timestampMs: 0,
+    phase: 0,
+    bottomHipY: 0.64,
+    hipShift: 0,
+  });
+  const still = structuredClone(anchor);
+  still.timestampMs = 3_000;
+  still.landmarks[23].x += 0.01;
+  assert.equal(poseFramesAreStill(anchor, still), true);
+
+  const moving = structuredClone(still);
+  moving.landmarks[23].x += 0.05;
+  assert.equal(poseFramesAreStill(anchor, moving), false);
+
+  const started = continuousHoldElapsedMs(null, 1_000, true);
+  assert.deepEqual(started, { startedAtMs: 1_000, elapsedMs: 0 });
+  assert.deepEqual(
+    continuousHoldElapsedMs(started.startedAtMs, 4_000, true),
+    { startedAtMs: 1_000, elapsedMs: 3_000 },
+  );
+  assert.deepEqual(
+    continuousHoldElapsedMs(started.startedAtMs, 4_100, false),
+    { startedAtMs: null, elapsedMs: 0 },
+  );
 });
 
 function landmark(
