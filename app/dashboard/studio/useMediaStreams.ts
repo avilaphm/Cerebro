@@ -46,6 +46,7 @@ export interface UseMediaStreams {
   camMicError: SourceError;
   screenError: SourceError;
   startCamMic: (cameraId?: string, micId?: string) => Promise<void>;
+  switchCamera: (cameraId: string) => Promise<void>;
   startScreen: (systemAudio: boolean) => Promise<void>;
   stopScreen: () => void;
   stopAll: () => void;
@@ -112,6 +113,44 @@ export function useMediaStreams(): UseMediaStreams {
       }
     },
     [refreshDevices],
+  );
+
+  // Swap the camera without disturbing the mic. Hot-replaces only the video track
+  // in the live stream, so the recorder's audio (a Web Audio source node bound to
+  // this stream) is never interrupted — safe to call mid-recording. Falls back to
+  // a full acquire if nothing is live yet.
+  const switchCamera = useCallback(
+    async (cameraId: string) => {
+      const current = camMicRef.current;
+      if (!current) {
+        await startCamMic(cameraId);
+        return;
+      }
+      setCamMicError(null);
+      try {
+        const fresh = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false,
+        });
+        const nextVideo = fresh.getVideoTracks()[0];
+        if (!nextVideo) {
+          fresh.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        current.getVideoTracks().forEach((t) => {
+          current.removeTrack(t);
+          t.stop();
+        });
+        current.addTrack(nextVideo);
+        // Same stream reference: the recorder's audio and every bound <video>
+        // keep playing and just pick up the new video track live.
+        setCamMicStream(current);
+        await refreshDevices();
+      } catch (err) {
+        setCamMicError(describeMediaError(err, 'camera'));
+      }
+    },
+    [startCamMic, refreshDevices],
   );
 
   const startScreen = useCallback(async (systemAudio: boolean) => {
@@ -185,6 +224,7 @@ export function useMediaStreams(): UseMediaStreams {
     camMicError,
     screenError,
     startCamMic,
+    switchCamera,
     startScreen,
     stopScreen,
     stopAll,

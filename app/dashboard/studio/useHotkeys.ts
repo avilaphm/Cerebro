@@ -8,6 +8,10 @@ interface StudioHotkeys {
   onLayout: (id: LayoutId) => void;
   onCycle: () => void;
   onEscape: () => void;
+  // Window the listener attaches to. Omit for the main window; pass the Document
+  // Picture-in-Picture window so shortcuts also fire while it is focused. `null`
+  // (the floating window isn't open) attaches nothing.
+  target?: Window | null;
 }
 
 /**
@@ -16,27 +20,28 @@ interface StudioHotkeys {
  * form control, and Space blurs the focused control + preventDefaults so it
  * doesn't also scroll the page or re-trigger a button.
  */
-export function useStudioHotkeys({ enabled, onLayout, onCycle, onEscape }: StudioHotkeys) {
+export function useStudioHotkeys({ enabled, onLayout, onCycle, onEscape, target }: StudioHotkeys) {
   useEffect(() => {
-    if (!enabled) return;
+    const win = target === undefined ? (typeof window !== 'undefined' ? window : null) : target;
+    if (!enabled || !win) return;
     const handler = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) {
         return;
       }
       if (e.key === '1' || e.key === '2' || e.key === '3') {
         onLayout(Number(e.key) as LayoutId);
       } else if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
-        (document.activeElement as HTMLElement | null)?.blur?.();
+        (win.document.activeElement as HTMLElement | null)?.blur?.();
         onCycle();
       } else if (e.key === 'Escape') {
         onEscape();
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [enabled, onLayout, onCycle, onEscape]);
+    win.addEventListener('keydown', handler);
+    return () => win.removeEventListener('keydown', handler);
+  }, [enabled, onLayout, onCycle, onEscape, target]);
 }

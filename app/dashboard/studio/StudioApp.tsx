@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   Camera,
@@ -9,6 +10,7 @@ import {
   Mic,
   Monitor,
   Pause,
+  PictureInPicture2,
   Play,
   RotateCcw,
   Smartphone,
@@ -22,6 +24,8 @@ import { useMediaStreams } from './useMediaStreams';
 import { useCompositor } from './useCompositor';
 import { useRecorder } from './useRecorder';
 import { useStudioHotkeys } from './useHotkeys';
+import { useDocumentPip, useDocumentPipSupported } from './useDocumentPip';
+import { SelfViewPip } from './SelfViewPip';
 import { mergeAudioTracks } from './audio';
 import type { CompositorConfig, CanvasWithCapture, LayoutId, StudioPhase } from './types';
 import { ORIENTATION_DIMS } from './types';
@@ -120,6 +124,7 @@ export default function StudioApp() {
     camMicError,
     screenError,
     startCamMic,
+    switchCamera,
     startScreen,
     stopAll,
     registerScreenEnded,
@@ -127,6 +132,9 @@ export default function StudioApp() {
 
   const recorder = useRecorder();
   const portraitRecorder = useRecorder();
+
+  const pipSupported = useDocumentPipSupported();
+  const { pipWindow, open: openPip, close: closePip } = useDocumentPip();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const portraitCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -266,14 +274,15 @@ export default function StudioApp() {
     handleRecorderComplete,
   ]);
 
-  // Front/back toggle on phones — pick the camera that isn't the live one.
+  // Toggle to the other camera (laptop <-> phone, or front/back on mobile). Uses
+  // the audio-safe video-track swap so it also works mid-recording.
   const flipCamera = useCallback(() => {
     if (cameras.length < 2) return;
     const currentId = camMicStream?.getVideoTracks()[0]?.getSettings().deviceId;
     const next = cameras.find((c) => c.deviceId !== currentId) ?? cameras[0];
     setSelectedCamera(next.deviceId);
-    void startCamMic(next.deviceId, selectedMic || undefined);
-  }, [cameras, camMicStream, selectedMic, startCamMic]);
+    void switchCamera(next.deviceId);
+  }, [cameras, camMicStream, switchCamera]);
 
   const returnToSetup = useCallback(() => {
     recorder.reset();
@@ -335,6 +344,28 @@ export default function StudioApp() {
     onCycle: cycleLayout,
     onEscape,
   });
+
+  // Mirror the hotkeys onto the floating window so 1/2/3, Space and Esc work
+  // while it is focused. (A browser tab can't capture keys while a different app
+  // holds focus, so the floating window's own buttons cover that case.)
+  useStudioHotkeys({
+    enabled: !!pipWindow && !cameraOnly && (phase === 'setup' || phase === 'recording'),
+    onLayout: setLayout,
+    onCycle: cycleLayout,
+    onEscape,
+    target: pipWindow,
+  });
+
+  const togglePip = useCallback(() => {
+    if (pipWindow) closePip();
+    else void openPip({ width: 240, height: 320 });
+  }, [pipWindow, closePip, openPip]);
+
+  // The floating self-view mirrors the live camera; recording end releases the
+  // camera, so close the window when we leave the recording flow.
+  useEffect(() => {
+    if (phase === 'review') closePip();
+  }, [phase, closePip]);
 
   // Portrait stage on mobile hugs a 9:16 box capped to the viewport height;
   // landscape fills the grid cell at 16:9 as before.
@@ -481,6 +512,13 @@ export default function StudioApp() {
             <LayoutSwitcher layout={config.layout} onSelect={setLayout} />
           )}
 
+          {!cameraOnly && phase !== 'review' && pipSupported && (
+            <button type="button" onClick={togglePip} className={`w-full ${LIGHT_BTN}`}>
+              <PictureInPicture2 className="h-4 w-4" />
+              {pipWindow ? 'Close floating self-view' : 'Float self-view'}
+            </button>
+          )}
+
           {phase === 'setup' && (
             <SetupControls
               cameras={cameras}
@@ -589,6 +627,21 @@ export default function StudioApp() {
         </div>
       )}
 
+      {pipWindow &&
+        createPortal(
+          <SelfViewPip
+            cameraStream={camMicStream}
+            layout={config.layout}
+            recording={phase === 'recording'}
+            paused={recorder.paused}
+            elapsedLabel={formatDuration(recorder.elapsedMs)}
+            canFlip={cameras.length >= 2}
+            onLayout={setLayout}
+            onFlip={flipCamera}
+            onStop={stopRecording}
+          />,
+          pipWindow.document.body,
+        )}
     </div>
   );
 }
