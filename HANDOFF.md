@@ -1,12 +1,49 @@
 # Handoff
 
 ## Last updated
-2026-07-05 by Claude - Cerebro Studio Phase 2 (layouts, hotkeys, countdown, pause/resume) shipped; Pedro laptop check pending.
+2026-07-05 by Claude - Studio screen-picker fix (tab switches now record); Continuity Camera path chosen for phone-as-webcam.
 
 ## Last code fix commit
-728a528 - feat(studio): Phase 2 - layouts, hotkeys, countdown, pause/resume
+68464b4 - fix(studio): default screen picker to full screen so tab switches record
 
 ## What just happened (read first)
+
+### Cerebro Studio: screen picker + phone-as-webcam (2026-07-05, LATEST)
+
+Pedro reported (1) screen recording no longer captured another Chrome tab he had
+open, and (2) his laptop webcam wasn't working, so he wants to use his iPhone as the
+Studio camera.
+
+Fixed (commit 68464b4, app/dashboard/studio/useMediaStreams.ts + StudioApp.tsx):
+- Root cause of (1): `getDisplayMedia` had no surface hint, so Chrome's picker
+  defaulted to sharing a SINGLE tab, which only ever captures that one tab. "It
+  worked at the beginning" = he first picked Entire Screen, later picked a tab.
+- `startScreen` now passes `video: { displaySurface: 'monitor' }` (pre-selects
+  Entire Screen), `surfaceSwitching: 'include'` (swap shared surface mid-record),
+  `selfBrowserSurface: 'exclude'` (hide the Studio tab from the list). Typed via a
+  local `ScreenShareOptions extends DisplayMediaStreamOptions` (those hints aren't
+  in lib.dom yet). Added a UI note under Share screen: pick Entire Screen to catch
+  other tabs/apps.
+- tsc + Studio ESLint clean. NOT yet confirmed on real hardware; the picker is a
+  native OS dialog; Pedro must verify it now defaults to Entire Screen.
+
+Phone-as-webcam (2): Pedro chose the NO-BUILD path, macOS Continuity Camera. His
+iPhone appears in Studio's existing Camera dropdown automatically (devicechange
+listener refreshes the list; selecting it re-acquires via startCamMic(deviceId)).
+No code needed. The in-app QR/WebRTC bridge was offered as a Phase 3 alternative
+and declined for now; revisit only if he wants a cross-platform, OS-setup-free
+flow later.
+
+NEXT:
+1. Pedro: enable Continuity Camera (iPhone near, unlocked-not-required, WiFi+BT on,
+   same Apple ID), then pick "iPhone Camera" in Studio's Camera dropdown. Confirm
+   the feed shows in the stage preview.
+2. Pedro: confirm the screen picker now defaults to Entire Screen and a mid-record
+   tab switch is captured.
+3. (Optional) Diagnose why the built-in laptop webcam failed; likely a Chrome
+   permission or another app holding the camera (NotReadableError).
+
+
 
 ### Cerebro Studio Phase 2 (2026-07-05, LATEST)
 
