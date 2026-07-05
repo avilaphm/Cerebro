@@ -137,6 +137,7 @@ function syntheticTrial(input?: {
   hipShift?: number;
   confidence?: number;
   repetitionCount?: number;
+  slowTempo?: boolean;
 }) {
   const frames: PoseFrame[] = [];
   const frameDuration = 1000 / 30;
@@ -160,16 +161,22 @@ function syntheticTrial(input?: {
     repetition < (input?.repetitionCount ?? 3);
     repetition += 1
   ) {
-    const repDurationMs = 1600;
+    const repDurationMs = input?.slowTempo ? 5400 : 1600;
     const repStart = timestampMs;
     while (timestampMs - repStart <= repDurationMs) {
       const elapsed = timestampMs - repStart;
-      const phase =
-        elapsed < 200
-          ? 0
-          : elapsed > 1400
-            ? 0
-            : (elapsed - 200) / 1200;
+      let phase = 0;
+      if (input?.slowTempo) {
+        if (elapsed >= 200 && elapsed < 2200) {
+          phase = (elapsed - 200) / 4000;
+        } else if (elapsed >= 2200 && elapsed < 3200) {
+          phase = 0.5;
+        } else if (elapsed >= 3200 && elapsed <= 5200) {
+          phase = 0.5 + (elapsed - 3200) / 4000;
+        }
+      } else if (elapsed >= 200 && elapsed <= 1400) {
+        phase = (elapsed - 200) / 1200;
+      }
       frames.push(
         makeFrame({
           timestampMs,
@@ -241,6 +248,19 @@ test('a clean synthetic three-rep trial passes without findings', () => {
   assert.equal(outcome.result.perRepetition.length, 3);
   assert.equal(outcome.result.rulesVersion, 1);
   assert.equal(outcome.result.calibrationStatus, 'uncalibrated');
+});
+
+test('a slow 2-1-2 tempo trial segments three valid repetitions', () => {
+  const outcome = runMovementScreeningPipeline(
+    syntheticTrial({ slowTempo: true }),
+    rules,
+  );
+  assert.equal(outcome.ok, true);
+  if (!outcome.ok) return;
+  assert.equal(outcome.result.perRepetition.length, 3);
+  for (const repetition of outcome.result.perRepetition) {
+    assert.ok(repetition.endedAtMs - repetition.startedAtMs < 6000);
+  }
 });
 
 test('lateral translation is detected with anatomical direction', () => {

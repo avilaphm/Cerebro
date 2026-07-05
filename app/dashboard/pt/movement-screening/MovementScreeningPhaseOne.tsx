@@ -66,6 +66,7 @@ type ExportBundle = CalibrationBundle | DiagnosticBundle;
 
 const MAX_CAPTURE_SECONDS = 25;
 const OVERLAY_GREEN = '#42ff88';
+const TEMPO_CUE = '2s down · 1s pause · 2s up';
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -732,48 +733,65 @@ export default function MovementScreeningPhaseOne({
               className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover md:object-contain"
             />
 
-            <div className="pointer-events-none absolute inset-x-[10%] bottom-[5%] top-[5%] border border-white/20 md:inset-x-[20%] md:bottom-[7%] md:top-[8%]">
+            <div className="pointer-events-none absolute inset-x-[10%] bottom-[5%] top-[5%] border border-[#42ff88]/55 bg-[#42ff88]/[0.02] md:inset-x-[20%] md:bottom-[7%] md:top-[8%]">
               <span className="absolute -left-px -top-px h-7 w-7 border-l-2 border-t-2 border-[#42ff88]" />
               <span className="absolute -right-px -top-px h-7 w-7 border-r-2 border-t-2 border-[#42ff88]" />
               <span className="absolute -bottom-px -left-px h-7 w-7 border-b-2 border-l-2 border-[#42ff88]" />
               <span className="absolute -bottom-px -right-px h-7 w-7 border-b-2 border-r-2 border-[#42ff88]" />
-            </div>
+              <span className="absolute bottom-8 left-1/2 top-12 border-l border-dashed border-[#42ff88]/20" />
 
-            <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] items-center gap-2 bg-black/65 px-3 py-2 text-[0.68rem] font-medium text-white backdrop-blur">
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  runtimeState === 'capturing'
-                    ? 'animate-pulse bg-red-500'
-                    : trackingReady
-                      ? 'bg-[#42ff88]'
-                      : 'bg-white/35'
-                }`}
-              />
-              {runtimeLabel(runtimeState)}
-            </div>
+              <div className="absolute inset-x-2 top-2 flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2 bg-black/75 px-2.5 py-2 text-[0.62rem] font-medium text-white backdrop-blur">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      runtimeState === 'capturing'
+                        ? 'animate-pulse bg-red-500'
+                        : trackingReady
+                          ? 'bg-[#42ff88]'
+                          : 'bg-white/35'
+                    }`}
+                  />
+                  <span className="truncate">{runtimeLabel(runtimeState)}</span>
+                </div>
 
-            {runtimeState === 'capturing' && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/65 px-3 py-2 font-mono text-xs text-white backdrop-blur sm:bottom-auto sm:left-auto sm:right-3 sm:top-3 sm:translate-x-0">
-                {elapsedSeconds < rules.config.segmentation.neutralBaselineDurationMs / 1000
-                  ? `HOLD ${Math.max(0, rules.config.segmentation.neutralBaselineDurationMs / 1000 - elapsedSeconds).toFixed(1)}s`
-                  : `${detectedRepetitions} / 3 REPS`}
+                {runtimeState === 'capturing' && (
+                  <div className="shrink-0 bg-black/75 px-2.5 py-2 font-mono text-[0.62rem] text-white backdrop-blur">
+                    {elapsedSeconds < rules.config.segmentation.neutralBaselineDurationMs / 1000
+                      ? `HOLD ${Math.max(0, rules.config.segmentation.neutralBaselineDurationMs / 1000 - elapsedSeconds).toFixed(1)}s`
+                      : `${detectedRepetitions} / 3 REPS`}
+                  </div>
+                )}
               </div>
-            )}
 
-            {runtimeState === 'idle' && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="max-w-sm px-6 text-center text-white">
+              {runtimeState === 'idle' ? (
+                <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 text-center text-white">
                   <Camera className="mx-auto h-8 w-8 text-[#42ff88]" />
-                  <p className="mt-4 text-lg font-medium tracking-[-0.02em]">
-                    Camera access starts only when you choose.
+                  <p className="mt-4 text-base font-medium tracking-[-0.02em]">
+                    Stand inside this rectangle
                   </p>
-                  <p className="mt-2 text-sm leading-6 text-white/50">
-                    Stand far enough back to keep wrists, hips, knees and ankles
-                    visible.
+                  <p className="mt-2 text-xs leading-5 text-white/58">
+                    Keep your raised wrists and both ankles visible.
+                  </p>
+                  <p className="mx-auto mt-4 w-fit bg-[#42ff88] px-2.5 py-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-black">
+                    Move slowly · {TEMPO_CUE}
                   </p>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="absolute inset-x-2 bottom-2 bg-black/75 px-3 py-2 text-center text-white backdrop-blur">
+                  <p className="text-[0.58rem] font-semibold uppercase tracking-[0.16em] text-[#42ff88]">
+                    Full-body capture zone
+                  </p>
+                  <p className="mt-1 text-[0.68rem] leading-4 text-white/75">
+                    {trackingReady
+                      ? 'Stay centred with raised wrists and ankles inside.'
+                      : 'Step back until raised wrists and ankles are visible.'}
+                  </p>
+                  <p className="mt-1 font-mono text-[0.62rem] text-white">
+                    Slow tempo · {TEMPO_CUE}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="mt-3 flex flex-col gap-3 border border-black/8 bg-white/55 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -884,8 +902,8 @@ export default function MovementScreeningPhaseOne({
               },
               {
                 number: '03',
-                title: 'Complete 3 reps',
-                copy: 'Perform exactly three controlled overhead squats, then stop and analyse.',
+                title: 'Move slowly for 3 reps',
+                copy: 'Use 2 seconds down, pause for 1 second, then take 2 seconds to stand. Repeat exactly three times.',
               },
             ].map((step) => (
               <li key={step.number} className="grid grid-cols-[2rem_1fr] gap-3">
