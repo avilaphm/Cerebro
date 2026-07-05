@@ -29,6 +29,15 @@ function describeMediaError(err: unknown, source: string): string {
   }
 }
 
+// Chrome-only getDisplayMedia picker hints not yet in lib.dom's
+// DisplayMediaStreamOptions. `selfBrowserSurface: 'exclude'` keeps the Studio
+// tab out of the list; `surfaceSwitching: 'include'` lets you swap the shared
+// surface mid-recording without restarting.
+interface ScreenShareOptions extends DisplayMediaStreamOptions {
+  surfaceSwitching?: 'include' | 'exclude';
+  selfBrowserSurface?: 'include' | 'exclude';
+}
+
 export interface UseMediaStreams {
   cameras: DeviceOption[];
   mics: DeviceOption[];
@@ -104,10 +113,15 @@ export function useMediaStreams(): UseMediaStreams {
   const startScreen = useCallback(async (systemAudio: boolean) => {
     setScreenError(null);
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+      // Pre-select "Entire Screen" in the picker so switching between tabs and
+      // apps is captured — a single Chrome-tab share only records that one tab.
+      const options: ScreenShareOptions = {
+        video: { displaySurface: 'monitor' },
         audio: systemAudio,
-      });
+        surfaceSwitching: 'include',
+        selfBrowserSurface: 'exclude',
+      };
+      const stream = await navigator.mediaDevices.getDisplayMedia(options);
       stopStream(screenRef.current);
       screenRef.current = stream;
       setScreenStream(stream);

@@ -819,6 +819,10 @@ function SetupControls({
         <Monitor className="h-4 w-4" />
         {screenShared ? 'Re-share screen' : 'Share screen'}
       </button>
+      <p className="-mt-2 text-[0.65rem] leading-relaxed text-black/40">
+        Choose <span className="font-medium text-black/55">Entire Screen</span> in the picker to
+        capture other tabs and apps — sharing a single tab records only that tab.
+      </p>
 
       <div className="border-t border-black/10 pt-4">
         <button
