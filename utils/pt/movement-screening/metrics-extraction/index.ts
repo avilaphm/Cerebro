@@ -1,5 +1,4 @@
 import {
-  METRICS_SCHEMA_VERSION,
   type AnatomicalDirection,
   type LandmarkSeries,
   type MetricValue,
@@ -358,8 +357,10 @@ export function extractMovementMetrics(
     reasons.push('An implausible landmark jump was detected.');
   }
   if (
+    config.movementId === 'overhead_squat_front' &&
+    config.qualityGates.minOverheadArmFrameFraction !== undefined &&
     overheadArmFrameFraction <
-    config.qualityGates.minOverheadArmFrameFraction
+      config.qualityGates.minOverheadArmFrameFraction
   ) {
     reasons.push('Both wrists were not overhead for enough valid frames.');
   }
@@ -415,7 +416,7 @@ export function extractMovementMetrics(
   return {
     ok: true,
     metrics: {
-      schemaVersion: METRICS_SCHEMA_VERSION,
+      schemaVersion: config.metricSchemaVersion,
       trialId: series.trialId,
       entryPoint: series.entryPoint,
       movement: {
@@ -434,7 +435,9 @@ export function extractMovementMetrics(
         repetitionsDetected: repetitions.length,
         ankleDriftHipWidthRatio,
         maxSegmentJumpHipWidthRatio,
-        overheadArmFrameFraction,
+        ...(config.movementId === 'overhead_squat_front'
+          ? { overheadArmFrameFraction }
+          : {}),
       },
       processing: {
         baseline: {

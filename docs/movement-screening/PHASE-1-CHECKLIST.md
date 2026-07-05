@@ -3,9 +3,9 @@
 ## Status
 
 - Current phase: Phase 1 only
-- Current state: hands-free framing/start/finish flow implemented and pushed; Pedro's iPhone visual and trial acceptance is next
+- Current state: bodyweight-squat rules v2 and arms-forward hands-free flow implemented locally; safe deployment and Pedro's iPhone trial acceptance are next
 - Current target: Pedro's iPhone 16 Pro, Chrome, front camera, authenticated Cerebro HTTPS deployment
-- Next action: Fully reload production, verify the brighter rectangle plus both three-second holds, then run one slow three-rep trial
+- Next action: Deploy code before activating rules v2, then run three ordinary iPhone bodyweight-squat trials
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
 - Pedro test guide: `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`
 - Route: `/dashboard/pt/movement-screening`
@@ -20,7 +20,7 @@ This file is the durable source of truth for the build. Update it after every wo
 3. The phone records and processes the live trial. The matching video and JSON evidence pair is transferred to the laptop for calibration review.
 4. Keep the existing device-independent live-camera pipeline. Do not fork phone metrics or rules logic.
 5. Build the interface, camera pipeline, recording, pose extraction, metrics pipeline, and rules workflow before asking Pedro for final movement thresholds.
-6. Pedro will record clean and deliberately faulted overhead squats on the phone.
+6. Pedro will record clean and deliberately faulted bodyweight squats on the phone, with arms straight forward at shoulder height.
 7. Those recordings, landmark data, metrics, and Pedro's judgement will define the ceiling, squat-depth boundary, hip-shift thresholds, and severity bands.
 8. Do not treat provisional research values as Pedro's final rules.
 9. This does not unlock the later client self-screening flow or any post-Phase-1 feature.
@@ -56,7 +56,7 @@ Phase 1 will contain:
 - One authenticated PT dashboard page beside M & L Assessment.
 - Chrome on iPhone 16 Pro with front-camera capture through HTTPS.
 - A live bright-green MediaPipe landmark overlay.
-- One movement: overhead squat, front view.
+- One movement: bodyweight squat, front view.
 - Three repetitions per trial.
 - A locally downloadable or shareable MP4/WebM calibration video from the same live-camera session.
 - A matching JSON calibration bundle with timestamps, landmark quality, metrics, rules version, and findings.
@@ -425,7 +425,7 @@ The recording exists to create Pedro's calibration evidence, not to create a cli
 - [x] Show a persistent 2-second down, 1-second pause, 2-second up tempo cue.
 - [x] Show model-loading progress.
 - [x] Show a three-second neutral-baseline countdown.
-- [x] Prompt for three overhead squats.
+- [x] Prompt for three bodyweight squats with arms straight forward at shoulder height.
 - [x] Show detected repetition count.
 - [x] Automatically finish after the third valid repetition, with a manual stop fallback.
 - [x] Require three seconds of tracked stillness after rep three before automatic finish.
@@ -502,7 +502,7 @@ Pedro will provide the source-of-truth examples using the iPhone front camera.
 ### A. Clean ceiling recordings
 
 - [ ] Pedro records at least five technically valid clean trials.
-- [ ] Each trial contains three overhead squats.
+- [ ] Each trial contains three bodyweight squats.
 - [ ] Video and calibration JSON are saved together.
 - [ ] Pedro confirms which trial best represents his clean ceiling.
 - [ ] Store the selected ceiling fixtures in the approved project fixture location.
@@ -583,24 +583,26 @@ Last completed:
 - Initial laptop-first plan and later iPhone-camera override persisted.
 - Six-skill chain created and validated; only the first three are functional.
 - Isolated PT route, worker pose extraction, two-metric pipeline, JSON rules engine, local recording/export, and versioned Supabase rule storage implemented.
-- Twenty deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
+- Twenty-two deterministic movement-screening tests, TypeScript, targeted lint, production build, production dependency audit, RLS checks, asset hashes, route protection, and immutable asset-header checks pass.
 - Fixed the real-browser startup failure where Next.js 16 Turbopack emitted a classic `importScripts()` worker bootstrap but the app forced Chrome to treat it as a module worker.
 - Fixed the first iPhone runtime failure where that classic worker still selected MediaPipe's ES-module WASM loader and iOS rejected its `import.meta` syntax.
 - Confirmed the iPhone camera, worker, and green overlay start successfully, then deployed a portrait 9:16 phone viewfinder with orientation-aware camera constraints and touch-safe controls.
 - Deployed a full-body green capture rectangle with all overlay text contained inside it and a tested 2-1-2 slow-tempo instruction.
 - Implemented and pushed a distance-readable guide, three-second in-frame auto-start, explicit movement/rep guidance, and three-second post-rep stillness auto-save.
+- Replaced the Phase 1 overhead squat with a front-view bodyweight squat, added an arms-forward start/finish posture gate, removed the overhead-only quality gate, and preserved legacy rules v1 compatibility for safe rollout.
 
 Next action:
 
-1. Fully reload `https://cerebroai.au/dashboard/pt/movement-screening` in Chrome on the iPhone 16 Pro.
-2. Confirm the brighter green rectangle stays visible at full-body distance and every overlay label remains inside it.
-3. Confirm staying inside for three seconds auto-starts, while leaving the guide resets the countdown.
-4. Run one slow trial using 2 seconds down, 1 second pause, and 2 seconds up.
-5. After rep three, confirm three seconds of arms-overhead stillness auto-saves and movement resets that countdown.
-6. Confirm the success/redo state, then record the iOS/Chrome/camera environment, source resolution, delegate, and FPS.
-7. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
-8. Verify anatomical direction, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
-9. Only after that gate passes, record Pedro's clean and faulted calibration examples.
+1. Deploy the compatibility code while rules v1 remains active, then apply the immutable rules v2 migration.
+2. Fully reload `https://cerebroai.au/dashboard/pt/movement-screening` in Chrome on the iPhone 16 Pro.
+3. Stand tall with arms straight forward at shoulder height and confirm staying ready for three seconds auto-starts.
+4. Confirm leaving the guide or dropping the ready posture resets the countdown.
+5. Run one slow bodyweight-squat trial using 2 seconds down, 1 second pause, and 2 seconds up.
+6. After rep three, return to the arms-forward ready posture and confirm three seconds of stillness auto-saves.
+7. Confirm the success/redo state, then record the iOS/Chrome/camera environment, source resolution, delegate, and FPS.
+8. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
+9. Verify anatomical direction, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
+10. Only after that gate passes, record Pedro's clean and faulted calibration examples and unlock later learning workflow design.
 
 Current blockers:
 

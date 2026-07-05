@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import fixtureJson from '../fixtures/phase-1-uncalibrated-v1.json';
+import legacyFixtureJson from '../fixtures/phase-1-uncalibrated-v1.json';
+import fixtureJson from '../fixtures/phase-1-uncalibrated-v2.json';
 import { createFrontCameraConstraints } from '../camera-constraints';
 import { sha256CanonicalJson } from '../canonical-json';
 import {
@@ -11,6 +12,7 @@ import {
 import {
   continuousHoldElapsedMs,
   poseFrameFitsCaptureGuide,
+  poseFrameMatchesBodyweightSquatStart,
   poseFramesAreStill,
 } from '../capture-guidance';
 import { MEDIAPIPE_WASM_USE_MODULE } from '../constants';
@@ -56,12 +58,12 @@ test('capture format supports WebM and iPhone MP4 evidence pairs', () => {
   );
   assert.equal(videoExtensionForMimeType('video/webm;codecs=vp8'), 'webm');
   assert.equal(
-    jsonFileNameForVideo('cerebro-ohs-trial.mp4'),
-    'cerebro-ohs-trial.json',
+    jsonFileNameForVideo('cerebro-bws-trial.mp4'),
+    'cerebro-bws-trial.json',
   );
   assert.equal(
-    jsonFileNameForVideo('cerebro-ohs-trial.webm'),
-    'cerebro-ohs-trial.json',
+    jsonFileNameForVideo('cerebro-bws-trial.webm'),
+    'cerebro-bws-trial.json',
   );
 });
 
@@ -98,6 +100,32 @@ test('capture guidance requires the full tracked pose inside the guide', () => {
   const outsideGuide = structuredClone(framed);
   outsideGuide.landmarks[15].x = 0.03;
   assert.equal(poseFrameFitsCaptureGuide(outsideGuide, 0.7), false);
+});
+
+test('bodyweight squat auto-start requires an upright arms-forward pose', () => {
+  const ready = makeFrame({
+    timestampMs: 0,
+    phase: 0,
+    bottomHipY: 0.64,
+    hipShift: 0,
+  });
+  assert.equal(poseFrameMatchesBodyweightSquatStart(ready, 0.7), true);
+
+  const armsOverhead = structuredClone(ready);
+  armsOverhead.landmarks[15].y = 0.12;
+  armsOverhead.landmarks[16].y = 0.12;
+  assert.equal(
+    poseFrameMatchesBodyweightSquatStart(armsOverhead, 0.7),
+    false,
+  );
+
+  const crouched = makeFrame({
+    timestampMs: 0,
+    phase: 0.5,
+    bottomHipY: 0.72,
+    hipShift: 0,
+  });
+  assert.equal(poseFrameMatchesBodyweightSquatStart(crouched, 0.7), false);
 });
 
 test('capture guidance resets interrupted holds and detects stillness', () => {
@@ -162,8 +190,8 @@ function makeFrame(input: {
 
   landmarks[11] = landmark(11, 0.42, 0.3, confidence);
   landmarks[12] = landmark(12, 0.58, 0.3, confidence);
-  landmarks[15] = landmark(15, 0.4, 0.12, confidence);
-  landmarks[16] = landmark(16, 0.6, 0.12, confidence);
+  landmarks[15] = landmark(15, 0.46, 0.31, confidence);
+  landmarks[16] = landmark(16, 0.54, 0.31, confidence);
   landmarks[23] = landmark(23, hipCenterX - 0.1, hipY, confidence);
   landmarks[24] = landmark(24, hipCenterX + 0.1, hipY, confidence);
   landmarks[25] = landmark(25, 0.4, kneeY, confidence);
@@ -279,6 +307,12 @@ test('the checked-in rules fixture is valid and hash-linked', async () => {
   assert.equal(validated.config.metadata.calibrationFixtureIds.length, 0);
 });
 
+test('the retired v1 rules remain readable during the safe rollout', () => {
+  const legacy = validateRulesEnvelope(legacyFixtureJson);
+  assert.equal(legacy.version, 1);
+  assert.equal(legacy.config.movementId, 'overhead_squat_front');
+});
+
 test('MediaPipe visibility supplies the shared presence proxy', () => {
   const copied = copyWorkerLandmarks([
     { x: 0.1, y: 0.2, z: 0, visibility: 0.87 },
@@ -293,7 +327,7 @@ test('a clean synthetic three-rep trial passes without findings', () => {
   if (!outcome.ok) return;
   assert.equal(outcome.result.findings.length, 0);
   assert.equal(outcome.result.perRepetition.length, 3);
-  assert.equal(outcome.result.rulesVersion, 1);
+  assert.equal(outcome.result.rulesVersion, 2);
   assert.equal(outcome.result.calibrationStatus, 'uncalibrated');
 });
 

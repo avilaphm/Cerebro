@@ -23,7 +23,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 3. Prop the phone securely near hip height where practical.
 4. Stand approximately 2 to 3 metres away.
 5. Use a bright room with light facing you, not behind you.
-6. Keep your full body visible, including both raised wrists and both ankles.
+6. Keep your full body visible, including both wrists and both ankles.
 7. Keep the phone completely still for the whole trial.
 8. Wear clothing that keeps the outline of the hips, knees, and ankles visible.
 
@@ -48,7 +48,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 3. Allow camera access when Chrome asks.
 4. Wait for `Loading pose model` to change to `Ready to record`.
 5. Confirm your front-camera image remains visible.
-6. Stand inside the green corners with both arms overhead.
+6. Stand tall inside the green corners with both arms straight forward at shoulder height.
 7. Confirm the status changes to `Auto start in 3.0 seconds`, then step outside before it reaches zero.
 8. Confirm the green dots and thin lines follow the wrists, shoulders, hips, knees, and ankles.
 9. Raise only your anatomical left hand. The visible preview is mirrored, but stored direction must remain anatomical left.
@@ -64,15 +64,15 @@ Stop here and report the exact red message if:
 
 ## B. Record one technical trial
 
-1. With the camera still ready, stand upright inside the green rectangle with both arms overhead.
+1. With the camera still ready, stand tall inside the green rectangle with both arms straight forward at shoulder height.
 2. If the camera was turned off after the technical check, tap `Enable camera` before stepping back.
 3. Hold inside the rectangle for three continuous seconds. Confirm stepping outside resets the auto-start countdown.
 4. Let Cerebro start the trial automatically. Use `Start now` only as a fallback.
 5. Hold completely still during the second three-second neutral-baseline countdown.
-6. Perform exactly three controlled overhead squats.
+6. Perform exactly three controlled bodyweight squats while keeping your arms straight forward.
 7. Return fully upright after every repetition.
 8. Watch the counter move from `0 / 3` to `3 / 3`.
-9. After rep three, keep your arms overhead and stand still for three seconds.
+9. After rep three, stand tall with your arms straight forward and remain still for three seconds.
 10. Confirm movement resets the finish countdown and stillness resumes it.
 11. Let Cerebro save and analyse automatically. Use `Stop early & analyse` only if automatic stopping fails.
 12. Wait for `Recording successful` or a clear redo instruction.
@@ -80,7 +80,7 @@ Stop here and report the exact red message if:
 
 ## C. Check the result
 
-- [ ] The page shows accepted `screening-result/1.0.0` JSON or a clear rejection reason.
+- [ ] The page shows accepted `screening-result/1.1.0` JSON or a clear rejection reason.
 - [ ] An accepted result contains exactly three `perRepetition` entries.
 - [ ] Both metrics exist:
   - `hip_lateral_translation_ratio`

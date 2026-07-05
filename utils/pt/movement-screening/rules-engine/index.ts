@@ -1,4 +1,6 @@
 import {
+  LEGACY_METRICS_SCHEMA_VERSION,
+  LEGACY_RULES_SCHEMA_VERSION,
   METRICS_SCHEMA_VERSION,
   RULES_SCHEMA_VERSION,
   SCREENING_RESULT_SCHEMA_VERSION,
@@ -146,10 +148,19 @@ function validateConfig(value: unknown, errors: string[]): value is RulesConfig 
     return false;
   }
 
-  if (value.movementId !== 'overhead_squat_front') {
+  const isLegacyOverhead =
+    value.movementId === 'overhead_squat_front' &&
+    value.metricSchemaVersion === LEGACY_METRICS_SCHEMA_VERSION;
+  const isBodyweightSquat =
+    value.movementId === 'bodyweight_squat_front' &&
+    value.metricSchemaVersion === METRICS_SCHEMA_VERSION;
+  if (!isLegacyOverhead && !isBodyweightSquat) {
     errors.push('config.movementId is unsupported');
   }
-  if (value.metricSchemaVersion !== METRICS_SCHEMA_VERSION) {
+  if (
+    value.metricSchemaVersion !== LEGACY_METRICS_SCHEMA_VERSION &&
+    value.metricSchemaVersion !== METRICS_SCHEMA_VERSION
+  ) {
     errors.push('config.metricSchemaVersion is unsupported');
   }
   if (value.expectedRepetitions !== 3) {
@@ -169,11 +180,20 @@ function validateConfig(value: unknown, errors: string[]): value is RulesConfig 
       'config.qualityGates.validFrameFractionMin',
       errors,
     );
-    validateUnitInterval(
-      value.qualityGates.minOverheadArmFrameFraction,
-      'config.qualityGates.minOverheadArmFrameFraction',
-      errors,
-    );
+    if (isLegacyOverhead) {
+      validateUnitInterval(
+        value.qualityGates.minOverheadArmFrameFraction,
+        'config.qualityGates.minOverheadArmFrameFraction',
+        errors,
+      );
+    } else if (
+      isBodyweightSquat &&
+      value.qualityGates.minOverheadArmFrameFraction !== undefined
+    ) {
+      errors.push(
+        'config.qualityGates.minOverheadArmFrameFraction is not valid for the bodyweight squat',
+      );
+    }
     for (const key of [
       'minInferenceFps',
       'maxAnkleDriftHipWidthRatio',
@@ -266,7 +286,10 @@ export function validateRulesEnvelope(input: unknown): RulesEnvelope {
     throw new Error('Rules envelope must be an object');
   }
 
-  if (input.schemaVersion !== RULES_SCHEMA_VERSION) {
+  if (
+    input.schemaVersion !== LEGACY_RULES_SCHEMA_VERSION &&
+    input.schemaVersion !== RULES_SCHEMA_VERSION
+  ) {
     errors.push('schemaVersion is unsupported');
   }
   if (!Number.isInteger(input.version) || Number(input.version) <= 0) {
@@ -288,6 +311,22 @@ export function validateRulesEnvelope(input: unknown): RulesEnvelope {
     errors.push('configSha256 must be a lowercase SHA-256 hex digest');
   }
   validateConfig(input.config, errors);
+  if (isRecord(input.config)) {
+    if (
+      input.schemaVersion === LEGACY_RULES_SCHEMA_VERSION &&
+      (input.config.movementId !== 'overhead_squat_front' ||
+        input.config.metricSchemaVersion !== LEGACY_METRICS_SCHEMA_VERSION)
+    ) {
+      errors.push('legacy rules schema must use the legacy overhead squat');
+    }
+    if (
+      input.schemaVersion === RULES_SCHEMA_VERSION &&
+      (input.config.movementId !== 'bodyweight_squat_front' ||
+        input.config.metricSchemaVersion !== METRICS_SCHEMA_VERSION)
+    ) {
+      errors.push('current rules schema must use the bodyweight squat');
+    }
+  }
 
   if (errors.length > 0) {
     throw new Error(`Invalid rules configuration: ${errors.join('; ')}`);

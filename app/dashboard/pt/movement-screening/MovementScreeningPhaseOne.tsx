@@ -28,6 +28,7 @@ import {
   FINISH_HOLD_DURATION_MS,
   FRAMING_HOLD_DURATION_MS,
   poseFrameFitsCaptureGuide,
+  poseFrameMatchesBodyweightSquatStart,
   poseFramesAreStill,
 } from '@/utils/pt/movement-screening/capture-guidance';
 import {
@@ -181,6 +182,7 @@ export default function MovementScreeningPhaseOne({
   const [source, setSource] = useState<SourceMetadata | null>(null);
   const [delegate, setDelegate] = useState<'GPU' | 'CPU' | null>(null);
   const [trackingReady, setTrackingReady] = useState(false);
+  const [startPoseReady, setStartPoseReady] = useState(false);
   const [framingHoldMs, setFramingHoldMs] = useState(0);
   const [finishHoldMs, setFinishHoldMs] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -192,6 +194,8 @@ export default function MovementScreeningPhaseOne({
   const [exportBundle, setExportBundle] = useState<ExportBundle | null>(null);
   const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const isBodyweightSquat =
+    rules.config.movementId === 'bodyweight_squat_front';
 
   const transitionRuntimeState = useCallback((nextState: RuntimeState) => {
     runtimeStateRef.current = nextState;
@@ -256,14 +260,21 @@ export default function MovementScreeningPhaseOne({
         frame,
         rules.config.qualityGates.landmarkConfidenceMin,
       );
+      const matchesStartPose = isBodyweightSquat
+        ? poseFrameMatchesBodyweightSquatStart(
+            frame,
+            rules.config.qualityGates.landmarkConfidenceMin,
+          )
+        : fitsCaptureGuide;
       setTrackingReady(fitsCaptureGuide);
+      setStartPoseReady(matchesStartPose);
 
       if (!capturingRef.current) {
         if (runtimeStateRef.current === 'ready') {
           const hold = continuousHoldElapsedMs(
             framingHoldStartRef.current,
             frame.timestampMs,
-            fitsCaptureGuide,
+            matchesStartPose,
           );
           framingHoldStartRef.current = hold.startedAtMs;
           setFramingHoldMs(
@@ -312,7 +323,7 @@ export default function MovementScreeningPhaseOne({
 
         if (detectedRepetitionsRef.current >= EXPECTED_REPETITIONS) {
           const remainsStill =
-            fitsCaptureGuide &&
+            matchesStartPose &&
             (!finishHoldAnchorRef.current ||
               poseFramesAreStill(finishHoldAnchorRef.current, capturedFrame));
 
@@ -352,7 +363,7 @@ export default function MovementScreeningPhaseOne({
         }
       }
     },
-    [drawPose, rules.config],
+    [drawPose, isBodyweightSquat, rules.config],
   );
 
   const beginInferenceLoop = useCallback(() => {
@@ -444,6 +455,7 @@ export default function MovementScreeningPhaseOne({
     const canvas = overlayRef.current;
     canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     setTrackingReady(false);
+    setStartPoseReady(false);
     framingHoldStartRef.current = null;
     finishHoldStartRef.current = null;
     finishHoldAnchorRef.current = null;
@@ -491,7 +503,8 @@ export default function MovementScreeningPhaseOne({
       confidenceMin: rules.config.qualityGates.landmarkConfidenceMin,
     });
     const nextOutcome = runMovementScreeningPipeline(landmarks, rules);
-    const videoFileName = `cerebro-ohs-${trialId}.${videoExtensionForMimeType(blob.type)}`;
+    const movementFilePrefix = isBodyweightSquat ? 'bws' : 'ohs';
+    const videoFileName = `cerebro-${movementFilePrefix}-${trialId}.${videoExtensionForMimeType(blob.type)}`;
     const exportedAt = new Date().toISOString();
 
     if (nextOutcome.ok) {
@@ -520,6 +533,7 @@ export default function MovementScreeningPhaseOne({
   }, [
     clearCaptureTimers,
     releaseCameraDevices,
+    isBodyweightSquat,
     rules,
     stopRecorder,
     transitionRuntimeState,
@@ -534,6 +548,7 @@ export default function MovementScreeningPhaseOne({
     autoStartingRef.current = false;
     framingHoldStartRef.current = null;
     setFramingHoldMs(0);
+    setStartPoseReady(false);
     transitionRuntimeState('starting_camera');
     if (!window.isSecureContext) {
       transitionRuntimeState('error');
@@ -814,7 +829,7 @@ export default function MovementScreeningPhaseOne({
     runtimeState === 'loading_model' ||
     runtimeState === 'processing';
   const canStartTrial =
-    runtimeState === 'ready' && trackingReady && Boolean(delegate);
+    runtimeState === 'ready' && startPoseReady && Boolean(delegate);
   const neutralBaselineSeconds =
     rules.config.segmentation.neutralBaselineDurationMs / 1000;
   const baselineRemainingSeconds = Math.max(
@@ -836,32 +851,40 @@ export default function MovementScreeningPhaseOne({
     runtimeState === 'capturing' &&
     detectedRepetitions >= EXPECTED_REPETITIONS;
   const statusSuccessful = runtimeState === 'complete' && outcome?.ok;
+  const movementName = isBodyweightSquat
+    ? 'Bodyweight squat'
+    : 'Overhead squat';
+  const movementSummary = `${movementName} · Front view · 3 reps`;
 
   const guideEyebrow =
     runtimeState === 'ready'
-      ? 'Overhead squat · Front view · 3 reps'
+      ? movementSummary
       : runtimeState === 'capturing'
         ? isFinishHold
           ? 'All 3 reps detected'
           : isNeutralBaseline
             ? 'Recording started'
-            : 'Overhead squat · Front view · 3 reps'
+            : movementSummary
         : runtimeState === 'processing'
           ? 'Recording finished'
           : runtimeState === 'complete'
             ? 'Movement 1 of 1'
-            : 'Overhead squat · Front view · 3 reps';
+            : movementSummary;
   const guideTitle =
     runtimeState === 'ready'
-      ? trackingReady
-        ? 'Hold your position'
-        : 'Fit your full body inside'
+      ? !trackingReady
+        ? 'Fit your full body inside'
+        : startPoseReady
+          ? 'Hold your position'
+          : isBodyweightSquat
+            ? 'Arms straight forward'
+            : 'Hold your position'
       : runtimeState === 'capturing'
         ? isFinishHold
           ? 'Stand still'
           : isNeutralBaseline
             ? 'Hold the start position'
-            : 'Overhead squat'
+            : movementName
         : runtimeState === 'processing'
           ? 'Checking recording'
           : runtimeState === 'complete'
@@ -869,10 +892,10 @@ export default function MovementScreeningPhaseOne({
               ? 'Recording successful'
               : 'Recording needs another try'
             : runtimeState === 'idle'
-              ? 'Overhead squat'
+              ? movementName
               : 'Get ready';
   const guideValue =
-    runtimeState === 'ready' && trackingReady
+    runtimeState === 'ready' && startPoseReady
       ? `${framingRemainingSeconds.toFixed(1)}s`
       : isNeutralBaseline
         ? `${baselineRemainingSeconds.toFixed(1)}s`
@@ -883,14 +906,22 @@ export default function MovementScreeningPhaseOne({
             : null;
   const guideDetail =
     runtimeState === 'ready'
-      ? trackingReady
-        ? 'The test starts automatically after 3 seconds.'
-        : 'Step back. Keep raised wrists and both ankles inside the green frame.'
+      ? !trackingReady
+        ? 'Step back. Keep your wrists and both ankles inside the bright green frame.'
+        : startPoseReady
+          ? 'The test starts automatically after 3 seconds.'
+          : isBodyweightSquat
+            ? 'Stand tall and reach both arms straight forward at shoulder height.'
+            : 'Hold the required start position.'
       : runtimeState === 'capturing'
         ? isFinishHold
-          ? 'Keep your arms overhead and body still. The recording saves automatically.'
+          ? isBodyweightSquat
+            ? 'Stand tall with arms straight forward. Stay still while the recording saves.'
+            : 'Keep your arms overhead and body still. The recording saves automatically.'
           : isNeutralBaseline
-            ? 'Arms overhead. Do not move until the countdown ends.'
+            ? isBodyweightSquat
+              ? 'Arms straight forward. Do not move until the countdown ends.'
+              : 'Arms overhead. Do not move until the countdown ends.'
             : `Move slowly · ${TEMPO_CUE}`
         : runtimeState === 'processing'
           ? 'Stay close. Your three repetitions are being verified.'
@@ -915,7 +946,7 @@ export default function MovementScreeningPhaseOne({
             </span>
           </div>
           <h1 className="mt-3 max-w-3xl text-[2rem] font-medium leading-[1.02] tracking-[-0.045em] text-black md:text-5xl">
-            Overhead squat,
+            {movementName},
             <span className="text-black/35"> measured in-browser.</span>
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-black/52">
@@ -947,7 +978,7 @@ export default function MovementScreeningPhaseOne({
 
             <div
               className={`pointer-events-none absolute inset-x-[8%] bottom-[4%] top-[4%] border-[3px] border-[#42ff88] bg-[#42ff88]/[0.025] outline outline-1 outline-black/70 transition-shadow duration-200 md:inset-x-[20%] md:bottom-[7%] md:top-[8%] ${
-                trackingReady
+                startPoseReady
                   ? 'shadow-[0_0_30px_rgba(66,255,136,0.8),inset_0_0_24px_rgba(66,255,136,0.16)]'
                   : 'shadow-[0_0_18px_rgba(66,255,136,0.55),inset_0_0_16px_rgba(66,255,136,0.1)]'
               }`}
@@ -964,7 +995,7 @@ export default function MovementScreeningPhaseOne({
                     className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                       runtimeState === 'capturing'
                         ? 'animate-pulse bg-red-500'
-                        : trackingReady
+                        : startPoseReady
                           ? 'bg-[#42ff88]'
                           : 'bg-white/35'
                     }`}
@@ -1021,12 +1052,12 @@ export default function MovementScreeningPhaseOne({
             <div className="flex min-w-0 items-center gap-3">
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                  trackingReady || statusSuccessful
+                  startPoseReady || statusSuccessful
                     ? 'bg-[#d9ffe8] text-emerald-800'
                     : 'bg-black/5 text-black/35'
                 }`}
               >
-                {trackingReady || statusSuccessful ? (
+                {startPoseReady || statusSuccessful ? (
                   <Check className="h-4 w-4" />
                 ) : (
                   <ScanLine className="h-4 w-4" />
@@ -1038,10 +1069,12 @@ export default function MovementScreeningPhaseOne({
                     ? outcome?.ok
                       ? 'Recording successful'
                       : 'Recording finished · quality check failed'
-                    : runtimeState === 'ready' && trackingReady
+                    : runtimeState === 'ready' && startPoseReady
                       ? `Auto start in ${framingRemainingSeconds.toFixed(1)} seconds`
                       : trackingReady
-                        ? 'Full body is inside the capture zone'
+                        ? isBodyweightSquat
+                          ? 'Full body detected · move arms straight forward'
+                          : 'Full body is inside the capture zone'
                         : 'Waiting for full-body tracking'}
                 </p>
                 <p className="truncate text-xs text-black/43">
@@ -1129,7 +1162,9 @@ export default function MovementScreeningPhaseOne({
               {
                 number: '02',
                 title: 'Enter the green frame',
-                copy: 'Face the camera with arms overhead. Hold inside the rectangle for three seconds to start automatically.',
+                copy: isBodyweightSquat
+                  ? 'Face the camera, stand tall, and reach both arms straight forward at shoulder height. Hold for three seconds to start automatically.'
+                  : 'Face the camera with arms overhead. Hold inside the rectangle for three seconds to start automatically.',
               },
               {
                 number: '03',
@@ -1144,7 +1179,9 @@ export default function MovementScreeningPhaseOne({
               {
                 number: '05',
                 title: 'Finish standing still',
-                copy: 'After rep three, hold still for three seconds. The recording saves and checks itself.',
+                copy: isBodyweightSquat
+                  ? 'After rep three, stand tall with arms straight forward and hold still for three seconds. The recording saves and checks itself.'
+                  : 'After rep three, hold still for three seconds. The recording saves and checks itself.',
               },
             ].map((step) => (
               <li key={step.number} className="grid grid-cols-[2rem_1fr] gap-3">

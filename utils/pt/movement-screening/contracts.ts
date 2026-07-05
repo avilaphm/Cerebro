@@ -1,7 +1,20 @@
 export const LANDMARK_SERIES_SCHEMA_VERSION = 'landmark-series/1.0.0' as const;
-export const METRICS_SCHEMA_VERSION = 'movement-metrics/1.0.0' as const;
-export const RULES_SCHEMA_VERSION = 'movement-screening-rules/1.0.0' as const;
-export const SCREENING_RESULT_SCHEMA_VERSION = 'screening-result/1.0.0' as const;
+export const LEGACY_METRICS_SCHEMA_VERSION = 'movement-metrics/1.0.0' as const;
+export const METRICS_SCHEMA_VERSION = 'movement-metrics/1.1.0' as const;
+export const LEGACY_RULES_SCHEMA_VERSION =
+  'movement-screening-rules/1.0.0' as const;
+export const RULES_SCHEMA_VERSION = 'movement-screening-rules/1.1.0' as const;
+export const SCREENING_RESULT_SCHEMA_VERSION = 'screening-result/1.1.0' as const;
+
+export type MetricsSchemaVersion =
+  | typeof LEGACY_METRICS_SCHEMA_VERSION
+  | typeof METRICS_SCHEMA_VERSION;
+export type RulesSchemaVersion =
+  | typeof LEGACY_RULES_SCHEMA_VERSION
+  | typeof RULES_SCHEMA_VERSION;
+export type MovementId =
+  | 'overhead_squat_front'
+  | 'bodyweight_squat_front';
 
 export type EntryPoint = 'live_camera' | 'uploaded_video' | 'self_screening';
 export type CalibrationStatus = 'uncalibrated' | 'calibrating' | 'calibrated';
@@ -81,7 +94,7 @@ export interface LandmarkSeries {
 }
 
 export interface MovementContext {
-  movementId: 'overhead_squat_front';
+  movementId: MovementId;
   expectedRepetitions: 3;
   neutralBaselineDurationMs: number;
 }
@@ -112,11 +125,11 @@ export interface MovementQualitySummary extends LandmarkQualitySummary {
   repetitionsDetected: number;
   ankleDriftHipWidthRatio: number;
   maxSegmentJumpHipWidthRatio: number;
-  overheadArmFrameFraction: number;
+  overheadArmFrameFraction?: number;
 }
 
 export interface MovementMetrics {
-  schemaVersion: typeof METRICS_SCHEMA_VERSION;
+  schemaVersion: MetricsSchemaVersion;
   trialId: string;
   entryPoint: EntryPoint;
   movement: MovementContext;
@@ -151,7 +164,7 @@ export interface QualityGateConfig {
   minInferenceFps: number;
   maxAnkleDriftHipWidthRatio: number;
   maxSegmentJumpHipWidthRatio: number;
-  minOverheadArmFrameFraction: number;
+  minOverheadArmFrameFraction?: number;
 }
 
 export interface SegmentationConfig {
@@ -186,7 +199,7 @@ export interface MetricRuleGroup {
 
 export interface RulesConfig {
   movementId: MovementContext['movementId'];
-  metricSchemaVersion: typeof METRICS_SCHEMA_VERSION;
+  metricSchemaVersion: MetricsSchemaVersion;
   expectedRepetitions: 3;
   qualityGates: QualityGateConfig;
   segmentation: SegmentationConfig;
@@ -200,7 +213,7 @@ export interface RulesConfig {
 }
 
 export interface RulesEnvelope {
-  schemaVersion: typeof RULES_SCHEMA_VERSION;
+  schemaVersion: RulesSchemaVersion;
   version: number;
   status: 'active';
   calibrationStatus: CalibrationStatus;
@@ -232,8 +245,8 @@ export interface ScreeningResult {
   source: SourceMetadata;
   model: PoseModelProvenance;
   quality: MovementQualitySummary;
-  metricsSchemaVersion: typeof METRICS_SCHEMA_VERSION;
-  rulesSchemaVersion: typeof RULES_SCHEMA_VERSION;
+  metricsSchemaVersion: MetricsSchemaVersion;
+  rulesSchemaVersion: RulesSchemaVersion;
   rulesVersion: number;
   rulesConfigSha256: string;
   calibrationStatus: CalibrationStatus;

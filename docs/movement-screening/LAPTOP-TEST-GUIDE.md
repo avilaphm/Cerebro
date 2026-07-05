@@ -1,6 +1,6 @@
 # Cerebro Movement Screening - Laptop Test Guide
 
-Use this guide after each new build or rules version. Phase 1 is laptop-only. Do not use these outputs for clients until the calibrated acceptance gate passes.
+Use this guide for secondary desktop diagnostics after each new build or rules version. The iPhone 16 Pro is the Phase 1 acceptance device. Do not use these outputs for clients until the calibrated acceptance gate passes.
 
 ## Before you start
 
@@ -30,8 +30,8 @@ Record this environment before the first accepted run:
 
 1. Click `Enable camera`.
 2. Wait for `Ready to record`.
-3. Stand inside the green corners with arms overhead.
-4. Confirm the status changes to `Required landmarks visible`.
+3. Stand tall inside the green corners with both arms straight forward at shoulder height.
+4. Confirm the status changes to `Auto start in 3.0 seconds`, then step out before it reaches zero.
 5. Confirm the green dots and thin lines follow the wrists, shoulders, hips, knees, and ankles.
 6. Raise only your anatomical left hand. The visible preview is mirrored, but later JSON direction must still say anatomical `left`.
 7. Lower the left hand, then repeat with the anatomical right hand.
@@ -39,19 +39,19 @@ Record this environment before the first accepted run:
 
 ## B. Record one technical trial
 
-1. Stand upright with both arms overhead.
-2. Click `Start 3-rep trial`.
-3. Hold completely still while the top-right label counts down `HOLD 3.0s`.
-4. Perform exactly three controlled overhead squats.
+1. Stand tall with both arms straight forward at shoulder height.
+2. Hold the ready posture for three seconds and let the trial start automatically.
+3. Hold completely still for the three-second neutral baseline.
+4. Perform exactly three controlled bodyweight squats while keeping your arms straight forward.
 5. Return fully upright after every repetition.
 6. Watch the counter move from `0 / 3 REPS` to `3 / 3 REPS`.
-7. The trial should stop automatically after the third completed repetition. Use `Stop & analyse` only if automatic stopping fails.
+7. After the third repetition, stand tall with arms straight forward and remain still for three seconds. Use `Stop early & analyse` only if automatic stopping fails.
 8. Wait for `Trial complete`.
 9. Confirm the camera light turns off after analysis.
 
 ## C. Check the result
 
-- [ ] The page shows either accepted `screening-result/1.0.0` JSON or a clear rejection reason.
+- [ ] The page shows either accepted `screening-result/1.1.0` JSON or a clear rejection reason.
 - [ ] An accepted result contains exactly three `perRepetition` entries.
 - [ ] Both metrics exist:
   - `hip_lateral_translation_ratio`
@@ -70,14 +70,14 @@ If rejected, use the message:
 | Low-confidence landmarks | Improve light, clothing contrast, and full-body framing. |
 | Frame rate below threshold | Close heavy tabs/apps and retry. Record whether GPU or CPU was used. |
 | Foot position or camera framing moved | Keep the laptop and feet fixed for the full trial. |
-| Wrists not overhead | Keep both wrists above both shoulders through the trial. |
+| Ready posture not detected | Stand tall with both arms straight forward at shoulder height and keep wrists and ankles inside the guide. |
 
 ## D. Download and verify the evidence pair
 
 1. Click `Video`.
 2. Click `JSON bundle`.
 3. Confirm both filenames share the same trial ID.
-4. Play the WebM from start to finish in Chrome.
+4. Play the MP4 or WebM from start to finish in Chrome.
 5. Confirm it contains the neutral hold and all three repetitions.
 6. Open the JSON and confirm:
    - the same trial ID;
