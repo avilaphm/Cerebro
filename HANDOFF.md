@@ -1,14 +1,51 @@
 # Handoff
 
 ## Last updated
-2026-07-04 by Claude - Studio desktop dual export (landscape + portrait cut) shipped; Pedro real-camera check pending.
+2026-07-05 by Codex - Movement Screening full-body framing and slow-tempo overlay deployed; Pedro iPhone check pending.
 
 ## Last code fix commit
-8c8ffea - feat(studio): dual landscape + portrait export on desktop
+27b7d7c - feat(movement): add framing and tempo cues
 
 ## What just happened (read first)
 
-### Cerebro Studio desktop dual export (2026-07-04, LATEST)
+### Movement Screening framing and tempo overlay (2026-07-05, LATEST)
+
+Pedro requested a clearer indication of where to stand, slower movement
+instructions, and all camera-overlay text contained inside the portrait
+viewfinder guide.
+
+Shipped:
+- Replaced the faint corner-only guide with a complete bright-green full-body
+  capture rectangle and a subtle dashed centre line.
+- Moved camera status, baseline countdown, repetition counter, positioning
+  guidance, and tempo text inside the rectangle.
+- Positioning guidance changes from `Step back` to `Stay centred` when the
+  required wrists, hips, knees, and ankles are tracked.
+- Added a persistent controlled tempo cue: 2 seconds down, 1 second pause,
+  2 seconds up.
+- Updated the Capture Protocol copy to repeat the same three-repetition tempo.
+- Added a synthetic 2-1-2 movement test proving three repetitions remain below
+  the existing six-second per-repetition ceiling.
+- Pose coordinates, mirroring, metrics, quality gates, and rules are unchanged.
+
+Verification:
+- `npm run test:movement-screening`: 18/18 pass.
+- `npx tsc --noEmit`: pass.
+- Targeted movement-screening ESLint: pass.
+- `npm run build`: pass.
+- Production deployment `dpl_B2DekrHWxF57T8qVnDx4KBVpWxgw` is Ready and
+  aliased to `https://cerebroai.au`.
+- The automated browser preview was unavailable, so Pedro's iPhone remains the
+  visual containment and alignment gate.
+
+NEXT:
+1. Fully reload Movement Screening on the iPhone.
+2. Confirm the green rectangle is clear and every overlay label stays inside it.
+3. Confirm the green landmarks align while standing inside the rectangle.
+4. Run one 2-1-2 three-repetition trial and verify automatic completion.
+5. Continue the three-trial technical acceptance only after that check passes.
+
+### Cerebro Studio desktop dual export (2026-07-04)
 
 Pedro wanted, from a laptop recording, to get BOTH a landscape and a portrait
 (9:16) version so he can download both. (Mobile screen+facecam is off the table
