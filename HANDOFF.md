@@ -1,14 +1,52 @@
 # Handoff
 
 ## Last updated
-2026-07-05 by Codex - Movement Screening full-body framing and slow-tempo overlay deployed; Pedro iPhone check pending.
+2026-07-05 by Claude - Cerebro Studio Phase 2 (layouts, hotkeys, countdown, pause/resume) shipped; Pedro laptop check pending.
 
 ## Last code fix commit
-27b7d7c - feat(movement): add framing and tempo cues
+728a528 - feat(studio): Phase 2 - layouts, hotkeys, countdown, pause/resume
 
 ## What just happened (read first)
 
-### Movement Screening framing and tempo overlay (2026-07-05, LATEST)
+### Cerebro Studio Phase 2 (2026-07-05, LATEST)
+
+Recorder controls for the desktop path. Builds on the mobile camera-only mode
+(ece3169) and desktop dual export (8c8ffea).
+
+Shipped (app/dashboard/studio/: StudioApp.tsx, useRecorder.ts, new useHotkeys.ts):
+- Reachable Layouts 1 (screen + cam bubble), 2 (camera only), 3 (screen only) via
+  a segmented switcher with an active indicator and a keyboard legend.
+- Hotkeys: 1/2/3 jump to a layout, Space cycles 1->2->3->1, Esc cancels the
+  countdown or stops recording. Ignored while a form control is focused; Space
+  blurs the focused control and preventDefaults.
+- 3-2-1 countdown overlay before recording, rendered in React (never drawn on the
+  canvas) so it is NOT baked into the take; tap the overlay or press Esc to cancel.
+- Pause / resume via MediaRecorder pause()/resume() on both recorders. Elapsed
+  timer freezes on pause via accumulated-segment accounting; amber PAUSED badge.
+  Layout switching + hotkeys work before AND during recording.
+- `layout` is now stateful (forced to 2 in camera-only mode); `config` memoized.
+  The "share your screen" hint only shows for layouts that need the screen (1, 3).
+
+Verification (Playwright, throwaway /studio-preview with screen+camera faked,
+then deleted):
+- tsc + Studio ESLint: clean.
+- Pixel-sampled the canvas per layout: L1 screen+bubble, L2 all camera, L3 all
+  screen. Hotkeys 1/2/3 + Space-cycle (with wrap) + Esc-stop all drive it.
+- Countdown showed 3/2/1 and recording started at ~3.1s (after the full delay).
+- Pause froze the timer at 00:33 and PAUSED showed; Resume advanced to 00:34; a
+  paused-then-stopped take still finalized BOTH 1920x1080 + 1080x1920 cuts.
+- 0 console errors.
+
+NEXT:
+1. Pedro laptop check at /dashboard/studio: try the layout buttons + hotkeys
+   (1/2/3, Space, Esc), the 3-2-1 countdown, and pause/resume with a REAL camera.
+   Also the still-open dual-export real-camera framing check and desktop bubble
+   sign-off (both close out Phase 1 + confirm the recent features on real hardware).
+2. Phase 3 remaining (not started): orientation picker, camera-bubble position /
+   size pickers, Document Picture-in-Picture floating control panel, review polish.
+3. Mobile screen+facecam still deferred (native ReplayKit only).
+
+### Movement Screening framing and tempo overlay (2026-07-05)
 
 Pedro requested a clearer indication of where to stand, slower movement
 instructions, and all camera-overlay text contained inside the portrait
