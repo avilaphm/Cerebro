@@ -105,6 +105,10 @@ export function useMediaStreams(): UseMediaStreams {
         await refreshDevices();
       } catch (err) {
         setCamMicError(describeMediaError(err, 'camera or microphone'));
+        // Still populate the device list so a failed default camera (e.g. a busy
+        // built-in webcam) doesn't hide the others — the user can switch to their
+        // phone / Continuity Camera from the dropdown and retry.
+        await refreshDevices();
       }
     },
     [refreshDevices],
