@@ -16,12 +16,20 @@ interface UseCompositorParams {
   portraitActive?: boolean;
 }
 
+const FPS = 30;
+
 /**
- * Runs the requestAnimationFrame draw loop that composites screen + camera
- * onto the canvas every frame. Reads config through a ref so layout / bubble
- * changes take effect instantly without restarting the loop. When a portrait
- * canvas is supplied and active, it is painted the same frame so both the
- * landscape and portrait recordings stay in sync.
+ * Runs the draw loop that composites screen + camera onto the canvas every
+ * frame. Reads config through a ref so layout / bubble changes take effect
+ * instantly without restarting the loop. When a portrait canvas is supplied and
+ * active, it is painted the same frame so both the landscape and portrait
+ * recordings stay in sync.
+ *
+ * The loop is driven by a Web Worker tick, not requestAnimationFrame: rAF is
+ * throttled to ~1fps on a hidden tab, which froze the recording the instant the
+ * user switched to another tab/app. A worker setInterval keeps ticking at 30fps
+ * in the background; the main thread renders on each tick. rAF is kept only as a
+ * fallback if the worker can't be created.
  */
 export function useCompositor({
   canvasRef,
@@ -38,8 +46,7 @@ export function useCompositor({
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
-    let raf = 0;
-    const loop = () => {
+    const render = () => {
       drawLayout(
         ctx,
         { width: canvas.width, height: canvas.height },
@@ -58,10 +65,30 @@ export function useCompositor({
           cameraVideoRef.current,
         );
       }
-
-      raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+
+    let raf = 0;
+    let worker: Worker | null = null;
+    try {
+      worker = new Worker(new URL('./tick.worker.ts', import.meta.url));
+      worker.onmessage = render;
+      worker.postMessage({ type: 'start', fps: FPS });
+    } catch {
+      // No Web Worker (or blocked): fall back to rAF. Still smooth while the tab
+      // is visible; only the background-tab case degrades to what it was before.
+      const loop = () => {
+        render();
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+    }
+
+    return () => {
+      if (worker) {
+        worker.postMessage({ type: 'stop' });
+        worker.terminate();
+      }
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, [active, canvasRef, screenVideoRef, cameraVideoRef, configRef, portraitCanvasRef, portraitActive]);
 }

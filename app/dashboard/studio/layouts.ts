@@ -180,8 +180,9 @@ export function drawLayout(
     return;
   }
 
-  // Layouts 1 and 3 — screen fills the canvas, letterboxed.
-  if (isReady(screen)) drawContain(ctx, screen, 0, 0, dims.width, dims.height);
+  // Layouts 1 and 3 — screen fills the whole canvas (cover-cropped) so there is
+  // no black dead space. A 16:10 laptop display loses a few pixels top/bottom.
+  if (isReady(screen)) drawCover(ctx, screen, 0, 0, dims.width, dims.height);
 
   if (config.layout === 3) return;
 
