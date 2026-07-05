@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   AlertCircle,
   Camera,
@@ -8,6 +8,8 @@ import {
   Download,
   Mic,
   Monitor,
+  Pause,
+  Play,
   RotateCcw,
   Smartphone,
   Square,
@@ -19,8 +21,9 @@ import {
 import { useMediaStreams } from './useMediaStreams';
 import { useCompositor } from './useCompositor';
 import { useRecorder } from './useRecorder';
+import { useStudioHotkeys } from './useHotkeys';
 import { mergeAudioTracks } from './audio';
-import type { CompositorConfig, CanvasWithCapture, StudioPhase } from './types';
+import type { CompositorConfig, CanvasWithCapture, LayoutId, StudioPhase } from './types';
 import { ORIENTATION_DIMS } from './types';
 
 const LANDSCAPE_BITRATE = 8_000_000;
@@ -54,6 +57,12 @@ const CAMERA_ONLY_CONFIG: CompositorConfig = {
   orientation: 'portrait',
   bubblePosition: 'bottom-right',
   bubbleSize: 'medium',
+};
+
+const LAYOUT_META: Record<LayoutId, { label: string; needsScreen: boolean }> = {
+  1: { label: 'Screen + cam', needsScreen: true },
+  2: { label: 'Camera', needsScreen: false },
+  3: { label: 'Screen', needsScreen: true },
 };
 
 function pad(n: number) {
@@ -91,10 +100,16 @@ export default function StudioApp() {
   // Also record a portrait (9:16) cut alongside the landscape take. Desktop
   // (screen+face) only — camera-only mode is already a single portrait video.
   const [makePortrait, setMakePortrait] = useState(true);
+  // Desktop layout: 1 screen+cam bubble, 2 camera only, 3 screen only.
+  const [layout, setLayout] = useState<LayoutId>(1);
+  const [countdown, setCountdown] = useState<number | null>(null);
   // Camera-only mode: mobile browsers have no getDisplayMedia (screen capture),
   // so Studio becomes a portrait talking-head recorder instead of dead-ending.
   const cameraOnly = !useScreenCaptureSupported();
-  const config = cameraOnly ? CAMERA_ONLY_CONFIG : LANDSCAPE_CONFIG;
+  const config = useMemo<CompositorConfig>(
+    () => (cameraOnly ? CAMERA_ONLY_CONFIG : { ...LANDSCAPE_CONFIG, layout }),
+    [cameraOnly, layout],
+  );
   const dualExport = !cameraOnly && makePortrait;
 
   const {
@@ -122,6 +137,7 @@ export default function StudioApp() {
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const portraitStreamRef = useRef<MediaStream | null>(null);
   const pendingStopsRef = useRef(0);
+  const countdownRef = useRef<number | null>(null);
   const audioCleanupRef = useRef<(() => void) | null>(null);
 
   // Stop both takes together. Safe when portrait wasn't started — an unstarted
@@ -129,6 +145,16 @@ export default function StudioApp() {
   const stopRecording = useCallback(() => {
     recorder.stop();
     portraitRecorder.stop();
+  }, [recorder, portraitRecorder]);
+
+  const pauseRecording = useCallback(() => {
+    recorder.pause();
+    portraitRecorder.pause();
+  }, [recorder, portraitRecorder]);
+
+  const resumeRecording = useCallback(() => {
+    recorder.resume();
+    portraitRecorder.resume();
   }, [recorder, portraitRecorder]);
 
   useEffect(() => {
@@ -267,6 +293,49 @@ export default function StudioApp() {
 
   const canRecord = cameraOnly ? !!camMicStream : !!camMicStream && !!screenStream;
 
+  const cancelCountdown = useCallback(() => {
+    if (countdownRef.current !== null) {
+      window.clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
+  // 3-2-1 overlay on the preview, then start recording. The count is a React
+  // overlay, never drawn on the canvas, so it is not baked into the take.
+  const beginCountdown = useCallback(() => {
+    if (!canRecord || countdownRef.current !== null) return;
+    let n = 3;
+    setCountdown(n);
+    countdownRef.current = window.setInterval(() => {
+      n -= 1;
+      if (n <= 0) {
+        window.clearInterval(countdownRef.current!);
+        countdownRef.current = null;
+        setCountdown(null);
+        startRecording();
+      } else {
+        setCountdown(n);
+      }
+    }, 1000);
+  }, [canRecord, startRecording]);
+
+  useEffect(() => () => cancelCountdown(), [cancelCountdown]);
+
+  const cycleLayout = useCallback(() => setLayout((l) => ((l % 3) + 1) as LayoutId), []);
+
+  const onEscape = useCallback(() => {
+    if (countdownRef.current !== null) cancelCountdown();
+    else if (phaseRef.current === 'recording') stopRecording();
+  }, [cancelCountdown, stopRecording]);
+
+  useStudioHotkeys({
+    enabled: !cameraOnly && (phase === 'setup' || phase === 'recording'),
+    onLayout: setLayout,
+    onCycle: cycleLayout,
+    onEscape,
+  });
+
   // Portrait stage on mobile hugs a 9:16 box capped to the viewport height;
   // landscape fills the grid cell at 16:9 as before.
   const isPortrait = config.orientation === 'portrait';
@@ -337,11 +406,11 @@ export default function StudioApp() {
             className="absolute inset-0 z-10 block h-full w-full"
           />
 
-          {phase !== 'review' && !cameraOnly && !screenStream && (
+          {phase !== 'review' && !cameraOnly && LAYOUT_META[config.layout].needsScreen && !screenStream && (
             <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 text-center">
               <Monitor className="h-8 w-8 text-white/50" strokeWidth={1.4} />
               <p className="max-w-xs px-6 text-sm text-white/70">
-                Share your screen to see the full Layout 1 preview.
+                Share your screen to see the {LAYOUT_META[config.layout].label} preview.
               </p>
             </div>
           )}
@@ -353,12 +422,36 @@ export default function StudioApp() {
             </div>
           )}
 
+          {countdown !== null && (
+            <button
+              type="button"
+              onClick={cancelCountdown}
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-black/45 backdrop-blur-sm"
+            >
+              <span className="font-display text-8xl font-light tabular-nums text-white">
+                {countdown}
+              </span>
+              <span className="text-xs uppercase tracking-[0.2em] text-white/60">
+                Tap or press Esc to cancel
+              </span>
+            </button>
+          )}
+
           {phase === 'recording' && (
             <div className="absolute left-4 top-4 z-20 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 backdrop-blur-sm">
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  recorder.paused ? 'bg-amber-400' : 'animate-pulse bg-red-500'
+                }`}
+              />
               <span className="font-mono text-sm tabular-nums text-white">
                 {formatDuration(recorder.elapsedMs)}
               </span>
+              {recorder.paused && (
+                <span className="text-xs font-medium uppercase tracking-wide text-amber-300">
+                  Paused
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -383,7 +476,11 @@ export default function StudioApp() {
         </div>
 
         {/* Controls */}
-        <div className="cb-card rounded-2xl border border-black/10 p-5">
+        <div className="cb-card space-y-5 rounded-2xl border border-black/10 p-5">
+          {!cameraOnly && phase !== 'review' && (
+            <LayoutSwitcher layout={config.layout} onSelect={setLayout} />
+          )}
+
           {phase === 'setup' && (
             <SetupControls
               cameras={cameras}
@@ -395,6 +492,7 @@ export default function StudioApp() {
               canRecord={canRecord}
               cameraOnly={cameraOnly}
               makePortrait={makePortrait}
+              counting={countdown !== null}
               onCameraChange={(id) => {
                 setSelectedCamera(id);
                 void startCamMic(id, selectedMic || undefined);
@@ -407,7 +505,7 @@ export default function StudioApp() {
               onTogglePortrait={() => setMakePortrait((v) => !v)}
               onShareScreen={handleShareScreen}
               onFlipCamera={flipCamera}
-              onRecord={startRecording}
+              onRecord={beginCountdown}
             />
           )}
 
@@ -423,9 +521,20 @@ export default function StudioApp() {
                     ? 'Screen with camera bubble, plus a portrait cut. Mic audio is being captured.'
                     : 'Screen with camera bubble. Mic audio is being captured.'}
               </p>
-              <button type="button" onClick={stopRecording} className={`w-full ${DARK_BTN}`}>
-                <Square className="h-4 w-4" fill="currentColor" /> Stop recording
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                {recorder.paused ? (
+                  <button type="button" onClick={resumeRecording} className={LIGHT_BTN}>
+                    <Play className="h-4 w-4" fill="currentColor" /> Resume
+                  </button>
+                ) : (
+                  <button type="button" onClick={pauseRecording} className={LIGHT_BTN}>
+                    <Pause className="h-4 w-4" fill="currentColor" /> Pause
+                  </button>
+                )}
+                <button type="button" onClick={stopRecording} className={DARK_BTN}>
+                  <Square className="h-4 w-4" fill="currentColor" /> Stop
+                </button>
+              </div>
             </div>
           )}
 
@@ -500,6 +609,39 @@ function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
+function LayoutSwitcher({ layout, onSelect }: { layout: LayoutId; onSelect: (id: LayoutId) => void }) {
+  const ids: LayoutId[] = [1, 2, 3];
+  return (
+    <div className="space-y-2">
+      <p className="text-[0.65rem] font-medium uppercase tracking-[0.2em] text-black/40">Layout</p>
+      <div className="grid grid-cols-3 gap-1.5">
+        {ids.map((n) => {
+          const active = layout === n;
+          return (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onSelect(n)}
+              aria-pressed={active}
+              className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2 text-[0.7rem] transition-colors ${
+                active
+                  ? 'border-black bg-[#080808] text-white'
+                  : 'border-black/10 text-black/60 hover:bg-black/5'
+              }`}
+            >
+              <span className="font-mono text-sm">{n}</span>
+              <span>{LAYOUT_META[n].label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[0.65rem] leading-relaxed text-black/40">
+        1 / 2 / 3 switch · Space cycles · Esc stops
+      </p>
+    </div>
+  );
+}
+
 interface SetupControlsProps {
   cameras: { deviceId: string; label: string }[];
   mics: { deviceId: string; label: string }[];
@@ -510,6 +652,7 @@ interface SetupControlsProps {
   canRecord: boolean;
   cameraOnly: boolean;
   makePortrait: boolean;
+  counting: boolean;
   onCameraChange: (id: string) => void;
   onMicChange: (id: string) => void;
   onToggleSystemAudio: () => void;
@@ -529,6 +672,7 @@ function SetupControls({
   canRecord,
   cameraOnly,
   makePortrait,
+  counting,
   onCameraChange,
   onMicChange,
   onToggleSystemAudio,
@@ -592,10 +736,11 @@ function SetupControls({
           <button
             type="button"
             onClick={onRecord}
-            disabled={!canRecord}
+            disabled={!canRecord || counting}
             className="inline-flex w-full items-center justify-center gap-2 bg-[#dc2626] px-4 py-3.5 text-sm font-medium text-white transition-colors hover:bg-[#b91c1c] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Circle className="h-4 w-4" fill="currentColor" /> Start recording
+            <Circle className="h-4 w-4" fill="currentColor" />
+            {counting ? 'Starting…' : 'Start recording'}
           </button>
           {!canRecord && (
             <p className="mt-2 text-center text-xs text-black/45">Waiting for camera…</p>
@@ -679,10 +824,11 @@ function SetupControls({
         <button
           type="button"
           onClick={onRecord}
-          disabled={!canRecord}
+          disabled={!canRecord || counting}
           className="inline-flex w-full items-center justify-center gap-2 bg-[#dc2626] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#b91c1c] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Circle className="h-4 w-4" fill="currentColor" /> Start recording
+          <Circle className="h-4 w-4" fill="currentColor" />
+          {counting ? 'Starting…' : 'Start recording'}
         </button>
         {!canRecord && (
           <p className="mt-2 text-center text-xs text-black/45">

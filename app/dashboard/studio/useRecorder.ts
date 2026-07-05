@@ -29,18 +29,29 @@ export function useRecorder() {
   const [status, setStatus] = useState<RecorderStatus>('idle');
   const [result, setResult] = useState<RecordingResult | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [paused, setPaused] = useState(false);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const startTimeRef = useRef(0);
+  // Elapsed time survives pause/resume: accumulate finished segments and add the
+  // live segment while running, so the timer freezes on pause.
+  const accumulatedRef = useRef(0);
+  const segmentStartRef = useRef(0);
   const timerRef = useRef<number | null>(null);
 
-  const clearTimer = () => {
+  const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
-  };
+  }, []);
+
+  const startTimer = useCallback(() => {
+    clearTimer();
+    timerRef.current = window.setInterval(() => {
+      setElapsedMs(accumulatedRef.current + (performance.now() - segmentStartRef.current));
+    }, 200);
+  }, [clearTimer]);
 
   // onComplete fires from the recorder's own stop event (external system), so
   // downstream state changes happen in a callback, not inside an effect.
@@ -67,19 +78,39 @@ export function useRecorder() {
     recorderRef.current = recorder;
     // Timeslice so data flushes periodically; protects long recordings.
     recorder.start(1000);
-    startTimeRef.current = performance.now();
+    accumulatedRef.current = 0;
+    segmentStartRef.current = performance.now();
     setElapsedMs(0);
+    setPaused(false);
     setStatus('recording');
-    timerRef.current = window.setInterval(() => {
-      setElapsedMs(performance.now() - startTimeRef.current);
-    }, 200);
-  }, []);
+    startTimer();
+  }, [startTimer, clearTimer]);
+
+  const pause = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== 'recording') return;
+    recorder.pause();
+    accumulatedRef.current += performance.now() - segmentStartRef.current;
+    clearTimer();
+    setElapsedMs(accumulatedRef.current);
+    setPaused(true);
+  }, [clearTimer]);
+
+  const resume = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== 'paused') return;
+    recorder.resume();
+    segmentStartRef.current = performance.now();
+    startTimer();
+    setPaused(false);
+  }, [startTimer]);
 
   const stop = useCallback(() => {
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     clearTimer();
-  }, []);
+    setPaused(false);
+  }, [clearTimer]);
 
   const reset = useCallback(() => {
     setResult((prev) => {
@@ -87,8 +118,10 @@ export function useRecorder() {
       return null;
     });
     chunksRef.current = [];
+    accumulatedRef.current = 0;
     setStatus('idle');
     setElapsedMs(0);
+    setPaused(false);
   }, []);
 
   useEffect(
@@ -97,8 +130,8 @@ export function useRecorder() {
       const recorder = recorderRef.current;
       if (recorder && recorder.state !== 'inactive') recorder.stop();
     },
-    [],
+    [clearTimer],
   );
 
-  return { status, result, elapsedMs, start, stop, reset };
+  return { status, result, elapsedMs, paused, start, pause, resume, stop, reset };
 }
