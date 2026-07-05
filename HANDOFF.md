@@ -1,12 +1,48 @@
 # Handoff
 
 ## Last updated
-2026-07-05 by Claude - Studio compositor fixes (background-tab freeze + screen dead space); iPhone Continuity Camera confirmed working. (Also live: Codex Movement Screening hands-free capture.)
+2026-07-05 by Claude - Studio floating self-view (Document PiP) shipped; compositor freeze + dead-space fixes confirmed working by Pedro. (Also live: Codex Movement Screening hands-free capture.)
 
 ## Last code fix commit
-13d7e2f - fix(studio): keep recording live on tab switch + fill screen to edges
+2e2a3e9 - feat(studio): floating self-view (Document PiP) with cross-tab controls
 
 ## What just happened (read first)
+
+### Cerebro Studio: floating self-view / Document PiP (2026-07-05, LATEST)
+
+Pedro confirmed the compositor fixes work ("perfect"). New ask: while recording,
+when he switches to another tab/app he wants to keep seeing himself (the recorded
+bubble is only visible on the Studio tab), and still switch layout / camera from
+there. Built the Phase 3 Document Picture-in-Picture item (commit 2e2a3e9):
+
+- useDocumentPip.ts (new): owns one always-on-top Document PiP window. Chrome-only
+  (typed narrowly, not in lib.dom). open() needs a user gesture; closed on unmount
+  and when phase -> review (camera is released then).
+- SelfViewPip.tsx (new): mirrored camera view rendered via createPortal INTO the
+  PiP window's document.body, so it stays in sync with app state. Inline styles
+  (the PiP document has no stylesheet - deliberate exception to the Tailwind-only
+  rule). Buttons: layout 1/2/3, flip camera, stop; REC dot + timer while recording.
+- useHotkeys.ts: now takes an optional `target` window so 1/2/3 / Space / Esc also
+  fire while the floating window is focused. IMPORTANT LIMIT: a browser tab cannot
+  capture keys while a DIFFERENT app holds focus, so global hotkeys from inside
+  Excel etc. are impossible; the floating window's on-screen buttons cover that.
+- useMediaStreams.ts: added switchCamera() - audio-safe flip that hot-swaps ONLY
+  the video track in the live stream. flipCamera routes through it now. This
+  matters because mergeAudioTracks (audio.ts) builds a Web Audio source node bound
+  to camMicStream; the old flip called startCamMic which STOPPED that stream and
+  would have cut the recorded audio on a mid-record flip. Do not revert flip back
+  to startCamMic.
+- StudioApp.tsx: "Float self-view" toggle (shown when Document PiP is supported,
+  non-cameraOnly, not review); portal render; second useStudioHotkeys targeting
+  the PiP window.
+
+tsc + Studio ESLint clean. NOT yet verified on hardware (Document PiP + Continuity
+Camera can't be driven from the test harness) - Pedro to confirm: floating window
+shows his mirrored face, its buttons switch layout/camera and stop, and a mid-record
+camera flip keeps audio. Studio Phase 3 remaining after this: orientation picker,
+bubble position/size pickers, review polish.
+
+
 
 ### Cerebro Studio: compositor freeze + dead space (2026-07-05, LATEST)
 
