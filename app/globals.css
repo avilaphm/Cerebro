@@ -299,6 +299,22 @@ body::before {
   color: inherit !important;
 }
 
+/* Solid black CTAs (bg-black + text-white) that ALSO carry a hover:bg-white
+   utility were rendering white-on-white. The panel-glass rule above,
+   `.liquid-dashboard main [class*="bg-white"]` (0,2,1), substring-matches the
+   `hover:bg-white` token and paints the button with translucent glass, which
+   out-specifies `.liquid-dashboard .bg-black` (0,2,0) while `.text-white` keeps
+   the label white. Re-assert the solid look on the interactive elements
+   themselves at (0,2,2) so it beats the glass rule at rest; the desktop
+   hover-invert rule below is (0,3,2) and still wins on hover. */
+.liquid-dashboard main button[class~="bg-black"],
+.liquid-dashboard main a[class~="bg-black"],
+.client-liquid button[class~="bg-black"],
+.client-liquid a[class~="bg-black"] {
+  background: #080808 !important;
+  color: #ffffff !important;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .liquid-dashboard main .bg-black:hover,
   .liquid-dashboard main button:hover[class*="hover:bg-white"],

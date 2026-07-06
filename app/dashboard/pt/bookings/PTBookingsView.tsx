@@ -169,6 +169,14 @@ export default function PTBookingsView() {
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
+  // On phones the 5-column week grid needs horizontal scrolling, so start on the
+  // single-day view which fits the screen and keeps booking slots tappable.
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 640px)').matches) {
+      setCalendarView('day');
+    }
+  }, []);
+
   const nextAppointments = useMemo(
     () => appointments.filter((appointment) => ACTIVE_STATUSES.includes(appointment.status)).slice(0, 12),
     [appointments],
@@ -619,7 +627,7 @@ export default function PTBookingsView() {
           <p className="text-sm text-black/40">Loading bookings...</p>
         ) : (
           <>
-            <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Metric label="Upcoming" value={String(nextAppointments.length)} />
               <Metric label="Pending cancels" value={String(requests.length)} alert={requests.length > 0} />
               <Metric label="Low credits" value={String(lowCreditClients.length)} alert={lowCreditClients.length > 0} />

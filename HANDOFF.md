@@ -1,14 +1,55 @@
 # Handoff
 
 ## Last updated
-2026-07-05 by Codex - Movement Screening bodyweight-squat rules v2 shipped safely; three real iPhone trials are the remaining gate. Studio floating self-view work remains unchanged.
+2026-07-06 by Claude - PT Bookings: fixed white-on-white CTA buttons (liquid-glass cascade) and made the page phone-bookable (day view default on mobile). Movement Screening iPhone trials remain the prior gate; Studio floating self-view unchanged.
 
 ## Last code fix commit
-672075d - feat(screening): use bodyweight squat
+(pending push) - fix(bookings): solid black CTAs + mobile day-view default
 
 ## What just happened (read first)
 
-### Movement Screening: bodyweight-squat rules v2 (2026-07-05, LATEST)
+### PT Bookings: white CTA fix + mobile booking (2026-07-06, LATEST)
+
+Pedro reported the black CTA buttons on `/dashboard/pt/bookings` (Book session,
+Add pack, Add availability, and the modal Book / Mark done / Approve) rendering
+as blank white pills, and asked to make the page bookable from his phone.
+
+Root cause of the white-on-white buttons: the panel-glass rule in
+`app/globals.css`, `.liquid-dashboard main [class*="bg-white"]` (specificity
+0,2,1), **substring**-matches the `hover:bg-white` utility on those CTAs and
+paints them with `--liquid-glass` (translucent white). That out-specifies
+`.liquid-dashboard .bg-black` (0,2,0) for the background, while `.text-white`
+keeps the label white -> white text on a white surface. Same substring-vs-token
+class as learning-log Entry 058.
+
+Fix (globals.css, added right after the `.bg-black *` block):
+`.liquid-dashboard main button[class~="bg-black"]` / `a[class~="bg-black"]`
+(+ `.client-liquid` equivalents) re-assert `#080808` bg + white text at
+specificity (0,2,2). That beats the glass rule at rest but sits below the
+desktop hover-invert rule `main button:hover[class*="hover:bg-white"]` (0,3,2),
+so hover-to-white still works on desktop and buttons stay solid on touch. This
+is a **site-wide** fix - every dashboard/client black CTA that also carries
+`hover:bg-white` is corrected, not just bookings.
+
+Mobile (`PTBookingsView.tsx`):
+- New mount effect: on `matchMedia('(max-width: 640px)')` the calendar starts in
+  `day` view (the 5-col week grid is `min-w-[48rem]` inside `overflow-x-auto`, so
+  week needs horizontal scroll on a phone; day view fits and keeps green slots
+  tappable -> tap slot -> booking modal). Only runs once on mount, so Pedro can
+  still switch to week/month manually.
+- Metric tiles now `grid-cols-2` on mobile (was 1-up) for a compact 2x2.
+
+Verification:
+- Cascade proven against the REAL compiled globals.css via a throwaway public
+  `/cssprobe` page + Playwright at 390px: the buggy CTA computed to
+  `background rgb(8,8,8)` / `color rgb(255,255,255)` (solid black, visible white
+  label); a real `bg-white` secondary button still got `rgba(255,255,255,0.46)`
+  glass + dark text (untouched). Probe deleted afterwards.
+- `npm run build` passes clean (exit 0, "Compiled successfully").
+- NOT yet visually verified on the live phone against production - Pedro should
+  eyeball `/dashboard/pt/bookings` on his iPhone after this deploy.
+
+### Movement Screening: bodyweight-squat rules v2 (2026-07-05)
 
 Pedro simplified the current technical test from an overhead squat to a
 front-view bodyweight squat before movement ordering or calibration work.
