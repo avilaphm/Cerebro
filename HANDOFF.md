@@ -4,7 +4,7 @@
 2026-07-06 by Claude - PT Bookings: fixed white-on-white CTA buttons (liquid-glass cascade) and made the page phone-bookable (day view default on mobile). Movement Screening iPhone trials remain the prior gate; Studio floating self-view unchanged.
 
 ## Last code fix commit
-(pending push) - fix(bookings): solid black CTAs + mobile day-view default
+e86e275 - fix(bookings): solid black CTAs + mobile day-view default
 
 ## What just happened (read first)
 
