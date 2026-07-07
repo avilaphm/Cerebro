@@ -4,7 +4,7 @@
 2026-07-07 by Claude - Shipped Next-Meal Phase 2 (generation + logging): suggest-next-meal edge function (remaining-macro aware, full-day vs gap-fill modes), 5 option cards with expandable recipes, "I made this" logging into pt_nutrition_logs, single-card Swap, craving re-ask. Feature doc docs/next-meal/README.md updated. Codex's Weekly Tonnage work below untouched.
 
 ## Last code fix commit
-(pending push) - feat(nutrition): next-meal phase 2 generation
+6684496 - feat(nutrition): next-meal phase 2 generation
 
 ## What just happened (read first)
 
