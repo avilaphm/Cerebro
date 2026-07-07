@@ -116,9 +116,9 @@ export function useMediaStreams(): UseMediaStreams {
   );
 
   // Swap the camera without disturbing the mic. Hot-replaces only the video track
-  // in the live stream, so the recorder's audio (a Web Audio source node bound to
-  // this stream) is never interrupted — safe to call mid-recording. Falls back to
-  // a full acquire if nothing is live yet.
+  // in the live stream, so whichever recorder audio path is active (direct mic
+  // track by default, Web Audio only when system audio is mixed) is never
+  // interrupted. Falls back to a full acquire if nothing is live yet.
   const switchCamera = useCallback(
     async (cameraId: string) => {
       const current = camMicRef.current;

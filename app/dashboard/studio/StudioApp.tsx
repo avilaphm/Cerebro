@@ -238,6 +238,7 @@ export default function StudioApp() {
   }, [startScreen, systemAudio]);
 
   const startRecording = useCallback(() => {
+    closePip();
     const canvas = canvasRef.current as CanvasWithCapture | null;
     if (!canvas || !camMicStream) return;
     if (!cameraOnly && !screenStream) return;
@@ -246,13 +247,20 @@ export default function StudioApp() {
     const portraitStream = dualExport && portraitCanvas ? portraitCanvas.captureStream(30) : null;
     const primaryStream = canvas.captureStream(30);
 
-    const audio = mergeAudioTracks(
-      [camMicStream, systemAudio ? screenStream : null],
-      portraitStream ? 2 : 1,
-    );
-    audioCleanupRef.current = audio.cleanup;
-    if (audio.tracks[0]) primaryStream.addTrack(audio.tracks[0]);
-    if (portraitStream && audio.tracks[1]) portraitStream.addTrack(audio.tracks[1]);
+    const screenAudioAvailable = Boolean(systemAudio && screenStream?.getAudioTracks().length);
+    if (screenAudioAvailable) {
+      const audio = mergeAudioTracks([camMicStream, screenStream], portraitStream ? 2 : 1);
+      audioCleanupRef.current = audio.cleanup;
+      if (audio.tracks[0]) primaryStream.addTrack(audio.tracks[0]);
+      if (portraitStream && audio.tracks[1]) portraitStream.addTrack(audio.tracks[1]);
+    } else {
+      const micTrack = camMicStream.getAudioTracks()[0];
+      audioCleanupRef.current = null;
+      if (micTrack) {
+        primaryStream.addTrack(micTrack);
+        if (portraitStream) portraitStream.addTrack(micTrack);
+      }
+    }
 
     recordingStreamRef.current = primaryStream;
     portraitStreamRef.current = portraitStream;
@@ -272,6 +280,7 @@ export default function StudioApp() {
     recorder,
     portraitRecorder,
     handleRecorderComplete,
+    closePip,
   ]);
 
   // Toggle to the other camera (laptop <-> phone, or front/back on mobile). Uses
@@ -314,6 +323,7 @@ export default function StudioApp() {
   // overlay, never drawn on the canvas, so it is not baked into the take.
   const beginCountdown = useCallback(() => {
     if (!canRecord || countdownRef.current !== null) return;
+    closePip();
     let n = 3;
     setCountdown(n);
     countdownRef.current = window.setInterval(() => {
@@ -327,7 +337,7 @@ export default function StudioApp() {
         setCountdown(n);
       }
     }, 1000);
-  }, [canRecord, startRecording]);
+  }, [canRecord, startRecording, closePip]);
 
   useEffect(() => () => cancelCountdown(), [cancelCountdown]);
 
@@ -349,7 +359,7 @@ export default function StudioApp() {
   // while it is focused. (A browser tab can't capture keys while a different app
   // holds focus, so the floating window's own buttons cover that case.)
   useStudioHotkeys({
-    enabled: !!pipWindow && !cameraOnly && (phase === 'setup' || phase === 'recording'),
+    enabled: !!pipWindow && !cameraOnly && phase === 'setup',
     onLayout: setLayout,
     onCycle: cycleLayout,
     onEscape,
@@ -361,10 +371,11 @@ export default function StudioApp() {
     else void openPip({ width: 240, height: 320 });
   }, [pipWindow, closePip, openPip]);
 
-  // The floating self-view mirrors the live camera; recording end releases the
-  // camera, so close the window when we leave the recording flow.
+  // The floating self-view is only safe before recording. When sharing "Entire
+  // Screen", any floating OS/browser window becomes part of the captured pixels,
+  // so close it before/during recording to keep the export clean.
   useEffect(() => {
-    if (phase === 'review') closePip();
+    if (phase !== 'setup') closePip();
   }, [phase, closePip]);
 
   // Portrait stage on mobile hugs a 9:16 box capped to the viewport height;
@@ -512,11 +523,16 @@ export default function StudioApp() {
             <LayoutSwitcher layout={config.layout} onSelect={setLayout} />
           )}
 
-          {!cameraOnly && phase !== 'review' && pipSupported && (
-            <button type="button" onClick={togglePip} className={`w-full ${LIGHT_BTN}`}>
-              <PictureInPicture2 className="h-4 w-4" />
-              {pipWindow ? 'Close floating self-view' : 'Float self-view'}
-            </button>
+          {!cameraOnly && phase === 'setup' && pipSupported && (
+            <div className="space-y-2">
+              <button type="button" onClick={togglePip} className={`w-full ${LIGHT_BTN}`}>
+                <PictureInPicture2 className="h-4 w-4" />
+                {pipWindow ? 'Close floating self-view' : 'Float self-view'}
+              </button>
+              <p className="text-[0.65rem] leading-relaxed text-black/40">
+                Closes before recording so it is not captured in the final video.
+              </p>
+            </div>
           )}
 
           {phase === 'setup' && (
@@ -628,13 +644,14 @@ export default function StudioApp() {
       )}
 
       {pipWindow &&
+        phase === 'setup' &&
         createPortal(
           <SelfViewPip
             cameraStream={camMicStream}
             layout={config.layout}
-            recording={phase === 'recording'}
-            paused={recorder.paused}
-            elapsedLabel={formatDuration(recorder.elapsedMs)}
+            recording={false}
+            paused={false}
+            elapsedLabel="00:00"
             canFlip={cameras.length >= 2}
             onLayout={setLayout}
             onFlip={flipCamera}

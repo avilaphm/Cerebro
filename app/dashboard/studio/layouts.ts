@@ -23,22 +23,6 @@ function isReady(video: HTMLVideoElement | null): video is HTMLVideoElement {
   return !!video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0;
 }
 
-// object-fit: contain — fit the whole source inside the box, letterboxed.
-function drawContain(
-  ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
-  dx: number,
-  dy: number,
-  dw: number,
-  dh: number,
-) {
-  const { videoWidth: vw, videoHeight: vh } = video;
-  const scale = Math.min(dw / vw, dh / vh);
-  const w = vw * scale;
-  const h = vh * scale;
-  ctx.drawImage(video, dx + (dw - w) / 2, dy + (dh - h) / 2, w, h);
-}
-
 // object-fit: cover — fill the box, cropping the overflow, never distorting.
 function drawCover(
   ctx: CanvasRenderingContext2D,
@@ -47,9 +31,10 @@ function drawCover(
   dy: number,
   dw: number,
   dh: number,
+  overscan = 1,
 ) {
   const { videoWidth: vw, videoHeight: vh } = video;
-  const scale = Math.max(dw / vw, dh / vh);
+  const scale = Math.max(dw / vw, dh / vh) * overscan;
   const sw = dw / scale;
   const sh = dh / scale;
   ctx.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, dx, dy, dw, dh);
@@ -141,14 +126,16 @@ export function drawPortraitStacked(
   const cardH = cardW * (9 / 16);
   const radius = 24 * scale;
 
-  // Screen card, top. Black fill under it covers any letterbox if the shared
-  // surface isn't a clean 16:9.
+  // Screen card, top. Use cover + slight overscan instead of contain so the
+  // portrait export crops away the black border around the shared screen.
   ctx.save();
   roundRectPath(ctx, sideMargin, topMargin, cardW, cardH, radius);
   ctx.clip();
   ctx.fillStyle = '#000000';
   ctx.fillRect(sideMargin, topMargin, cardW, cardH);
-  if (isReady(screen)) drawContain(ctx, screen, sideMargin, topMargin, cardW, cardH);
+  if (isReady(screen)) {
+    drawCover(ctx, screen, sideMargin, topMargin, cardW, cardH, 1.1);
+  }
   ctx.restore();
 
   // Camera fills everything below the card, full-bleed (cover-cropped).
