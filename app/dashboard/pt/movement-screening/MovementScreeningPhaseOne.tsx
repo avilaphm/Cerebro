@@ -22,7 +22,10 @@ import {
   POSE_CONNECTIONS,
   WORKER_MODEL_PROVENANCE,
 } from '@/utils/pt/movement-screening/constants';
-import { createFrontCameraConstraints } from '@/utils/pt/movement-screening/camera-constraints';
+import {
+  createFrontCameraConstraints,
+  requestMinimumCameraZoom,
+} from '@/utils/pt/movement-screening/camera-constraints';
 import {
   continuousHoldElapsedMs,
   FINISH_HOLD_DURATION_MS,
@@ -569,6 +572,7 @@ export default function MovementScreeningPhaseOne({
         audio: false,
         video: createFrontCameraConstraints(portraitCapture),
       });
+      const minimumZoomRequested = await requestMinimumCameraZoom(stream);
       streamRef.current = stream;
       const video = videoRef.current;
       if (!video) throw new Error('Camera preview is unavailable.');
@@ -602,6 +606,9 @@ export default function MovementScreeningPhaseOne({
         device: [
           navigator.platform || 'unknown',
           cameraTrack?.label || 'front camera',
+          minimumZoomRequested
+            ? 'minimum camera zoom requested'
+            : 'full-sensor camera requested',
         ].join(' · '),
       };
       sourceRef.current = nextSource;
@@ -962,18 +969,18 @@ export default function MovementScreeningPhaseOne({
 
       <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <section className="min-w-0">
-          <div className="relative mx-auto aspect-[9/16] w-full max-w-[24rem] overflow-hidden rounded-[20px] bg-[#080b09] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] md:aspect-video md:max-w-none">
+          <div className="relative mx-auto aspect-[3/4] w-full max-w-[28rem] overflow-hidden rounded-[20px] bg-[#080b09] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] md:aspect-[4/3] md:max-w-none">
             <video
               ref={videoRef}
               autoPlay
               muted
               playsInline
-              className="absolute inset-0 h-full w-full -scale-x-100 object-cover md:object-contain"
+              className="absolute inset-0 h-full w-full -scale-x-100 object-contain"
             />
             <canvas
               ref={overlayRef}
               aria-label="Live pose tracking overlay"
-              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover md:object-contain"
+              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-contain"
             />
 
             <div

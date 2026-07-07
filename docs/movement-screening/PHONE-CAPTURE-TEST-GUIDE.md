@@ -14,6 +14,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 - [ ] Log in to Cerebro as Pedro/admin.
 - [ ] Open `/dashboard/pt/movement-screening`.
 - [ ] Confirm the page says `Rules uncalibrated`.
+- [ ] Confirm the camera card looks wider than the old tall 9:16 preview. The live image should not look cropped/zoomed before you step back.
 - [ ] Do not use the laptop's `http://192.168...` address. Phone camera access requires the HTTPS Cerebro deployment.
 
 ## Position the phone
@@ -21,7 +22,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 1. Keep the phone in portrait orientation.
 2. Use the front camera.
 3. Prop the phone securely near hip height where practical.
-4. Stand approximately 2 to 3 metres away.
+4. Start approximately 1.5 to 2.5 metres away, then adjust only as much as needed to keep wrists and ankles inside the green frame.
 5. Use a bright room with light facing you, not behind you.
 6. Keep your full body visible, including both wrists and both ankles.
 7. Keep the phone completely still for the whole trial.
@@ -36,6 +37,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 | Chrome version | |
 | Camera label shown in JSON | |
 | Camera resolution shown by Cerebro | |
+| Preview shape | 3:4 portrait / other |
 | Worker delegate shown by Cerebro | GPU / CPU |
 | Inference FPS | |
 | Recording format | MP4 / WebM |
@@ -47,7 +49,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 2. Tap `Enable camera`.
 3. Allow camera access when Chrome asks.
 4. Wait for `Loading pose model` to change to `Ready to record`.
-5. Confirm your front-camera image remains visible.
+5. Confirm your front-camera image remains visible and is not cropped by the preview.
 6. Stand tall inside the green corners with both arms straight forward at shoulder height.
 7. Confirm the status changes to `Auto start in 3.0 seconds`, then step outside before it reaches zero.
 8. Confirm the green dots and thin lines follow the wrists, shoulders, hips, knees, and ankles.

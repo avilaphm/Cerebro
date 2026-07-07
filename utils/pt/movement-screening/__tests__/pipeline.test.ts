@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import legacyFixtureJson from '../fixtures/phase-1-uncalibrated-v1.json';
 import fixtureJson from '../fixtures/phase-1-uncalibrated-v2.json';
-import { createFrontCameraConstraints } from '../camera-constraints';
+import {
+  createFrontCameraConstraints,
+  requestMinimumCameraZoom,
+} from '../camera-constraints';
 import { sha256CanonicalJson } from '../canonical-json';
 import {
   jsonFileNameForVideo,
@@ -74,18 +77,60 @@ test('MediaPipe uses its classic WASM loader inside the classic Turbopack worker
 test('front camera constraints follow the screen orientation', () => {
   assert.deepEqual(createFrontCameraConstraints(true), {
     facingMode: 'user',
-    width: { ideal: 720 },
+    width: { ideal: 960 },
     height: { ideal: 1280 },
-    aspectRatio: { ideal: 9 / 16 },
+    aspectRatio: { ideal: 3 / 4 },
+    resizeMode: { ideal: 'none' },
     frameRate: { ideal: 30, max: 30 },
   });
   assert.deepEqual(createFrontCameraConstraints(false), {
     facingMode: 'user',
     width: { ideal: 1280 },
-    height: { ideal: 720 },
-    aspectRatio: { ideal: 16 / 9 },
+    height: { ideal: 960 },
+    aspectRatio: { ideal: 4 / 3 },
+    resizeMode: { ideal: 'none' },
     frameRate: { ideal: 30, max: 30 },
   });
+});
+
+test('front camera zoom is reduced when the browser exposes zoom capabilities', async () => {
+  const calls: MediaTrackConstraints[] = [];
+  const stream = {
+    getVideoTracks() {
+      return [
+        {
+          getCapabilities() {
+            return { zoom: { min: 1, max: 5, step: 0.1 } };
+          },
+          async applyConstraints(constraints: MediaTrackConstraints) {
+            calls.push(constraints);
+          },
+        },
+      ];
+    },
+  } as unknown as MediaStream;
+
+  assert.equal(await requestMinimumCameraZoom(stream), true);
+  assert.deepEqual(calls, [{ advanced: [{ zoom: 1 }] }]);
+});
+
+test('front camera zoom request is skipped when zoom is unavailable', async () => {
+  const stream = {
+    getVideoTracks() {
+      return [
+        {
+          getCapabilities() {
+            return {};
+          },
+          async applyConstraints() {
+            throw new Error('applyConstraints should not run');
+          },
+        },
+      ];
+    },
+  } as unknown as MediaStream;
+
+  assert.equal(await requestMinimumCameraZoom(stream), false);
 });
 
 test('capture guidance requires the full tracked pose inside the guide', () => {

@@ -3,7 +3,7 @@
 ## Status
 
 - Current phase: Phase 1 only
-- Current state: bodyweight-squat rules v2 and arms-forward hands-free flow are live; Pedro's three iPhone technical trials are next
+- Current state: bodyweight-squat rules v2, arms-forward hands-free flow, and wide/full-sensor iPhone camera preview are live; Pedro's three iPhone technical trials are next
 - Current target: Pedro's iPhone 16 Pro, Chrome, front camera, authenticated Cerebro HTTPS deployment
 - Next action: Run three ordinary iPhone bodyweight-squat trials using the phone guide
 - Source PRD: `Cerebro Knowledge/cerebro-movement-screening-PRD.md`
@@ -144,6 +144,7 @@ These rules keep phone capture and later browser/video adapters on one pipeline:
 - Keep GPU and CPU-worker delegates interchangeable.
 - Do not use desktop-only file paths or browser APIs without capability checks.
 - Keep camera controls usable with touch.
+- Prefer the widest non-cropped camera feed available for live capture: request a 4:3/full-sensor stream, ask the browser not to crop-and-scale when supported, render the preview with `object-contain`, and request the minimum camera zoom if the track exposes zoom capabilities.
 - Do not change metrics or rules for iPhone capture.
 
 ## Package and security decision
@@ -472,6 +473,7 @@ This gate proves the software before Pedro defines final movement rules.
 - [x] Test through an authenticated HTTPS deployment or an approved secure local setup.
 - [ ] Record iPhone model, iOS version, Chrome version, and camera label.
 - [x] Camera permission succeeds.
+- [ ] Camera preview is visibly non-cropped and not artificially zoomed in.
 - [ ] Full body remains visible.
 - [ ] Green landmarks and connections align with the body.
 - [ ] Anatomical left and right are correct.
@@ -590,24 +592,26 @@ Last completed:
 - Deployed a full-body green capture rectangle with all overlay text contained inside it and a tested 2-1-2 slow-tempo instruction.
 - Implemented and pushed a distance-readable guide, three-second in-frame auto-start, explicit movement/rep guidance, and three-second post-rep stillness auto-save.
 - Replaced the Phase 1 overhead squat with a front-view bodyweight squat, added an arms-forward start/finish posture gate, removed the overhead-only quality gate, and preserved legacy rules v1 compatibility for safe rollout.
+- Replaced the cropped 9:16 phone viewfinder with a 3:4 portrait / 4:3 landscape full-sensor camera request, non-cropped preview rendering, and best-effort minimum-zoom constraint.
 
 Next action:
 
 1. Fully reload `https://cerebroai.au/dashboard/pt/movement-screening` in Chrome on the iPhone 16 Pro.
 2. Confirm the page shows `Bodyweight squat` and rules v2.
-3. Stand tall with arms straight forward at shoulder height and confirm staying ready for three seconds auto-starts.
-4. Confirm leaving the guide or dropping the ready posture resets the countdown.
-5. Run one slow bodyweight-squat trial using 2 seconds down, 1 second pause, and 2 seconds up.
-6. After rep three, return to the arms-forward ready posture and confirm three seconds of stillness auto-saves.
-7. Confirm the success/redo state, then record the iOS/Chrome/camera environment, source resolution, delegate, and FPS.
-8. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
-9. Verify anatomical direction, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
-10. Only after that gate passes, record Pedro's clean and faulted calibration examples and unlock later learning workflow design.
+3. Confirm the preview looks wider/non-cropped compared with the old tall 9:16 camera card.
+4. Stand tall with arms straight forward at shoulder height and confirm staying ready for three seconds auto-starts.
+5. Confirm leaving the guide or dropping the ready posture resets the countdown.
+6. Run one slow bodyweight-squat trial using 2 seconds down, 1 second pause, and 2 seconds up.
+7. After rep three, return to the arms-forward ready posture and confirm three seconds of stillness auto-saves.
+8. Confirm the success/redo state, then record the iOS/Chrome/camera environment, source resolution, delegate, and FPS.
+9. Follow `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md` and complete three technical trials.
+10. Verify anatomical direction, automatic three-rep detection, MP4/WebM playback, JSON alignment, evidence sharing, camera cleanup, and network privacy.
+11. Only after that gate passes, record Pedro's clean and faulted calibration examples and unlock later learning workflow design.
 
 Current blockers:
 
 - Automated browser control still cannot attach to Pedro's Chrome extension session. Chrome is running, the Codex Chrome Extension 1.1.5 is installed and enabled in the selected Default profile, and the native-host manifest is valid. The approved fresh-window helper failed at macOS LaunchServices, and the required one-time connection retry still failed. Chrome plugin reinstallation from the Codex plugin UI is now required before another automated attempt.
-- Pedro's rectangle/text containment check and three complete iPhone trials are the remaining current gate.
+- Pedro's non-cropped camera-preview check, rectangle/text containment check, and three complete iPhone trials are the remaining current gate.
 - Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical iPhone acceptance passes.
 
 ## Session Continuation Log
@@ -626,6 +630,7 @@ Current blockers:
 | 2026-07-05 | Added full-body capture rectangle, contained all overlay labels, and added a tested 2-1-2 tempo cue in commit `27b7d7c` | 18/18 tests, TypeScript, targeted lint, production build, and Vercel deployment `dpl_B2DekrHWxF57T8qVnDx4KBVpWxgw` pass | Pedro verifies rectangle/text containment and runs one slow three-rep trial | Automated browser preview unavailable; real iPhone visual acceptance pending |
 | 2026-07-05 | Added distance-readable framing plus three-second hands-free start and post-rep stillness finish in commit `0bf3518` | 20/20 tests, TypeScript, targeted lint, and production build pass | Pedro verifies both interrupted-hold resets and one complete hands-free iPhone trial | In-app browser preview unavailable; real iPhone visual/camera acceptance pending |
 | 2026-07-05 | Replaced the Phase 1 movement with a front-view bodyweight squat; added arms-forward ready/finish gates; deployed compatible code before activating immutable rules v2 in commit `672075d` | 22/22 tests, full TypeScript, targeted lint, production build, rule/fixture hash parity, Vercel deployment `dpl_9YUKdnTC3SpaBYsaxxchTLjcLfBs`, one active rules row, route protection, camera policy, and model asset headers pass | Pedro completes three iPhone technical trials from the phone guide | Real iPhone posture tolerance, repetition detection, export, and cleanup acceptance remain pending |
+| 2026-07-07 | Reduced apparent iPhone camera zoom by moving capture from cropped 9:16 to a full-sensor 3:4/4:3 request, asking for no crop-and-scale, requesting minimum camera zoom when exposed, and rendering the preview without CSS cropping | 24/24 movement-screening tests, targeted ESLint, full TypeScript, and production build pass | Pedro reloads the phone route, confirms the preview is no longer zoomed/cropped, then completes three iPhone technical trials | Real iPhone preview/FOV confirmation remains pending |
 
 ## Research references
 
