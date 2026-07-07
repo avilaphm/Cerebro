@@ -1,14 +1,63 @@
 # Handoff
 
 ## Last updated
-2026-07-06 by Claude - PT Bookings: fixed white-on-white CTA buttons (liquid-glass cascade) and made the page phone-bookable (day view default on mobile). Movement Screening iPhone trials remain the prior gate; Studio floating self-view unchanged.
+2026-07-07 by Codex - Movement Screening: reduced apparent iPhone zoom by switching the live capture to a wider/full-sensor camera request and non-cropped preview. iPhone preview confirmation and three technical trials remain the current gate.
 
 ## Last code fix commit
-e86e275 - fix(bookings): solid black CTAs + mobile day-view default
+75c7511 - fix(screening): widen camera preview
 
 ## What just happened (read first)
 
-### PT Bookings: white CTA fix + mobile booking (2026-07-06, LATEST)
+### Movement Screening: wide camera preview (2026-07-07, LATEST)
+
+Pedro reported the iPhone movement-screening camera looked zoomed in, forcing him
+to step so far back that the on-screen instructions became unreadable.
+
+Root cause addressed in commit `75c7511`:
+
+- The phone preview used a tall 9:16 viewfinder and `object-cover`, which can
+  crop the live video and look like camera zoom.
+- The camera constraints also asked for a 9:16 portrait stream, which can
+  encourage the browser to crop/scale the camera feed instead of using the
+  wider sensor mode.
+
+Fix:
+
+- `createFrontCameraConstraints()` now requests a fuller sensor shape:
+  3:4 in portrait and 4:3 in landscape.
+- It requests `resizeMode: none` where supported, so the browser should avoid
+  crop-and-scale when choosing a camera mode.
+- After the stream opens, the app calls `requestMinimumCameraZoom()` and applies
+  the track's minimum zoom if the browser exposes zoom capabilities.
+- The live `<video>` and pose `<canvas>` now render with `object-contain` on
+  phone and desktop, so CSS no longer crops the camera feed.
+- The camera card changed from 9:16 to 3:4 on phones and 4:3 on desktop, keeping
+  the visible green guide aligned with the wider capture request.
+- Phone test guide and Phase 1 checklist now explicitly require a non-cropped
+  preview/FOV confirmation before the three technical trials.
+
+Verification:
+
+- `npm run test:movement-screening` passes: 24/24.
+- Targeted ESLint passes for the changed movement-screening files.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing warning only:
+  middleware file convention is deprecated in favour of proxy.
+
+NEXT:
+
+1. Pedro fully reloads `https://cerebroai.au/dashboard/pt/movement-screening`
+   on iPhone 16 Pro Chrome after deployment.
+2. Confirm the preview looks wider/non-cropped and no longer artificially
+   zoomed in.
+3. Confirm `Bodyweight squat`, rules v2, arms-forward auto-start, and
+   arms-forward auto-save still work.
+4. Complete the three ordinary iPhone technical trials from
+   `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`.
+5. Keep movement ordering, calibration, and the proposed five-edit learning
+   workflow locked until these real-device trials pass.
+
+### PT Bookings: white CTA fix + mobile booking (2026-07-06)
 
 Pedro reported the black CTA buttons on `/dashboard/pt/bookings` (Book session,
 Add pack, Add availability, and the modal Book / Mark done / Approve) rendering
