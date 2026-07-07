@@ -38,6 +38,22 @@ interface ScreenShareOptions extends DisplayMediaStreamOptions {
   selfBrowserSurface?: 'include' | 'exclude';
 }
 
+function studioCameraConstraints(deviceId?: string): MediaTrackConstraints {
+  return {
+    deviceId: deviceId ? { exact: deviceId } : undefined,
+    width: { ideal: 1920, max: 1920 },
+    height: { ideal: 1080, max: 1080 },
+    frameRate: { ideal: 30, max: 30 },
+  };
+}
+
+const STUDIO_SCREEN_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  displaySurface: 'monitor',
+  width: { ideal: 1920, max: 1920 },
+  height: { ideal: 1080, max: 1080 },
+  frameRate: { ideal: 30, max: 30 },
+};
+
 export interface UseMediaStreams {
   cameras: DeviceOption[];
   mics: DeviceOption[];
@@ -93,11 +109,7 @@ export function useMediaStreams(): UseMediaStreams {
       setCamMicError(null);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: cameraId ? { exact: cameraId } : undefined,
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
+          video: studioCameraConstraints(cameraId),
           audio: micId ? { deviceId: { exact: micId } } : true,
         });
         stopStream(camMicRef.current);
@@ -129,7 +141,7 @@ export function useMediaStreams(): UseMediaStreams {
       setCamMicError(null);
       try {
         const fresh = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: cameraId }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: studioCameraConstraints(cameraId),
           audio: false,
         });
         const nextVideo = fresh.getVideoTracks()[0];
@@ -159,7 +171,7 @@ export function useMediaStreams(): UseMediaStreams {
       // Pre-select "Entire Screen" in the picker so switching between tabs and
       // apps is captured — a single Chrome-tab share only records that one tab.
       const options: ScreenShareOptions = {
-        video: { displaySurface: 'monitor' },
+        video: STUDIO_SCREEN_VIDEO_CONSTRAINTS,
         audio: systemAudio,
         surfaceSwitching: 'include',
         selfBrowserSurface: 'exclude',

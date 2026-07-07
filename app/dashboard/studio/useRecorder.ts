@@ -11,13 +11,29 @@ export interface RecordingResult {
 }
 
 const MIME_CANDIDATES = [
-  'video/webm;codecs=vp9,opus',
+  // Prefer lower-latency / cheaper encoders before VP9. Chrome may not expose
+  // WebM+H264 everywhere, so this safely falls through to VP8.
+  'video/webm;codecs=h264,opus',
   'video/webm;codecs=vp8,opus',
+  'video/webm;codecs=vp9,opus',
   'video/webm',
 ];
 
 function pickMimeType(): string {
   return MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+}
+
+function describeVideoTracks(stream: MediaStream) {
+  return stream.getVideoTracks().map((track) => {
+    const settings = track.getSettings();
+    return {
+      label: track.label,
+      width: settings.width,
+      height: settings.height,
+      frameRate: settings.frameRate,
+      displaySurface: settings.displaySurface,
+    };
+  });
 }
 
 /**
@@ -64,6 +80,13 @@ export function useRecorder() {
         mimeType: mimeType || undefined,
         videoBitsPerSecond: bitrate,
       });
+      console.info('[Studio recorder] start', {
+        requestedMimeType: mimeType || 'browser default',
+        actualMimeType: recorder.mimeType || mimeType || 'browser default',
+        videoBitsPerSecond: bitrate,
+        videoTracks: describeVideoTracks(stream),
+        audioTrackCount: stream.getAudioTracks().length,
+      });
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
@@ -75,16 +98,18 @@ export function useRecorder() {
         clearTimer();
         onComplete?.();
       };
-    recorderRef.current = recorder;
-    // Timeslice so data flushes periodically; protects long recordings.
-    recorder.start(1000);
-    accumulatedRef.current = 0;
-    segmentStartRef.current = performance.now();
-    setElapsedMs(0);
-    setPaused(false);
-    setStatus('recording');
-    startTimer();
-  }, [startTimer, clearTimer]);
+      recorderRef.current = recorder;
+      // Timeslice so data flushes periodically; protects long recordings.
+      recorder.start(1000);
+      accumulatedRef.current = 0;
+      segmentStartRef.current = performance.now();
+      setElapsedMs(0);
+      setPaused(false);
+      setStatus('recording');
+      startTimer();
+    },
+    [startTimer, clearTimer],
+  );
 
   const pause = useCallback(() => {
     const recorder = recorderRef.current;
