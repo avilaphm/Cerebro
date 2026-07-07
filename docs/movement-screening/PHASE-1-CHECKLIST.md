@@ -592,8 +592,9 @@ Last completed:
 - Deployed a full-body green capture rectangle with all overlay text contained inside it and a tested 2-1-2 slow-tempo instruction.
 - Implemented and pushed a distance-readable guide, three-second in-frame auto-start, explicit movement/rep guidance, and three-second post-rep stillness auto-save.
 - Replaced the Phase 1 overhead squat with a front-view bodyweight squat, added an arms-forward start/finish posture gate, removed the overhead-only quality gate, and preserved legacy rules v1 compatibility for safe rollout.
-- Replaced the cropped 9:16 phone viewfinder with a 4:3 full-sensor camera request, filled preview rendering, and best-effort minimum-zoom constraint.
+- Replaced the cropped 9:16 phone viewfinder with a 4:3 full-sensor camera request and a final filled-HUD preview that uses side cropping instead of large black bars.
 - Replaced the centre instruction card with a compact, top-positioned one-phrase HUD so Pedro can still see his head/body while navigating the trial hands-free.
+- Synced the phone and laptop test guides so iPhone acceptance, one-phrase cues, and secondary desktop diagnostics are documented separately.
 
 Next action:
 
@@ -612,7 +613,7 @@ Next action:
 Current blockers:
 
 - Automated browser control still cannot attach to Pedro's Chrome extension session. Chrome is running, the Codex Chrome Extension 1.1.5 is installed and enabled in the selected Default profile, and the native-host manifest is valid. The approved fresh-window helper failed at macOS LaunchServices, and the required one-time connection retry still failed. Chrome plugin reinstallation from the Codex plugin UI is now required before another automated attempt.
-- Pedro's filled camera-preview check, rectangle/text containment check, and three complete iPhone trials are the remaining current gate.
+- Pedro's filled camera-preview check, one-phrase cue readability check, and three complete iPhone trials are the remaining current gate.
 - Pedro's final ceiling, hip-shift, and squat-depth definitions remain intentionally deferred until technical iPhone acceptance passes.
 
 ## Session Continuation Log
@@ -631,8 +632,9 @@ Current blockers:
 | 2026-07-05 | Added full-body capture rectangle, contained all overlay labels, and added a tested 2-1-2 tempo cue in commit `27b7d7c` | 18/18 tests, TypeScript, targeted lint, production build, and Vercel deployment `dpl_B2DekrHWxF57T8qVnDx4KBVpWxgw` pass | Pedro verifies rectangle/text containment and runs one slow three-rep trial | Automated browser preview unavailable; real iPhone visual acceptance pending |
 | 2026-07-05 | Added distance-readable framing plus three-second hands-free start and post-rep stillness finish in commit `0bf3518` | 20/20 tests, TypeScript, targeted lint, and production build pass | Pedro verifies both interrupted-hold resets and one complete hands-free iPhone trial | In-app browser preview unavailable; real iPhone visual/camera acceptance pending |
 | 2026-07-05 | Replaced the Phase 1 movement with a front-view bodyweight squat; added arms-forward ready/finish gates; deployed compatible code before activating immutable rules v2 in commit `672075d` | 22/22 tests, full TypeScript, targeted lint, production build, rule/fixture hash parity, Vercel deployment `dpl_9YUKdnTC3SpaBYsaxxchTLjcLfBs`, one active rules row, route protection, camera policy, and model asset headers pass | Pedro completes three iPhone technical trials from the phone guide | Real iPhone posture tolerance, repetition detection, export, and cleanup acceptance remain pending |
-| 2026-07-07 | Reduced apparent iPhone camera zoom by moving capture from cropped 9:16 to a full-sensor 3:4/4:3 request, asking for no crop-and-scale, requesting minimum camera zoom when exposed, and rendering the preview without CSS cropping | 24/24 movement-screening tests, targeted ESLint, full TypeScript, and production build pass | Pedro reloads the phone route, confirms the preview is no longer zoomed/cropped, then completes three iPhone technical trials | Real iPhone preview/FOV confirmation remains pending |
+| 2026-07-07 | Reduced apparent iPhone camera zoom by moving capture from cropped 9:16 to a full-sensor 3:4/4:3 request, asking for no crop-and-scale, requesting minimum camera zoom when exposed, and rendering the preview without CSS cropping. This intermediate object-contain pass was superseded by the filled-HUD pass below after real iPhone screenshots showed black bars. | 24/24 movement-screening tests, targeted ESLint, full TypeScript, and production build pass | Pedro reloads the phone route, confirms the preview is no longer zoomed/cropped, then completes three iPhone technical trials | Real iPhone preview/FOV confirmation remains pending |
 | 2026-07-07 | Reworked the iPhone capture HUD after real testing showed the 4:3 stream sitting inside black bars and the centre cue blocking Pedro's head/body; the phone view now fills the capture card with side crop and uses a compact top one-phrase cue | 24/24 movement-screening tests, targeted ESLint, full TypeScript, and production build pass | Pedro reloads the phone route and confirms the camera fills the frame, the cue is readable at distance, and his head/body remain visible | Real iPhone HUD confirmation remains pending |
+| 2026-07-07 | Synced the movement-screening docs after the filled-HUD deployment: phone guide now records the one-phrase cue flow and laptop guide is marked secondary desktop diagnostics only | Docs-only review; no code changed | Pedro follows the phone guide for the three iPhone technical trials | Real iPhone HUD and trial acceptance remain pending |
 
 ## Research references
 

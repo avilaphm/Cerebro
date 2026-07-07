@@ -2,6 +2,8 @@
 
 Use this guide for secondary desktop diagnostics after each new build or rules version. The iPhone 16 Pro is the Phase 1 acceptance device. Do not use these outputs for clients until the calibrated acceptance gate passes.
 
+Current production note, 2026-07-07: the phone HUD now requests the observed 4:3 iPhone stream, fills the green capture card with side cropping, and uses one-phrase top cues. Do not use this laptop guide to judge phone preview size, side crop, or distance readability. Use `PHONE-CAPTURE-TEST-GUIDE.md` for iPhone acceptance.
+
 ## Before you start
 
 - [ ] Use the same laptop and built-in front camera intended for calibration.
@@ -9,6 +11,7 @@ Use this guide for secondary desktop diagnostics after each new build or rules v
 - [ ] Log in to Cerebro as Pedro/admin.
 - [ ] Open `/dashboard/pt/movement-screening`.
 - [ ] Allow camera access for the Cerebro site.
+- [ ] Treat this as desktop diagnostics only; phone HUD and FOV acceptance must be checked on the iPhone.
 - [ ] Use a bright room with the camera near hip height where practical.
 - [ ] Leave enough distance to show both wrists and both ankles at all times.
 - [ ] Wear clothing that keeps the outline of the hips, knees, and ankles visible.
@@ -23,6 +26,7 @@ Record this environment before the first accepted run:
 | Chrome version | |
 | Camera label | |
 | Camera resolution shown by Cerebro | |
+| Desktop preview shape | |
 | Worker delegate shown by Cerebro | GPU / CPU |
 | Rules version | |
 
@@ -33,9 +37,10 @@ Record this environment before the first accepted run:
 3. Stand tall inside the green corners with both arms straight forward at shoulder height.
 4. Confirm the status changes to `Auto start in 3.0 seconds`, then step out before it reaches zero.
 5. Confirm the green dots and thin lines follow the wrists, shoulders, hips, knees, and ankles.
-6. Raise only your anatomical left hand. The visible preview is mirrored, but later JSON direction must still say anatomical `left`.
-7. Lower the left hand, then repeat with the anatomical right hand.
-8. If the overlay is offset, flickering heavily, or swaps left and right, stop. Do not calibrate rules.
+6. Confirm the overlay aligns with the desktop diagnostic preview. Do not compare this layout with the iPhone filled HUD.
+7. Raise only your anatomical left hand. The visible preview is mirrored, but later JSON direction must still say anatomical `left`.
+8. Lower the left hand, then repeat with the anatomical right hand.
+9. If the overlay is offset, flickering heavily, or swaps left and right, stop. Do not calibrate rules.
 
 ## B. Record one technical trial
 
@@ -110,11 +115,13 @@ Run three ordinary trials before calibration.
 | | | | | | | |
 | | | | | | | |
 
-Technical acceptance passes only when all three rows pass, anatomical direction is correct, the camera releases after each run/navigation, and no capture payload is uploaded.
+Desktop diagnostic acceptance passes only when all three rows pass, anatomical direction is correct, the camera releases after each run/navigation, and no capture payload is uploaded.
 
-## G. Pedro calibration recordings
+This does not replace iPhone technical acceptance. The current Phase 1 gate remains three ordinary iPhone trials from `PHONE-CAPTURE-TEST-GUIDE.md`.
 
-Start this only after technical acceptance passes.
+## G. Desktop diagnostic recordings
+
+Use this only for laptop-specific debugging or future desktop calibration. Pedro's current Phase 1 calibration recordings must come from the iPhone guide.
 
 1. Record at least five clean trials.
 2. Record deliberate subject-left and subject-right hip shifts.
@@ -127,4 +134,4 @@ Start this only after technical acceptance passes.
 9. Activate version 2 as data; do not redeploy the app.
 10. Keep version 1 as the immutable uncalibrated baseline.
 
-Do not start phone testing or later report/commentary/refinement skills during this process.
+Do not use laptop diagnostic results to unlock later report, commentary, refinement, client-screening, or movement-ordering work.
