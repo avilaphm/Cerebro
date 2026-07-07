@@ -74,12 +74,12 @@ test('MediaPipe uses its classic WASM loader inside the classic Turbopack worker
   assert.equal(MEDIAPIPE_WASM_USE_MODULE, false);
 });
 
-test('front camera constraints follow the screen orientation', () => {
+test('front camera constraints prefer the iPhone full-sensor 4:3 feed', () => {
   assert.deepEqual(createFrontCameraConstraints(true), {
     facingMode: 'user',
-    width: { ideal: 960 },
-    height: { ideal: 1280 },
-    aspectRatio: { ideal: 3 / 4 },
+    width: { ideal: 1280 },
+    height: { ideal: 960 },
+    aspectRatio: { ideal: 4 / 3 },
     resizeMode: { ideal: 'none' },
     frameRate: { ideal: 30, max: 30 },
   });

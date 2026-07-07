@@ -865,39 +865,43 @@ export default function MovementScreeningPhaseOne({
 
   const guideEyebrow =
     runtimeState === 'ready'
-      ? movementSummary
+      ? startPoseReady
+        ? 'Auto start'
+        : movementName
       : runtimeState === 'capturing'
         ? isFinishHold
-          ? 'All 3 reps detected'
+          ? 'Auto save'
           : isNeutralBaseline
-            ? 'Recording started'
-            : movementSummary
+            ? 'Baseline'
+            : 'Repetition'
         : runtimeState === 'processing'
-          ? 'Recording finished'
+          ? 'Checking'
           : runtimeState === 'complete'
-            ? 'Movement 1 of 1'
+            ? outcome?.ok
+              ? 'Saved'
+              : 'Redo'
             : movementSummary;
   const guideTitle =
     runtimeState === 'ready'
       ? !trackingReady
-        ? 'Fit your full body inside'
+        ? 'Step back'
         : startPoseReady
-          ? 'Hold your position'
+          ? 'Hold still'
           : isBodyweightSquat
-            ? 'Arms straight forward'
-            : 'Hold your position'
+            ? 'Arms forward'
+            : 'Hold start pose'
       : runtimeState === 'capturing'
         ? isFinishHold
-          ? 'Stand still'
+          ? 'Stand tall'
           : isNeutralBaseline
-            ? 'Hold the start position'
-            : movementName
+            ? 'Freeze'
+            : `Squat ${Math.min(detectedRepetitions + 1, EXPECTED_REPETITIONS)} of ${EXPECTED_REPETITIONS}`
         : runtimeState === 'processing'
-          ? 'Checking recording'
+          ? 'Checking'
           : runtimeState === 'complete'
             ? outcome?.ok
-              ? 'Recording successful'
-              : 'Recording needs another try'
+              ? 'Saved'
+              : 'Redo needed'
             : runtimeState === 'idle'
               ? movementName
               : 'Get ready';
@@ -908,37 +912,35 @@ export default function MovementScreeningPhaseOne({
         ? `${baselineRemainingSeconds.toFixed(1)}s`
         : isFinishHold
           ? `${finishRemainingSeconds.toFixed(1)}s`
-          : runtimeState === 'capturing'
-            ? `Rep ${Math.min(detectedRepetitions + 1, EXPECTED_REPETITIONS)} of ${EXPECTED_REPETITIONS}`
-            : null;
+          : null;
   const guideDetail =
     runtimeState === 'ready'
       ? !trackingReady
-        ? 'Step back. Keep your wrists and both ankles inside the bright green frame.'
+        ? 'Head, hands, ankles visible'
         : startPoseReady
-          ? 'The test starts automatically after 3 seconds.'
+          ? 'Starts by itself'
           : isBodyweightSquat
-            ? 'Stand tall and reach both arms straight forward at shoulder height.'
-            : 'Hold the required start position.'
+            ? 'Stand tall'
+            : 'Hold start pose'
       : runtimeState === 'capturing'
         ? isFinishHold
           ? isBodyweightSquat
-            ? 'Stand tall with arms straight forward. Stay still while the recording saves.'
-            : 'Keep your arms overhead and body still. The recording saves automatically.'
+            ? 'Arms forward · stay still'
+            : 'Stay still'
           : isNeutralBaseline
             ? isBodyweightSquat
-              ? 'Arms straight forward. Do not move until the countdown ends.'
-              : 'Arms overhead. Do not move until the countdown ends.'
-            : `Move slowly · ${TEMPO_CUE}`
+              ? 'Arms forward · no movement'
+              : 'Do not move'
+            : TEMPO_CUE
         : runtimeState === 'processing'
-          ? 'Stay close. Your three repetitions are being verified.'
+          ? 'Stay nearby'
           : runtimeState === 'complete'
             ? outcome?.ok
-              ? 'The Phase 1 screen is complete. Your result is ready below.'
-              : 'Review the quality note below, then redo this movement.'
+              ? 'Result ready below'
+              : 'Try again'
             : runtimeState === 'idle'
-              ? 'Front view · 3 repetitions'
-              : 'The pose model is preparing your hands-free test.';
+              ? 'Tap Enable camera'
+              : 'Preparing camera';
 
   return (
     <div className="min-h-full w-full max-w-full overflow-hidden rounded-[18px] border border-black/8 bg-[rgba(255,255,255,0.62)] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.06)] backdrop-blur-xl sm:rounded-[24px] sm:p-4 md:p-7">
@@ -969,22 +971,22 @@ export default function MovementScreeningPhaseOne({
 
       <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <section className="min-w-0">
-          <div className="relative mx-auto aspect-[3/4] w-full max-w-[28rem] overflow-hidden rounded-[20px] bg-[#080b09] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] md:aspect-[4/3] md:max-w-none">
+          <div className="relative mx-auto h-[70svh] min-h-[34rem] w-full max-w-[30rem] overflow-hidden rounded-[20px] bg-[#080b09] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] md:aspect-[4/3] md:h-auto md:min-h-0 md:max-w-none">
             <video
               ref={videoRef}
               autoPlay
               muted
               playsInline
-              className="absolute inset-0 h-full w-full -scale-x-100 object-contain"
+              className="absolute inset-0 h-full w-full -scale-x-100 object-cover"
             />
             <canvas
               ref={overlayRef}
               aria-label="Live pose tracking overlay"
-              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-contain"
+              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover"
             />
 
             <div
-              className={`pointer-events-none absolute inset-x-[8%] bottom-[4%] top-[4%] border-[3px] border-[#42ff88] bg-[#42ff88]/[0.025] outline outline-1 outline-black/70 transition-shadow duration-200 md:inset-x-[20%] md:bottom-[7%] md:top-[8%] ${
+              className={`pointer-events-none absolute inset-x-[6%] bottom-[3%] top-[3%] border-[3px] border-[#42ff88] bg-[#42ff88]/[0.025] outline outline-1 outline-black/70 transition-shadow duration-200 md:inset-x-[18%] md:bottom-[6%] md:top-[7%] ${
                 startPoseReady
                   ? 'shadow-[0_0_30px_rgba(66,255,136,0.8),inset_0_0_24px_rgba(66,255,136,0.16)]'
                   : 'shadow-[0_0_18px_rgba(66,255,136,0.55),inset_0_0_16px_rgba(66,255,136,0.1)]'
@@ -997,7 +999,7 @@ export default function MovementScreeningPhaseOne({
               <span className="absolute bottom-10 left-1/2 top-14 border-l-2 border-dashed border-[#42ff88]/40" />
 
               <div className="absolute inset-x-2 top-2 flex items-start justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2 bg-black/85 px-3 py-2.5 text-xs font-semibold text-white shadow-lg backdrop-blur">
+                <div className="flex min-w-0 items-center gap-2 bg-black/75 px-2.5 py-1.5 text-[0.72rem] font-semibold text-white shadow-lg backdrop-blur">
                   <span
                     className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                       runtimeState === 'capturing'
@@ -1010,46 +1012,46 @@ export default function MovementScreeningPhaseOne({
                   <span className="truncate">{runtimeLabel(runtimeState)}</span>
                 </div>
 
-                <div className="shrink-0 bg-[#42ff88] px-3 py-2.5 font-mono text-xs font-bold text-black shadow-lg">
+                <div className="shrink-0 bg-[#42ff88] px-3 py-1.5 font-mono text-[0.72rem] font-bold text-black shadow-lg">
                   {runtimeState === 'capturing'
                     ? `${detectedRepetitions} / ${EXPECTED_REPETITIONS}`
                     : '1 / 1'}
                 </div>
               </div>
 
-              <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 bg-black/82 px-4 py-5 text-center text-white shadow-[0_14px_40px_rgba(0,0,0,0.45)] backdrop-blur-sm">
-                <p className="text-[0.65rem] font-bold uppercase tracking-[0.18em] text-[#42ff88]">
+              <div className="absolute inset-x-3 top-[4.5rem] mx-auto max-w-[22rem] bg-black/68 px-3 py-3 text-center text-white shadow-[0_14px_40px_rgba(0,0,0,0.35)] backdrop-blur-sm">
+                <p className="text-[0.58rem] font-bold uppercase tracking-[0.18em] text-[#42ff88]">
                   {guideEyebrow}
                 </p>
                 <p
                   aria-live="polite"
-                  className="mt-2 text-xl font-bold leading-tight tracking-[-0.03em] sm:text-2xl"
+                  className="mt-1.5 text-2xl font-bold leading-none tracking-[-0.04em] sm:text-3xl"
                 >
                   {guideTitle}
                 </p>
                 {guideValue && (
-                  <p className="mt-2 font-mono text-4xl font-bold leading-none text-[#42ff88] sm:text-5xl">
+                  <p className="mt-1.5 font-mono text-4xl font-bold leading-none text-[#42ff88] sm:text-5xl">
                     {guideValue}
                   </p>
                 )}
-                <p className="mx-auto mt-3 max-w-[17rem] text-xs font-medium leading-5 text-white/80 sm:text-sm">
+                <p className="mx-auto mt-2 max-w-[17rem] text-xs font-medium leading-4 text-white/78 sm:text-sm">
                   {guideDetail}
                 </p>
               </div>
 
-              <div className="absolute inset-x-2 bottom-2 bg-black/88 px-3 py-2.5 text-center text-white shadow-lg backdrop-blur">
-                <p className="text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[#42ff88]">
+              <div className="absolute inset-x-6 bottom-3 bg-black/68 px-3 py-1.5 text-center text-white shadow-lg backdrop-blur">
+                <p className="text-[0.58rem] font-bold uppercase tracking-[0.16em] text-[#42ff88]">
                   {runtimeState === 'ready'
-                    ? 'Hands-free auto start'
+                    ? 'Move your body to control the trial'
                     : runtimeState === 'capturing'
                       ? isFinishHold
-                        ? 'Hands-free auto save'
-                        : 'Keep your body inside the frame'
+                        ? 'Auto save'
+                        : 'Stay inside the frame'
                       : runtimeState === 'complete'
                         ? statusSuccessful
-                          ? 'Screen complete'
+                          ? 'Complete'
                           : 'Redo required'
-                        : 'Full-body capture zone'}
+                        : 'Full-body zone'}
                 </p>
               </div>
             </div>

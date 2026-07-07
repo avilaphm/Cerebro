@@ -25,11 +25,12 @@ function cameraConstraints(
 export function createFrontCameraConstraints(
   portrait: boolean,
 ): MediaTrackConstraints {
+  void portrait;
   return cameraConstraints({
     facingMode: 'user',
-    width: { ideal: portrait ? 960 : 1280 },
-    height: { ideal: portrait ? 1280 : 960 },
-    aspectRatio: { ideal: portrait ? 3 / 4 : 4 / 3 },
+    width: { ideal: 1280 },
+    height: { ideal: 960 },
+    aspectRatio: { ideal: 4 / 3 },
     resizeMode: { ideal: 'none' },
     frameRate: { ideal: 30, max: 30 },
   });
