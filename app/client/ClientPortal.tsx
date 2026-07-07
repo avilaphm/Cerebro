@@ -1734,6 +1734,7 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       assignment_id: assignment.id,
       event_type: 'workout_logged',
       metadata: {
+        workout_log_id: workoutId,
         workout_title: selectedDay.title,
         phase_index: selectedWorkout.phaseIndex,
         day_index: selectedWorkout.dayIndex,
@@ -1742,6 +1743,20 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         section_notes: notes,
       },
     });
+
+    void supabase.functions
+      .invoke('classify-exercise-library', {
+        body: { client_id: client.id, workout_log_id: workoutId },
+      })
+      .then((result) => {
+        const payload = result.data as { ok?: boolean; error?: string } | null;
+        if (result.error || payload?.ok === false) {
+          console.warn('Exercise classification queued with errors', result.error?.message ?? payload?.error);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn('Exercise classification request failed', error);
+      });
 
     const linkedPlanItem = currentWeeklyPlanItems.find((item) =>
       item.linked_assignment_id === assignment.id &&

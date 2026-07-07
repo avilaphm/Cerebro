@@ -695,6 +695,7 @@ export default function PTSessionsView({
       assignment_id: assignment.id,
       event_type: 'workout_logged',
       metadata: {
+        workout_log_id: workoutId,
         workout_title: day.title,
         phase_index: selectedWorkout.phaseIndex,
         day_index: selectedWorkout.dayIndex,
@@ -703,6 +704,20 @@ export default function PTSessionsView({
         source: 'coach_session',
       },
     });
+
+    void supabase.functions
+      .invoke('classify-exercise-library', {
+        body: { client_id: selectedClient.id, workout_log_id: workoutId },
+      })
+      .then((result) => {
+        const payload = result.data as { ok?: boolean; error?: string } | null;
+        if (result.error || payload?.ok === false) {
+          console.warn('Exercise classification queued with errors', result.error?.message ?? payload?.error);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn('Exercise classification request failed', error);
+      });
 
     const sessionSummary = rows
       .map((row) =>
