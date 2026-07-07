@@ -1,14 +1,58 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Codex - Movement Screening: reduced apparent iPhone zoom by switching the live capture to a wider/full-sensor camera request and non-cropped preview. iPhone preview confirmation and three technical trials remain the current gate.
+2026-07-07 by Codex - Studio: cleaned portrait export by cropping the screen card, preventing floating self-view capture, and reducing mic latency. Movement Screening iPhone trials remain the other current gate.
 
 ## Last code fix commit
-75c7511 - fix(screening): widen camera preview
+cc9539e - fix(studio): clean portrait export
 
 ## What just happened (read first)
 
-### Movement Screening: wide camera preview (2026-07-07, LATEST)
+### Cerebro Studio: clean portrait export + lower-latency mic (2026-07-07, LATEST)
+
+Pedro tested Studio and supplied screenshots showing:
+
+- Final review/export included the extra floating self-view inside the captured
+  screen area.
+- The portrait export had a black border around the top screen-recording card.
+- His voice felt lagged against the video.
+
+Shipped in commit `cc9539e`:
+
+- Floating self-view is now setup-only. Studio closes it when the countdown
+  starts and again before MediaRecorder starts. The control is hidden during
+  recording.
+- Reason: with "Entire Screen" capture, any floating OS/browser window visible
+  on that monitor becomes part of the screen pixels. Browser code cannot
+  subtract it from the screen stream after capture. Closing it before recording
+  is the clean-export-safe behaviour.
+- Portrait export now draws the screen card with `cover` plus 1.1x overscan
+  instead of `contain`, so it zooms in enough to remove the black border around
+  the shared screen card.
+- Mic-only recordings now add the original microphone track directly to the
+  landscape and portrait recorder streams. Web Audio mixing is used only when
+  system audio is actually being mixed in. This removes the avoidable
+  MediaStreamDestination/Web Audio latency in the default mic-only path.
+- Updated the camera-switch comment so future edits preserve the direct-mic
+  default and use Web Audio only for system-audio mixing.
+
+Verification:
+
+- Targeted ESLint passes for changed Studio files.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing warning only:
+  middleware file convention is deprecated in favour of proxy.
+
+NEXT:
+
+1. Pedro reloads `/dashboard/studio` after deployment.
+2. Record a short desktop screen + camera test with portrait export on.
+3. Confirm the portrait top screen card no longer shows the black border.
+4. Confirm the final export no longer includes the extra floating self-view.
+5. Confirm voice/video sync is materially tighter. If still lagging, next
+   likely layer is compositor/canvas timing rather than Web Audio mixing.
+
+### Movement Screening: wide camera preview (2026-07-07)
 
 Pedro reported the iPhone movement-screening camera looked zoomed in, forcing him
 to step so far back that the on-screen instructions became unreadable.
