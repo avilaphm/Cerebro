@@ -2,7 +2,7 @@
 
 Use this guide for Phase 1 technical acceptance and Pedro's calibration recordings. The iPhone captures the trial; the laptop browser is used afterwards to inspect the evidence and calibrate the JSON rules.
 
-Current production note, 2026-07-07: the live iPhone HUD uses a 4:3 full-sensor stream that fills the green capture card. Side cropping is expected, so stay centred. The instruction HUD is now a compact one-phrase cue at the top so Pedro can read it from distance without it blocking his head or torso.
+Current production note, 2026-07-07: the live iPhone HUD uses a 4:3 full-sensor stream that fills the green capture card. Side cropping is expected, so stay centred. The instruction HUD is now a compact one-phrase cue at the top so Pedro can read it from distance without it blocking his head or torso. The pose loop now follows the camera's delivered video frames, so the green landmarks should feel live rather than delayed.
 
 Do not use these outputs for clients until the calibrated Phase 1 acceptance gate passes.
 
@@ -18,6 +18,7 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 - [ ] Confirm the page says `Rules uncalibrated`.
 - [ ] Confirm the live image fills the green capture card with no big black bars. The sides may be cropped; keep your body centred.
 - [ ] Confirm the top cue is readable from your squat distance and does not cover your head or torso.
+- [ ] Confirm the green landmarks follow your body smoothly while you move slowly in front of the camera.
 - [ ] Do not use the laptop's `http://192.168...` address. Phone camera access requires the HTTPS Cerebro deployment.
 
 ## Position the phone
@@ -58,14 +59,16 @@ Do not use these outputs for clients until the calibrated Phase 1 acceptance gat
 7. Stand tall inside the green corners with both arms straight forward at shoulder height.
 8. Confirm the status changes to `Auto start in 3.0 seconds` or the top cue changes to `Hold still`, then step outside before the countdown reaches zero.
 9. Confirm the green dots and thin lines follow the wrists, shoulders, hips, knees, and ankles.
-10. Raise only your anatomical left hand. The visible preview is mirrored, but stored direction must remain anatomical left.
-11. Repeat with your anatomical right hand.
+10. Move one arm slowly and confirm the green overlay tracks without a visible delayed/choppy feel.
+11. Raise only your anatomical left hand. The visible preview is mirrored, but stored direction must remain anatomical left.
+12. Repeat with your anatomical right hand.
 
 Stop here and report the exact red message if:
 
 - the preview remains black;
 - the camera closes before `Ready to record`;
 - the overlay is offset or unstable;
+- the overlay clearly lags behind the live camera image;
 - the cue blocks your head or torso;
 - the worker never becomes ready;
 - the page reports fewer than 15 inference frames per second.
