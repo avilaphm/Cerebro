@@ -10,6 +10,10 @@
 
 ### Next-Meal Phase 1: auth fix + in-app camera + confirm cards (2026-07-07, LATEST)
 
+**Full feature doc (what/why/how, 3-phase roadmap, data model, what's next):**
+`docs/next-meal/README.md` - read that first for the big + small picture; the
+entries below are the change log.
+
 Pedro tested Phase 1 on his phone. Three issues, all fixed:
 
 1. **"Couldn't read those photos" was a lie.** The photos were fine; the analyze
