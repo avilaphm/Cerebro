@@ -1,14 +1,63 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Claude - Next-Meal Phase 1 fixes: fixed the "couldn't read photos" failure (was a 404 auth mismatch, not photo quality), added an in-app multi-shot camera (no more take/use-photo dance, up to 10), and yes/no confirmation cards for uncertain items. Studio latency work below (Codex) untouched.
+2026-07-07 by Codex - Ported the proven Studio low-latency media timing pattern to Movement Screening: camera-frame-clocked pose submission, worker stall heartbeat, desynchronized transparent overlay canvas, and lower-cost local recording format preference. Nutrition work below remains Claude's separate feature.
 
 ## Last code fix commit
-1264b66 - fix(nutrition): next-meal auth + in-app camera + confirm cards
+56e5b39 - fix(screening): sync pose loop to camera frames
 
 ## What just happened (read first)
 
-### Next-Meal Phase 1: auth fix + in-app camera + confirm cards (2026-07-07, LATEST)
+### Movement Screening: frame-clocked live camera and overlay (2026-07-07, LATEST)
+
+Pedro confirmed the Studio latency fix worked and asked to apply the same idea
+to the Movement Screening camera and the live video/overlay people see while
+doing the test.
+
+Shipped in commit `56e5b39`:
+- The live pose loop no longer depends on `requestAnimationFrame` as the primary
+  clock. It now submits camera frames from
+  `HTMLVideoElement.requestVideoFrameCallback()` when the browser supports it,
+  so pose extraction follows the real delivered camera frames.
+- Added a dedicated Movement Screening worker heartbeat at 30fps. It only nudges
+  inference if the video-frame callback stalls or if the browser lacks
+  `requestVideoFrameCallback`.
+- Preserved the existing one-frame-in-flight pose-worker rule. If the worker is
+  busy, frames are dropped and counted instead of queueing stale frames.
+- The transparent pose overlay canvas now requests `{ desynchronized: true }`.
+  It does not force `alpha: false` because this canvas sits over the camera
+  preview and must remain transparent.
+- Local calibration recording now prefers lower-cost formats before VP9:
+  WebM/H264 when exposed, then VP8, then VP9, then generic WebM, then MP4
+  fallbacks for iPhone/WebKit.
+- No metrics, rule thresholds, findings, or Phase 1 scope were changed.
+
+Docs in commit `83d369d`:
+- Phone capture guide now asks Pedro to check that green landmarks follow the
+  body smoothly without visible delay.
+- Phase 1 checklist records the new video-frame-clocked camera path and keeps
+  the iPhone acceptance gate locked to three real technical trials.
+
+Verification:
+- `npm run test:movement-screening` passes: 24/24.
+- Targeted ESLint passes for changed movement-screening files.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing warning only:
+  middleware file convention is deprecated in favour of proxy.
+
+NEXT:
+1. Pedro fully reloads `https://cerebroai.au/dashboard/pt/movement-screening`
+   on iPhone 16 Pro Chrome after deployment.
+2. Confirm the camera fills the green card with no large black bars.
+3. Move slowly and confirm the green landmarks feel attached to the body, not
+   delayed or choppy.
+4. Confirm the one-phrase top cue is still readable at distance.
+5. Run the three iPhone technical trials from
+   `docs/movement-screening/PHONE-CAPTURE-TEST-GUIDE.md`.
+6. Do not unlock movement ordering, calibration-rule changes, commentary, report,
+   or self-learning workflow until those three trials pass.
+
+### Next-Meal Phase 1: auth fix + in-app camera + confirm cards (2026-07-07)
 
 **Full feature doc (what/why/how, 3-phase roadmap, data model, what's next):**
 `docs/next-meal/README.md` - read that first for the big + small picture; the
