@@ -1,14 +1,66 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Codex - Studio: cleaned portrait export by cropping the screen card, preventing floating self-view capture, and reducing mic latency. Movement Screening iPhone trials remain the other current gate.
+2026-07-07 by Codex - Movement Screening: real iPhone HUD now fills the capture card, crops sides, and uses compact one-phrase top cues so Pedro can navigate hands-free from distance. Studio export cleanup remains live.
 
 ## Last code fix commit
-cc9539e - fix(studio): clean portrait export
+1bc0203 - fix(screening): fill iPhone capture HUD
 
 ## What just happened (read first)
 
-### Cerebro Studio: clean portrait export + lower-latency mic (2026-07-07, LATEST)
+### Movement Screening: filled iPhone capture HUD (2026-07-07, LATEST)
+
+Pedro tested the widened camera build on iPhone and supplied screenshots showing:
+
+- iPhone Chrome returned a `1280 × 960` 4:3 camera stream.
+- Rendering that stream with `object-contain` inside the tall capture card left
+  large black bars above and below the video.
+- The central black instruction card blocked his head/body, which made it hard
+  to position himself while away from the phone.
+- A quality-check failure occurred while he was close to the phone / not fully
+  framed; the UI needed to guide the subject better before trial start.
+
+Shipped in commit `1bc0203`:
+
+- Camera constraints now explicitly prefer the iPhone's observed 4:3
+  full-sensor stream (`1280 × 960`) for both portrait and landscape screen
+  orientations.
+- The phone camera HUD now uses a taller `70svh` capture card and renders the
+  video/canvas with `object-cover`, filling the green frame and cropping side
+  overflow instead of showing black bars.
+- The visible green capture guide was expanded slightly to use more of the card.
+- The large centre instruction panel was replaced with a compact top-positioned
+  cue HUD.
+- Cues are now short one-phrase states designed for hands-free navigation:
+  `Step back`, `Arms forward`, `Hold still`, `Freeze`, `Squat 1 of 3`,
+  `Stand tall`, `Redo needed`.
+- The bottom overlay is smaller so it interferes less with feet/ankles.
+- Phone test guide and Phase 1 checklist now describe the intended filled
+  4:3-crop behaviour and ask Pedro to stay centred.
+
+Verification:
+
+- `npm run test:movement-screening` passes: 24/24.
+- Targeted ESLint passes for changed movement-screening files.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing warning only:
+  middleware file convention is deprecated in favour of proxy.
+
+NEXT:
+
+1. Pedro fully reloads `https://cerebroai.au/dashboard/pt/movement-screening`
+   on iPhone 16 Pro Chrome after deployment.
+2. Confirm the camera feed fills the green capture card with no large black
+   bars. Side cropping is expected; Pedro should stay centred.
+3. Confirm the one-phrase top cue is readable at distance and no longer blocks
+   his head/body.
+4. Run the start gate: `Step back` -> `Arms forward` -> `Hold still`.
+5. Complete one slow three-rep bodyweight-squat trial and report whether the
+   quality check passes or which rejection reason appears.
+6. Keep movement ordering/calibration/later learning workflow locked until three
+   real iPhone technical trials pass.
+
+### Cerebro Studio: clean portrait export + lower-latency mic (2026-07-07)
 
 Pedro tested Studio and supplied screenshots showing:
 
