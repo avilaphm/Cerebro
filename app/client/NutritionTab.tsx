@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { createClient } from '@/utils/supabase/client';
 import NutritionChatModal from './NutritionChatModal';
+import NextMealModal from './NextMealModal';
 
 interface FoodItem {
   name: string;
@@ -493,6 +494,7 @@ export default function NutritionTab({ clientId }: Props) {
   const [phaseNutrition, setPhaseNutrition] = useState<PhaseNutrition[]>([]);
   const [loading, setLoading] = useState(true);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showNextMeal, setShowNextMeal] = useState(false);
   const [nutritionJourneyExpanded, setNutritionJourneyExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletedEntries, setDeletedEntries] = useState<DeletedEntry[]>([]);
@@ -721,24 +723,37 @@ export default function NutritionTab({ clientId }: Props) {
         )}
       </div>
 
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-3 sm:grid-cols-2">
         <button
           type="button"
           onClick={() => setShowLogModal(true)}
-          className="group flex w-full items-center justify-between border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:border-black/25"
+          className="group flex items-start gap-3 border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:border-black/25"
         >
-          <div>
-            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-black/35">Track your food</p>
-            <p className="mt-0.5 text-sm font-medium">Track your food here</p>
-            <p className="mt-0.5 text-[0.65rem] text-black/35">Voice dump, photos, or type — AI splits it into meals</p>
-          </div>
-          <svg
-            width="20" height="20" viewBox="0 0 20 20" fill="none"
-            stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
-            className="shrink-0 text-black/25 transition-transform group-hover:translate-x-0.5"
-          >
-            <path d="M7 10h6M10 7l3 3-3 3" />
-          </svg>
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/45">
+            <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <rect x="7.5" y="1.5" width="7" height="11" rx="3.5" /><path d="M3.5 11a7.5 7.5 0 0015 0M11 18.5v2" />
+            </svg>
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">Track your food</span>
+            <span className="mt-0.5 block text-[0.65rem] text-black/35">Voice, photo, or type — AI splits it into meals</span>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowNextMeal(true)}
+          className="group flex items-start gap-3 border border-black/10 bg-white px-5 py-4 text-left transition-colors hover:border-black/25"
+        >
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/45">
+            <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 7h3l2-2.5h9L18 7h2v11.5H2V7z" /><circle cx="11" cy="13" r="3" />
+            </svg>
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">Help me with my next meal</span>
+            <span className="mt-0.5 block text-[0.65rem] text-black/35">Snap your fridge — AI suggests a meal that fits your macros</span>
+          </span>
         </button>
       </div>
 
@@ -948,6 +963,13 @@ export default function NutritionTab({ clientId }: Props) {
           clientId={clientId}
           onClose={() => setShowLogModal(false)}
           onLogged={() => void loadLogs(selectedDate)}
+        />
+      )}
+
+      {showNextMeal && (
+        <NextMealModal
+          clientId={clientId}
+          onClose={() => setShowNextMeal(false)}
         />
       )}
     </div>

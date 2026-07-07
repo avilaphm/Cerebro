@@ -1,14 +1,64 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Codex - Movement Screening: real iPhone HUD now fills the capture card, crops sides, and uses compact one-phrase top cues so Pedro can navigate hands-free from distance. Studio export cleanup remains live.
+2026-07-07 by Claude - Shipped Phase 1 of "Help me with my next meal" (client nutrition): meal-type -> fridge photo capture -> AI ingredient detection -> confirmation. detect-fridge-ingredients edge function deployed. Generation (Phase 2) is next. Movement Screening iPhone HUD work below is unchanged.
 
 ## Last code fix commit
-1bc0203 - fix(screening): fill iPhone capture HUD
+(pending push) - feat(nutrition): next-meal phase 1 (detect + confirm)
 
 ## What just happened (read first)
 
-### Movement Screening: filled iPhone capture HUD (2026-07-07, LATEST)
+### Client Nutrition: "Help me with my next meal" Phase 1 (2026-07-07, LATEST)
+
+New client feature (PRD: Google Doc "Help Me With My Next Meal"). Lets a client
+photograph their fridge/pantry and get meal ideas that fit their remaining daily
+macros. Being built in 3 phases; **Phase 1 (detection + confirmation) shipped**.
+
+What's live in Phase 1:
+- `app/client/NutritionTab.tsx` entry point: the single "Track your food" button
+  is now TWO equal-weight actions - "Track your food" (existing logger) and
+  "Help me with my next meal" (new flow). Opens `NextMealModal`.
+- `app/client/NextMealModal.tsx` (new): full-screen flow - meal-type
+  (breakfast/lunch/dinner/snack) -> photo capture (1-5, deletable thumbnails,
+  compress to 1280px jpeg base64, mirrors NutritionChatModal) -> analyzing ->
+  confirmation (category-grouped removable chips, add-via-text with a small
+  hardcoded autocomplete, "I have basic staples" toggle default ON, optional
+  craving field with iOS-safe voice-to-text).
+- `supabase/functions/detect-fridge-ingredients/index.ts` (new, DEPLOYED v1,
+  verify_jwt on): reuses the log-nutrition-batch Claude-vision + auth + CORS
+  pattern (model claude-sonnet-4-6). Verifies pt_clients.user_id ownership.
+  Returns strict `{ ok, ingredients: [{ name, category, confidence }] }`.
+  Smoke-tested live: POST unauth -> 401, OPTIONS -> 200.
+
+Phase 1 end state is an honest interim: the confirm CTA "Find meals" goes to a
+"got your ingredients / suggestions coming shortly" screen. Generation is Phase 2.
+
+**Data the AI already has (no new tables needed until Phase 3):** targets in
+`pt_client_nutrition_doc.daily_targets`; logged intake in `pt_nutrition_logs`
+(remaining = target - today's sum); allergies/dislikes in
+`pt_client_nutrition_doc.foods_to_avoid`; goal in `pt_clients.goals`.
+
+Decisions locked with Pedro:
+- First-meal-of-day mode = "full remaining + teach": when nothing is logged yet,
+  show the whole day's budget as context and have the AI pick a sensible single
+  meal portion + explain the leftover (shapes the Phase 2 generation prompt).
+
+Verification: tsc clean; `npm run build` passes (exit 0); new component lint
+clean except the unavoidable `<img>` blob-preview warning (same as
+NutritionChatModal). mealType + capture screens visually verified at 390px via a
+throwaway probe (deleted). NOT yet exercised end-to-end as a logged-in client -
+the photo->detect->confirm loop needs a real client session; Pedro should run it
+once on his phone.
+
+NEXT (Phase 2): generation edge function (context payload: targets + remaining +
+foods_to_avoid + recent meals + full-day-vs-gap-fill mode) -> 5 option cards ->
+"I made this" logs into pt_nutrition_logs -> single-card regen. Then Phase 3:
+`recipes` table + Recipe Book + session memory.
+NOTE: the "Help me with my next meal" button is live in the client portal; if
+Pedro doesn't want clients seeing an in-progress feature, gate/hide that button
+until Phase 2 (one-line change in NutritionTab).
+
+### Movement Screening: filled iPhone capture HUD (2026-07-07)
 
 Pedro tested the widened camera build on iPhone and supplied screenshots showing:
 
