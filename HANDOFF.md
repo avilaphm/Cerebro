@@ -1,14 +1,49 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Codex - Shipped Studio local recording latency reduction: video-frame-clocked compositor, worker stall heartbeat, 1080p/30 capture caps, lower-cost recorder codec preference, and console FPS diagnostics. Nutrition work below is Claude's concurrent feature and was left untouched.
+2026-07-07 by Claude - Next-Meal Phase 1 fixes: fixed the "couldn't read photos" failure (was a 404 auth mismatch, not photo quality), added an in-app multi-shot camera (no more take/use-photo dance, up to 10), and yes/no confirmation cards for uncertain items. Studio latency work below (Codex) untouched.
 
 ## Last code fix commit
-fd556c3 - fix(studio): reduce local recording latency
+(pending push) - fix(nutrition): next-meal auth + in-app camera + confirm cards
 
 ## What just happened (read first)
 
-### Cerebro Studio: local recording latency reduction (2026-07-07, LATEST)
+### Next-Meal Phase 1: auth fix + in-app camera + confirm cards (2026-07-07, LATEST)
+
+Pedro tested Phase 1 on his phone. Three issues, all fixed:
+
+1. **"Couldn't read those photos" was a lie.** The photos were fine; the analyze
+   call was returning **404** = my `detect-fridge-ingredients` "Client not found"
+   branch. Root cause: the function gated on `pt_clients.user_id = auth.uid`
+   (owner-only), but Pedro tests from an account that isn't the linked client
+   login (client `e8def647` / pedro@pedept.com.au is linked to auth `637726dd`;
+   he was on a different login). The whole client portal uses this same strict
+   gate, so the feature works when logged in AS the client, but not otherwise.
+   Fix: adopt the codebase's real pattern from `generate-nutrition-programme` -
+   authorize if **coach/admin (PEDRO_EMAILS or profiles.role='admin') OR owning
+   client**. Detection returns no client-private data, so this is safe. Also made
+   auth/parse failures return HTTP 200 `{ok:false,error}` so the real reason
+   surfaces, and the client no longer hard-codes a photo-quality message.
+   detect-fridge-ingredients redeployed (v2, verify_jwt on).
+
+2. **Multi-shot camera.** The native `<input capture>` forces take -> "Use Photo"
+   -> reopen per shot. Replaced with an in-app camera (getUserMedia live preview
+   + shutter, pattern mirrors ML-assessment/Studio): snap many in a row, running
+   thumbnails + count, Done to finish. Falls back to native input if getUserMedia
+   is unavailable/denied. Photo cap raised 5 -> 10 (client + function).
+
+3. **Yes/No confirmation cards.** Low-confidence detections now appear in a
+   "Just checking" section as `Do you have X? [Yes][No]` cards; Yes moves the item
+   into the confirmed chips, No removes it. High-confidence items skip straight to
+   chips.
+
+Verification (throwaway probe + Playwright at 390px, deleted after): capture step,
+in-app camera overlay (shutter captured 3 shots, 3/10 count, thumbnails, Done),
+and confirm step with the two yes/no cards + working Yes(->chip)/No(->removed)
+were all visually confirmed. tsc + build pass. Real iOS-Safari camera behaviour
+still needs Pedro's phone (getUserMedia on iOS is the true test).
+
+### Cerebro Studio: local recording latency reduction (2026-07-07)
 
 Pedro reported the Studio camera looked laggy/choppy during screen + camera
 recording, like a bad connection. Internet is not involved: Studio captures,

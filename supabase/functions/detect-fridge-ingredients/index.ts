@@ -14,6 +14,26 @@ function json(data: unknown, status = 200) {
   });
 }
 
+// Pedro's coach/admin logins. Matches the allowlist used by the nutrition
+// generation function so the coach can use client tools while previewing.
+const PEDRO_EMAILS = ['pedro@meetavila.com', 'pedroavila.phm@gmail.com', 'pedro@cerebroai.au', 'avila.phm@gmail.com'];
+
+// Authorized if the caller is the coach/admin OR the client's own linked login.
+// Detection returns no client-private data, but we still gate to app users.
+async function isAuthorized(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  email: string,
+  clientId: string,
+): Promise<boolean> {
+  if (PEDRO_EMAILS.includes(email.toLowerCase())) return true;
+  const [{ data: profile }, { data: owned }] = await Promise.all([
+    admin.from('profiles').select('role').eq('id', userId).maybeSingle(),
+    admin.from('pt_clients').select('id').eq('id', clientId).eq('user_id', userId).maybeSingle(),
+  ]);
+  return profile?.role === 'admin' || !!owned?.id;
+}
+
 interface PhotoInput {
   base64: string;
   mime_type: string;
@@ -79,23 +99,19 @@ Deno.serve(async (req: Request) => {
     const body = (await req.json()) as RequestBody;
     const { client_id, photos = [] } = body;
 
-    if (!client_id) return json({ error: 'Missing client_id.' }, 400);
-    if (photos.length === 0) return json({ error: 'Add at least one photo of your fridge or pantry.' }, 400);
+    if (!client_id) return json({ ok: false, error: 'Missing client_id.' }, 400);
+    if (photos.length === 0) return json({ ok: false, error: 'Add at least one photo of your fridge or pantry.' }, 400);
 
-    // Verify the caller owns this client record.
-    const { data: clientRow } = await adminClient
-      .from('pt_clients')
-      .select('id')
-      .eq('id', client_id)
-      .eq('user_id', authData.user.id)
-      .single();
-    if (!clientRow) return json({ error: 'Client not found.' }, 404);
+    // 200 with ok:false so the real reason reaches the client instead of a
+    // generic non-2xx that the UI can only show as "couldn't read the photos".
+    const authorized = await isAuthorized(adminClient, authData.user.id, authData.user.email ?? '', client_id);
+    if (!authorized) return json({ ok: false, error: 'This login is not linked to that client. Log in as the client to continue.' });
 
     const validMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
     type ValidMime = typeof validMimes[number];
 
     const contentBlocks: Anthropic.MessageParam['content'] = [
-      ...photos.slice(0, 5).map((p): Anthropic.Messages.ImageBlockParam => ({
+      ...photos.slice(0, 10).map((p): Anthropic.Messages.ImageBlockParam => ({
         type: 'image',
         source: {
           type: 'base64',

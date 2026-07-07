@@ -86,7 +86,12 @@ interface ConfirmIngredient {
   category: Category;
   confidence: 'high' | 'medium' | 'low';
   source: 'detected' | 'added';
+  // Low-confidence detections start pending: the client answers a yes/no card
+  // before they join the confirmed chips.
+  pending: boolean;
 }
+
+const MAX_PHOTOS = 10;
 
 interface PhotoEntry {
   preview: string;
@@ -122,6 +127,8 @@ export default function NextMealModal({ clientId, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [recording, setRecording] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -129,6 +136,8 @@ export default function NextMealModal({ clientId, onClose }: Props) {
   const recordingIntentRef = useRef(false);
   const cravingBaseRef = useRef('');
   const photosRef = useRef<PhotoEntry[]>([]);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   useEffect(() => { photosRef.current = photos; }, [photos]);
 
   // Lock background scroll while the flow is open.
@@ -143,8 +152,17 @@ export default function NextMealModal({ clientId, onClose }: Props) {
   useEffect(() => () => {
     recordingIntentRef.current = false;
     recognitionRef.current?.abort();
+    streamRef.current?.getTracks().forEach((t) => t.stop());
     photosRef.current.forEach((p) => URL.revokeObjectURL(p.preview));
   }, []);
+
+  // Attach the live camera stream to the <video> once the overlay has mounted.
+  useEffect(() => {
+    if (!cameraOpen || !streamRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+    video.play().then(() => setCameraReady(true)).catch(() => setCameraReady(true));
+  }, [cameraOpen]);
 
   // Animated progress while analyzing. Progress is reset to 0 in analyze()
   // before entering this step, so the effect never sets state synchronously.
@@ -178,7 +196,7 @@ export default function NextMealModal({ clientId, onClose }: Props) {
 
   const addPhotos = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const remaining = 5 - photos.length;
+    const remaining = MAX_PHOTOS - photos.length;
     if (remaining <= 0) return;
     const toAdd = Array.from(files).slice(0, remaining);
     const entries = await Promise.all(
@@ -200,6 +218,51 @@ export default function NextMealModal({ clientId, onClose }: Props) {
     });
   };
 
+  // In-app camera: a live getUserMedia preview with a shutter, so several fridge
+  // shots can be taken in a row without the native "Use Photo" confirmation each
+  // time. Pattern mirrors the Studio / ML-assessment camera already in this app.
+  const openCamera = async () => {
+    setError(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      cameraInputRef.current?.click(); // fall back to the native single-shot camera
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraReady(false);
+      setCameraOpen(true);
+    } catch {
+      setError('Couldn’t open the camera. You can still add photos from your library.');
+      cameraInputRef.current?.click();
+    }
+  };
+
+  const closeCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCameraOpen(false);
+    setCameraReady(false);
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video || photos.length >= MAX_PHOTOS) return;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const scale = Math.min(1, 1280 / Math.max(vw, vh));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(vw * scale);
+    canvas.height = Math.round(vh * scale);
+    canvas.getContext('2d')!.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    setPhotos((prev) => (prev.length >= MAX_PHOTOS ? prev : [...prev, { preview: dataUrl, base64: dataUrl.split(',')[1], mimeType: 'image/jpeg' }]));
+  };
+
   const analyze = async () => {
     if (photos.length === 0) return;
     setError(null);
@@ -213,7 +276,9 @@ export default function NextMealModal({ clientId, onClose }: Props) {
         },
       });
       if (fnErr || !data?.ok || !data.ingredients) {
-        setError(data?.error ?? "Couldn't read those photos. Try clearer, well-lit shots.");
+        // Surface the server's real reason (auth / parse) rather than always
+        // blaming photo quality, which sends debugging down the wrong path.
+        setError(data?.error ?? 'Something went wrong analysing your photos. Please try again.');
         setStep('capture');
         return;
       }
@@ -229,6 +294,7 @@ export default function NextMealModal({ clientId, onClose }: Props) {
           category: CATEGORY_ORDER.includes(i.category) ? i.category : 'other',
           confidence: i.confidence,
           source: 'detected' as const,
+          pending: i.confidence === 'low',
         })),
       );
       setStep('confirm');
@@ -240,6 +306,15 @@ export default function NextMealModal({ clientId, onClose }: Props) {
 
   const removeIngredient = (id: string) => setIngredients((prev) => prev.filter((i) => i.id !== id));
 
+  // Yes/No answer to a "just checking" card for an unsure detection.
+  const confirmPending = (id: string, keep: boolean) => {
+    setIngredients((prev) =>
+      keep
+        ? prev.map((i) => (i.id === id ? { ...i, pending: false } : i))
+        : prev.filter((i) => i.id !== id),
+    );
+  };
+
   const addIngredient = (name: string, category: Category) => {
     const clean = name.trim();
     if (!clean) return;
@@ -247,9 +322,11 @@ export default function NextMealModal({ clientId, onClose }: Props) {
       setAddQuery('');
       return;
     }
-    setIngredients((prev) => [...prev, { id: nextId(), name: clean, category, confidence: 'high', source: 'added' }]);
+    setIngredients((prev) => [...prev, { id: nextId(), name: clean, category, confidence: 'high', source: 'added', pending: false }]);
     setAddQuery('');
   };
+
+  const pendingItems = useMemo(() => ingredients.filter((i) => i.pending), [ingredients]);
 
   const suggestions = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
@@ -263,7 +340,7 @@ export default function NextMealModal({ clientId, onClose }: Props) {
   const grouped = useMemo(() => {
     const map = new Map<Category, ConfirmIngredient[]>();
     for (const cat of CATEGORY_ORDER) map.set(cat, []);
-    ingredients.forEach((i) => map.get(i.category)!.push(i));
+    ingredients.filter((i) => !i.pending).forEach((i) => map.get(i.category)!.push(i));
     return CATEGORY_ORDER.map((cat) => ({ cat, items: map.get(cat)! })).filter((g) => g.items.length > 0);
   }, [ingredients]);
 
@@ -408,37 +485,40 @@ export default function NextMealModal({ clientId, onClose }: Props) {
                 <path d="M1.5 5h2l1.5-2h6L12.5 5H14.5v8.5h-13V5z" /><circle cx="8" cy="9" r="2.2" />
               </svg>
               <p className="text-[0.65rem] leading-relaxed text-black/45">
-                <span className="font-medium text-black/60">Open the fridge fully</span> and take 1–5 photos of your fridge, freezer or pantry. More angles = better suggestions.
+                <span className="font-medium text-black/60">Open the fridge fully.</span> Tap the camera and snap as many shots as you like — fridge, freezer, pantry — then hit Done. More angles = better suggestions.
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {photos.map((p, i) => (
-                <div key={i} className="relative aspect-square">
-                  <img src={p.preview} alt={`kitchen ${i + 1}`} className="h-full w-full rounded-2xl object-cover shadow-sm" />
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(i)}
-                    className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black text-white text-xs shadow"
-                    aria-label="Remove photo"
-                  >×</button>
-                </div>
-              ))}
-              {photos.length < 5 && (
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="flex aspect-square flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-black/15 text-black/30 transition-colors hover:border-black/30 hover:text-black/50"
-                >
-                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M2 7h3l2-2.5h9L18 7h2v11.5H2V7z" /><circle cx="11" cy="13" r="3" />
-                  </svg>
-                  <span className="text-[0.55rem] uppercase tracking-[0.08em]">Photo</span>
-                </button>
-              )}
-            </div>
+            {photos.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {photos.map((p, i) => (
+                  <div key={i} className="relative aspect-square">
+                    <img src={p.preview} alt={`kitchen ${i + 1}`} className="h-full w-full rounded-2xl object-cover shadow-sm" />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(i)}
+                      className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black text-white text-xs shadow"
+                      aria-label="Remove photo"
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )}
 
-            {photos.length < 5 && (
+            {photos.length < MAX_PHOTOS && (
+              <button
+                type="button"
+                onClick={() => void openCamera()}
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-black py-3.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+              >
+                <svg width="18" height="18" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <path d="M2 7h3l2-2.5h9L18 7h2v11.5H2V7z" /><circle cx="11" cy="13" r="3" />
+                </svg>
+                {photos.length === 0 ? 'Open camera' : 'Take more'}
+              </button>
+            )}
+
+            {photos.length < MAX_PHOTOS && (
               <button
                 type="button"
                 onClick={() => galleryInputRef.current?.click()}
@@ -446,6 +526,10 @@ export default function NextMealModal({ clientId, onClose }: Props) {
               >
                 Choose from library
               </button>
+            )}
+
+            {photos.length > 0 && (
+              <p className="text-center text-[0.6rem] text-black/30 tabular-nums">{photos.length}/{MAX_PHOTOS} photos</p>
             )}
 
             {error && <p className="px-1 text-[0.7rem] text-red-500">{error}</p>}
@@ -488,6 +572,36 @@ export default function NextMealModal({ clientId, onClose }: Props) {
               Here&apos;s what I spotted. Remove anything that&apos;s wrong and add anything I missed.
             </p>
 
+            {/* Yes/No cards for items the AI wasn't sure about */}
+            {pendingItems.length > 0 && (
+              <div className="space-y-2">
+                <p className="px-1 text-[0.58rem] font-medium uppercase tracking-[0.14em] text-amber-500">Just checking</p>
+                {pendingItems.map((ing) => (
+                  <div key={ing.id} className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+                    <p className="min-w-0 text-sm">
+                      Do you have <span className="font-medium">{ing.name}</span>?
+                    </p>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => confirmPending(ing.id, true)}
+                        className="rounded-full bg-black px-4 py-2 text-[0.72rem] font-medium text-white transition-opacity hover:opacity-90"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => confirmPending(ing.id, false)}
+                        className="rounded-full border border-black/15 bg-white px-4 py-2 text-[0.72rem] font-medium text-black/55 transition-colors hover:border-black/35"
+                      >
+                        No
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {grouped.map(({ cat, items }) => (
               <div key={cat}>
                 <p className="mb-2 px-1 text-[0.58rem] font-medium uppercase tracking-[0.14em] text-black/35">{CATEGORY_LABELS[cat]}</p>
@@ -500,9 +614,6 @@ export default function NextMealModal({ clientId, onClose }: Props) {
                       className="group inline-flex items-center gap-1.5 rounded-full border border-black/12 bg-white py-1.5 pl-3 pr-2 text-[0.78rem] text-black/80 transition-colors hover:border-black/30"
                     >
                       <span>{ing.name}</span>
-                      {ing.confidence === 'low' && ing.source === 'detected' && (
-                        <span className="text-[0.55rem] uppercase tracking-[0.06em] text-amber-500">not sure</span>
-                      )}
                       <span className="flex h-4 w-4 items-center justify-center rounded-full text-black/25 transition-colors group-hover:bg-black/5 group-hover:text-black/60" aria-hidden>×</span>
                     </button>
                   ))}
@@ -626,6 +737,53 @@ export default function NextMealModal({ clientId, onClose }: Props) {
             >
               Find meals
             </button>
+          )}
+        </div>
+      )}
+
+      {/* In-app camera overlay: live preview + shutter, snap several in a row */}
+      {cameraOpen && (
+        <div className="fixed inset-0 z-[80] flex flex-col bg-black">
+          <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 h-full w-full object-cover" />
+          {!cameraReady && (
+            <div className="absolute inset-0 flex items-center justify-center text-sm text-white/70">Starting camera…</div>
+          )}
+
+          <div className="relative z-10 flex items-center justify-between px-4 pb-3 pt-14">
+            <span className="rounded-full bg-black/45 px-3 py-1.5 text-xs font-medium text-white tabular-nums backdrop-blur-sm">{photos.length}/{MAX_PHOTOS}</span>
+            <button
+              type="button"
+              onClick={closeCamera}
+              className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black shadow"
+            >
+              Done
+            </button>
+          </div>
+
+          <div className="flex-1" />
+
+          {photos.length > 0 && (
+            <div className="relative z-10 flex gap-2 overflow-x-auto px-4 pb-3">
+              {photos.map((p, i) => (
+                <img key={i} src={p.preview} alt={`shot ${i + 1}`} className="h-14 w-14 shrink-0 rounded-lg object-cover ring-1 ring-white/40" />
+              ))}
+            </div>
+          )}
+
+          <div className="relative z-10 flex items-center justify-center pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-2">
+            <button
+              type="button"
+              onClick={capturePhoto}
+              disabled={photos.length >= MAX_PHOTOS}
+              aria-label="Take photo"
+              className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/90 transition-transform active:scale-95 disabled:opacity-40"
+            >
+              <span className="h-16 w-16 rounded-full bg-white" />
+            </button>
+          </div>
+
+          {photos.length >= MAX_PHOTOS && (
+            <p className="relative z-10 pb-4 text-center text-[0.7rem] text-white/70">That&apos;s the max — tap Done to continue.</p>
           )}
         </div>
       )}
