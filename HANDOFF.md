@@ -1,12 +1,77 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Codex - Ported the proven Studio low-latency media timing pattern to Movement Screening: camera-frame-clocked pose submission, worker stall heartbeat, desynchronized transparent overlay canvas, and lower-cost local recording format preference. Nutrition work below remains Claude's separate feature.
+2026-07-07 by Codex - Shipped Weekly Tonnage Phase 1 foundation: live `exercise_library` schema, deployed classifier/backfill edge function, workout-completion hooks, and historical exercise-name backfill.
 
 ## Last code fix commit
-56e5b39 - fix(screening): sync pose loop to camera frames
+670c0a2 - feat(pt): add weekly tonnage exercise library
 
 ## What just happened (read first)
+
+### Weekly Tonnage Phase 1: exercise library classification foundation (2026-07-07, LATEST)
+
+Pedro provided `Cerebro Knowledge/weekly-tonnage-prd.md`. The PRD says to ship
+phases sequentially, so only Phase 1 was built: "classify once, compute forever."
+
+Shipped in commit `670c0a2`:
+- Added `public.exercise_library` for deterministic tonnage tags, separate from
+  `pt_exercises` video/programming cards.
+- Columns include canonical name/key, aliases, pattern, plane, primary muscle,
+  secondary muscles, load type, bodyweight factor, tonnage mode, confidence,
+  locked, and needs-review fields.
+- RLS is enabled. `service_role` has full access; authenticated access is
+  restricted to Pedro/admins. Supabase advisors were clean for this new table
+  after wrapping the JWT call in the admin policy.
+- Added deployed edge function `classify-exercise-library`.
+  - Inputs: `workout_log_id`, explicit `exercise_names`, or admin-only
+    `backfill`.
+  - Exact/alias matches are skipped.
+  - AI classifies only missing exercises.
+  - Low confidence or AI failure inserts `pattern='other'` with
+    `needs_review=true`, so workout saving and future computation are not
+    blocked by AI.
+  - Backfill paginates set logs and persists each model batch immediately.
+- Client self-logging and coach PT Sessions now call the classifier
+  fire-and-forget after workout logs, set logs, and workout event insertion.
+  Workout completion remains successful even if classification fails later.
+- Workout event metadata now includes `workout_log_id`.
+
+Live deployment/backfill:
+- `supabase db push` is blocked by existing remote/local migration drift, so this
+  migration SQL was applied directly with
+  `supabase db query --linked -f supabase/migrations/20260707052129_weekly_tonnage_exercise_library.sql`.
+- Deployed `classify-exercise-library` to project `otcnrkfvgyvwolironoz`.
+- Smoke test classified:
+  - Bench Press -> Push / Horizontal / Chest / external.
+  - Pull-Up -> Pull / Vertical / Back / bodyweight factor 1.0.
+- Historical backfill completed. Final coverage query found `0` missing logged
+  exercise names after alias matching.
+- Current live `exercise_library` count: `164` rows, `34` needs-review rows.
+  Review rows are mostly mobility/control drills and compound names, e.g.
+  `90-90 Breathing`, `Thread the Needle`, `Spider-Man lunge`,
+  `DB Lateral Raise, Bicep Curl, Skull Crusher`.
+
+Verification:
+- `npx eslint supabase/functions/classify-exercise-library/index.ts` passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing warning only:
+  middleware file convention is deprecated in favour of proxy.
+- Targeted ESLint on `ClientPortal.tsx` and `PTSessionsView.tsx` still fails on
+  pre-existing React compiler `set-state-in-effect` errors in those large files;
+  the new classifier hook lines are not the failing lines.
+- `supabase db lint` could not run because local Postgres at `127.0.0.1:54322`
+  is not running. Linked advisors were run instead.
+
+NEXT:
+1. Phase 2: create `weekly_tonnage`, deterministic tonnage computation, and
+   full-week recompute after workout completion.
+2. Use `exercise_library.tonnage_mode` to exclude carry/isometric/time-based
+   exercises from v1 totals and list them as "not included" later.
+3. Use latest `pt_client_metrics.weight_kg`, then `pt_clients.current_weight_kg`
+   for bodyweight exercises.
+4. Phase 3: client home card/drilldown and coach review screen for
+   `needs_review` rows. Saving a coach edit must set `locked=true` and never be
+   reclassified.
 
 ### Movement Screening: frame-clocked live camera and overlay (2026-07-07, LATEST)
 
