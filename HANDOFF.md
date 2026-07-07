@@ -4,7 +4,7 @@
 2026-07-07 by Claude - Next-Meal Phase 1 fixes: fixed the "couldn't read photos" failure (was a 404 auth mismatch, not photo quality), added an in-app multi-shot camera (no more take/use-photo dance, up to 10), and yes/no confirmation cards for uncertain items. Studio latency work below (Codex) untouched.
 
 ## Last code fix commit
-(pending push) - fix(nutrition): next-meal auth + in-app camera + confirm cards
+1264b66 - fix(nutrition): next-meal auth + in-app camera + confirm cards
 
 ## What just happened (read first)
 
