@@ -970,6 +970,7 @@ export default function NutritionTab({ clientId }: Props) {
         <NextMealModal
           clientId={clientId}
           onClose={() => setShowNextMeal(false)}
+          onLogged={() => void loadLogs(selectedDate)}
         />
       )}
     </div>

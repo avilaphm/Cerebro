@@ -9,8 +9,8 @@ generation work.
 - **Surface:** client portal → Nutrition tab (`/client`)
 - **PRD:** Google Doc "Help Me With My Next Meal" (Pedro's). This doc is the
   engineering source of truth and supersedes the PRD where they differ.
-- **Status:** Phase 1 (detection + confirmation) **shipped**. Phase 2 (generation)
-  is next. Phase 3 (recipe book) after that.
+- **Status:** Phase 1 (detection + confirmation) and Phase 2 (generation + logging)
+  **shipped**. Phase 3 (recipe book) is next.
 
 Status legend: ✅ done · 🔜 next · ⏳ later · ⚠️ decision/limitation
 
@@ -58,8 +58,8 @@ whether anything is logged today.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | **1. Detection & confirmation** | Entry point, meal-type step, in-app camera capture, AI ingredient detection, confirmation (chips, add, staples, craving, yes/no cards) | ✅ shipped |
-| **2. Generation & logging** | Generation edge function (full context payload + modes), 5 option cards, "I made this" → tracker, single-card regen, craving re-ask | 🔜 next |
-| **3. Recipe book & memory** | `recipes` table, Recipe Book tab (grid/list, search, filter, save/remove, "I made this"), generation-session memory | ⏳ later |
+| **2. Generation & logging** | Generation edge function (full context payload + modes), 5 option cards, "I made this" → tracker, single-card regen, craving re-ask | ✅ shipped |
+| **3. Recipe book & memory** | `recipes` table, Recipe Book tab (grid/list, search, filter, save/remove, "I made this"), generation-session memory | 🔜 next |
 
 ---
 
@@ -93,15 +93,18 @@ Nutrition tab
         meal type → capture (in-app camera / library)
           → detect-fridge-ingredients (Claude vision)
             → confirm (yes/no cards + chips + add + staples + craving)
-              → [Phase 2] generate → 5 options → I made this / save / regen
+              → suggest-next-meal (Claude) → 5 options
+                → expand recipe / Swap (regen one) / craving re-ask
+                → "I made this" → pt_nutrition_logs → tracker refreshes
 ```
 
 ### Files
 | File | Role |
 | --- | --- |
 | `app/client/NutritionTab.tsx` | Entry point - two equal-weight buttons; renders `NextMealModal` |
-| `app/client/NextMealModal.tsx` | The whole Phase 1 flow (meal type → camera → analyze → confirm → interim done) |
+| `app/client/NextMealModal.tsx` | The whole flow (meal type → camera → analyze → confirm → options → logged) |
 | `supabase/functions/detect-fridge-ingredients/index.ts` | Vision edge function; returns `{ ok, ingredients:[{name,category,confidence}] }` |
+| `supabase/functions/suggest-next-meal/index.ts` | Generation edge function; loads targets/remaining/foods_to_avoid, returns 5 meals + context |
 | `app/client/NutritionChatModal.tsx` | (Reference) existing food logger - camera/voice/compression patterns were ported from here |
 | `supabase/functions/log-nutrition-batch/index.ts` | (Reference) existing vision + auth + CORS pattern the edge function mirrors |
 | `supabase/functions/generate-nutrition-programme/index.ts` | (Reference) the admin-OR-owner `authorizeClient` pattern used for auth |
@@ -138,8 +141,20 @@ the ML-assessment / Studio cameras already in the repo.)
     iOS-safe voice-to-text.
 - `detect-fridge-ingredients` edge function: deployed (v2, `verify_jwt` on),
   admin-OR-owner auth, strict JSON output, dedupe, category normalisation.
-- ⚠️ Phase 1 ends at an **honest interim** screen ("got your ingredients,
-  suggestions coming shortly") because generation is Phase 2.
+
+### Phase 2 (generation + logging) ✅
+- `suggest-next-meal` edge function (deployed, `verify_jwt` on): loads
+  `daily_targets`, sums today's `pt_nutrition_logs` → **remaining**, reads goal +
+  `foods_to_avoid` + last 3 days of meals, detects **full_day vs gap_fill** mode,
+  and returns exactly N meals (`{name, description, whyThisOne, prepTimeMinutes,
+  calories, protein, carbs, fat, ingredients[], steps[]}`) + a `context`
+  (mode + remaining). Discovery + craving modes; substitution honesty.
+- Options step in `NextMealModal`: context banner (mode-aware remaining), 5 cards
+  (name, macros, prep time, "why this one"), tap-to-expand recipe (ingredients +
+  steps), **"I made this"** → direct insert into `pt_nutrition_logs` (input_type
+  `text`) → `onLogged` refreshes the tracker → logged-success screen, **"Swap"**
+  (single-card regen, `count:1` + `exclude` current names), and a **craving
+  re-ask** ("New options" regenerates all 5 excluding the current set).
 
 **Verified:** tsc + production build pass; camera overlay (shutter, thumbnails,
 count, Done) and confirm yes/no cards visually confirmed at 390px via a throwaway
@@ -165,21 +180,9 @@ probe + Playwright (getUserMedia stubbed with a canvas stream, detection stubbed
 
 ## 8. What's next 🔜
 
-### Phase 2 - generation & logging
-- **New edge function** (e.g. `suggest-next-meal`) mirroring the vision/auth
-  pattern. Context payload: confirmed ingredients + staples flag, meal type,
-  **remaining macros** (target − today's logs), goal, `foods_to_avoid`, last 2-3
-  days of meals, and the **full-day-vs-gap-fill mode** flag.
-- Output contract: exactly 5 meals - `{ name, description, whyThisOne,
-  prepTimeMinutes, calories, protein, carbs, fat, ingredients[], steps[] }`.
-- Rules: only confirmed ingredients + staples; ≥1 option under 15 min; macros
-  labelled as estimates; craving mode + substitution honesty; discovery mode.
-- UI: 5 option cards (name, description, macros, prep time, "why this one",
-  tap-to-expand recipe); **"I made this"** → insert into `pt_nutrition_logs`
-  (reuse the existing log shape); single-card **regenerate**; craving re-ask.
-- Wire `NextMealModal`'s "Find meals" CTA from the interim screen to this.
+Phase 2 (generation + logging) is ✅ shipped - see §6. Next is Phase 3.
 
-### Phase 3 - recipe book & memory ⏳
+### Phase 3 - recipe book & memory 🔜
 - `recipes` table: `id, client_id, name, description, meal_type, calories, protein,
   carbs, fat, prep_time, ingredients (jsonb), steps (jsonb), source, created_at`.
 - Recipe Book tab in Nutrition: grid/list, search, meal-type filter, save
@@ -188,11 +191,15 @@ probe + Playwright (getUserMedia stubbed with a canvas stream, detection stubbed
   option) - stored in v1, used as a personalization signal later.
 
 ### Known gaps / open items ⚠️
-- iOS Safari `getUserMedia` needs **real-device testing on Pedro's phone** - the
-  only true test of the in-app camera.
+- **Real-device pass on Pedro's phone** is the outstanding test: iOS Safari
+  `getUserMedia` (camera) and a live detect → generate → "I made this" round trip
+  as the actual client. Phases 1 and 2 were verified with a stubbed probe, not a
+  real client session end to end.
+- The feature is **live to clients** and now fully functional (no interim screen).
+  Gate/hide the button in `NutritionTab` if it shouldn't be visible yet.
+- Allergy safety relies on `foods_to_avoid` being passed to `suggest-next-meal`
+  (it is, with a "NEVER include" instruction). Spot-check it holds for a client
+  with a real allergy before trusting it for hard allergies.
 - Autocomplete uses a small hardcoded ingredient list (fine for v1).
-- The "Help me with my next meal" button is **live to clients**; until Phase 2 it
-  ends at the interim screen. Gate/hide it in `NutritionTab` if clients shouldn't
-  see an in-progress feature yet (one-line change).
-- Allergy safety currently relies on `foods_to_avoid` being passed to the model in
-  Phase 2 - verify it's honoured before relying on it for hard allergies.
+- No recipe persistence yet (Phase 3); a suggestion only survives if the client
+  taps "I made this" (which logs it) - otherwise it's gone on close.

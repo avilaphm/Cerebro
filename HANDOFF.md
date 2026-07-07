@@ -1,14 +1,43 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Codex - Shipped Weekly Tonnage Phase 1 foundation: live `exercise_library` schema, deployed classifier/backfill edge function, workout-completion hooks, and historical exercise-name backfill.
+2026-07-07 by Claude - Shipped Next-Meal Phase 2 (generation + logging): suggest-next-meal edge function (remaining-macro aware, full-day vs gap-fill modes), 5 option cards with expandable recipes, "I made this" logging into pt_nutrition_logs, single-card Swap, craving re-ask. Feature doc docs/next-meal/README.md updated. Codex's Weekly Tonnage work below untouched.
 
 ## Last code fix commit
-670c0a2 - feat(pt): add weekly tonnage exercise library
+(pending push) - feat(nutrition): next-meal phase 2 generation
 
 ## What just happened (read first)
 
-### Weekly Tonnage Phase 1: exercise library classification foundation (2026-07-07, LATEST)
+### Next-Meal Phase 2: generation + logging (2026-07-07, LATEST)
+
+Source of truth: `docs/next-meal/README.md` (updated - Phases 1 & 2 now shipped).
+
+Built the generation half of "Help me with my next meal":
+- `supabase/functions/suggest-next-meal/index.ts` (deployed, verify_jwt on,
+  admin-OR-owner auth). Loads `daily_targets`, sums today's `pt_nutrition_logs`
+  into a **remaining** budget, reads goal + `foods_to_avoid` + last 3 days of
+  meals, detects **full_day vs gap_fill** mode (full_day = nothing logged yet →
+  size as one meal + teach the leftover; gap_fill = fit the remainder), and
+  returns N meals `{name, description, whyThisOne, prepTimeMinutes, calories,
+  protein, carbs, fat, ingredients[], steps[]}` + a `context` (mode + remaining).
+  Discovery + craving modes, substitution honesty.
+- `NextMealModal` options step: context banner (mode-aware remaining), 5 cards
+  (macros, prep, "why this one"), tap-to-expand recipe (ingredients + steps),
+  **"I made this"** → direct insert into `pt_nutrition_logs` (input_type `text`)
+  → `onLogged` refreshes NutritionTab → logged-success screen; **"Swap"**
+  (single-card regen, count:1 + exclude); **craving re-ask** ("New options").
+  The old interim "coming soon" screen is gone; "Find meals" now generates.
+
+Verified end to end via a throwaway probe + Playwright at 390px (getUserMedia,
+detect, suggest, and the log insert all stubbed): meal type → camera (2 shots) →
+analyze → confirm → Find meals → 5 option cards → expand recipe → "I made this" →
+"Logged to your tracker". tsc + build pass. Real client-session pass on Pedro's
+phone is still the outstanding test.
+
+NEXT: Phase 3 - `recipes` table + Recipe Book tab (save/search/filter/remove) +
+generation-session memory. Spec in docs/next-meal/README.md §8.
+
+### Weekly Tonnage Phase 1: exercise library classification foundation (2026-07-07)
 
 Pedro provided `Cerebro Knowledge/weekly-tonnage-prd.md`. The PRD says to ship
 phases sequentially, so only Phase 1 was built: "classify once, compute forever."

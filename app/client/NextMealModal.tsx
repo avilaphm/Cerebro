@@ -105,17 +105,43 @@ interface DetectResponse {
   error?: string;
 }
 
-type Step = 'mealType' | 'capture' | 'analyzing' | 'confirm' | 'done';
+interface MealOption {
+  name: string;
+  description: string;
+  whyThisOne: string;
+  prepTimeMinutes: number | null;
+  calories: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  ingredients: { name: string; quantity: string }[];
+  steps: string[];
+}
+
+interface GenContext {
+  mode: 'full_day' | 'gap_fill';
+  remaining: { calories: number; protein_g: number; carbs_g: number; fat_g: number; fibre_g: number };
+}
+
+interface GenerateResponse {
+  ok: boolean;
+  meals?: MealOption[];
+  context?: GenContext;
+  error?: string;
+}
+
+type Step = 'mealType' | 'capture' | 'analyzing' | 'confirm' | 'generating' | 'options' | 'done';
 
 interface Props {
   clientId: string;
   onClose: () => void;
+  onLogged?: () => void;
 }
 
 let idCounter = 0;
 const nextId = () => `ing-${Date.now()}-${idCounter++}`;
 
-export default function NextMealModal({ clientId, onClose }: Props) {
+export default function NextMealModal({ clientId, onClose, onLogged }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [step, setStep] = useState<Step>('mealType');
   const [mealType, setMealType] = useState<MealSlot | null>(null);
@@ -129,6 +155,12 @@ export default function NextMealModal({ clientId, onClose }: Props) {
   const [recording, setRecording] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [meals, setMeals] = useState<MealOption[]>([]);
+  const [genContext, setGenContext] = useState<GenContext | null>(null);
+  const [expandedMeal, setExpandedMeal] = useState<number | null>(null);
+  const [regenIndex, setRegenIndex] = useState<number | null>(null);
+  const [loggingName, setLoggingName] = useState<string | null>(null);
+  const [loggedName, setLoggedName] = useState<string | null>(null);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -164,14 +196,14 @@ export default function NextMealModal({ clientId, onClose }: Props) {
     video.play().then(() => setCameraReady(true)).catch(() => setCameraReady(true));
   }, [cameraOpen]);
 
-  // Animated progress while analyzing. Progress is reset to 0 in analyze()
-  // before entering this step, so the effect never sets state synchronously.
+  // Animated progress while analyzing or generating. Progress is reset to 0 in the
+  // handler before entering these steps, so the effect never sets state synchronously.
   useEffect(() => {
-    if (step !== 'analyzing') return;
+    if (step !== 'analyzing' && step !== 'generating') return;
     const start = Date.now();
     const id = setInterval(() => {
       const elapsed = Date.now() - start;
-      setProgress(Math.min(95, Math.round(95 * (1 - Math.exp(-elapsed / 5000)))));
+      setProgress(Math.min(95, Math.round(95 * (1 - Math.exp(-elapsed / 6000)))));
     }, 150);
     return () => clearInterval(id);
   }, [step]);
@@ -327,6 +359,97 @@ export default function NextMealModal({ clientId, onClose }: Props) {
   };
 
   const pendingItems = useMemo(() => ingredients.filter((i) => i.pending), [ingredients]);
+  const confirmedNames = () => ingredients.filter((i) => !i.pending).map((i) => i.name);
+
+  // --- Phase 2: generation ---
+  const generate = async (opts?: { exclude?: string[]; fromOptions?: boolean }) => {
+    if (!mealType) return;
+    const list = confirmedNames();
+    if (list.length === 0) return;
+    setError(null);
+    setProgress(0);
+    setStep('generating');
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke<GenerateResponse>('suggest-next-meal', {
+        body: {
+          client_id: clientId,
+          meal_type: mealType,
+          ingredients: list,
+          include_staples: includeStaples,
+          craving: craving.trim() || undefined,
+          exclude: opts?.exclude ?? [],
+          count: 5,
+        },
+      });
+      if (fnErr || !data?.ok || !data.meals?.length) {
+        setError(data?.error ?? 'Could not build meal options. Please try again.');
+        setStep(opts?.fromOptions ? 'options' : 'confirm');
+        return;
+      }
+      setMeals(data.meals);
+      setGenContext(data.context ?? null);
+      setExpandedMeal(null);
+      setStep('options');
+    } catch {
+      setError('Something went wrong building your options. Please try again.');
+      setStep(opts?.fromOptions ? 'options' : 'confirm');
+    }
+  };
+
+  // Swap a single card for a fresh option, keeping the rest.
+  const regenOne = async (index: number) => {
+    if (!mealType || regenIndex !== null) return;
+    setRegenIndex(index);
+    setError(null);
+    try {
+      const { data } = await supabase.functions.invoke<GenerateResponse>('suggest-next-meal', {
+        body: {
+          client_id: clientId,
+          meal_type: mealType,
+          ingredients: confirmedNames(),
+          include_staples: includeStaples,
+          craving: craving.trim() || undefined,
+          exclude: meals.map((m) => m.name),
+          count: 1,
+        },
+      });
+      const fresh = data?.ok ? data.meals?.[0] : undefined;
+      if (fresh) {
+        setMeals((prev) => prev.map((m, i) => (i === index ? fresh : m)));
+        setExpandedMeal((cur) => (cur === index ? null : cur));
+      } else {
+        setError(data?.error ?? 'Could not swap that option. Please try again.');
+      }
+    } finally {
+      setRegenIndex(null);
+    }
+  };
+
+  // "I made this" -> write a normal nutrition log the tracker will show.
+  const logMeal = async (meal: MealOption) => {
+    if (loggingName || !mealType) return;
+    setLoggingName(meal.name);
+    const { error: insErr } = await supabase.from('pt_nutrition_logs').insert({
+      client_id: clientId,
+      input_type: 'text',
+      meal_type: mealType,
+      meal_description: meal.name,
+      food_items: meal.ingredients.map((i) => ({ name: i.name, quantity: i.quantity, unit: '' })),
+      protein_g: meal.protein,
+      carbs_g: meal.carbs,
+      fat_g: meal.fat,
+      calories: meal.calories,
+      notes: 'Cooked from a Next Meal suggestion.',
+    });
+    setLoggingName(null);
+    if (insErr) {
+      setError('Could not log that meal. Please try again.');
+      return;
+    }
+    setLoggedName(meal.name);
+    onLogged?.();
+    setStep('done');
+  };
 
   const suggestions = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
@@ -415,12 +538,15 @@ export default function NextMealModal({ clientId, onClose }: Props) {
     : step === 'capture' ? 'Show me what you have'
     : step === 'analyzing' ? 'Reading your kitchen'
     : step === 'confirm' ? 'Confirm your ingredients'
+    : step === 'generating' ? 'Building your options'
+    : step === 'options' ? 'Your meal options'
     : "You're all set";
 
   const goBack = () => {
     setError(null);
     if (step === 'capture') { setStep('mealType'); return; }
     if (step === 'confirm') { setStep('capture'); return; }
+    if (step === 'options') { setStep('confirm'); return; }
     onClose();
   };
 
@@ -430,11 +556,11 @@ export default function NextMealModal({ clientId, onClose }: Props) {
       <div className="flex shrink-0 items-center px-4 pb-3 pt-14">
         <button
           type="button"
-          onClick={step === 'mealType' || step === 'analyzing' || step === 'done' ? onClose : goBack}
+          onClick={step === 'capture' || step === 'confirm' || step === 'options' ? goBack : onClose}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/8 bg-white text-black/40 shadow-sm transition-colors hover:text-black"
-          aria-label={step === 'capture' || step === 'confirm' ? 'Back' : 'Close'}
+          aria-label={step === 'capture' || step === 'confirm' || step === 'options' ? 'Back' : 'Close'}
         >
-          {step === 'capture' || step === 'confirm' ? (
+          {step === 'capture' || step === 'confirm' || step === 'options' ? (
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 2L4 7l5 5" />
             </svg>
@@ -539,8 +665,8 @@ export default function NextMealModal({ clientId, onClose }: Props) {
           </div>
         )}
 
-        {/* STEP: analyzing */}
-        {step === 'analyzing' && (
+        {/* STEP: analyzing / generating */}
+        {(step === 'analyzing' || step === 'generating') && (
           <div className="flex flex-col items-center justify-center gap-6 py-20">
             <div className="relative h-16 w-16">
               <svg className="absolute inset-0 -rotate-90" width="64" height="64" viewBox="0 0 64 64">
@@ -558,7 +684,9 @@ export default function NextMealModal({ clientId, onClose }: Props) {
             </div>
             <div className="text-center">
               <p className="text-sm font-medium">
-                {progress < 40 ? 'Looking through your photos…' : progress < 75 ? 'Spotting ingredients…' : 'Almost there…'}
+                {step === 'analyzing'
+                  ? (progress < 40 ? 'Looking through your photos…' : progress < 75 ? 'Spotting ingredients…' : 'Almost there…')
+                  : (progress < 40 ? 'Checking your macros for today…' : progress < 75 ? 'Cooking up options…' : 'Almost there…')}
               </p>
               <p className="mt-1 text-[0.65rem] text-black/35">This usually takes a few seconds</p>
             </div>
@@ -696,17 +824,129 @@ export default function NextMealModal({ clientId, onClose }: Props) {
           </div>
         )}
 
-        {/* STEP: done (Phase 1 interim — generation ships in Phase 2) */}
+        {/* STEP: options — 5 meal suggestions */}
+        {step === 'options' && (
+          <div className="mx-auto max-w-md space-y-3">
+            {genContext && (
+              <div className="rounded-2xl border border-black/8 bg-white px-4 py-3 shadow-sm">
+                {genContext.mode === 'full_day' ? (
+                  <p className="text-[0.7rem] leading-relaxed text-black/55">
+                    <span className="font-medium text-black/70">First meal of the day.</span> These options are one part of your {genContext.remaining.calories} kcal / {genContext.remaining.protein_g}g protein for today, sized to leave room for the rest.
+                  </p>
+                ) : (
+                  <p className="text-[0.7rem] leading-relaxed text-black/55">
+                    <span className="font-medium text-black/70">{genContext.remaining.calories} kcal &middot; {genContext.remaining.protein_g}g protein left today.</span> Options fit what you have and what&apos;s left.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {meals.map((m, i) => {
+              const expanded = expandedMeal === i;
+              const busy = regenIndex === i;
+              return (
+                <div key={`${m.name}-${i}`} className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+                  <button type="button" onClick={() => setExpandedMeal(expanded ? null : i)} className="w-full px-4 py-3.5 text-left">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-medium leading-snug">{m.name}</p>
+                      {m.calories != null && <span className="shrink-0 text-xs font-medium tabular-nums">{m.calories} kcal</span>}
+                    </div>
+                    {m.description && <p className="mt-1 text-[0.7rem] leading-relaxed text-black/45">{m.description}</p>}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.62rem] tabular-nums text-black/40">
+                      {m.protein != null && <span>{m.protein}g P</span>}
+                      {m.carbs != null && <span>{m.carbs}g C</span>}
+                      {m.fat != null && <span>{m.fat}g F</span>}
+                      {m.prepTimeMinutes != null && <span className="text-black/35">&middot; {m.prepTimeMinutes} min</span>}
+                    </div>
+                    {m.whyThisOne && (
+                      <p className="mt-2 rounded-lg bg-black/[0.03] px-2.5 py-1.5 text-[0.66rem] leading-relaxed text-black/55">{m.whyThisOne}</p>
+                    )}
+                    <p className="mt-1.5 text-[0.58rem] uppercase tracking-[0.1em] text-black/25">{expanded ? 'Hide recipe' : 'Tap for recipe'}</p>
+                  </button>
+
+                  {expanded && (
+                    <div className="space-y-3 border-t border-black/8 px-4 py-3">
+                      {m.ingredients.length > 0 && (
+                        <div>
+                          <p className="mb-1 text-[0.56rem] font-medium uppercase tracking-[0.14em] text-black/35">Ingredients</p>
+                          <ul className="space-y-0.5">
+                            {m.ingredients.map((ing, k) => (
+                              <li key={k} className="text-[0.72rem] text-black/60">{ing.name}{ing.quantity ? ` · ${ing.quantity}` : ''}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {m.steps.length > 0 && (
+                        <div>
+                          <p className="mb-1 text-[0.56rem] font-medium uppercase tracking-[0.14em] text-black/35">Steps</p>
+                          <ol className="space-y-1">
+                            {m.steps.map((s, k) => (
+                              <li key={k} className="flex gap-2 text-[0.72rem] leading-relaxed text-black/60">
+                                <span className="text-black/30">{k + 1}.</span><span>{s}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 border-t border-black/8 px-3 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => void logMeal(m)}
+                      disabled={loggingName === m.name}
+                      className="flex-1 rounded-full bg-black py-2.5 text-[0.72rem] font-medium text-white transition-opacity disabled:opacity-40"
+                    >
+                      {loggingName === m.name ? 'Logging…' : 'I made this'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void regenOne(i)}
+                      disabled={busy}
+                      className="rounded-full border border-black/12 bg-white px-4 py-2.5 text-[0.72rem] font-medium text-black/55 transition-colors hover:border-black/30 disabled:opacity-40"
+                    >
+                      {busy ? '…' : 'Swap'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Craving re-ask */}
+            <div className="rounded-2xl border border-black/8 bg-white px-4 py-3 shadow-sm">
+              <p className="text-[0.66rem] text-black/45">Not what you&apos;re after? Tweak your craving and get five fresh options.</p>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  value={craving}
+                  onChange={(e) => setCraving(e.target.value)}
+                  placeholder="e.g. something warm, tacos"
+                  className="min-w-0 flex-1 border border-black/12 bg-white px-3 py-2 text-[0.8rem] outline-none focus:border-black/40"
+                />
+                <button
+                  type="button"
+                  onClick={() => void generate({ exclude: meals.map((m) => m.name), fromOptions: true })}
+                  className="shrink-0 rounded-full bg-black px-4 py-2 text-[0.72rem] font-medium text-white"
+                >
+                  New options
+                </button>
+              </div>
+            </div>
+
+            {error && <p className="px-1 text-[0.7rem] text-red-500">{error}</p>}
+          </div>
+        )}
+
+        {/* STEP: done — logged to the tracker */}
         {step === 'done' && (
           <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-16 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black text-white">
               <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11l5 5L18 6" /></svg>
             </div>
             <div>
-              <p className="text-sm font-medium">Got your {mealLabel.toLowerCase()} ingredients</p>
+              <p className="text-sm font-medium">Logged to your tracker</p>
               <p className="mx-auto mt-2 max-w-[18rem] text-[0.72rem] leading-relaxed text-black/45">
-                {ingredients.length} ingredient{ingredients.length !== 1 ? 's' : ''} confirmed{includeStaples ? ' + basic staples' : ''}
-                {craving.trim() ? ` · craving “${craving.trim()}”` : ''}. Personalised meal suggestions that fit your remaining calories are being switched on shortly.
+                {loggedName ? `"${loggedName}" ` : ''}added to your {mealLabel.toLowerCase()}. Nice work.
               </p>
             </div>
             <button type="button" onClick={onClose} className="mt-2 rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition-opacity hover:opacity-90">
@@ -731,8 +971,8 @@ export default function NextMealModal({ clientId, onClose }: Props) {
           ) : (
             <button
               type="button"
-              onClick={() => setStep('done')}
-              disabled={ingredients.length === 0}
+              onClick={() => void generate()}
+              disabled={confirmedNames().length === 0}
               className="w-full rounded-full bg-black py-3.5 text-sm font-medium text-white transition-opacity disabled:opacity-20"
             >
               Find meals
