@@ -79,6 +79,12 @@ const MAX_CAPTURE_SECONDS = 25;
 const OVERLAY_GREEN = '#42ff88';
 const TEMPO_CUE = '2s down · 1s pause · 2s up';
 const EXPECTED_REPETITIONS = 3;
+const TARGET_INFERENCE_FPS = 30;
+const MIN_INFERENCE_INTERVAL_MS = 1000 / TARGET_INFERENCE_FPS - 2;
+const INFERENCE_STALL_HEARTBEAT_MS = (1000 / TARGET_INFERENCE_FPS) * 2.5;
+const OVERLAY_CONTEXT_OPTIONS: CanvasRenderingContext2DSettings = {
+  desynchronized: true,
+};
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -97,9 +103,13 @@ function makeJsonBlob(exportBundle: ExportBundle): Blob {
 
 async function waitForFirstVideoFrame(video: HTMLVideoElement): Promise<void> {
   if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => resolve()),
-    );
+    await new Promise<void>((resolve) => {
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(() => resolve());
+        return;
+      }
+      requestAnimationFrame(() => resolve());
+    });
     return;
   }
 
@@ -115,6 +125,10 @@ async function waitForFirstVideoFrame(video: HTMLVideoElement): Promise<void> {
     };
     const handleCanPlay = () => {
       cleanup();
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(() => resolve());
+        return;
+      }
       requestAnimationFrame(() => resolve());
     };
     const handleError = () => {
@@ -159,6 +173,9 @@ export default function MovementScreeningPhaseOne({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderChunksRef = useRef<Blob[]>([]);
   const animationFrameRef = useRef<number | null>(null);
+  const inferenceHeartbeatWorkerRef = useRef<Worker | null>(null);
+  const cancelVideoFrameClockRef = useRef<(() => void) | null>(null);
+  const inferenceLoopActiveRef = useRef(false);
   const captureTimerRef = useRef<number | null>(null);
   const captureIntervalRef = useRef<number | null>(null);
   const captureStartRef = useRef(0);
@@ -219,7 +236,7 @@ export default function MovementScreeningPhaseOne({
       canvas.height = video.videoHeight;
     }
 
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d', OVERLAY_CONTEXT_OPTIONS);
     if (!context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
     if (frame.landmarks.length === 0) return;
@@ -369,50 +386,105 @@ export default function MovementScreeningPhaseOne({
     [drawPose, isBodyweightSquat, rules.config],
   );
 
-  const beginInferenceLoop = useCallback(() => {
+  const stopInferenceLoop = useCallback(() => {
+    inferenceLoopActiveRef.current = false;
+    cancelVideoFrameClockRef.current?.();
+    cancelVideoFrameClockRef.current = null;
     if (animationFrameRef.current !== null) {
       cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (inferenceHeartbeatWorkerRef.current) {
+      inferenceHeartbeatWorkerRef.current.postMessage({ type: 'stop' });
+      inferenceHeartbeatWorkerRef.current.terminate();
+      inferenceHeartbeatWorkerRef.current = null;
+    }
+  }, []);
+
+  const submitCurrentCameraFrame = useCallback((timestampMs: number) => {
+    const video = videoRef.current;
+    const worker = workerRef.current;
+    if (
+      document.hidden ||
+      !video ||
+      !worker ||
+      video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+      return;
+    }
+    if (timestampMs - lastFrameRequestRef.current < MIN_INFERENCE_INTERVAL_MS) {
+      return;
+    }
+    lastFrameRequestRef.current = timestampMs;
+
+    if (!worker.canAcceptFrame() || bitmapPendingRef.current) {
+      if (capturingRef.current) worker.noteDroppedFrame();
+      return;
     }
 
-    const loop = (timestamp: number) => {
-      animationFrameRef.current = requestAnimationFrame(loop);
-      const video = videoRef.current;
-      const worker = workerRef.current;
-      if (
-        document.hidden ||
-        !video ||
-        !worker ||
-        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
-      ) {
-        return;
-      }
-      if (timestamp - lastFrameRequestRef.current < 33) return;
-      lastFrameRequestRef.current = timestamp;
-
-      if (!worker.canAcceptFrame() || bitmapPendingRef.current) {
-        if (capturingRef.current) worker.noteDroppedFrame();
-        return;
-      }
-
-      bitmapPendingRef.current = true;
-      void createImageBitmap(video)
-        .then((bitmap) => {
-          worker.submit(bitmap, performance.now());
-        })
-        .catch((error: unknown) => {
-          setErrorMessage(
-            error instanceof Error
-              ? error.message
-              : 'The current camera frame could not be read.',
-          );
-        })
-        .finally(() => {
-          bitmapPendingRef.current = false;
-        });
-    };
-
-    animationFrameRef.current = requestAnimationFrame(loop);
+    bitmapPendingRef.current = true;
+    void createImageBitmap(video)
+      .then((bitmap) => {
+        worker.submit(bitmap, timestampMs);
+      })
+      .catch((error: unknown) => {
+        setErrorMessage(
+          error instanceof Error
+            ? error.message
+            : 'The current camera frame could not be read.',
+        );
+      })
+      .finally(() => {
+        bitmapPendingRef.current = false;
+      });
   }, []);
+
+  const beginInferenceLoop = useCallback(() => {
+    stopInferenceLoop();
+    const video = videoRef.current;
+    if (!video) return;
+
+    inferenceLoopActiveRef.current = true;
+    lastFrameRequestRef.current = 0;
+
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      let requestId = 0;
+      const onVideoFrame: VideoFrameRequestCallback = (now) => {
+        if (!inferenceLoopActiveRef.current) return;
+        submitCurrentCameraFrame(now);
+        requestId = video.requestVideoFrameCallback(onVideoFrame);
+      };
+      requestId = video.requestVideoFrameCallback(onVideoFrame);
+      cancelVideoFrameClockRef.current = () => {
+        video.cancelVideoFrameCallback(requestId);
+      };
+    } else {
+      const loop = (timestamp: number) => {
+        if (!inferenceLoopActiveRef.current) return;
+        submitCurrentCameraFrame(timestamp);
+        animationFrameRef.current = requestAnimationFrame(loop);
+      };
+      animationFrameRef.current = requestAnimationFrame(loop);
+    }
+
+    try {
+      const heartbeat = new Worker(
+        new URL('./inference-tick.worker.ts', import.meta.url),
+      );
+      inferenceHeartbeatWorkerRef.current = heartbeat;
+      heartbeat.onmessage = () => {
+        if (!inferenceLoopActiveRef.current) return;
+        const now = performance.now();
+        if (now - lastFrameRequestRef.current < INFERENCE_STALL_HEARTBEAT_MS) {
+          return;
+        }
+        submitCurrentCameraFrame(now);
+      };
+      heartbeat.postMessage({ type: 'start', fps: TARGET_INFERENCE_FPS });
+    } catch {
+      // requestVideoFrameCallback/rAF is still enough for visible-tab capture.
+    }
+  }, [stopInferenceLoop, submitCurrentCameraFrame]);
 
   const clearCaptureTimers = useCallback(() => {
     if (captureTimerRef.current !== null) {
@@ -446,17 +518,16 @@ export default function MovementScreeningPhaseOne({
   }, []);
 
   const releaseCameraDevices = useCallback(() => {
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
+    stopInferenceLoop();
     workerRef.current?.close();
     workerRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     const canvas = overlayRef.current;
-    canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    canvas
+      ?.getContext('2d', OVERLAY_CONTEXT_OPTIONS)
+      ?.clearRect(0, 0, canvas.width, canvas.height);
     setTrackingReady(false);
     setStartPoseReady(false);
     framingHoldStartRef.current = null;
@@ -467,7 +538,7 @@ export default function MovementScreeningPhaseOne({
     setDelegate(null);
     setSource(null);
     sourceRef.current = null;
-  }, []);
+  }, [stopInferenceLoop]);
 
   const finishTrial = useCallback(async () => {
     if (!capturingRef.current) return;

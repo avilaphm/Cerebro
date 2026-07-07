@@ -49,6 +49,15 @@ const source: SourceMetadata = {
 
 test('capture format supports WebM and iPhone MP4 evidence pairs', () => {
   assert.deepEqual(
+    selectRecorderFormat((mimeType) =>
+      ['video/webm;codecs=vp8', 'video/webm;codecs=vp9'].includes(mimeType),
+    ),
+    {
+      mimeType: 'video/webm;codecs=vp8',
+      extension: 'webm',
+    },
+  );
+  assert.deepEqual(
     selectRecorderFormat((mimeType) => mimeType === 'video/mp4'),
     {
       mimeType: 'video/mp4',

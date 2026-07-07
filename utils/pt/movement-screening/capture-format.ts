@@ -4,8 +4,9 @@ export interface RecorderFormat {
 }
 
 export const RECORDER_FORMAT_CANDIDATES: readonly RecorderFormat[] = [
-  { mimeType: 'video/webm;codecs=vp9', extension: 'webm' },
+  { mimeType: 'video/webm;codecs=h264', extension: 'webm' },
   { mimeType: 'video/webm;codecs=vp8', extension: 'webm' },
+  { mimeType: 'video/webm;codecs=vp9', extension: 'webm' },
   { mimeType: 'video/webm', extension: 'webm' },
   { mimeType: 'video/mp4;codecs=avc1.42E01E', extension: 'mp4' },
   { mimeType: 'video/mp4', extension: 'mp4' },
