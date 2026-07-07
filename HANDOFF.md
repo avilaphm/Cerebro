@@ -1,14 +1,69 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Claude - Shipped Phase 1 of "Help me with my next meal" (client nutrition): meal-type -> fridge photo capture -> AI ingredient detection -> confirmation. detect-fridge-ingredients edge function deployed. Generation (Phase 2) is next. Movement Screening iPhone HUD work below is unchanged.
+2026-07-07 by Codex - Shipped Studio local recording latency reduction: video-frame-clocked compositor, worker stall heartbeat, 1080p/30 capture caps, lower-cost recorder codec preference, and console FPS diagnostics. Nutrition work below is Claude's concurrent feature and was left untouched.
 
 ## Last code fix commit
-1626127 - feat(nutrition): next-meal phase 1 (detect + confirm)
+fd556c3 - fix(studio): reduce local recording latency
 
 ## What just happened (read first)
 
-### Client Nutrition: "Help me with my next meal" Phase 1 (2026-07-07, LATEST)
+### Cerebro Studio: local recording latency reduction (2026-07-07, LATEST)
+
+Pedro reported the Studio camera looked laggy/choppy during screen + camera
+recording, like a bad connection. Internet is not involved: Studio captures,
+composites, and records locally in the browser.
+
+Research / implementation direction used:
+- Mature browser recorders such as Screenity avoid depending on foreground-tab
+  rendering alone and eventually move heavy pipelines to Offscreen/WebCodecs.
+- `HTMLVideoElement.requestVideoFrameCallback()` is the correct browser clock
+  for drawing a video source to canvas when a new media frame is available.
+- Canvas 2D contexts can request `{ alpha: false, desynchronized: true }` to
+  avoid unnecessary alpha blending and reduce latency where the browser honours
+  it.
+- Feeding a 4K/retina screen into a 1080 output canvas makes the main thread and
+  MediaRecorder work harder than needed.
+
+What changed in commit `fd556c3`:
+- Studio already had the Web Worker tick from the previous fix. This pass kept
+  it, but changed its role to a background-safe stall heartbeat instead of the
+  primary drawing clock.
+- The compositor now uses `requestVideoFrameCallback()` on the camera and screen
+  `<video>` elements, so canvas draws follow actual delivered media frames.
+- The worker still ticks at 30fps and forces a draw only if video-frame callbacks
+  stall, which protects recording when Chrome throttles foreground rendering.
+- Both landscape and portrait canvases request a 2D context with
+  `{ alpha: false, desynchronized: true }`.
+- Camera capture and screen capture now request max `1920 × 1080` at `30fps`.
+  This prevents a 4K/retina display or camera from being downscaled every frame
+  into the 1080p output canvas.
+- MediaRecorder now prefers cheaper/lower-latency codecs before VP9:
+  WebM/H264 if Chrome exposes it, then VP8, then VP9, then browser default WebM.
+- Studio logs recording/compositor diagnostics to the browser console:
+  selected recorder MIME type, track dimensions/FPS, draw FPS, camera-frame FPS,
+  screen-frame FPS, worker tick FPS, skipped draws, and whether the document is
+  hidden.
+
+Verification:
+- Targeted ESLint passes for changed Studio files.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing warning only:
+  middleware file convention is deprecated in favour of proxy.
+
+NEXT:
+1. Pedro reloads `/dashboard/studio`.
+2. Open Chrome DevTools console before recording.
+3. Record a 20-30 second screen + camera take while clicking around another app
+   or tab.
+4. Check whether the final video camera motion is live/crisp and whether audio
+   remains in sync.
+5. If lag remains, copy the `[Studio compositor]` and `[Studio recorder]` console
+   logs into the next message. If draw/camera FPS are healthy but the saved file
+   is still choppy, the next step is a separate WebCodecs/OffscreenCanvas
+   migration proposal rather than another small MediaRecorder tweak.
+
+### Client Nutrition: "Help me with my next meal" Phase 1 (2026-07-07)
 
 New client feature (PRD: Google Doc "Help Me With My Next Meal"). Lets a client
 photograph their fridge/pantry and get meal ideas that fit their remaining daily
