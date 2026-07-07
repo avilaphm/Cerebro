@@ -4,7 +4,7 @@
 2026-07-07 by Claude - Shipped Phase 1 of "Help me with my next meal" (client nutrition): meal-type -> fridge photo capture -> AI ingredient detection -> confirmation. detect-fridge-ingredients edge function deployed. Generation (Phase 2) is next. Movement Screening iPhone HUD work below is unchanged.
 
 ## Last code fix commit
-(pending push) - feat(nutrition): next-meal phase 1 (detect + confirm)
+1626127 - feat(nutrition): next-meal phase 1 (detect + confirm)
 
 ## What just happened (read first)
 
