@@ -4,7 +4,7 @@
 2026-07-08 by Claude - Next-Meal: renamed "Recipe book" to "My meals" with two tabs - Saved (the recipe book) and Recent (last 3 searches from next_meal_sessions, now storing the generated meals so any past idea can be saved/logged). RecipeBookModal replaced by MyMealsModal. Guarded a savedNames crash on undefined name. Source of truth: docs/next-meal/README.md.
 
 ## Last code fix commit
-(pending push) - feat(nutrition): my-meals history tab (save from past searches)
+c628d61 - feat(nutrition): my-meals history tab (save from past searches)
 
 ## What just happened (read first)
 
