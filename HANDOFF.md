@@ -4,7 +4,7 @@
 2026-07-08 by Claude - Shipped Next-Meal Phase 3 (recipe book + session memory): recipes + next_meal_sessions tables with RLS, Save bookmark on option cards, RecipeBookModal (search/filter/expand/I-made-this/remove), session memory on each generation. "Help me with my next meal" is now feature-complete (all 3 phases). Only a real-device pass remains. Source of truth: docs/next-meal/README.md.
 
 ## Last code fix commit
-(pending push) - feat(nutrition): next-meal phase 3 recipe book
+c1f19e7 - feat(nutrition): next-meal phase 3 recipe book
 
 ## What just happened (read first)
 
