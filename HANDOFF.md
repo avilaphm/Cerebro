@@ -1,14 +1,40 @@
 # Handoff
 
 ## Last updated
-2026-07-08 by Claude - Shipped Next-Meal Phase 3 (recipe book + session memory): recipes + next_meal_sessions tables with RLS, Save bookmark on option cards, RecipeBookModal (search/filter/expand/I-made-this/remove), session memory on each generation. "Help me with my next meal" is now feature-complete (all 3 phases). Only a real-device pass remains. Source of truth: docs/next-meal/README.md.
+2026-07-08 by Claude - Next-Meal: renamed "Recipe book" to "My meals" with two tabs - Saved (the recipe book) and Recent (last 3 searches from next_meal_sessions, now storing the generated meals so any past idea can be saved/logged). RecipeBookModal replaced by MyMealsModal. Guarded a savedNames crash on undefined name. Source of truth: docs/next-meal/README.md.
 
 ## Last code fix commit
-c1f19e7 - feat(nutrition): next-meal phase 3 recipe book
+(pending push) - feat(nutrition): my-meals history tab (save from past searches)
 
 ## What just happened (read first)
 
-### Next-Meal Phase 3: recipe book + session memory (2026-07-08, LATEST)
+### Next-Meal: "My meals" (recipe book + history tab) (2026-07-08, LATEST)
+
+Pedro asked to see past searches and save a meal from them, and to rename the
+recipe book to something that holds both history and saved recipes.
+
+- **Rename:** "Recipe book" → **"My meals"**. `RecipeBookModal.tsx` deleted,
+  replaced by `app/client/MyMealsModal.tsx` with two tabs:
+  - **Saved** = the recipe book (search / meal-type filter / expand / "I made
+    this" / Remove) - same as before.
+  - **Recent** = the last 3 `next_meal_sessions`, grouped by search (meal type ·
+    time · craving), each showing its generated meals. Any past meal has **Save**
+    (→ recipes, deduped against already-saved via a `savedNames` set) and
+    **"I made this"** (→ pt_nutrition_logs).
+- **Schema:** migration `next_meal_sessions_store_meals` adds a `meals` jsonb
+  column. `NextMealModal.generate()` now stores the full `meals` array on the
+  session (previously only meal_type/ingredients/craving), so history is
+  revisitable and savable.
+- NutritionTab: the entry button is now "My meals" (`showMyMeals`).
+- **Bug fixed:** `savedNames` did `r.name.toLowerCase()` and could crash on an
+  undefined name; guarded with `(r.name ?? '')`. (Surfaced via the probe; the DB
+  column is NOT NULL so production was safe, but the guard is correct.)
+
+Verified via throwaway probe + Playwright at 390px (network stubbed): both tabs,
+Recent shows grouped searches, and **saving a past meal from Recent moves it into
+Saved** (Saved count 1 → 2, dedup shows already-saved as "Saved"). tsc + build pass.
+
+### Next-Meal Phase 3: recipe book + session memory (2026-07-08)
 
 Source of truth: `docs/next-meal/README.md` (all 3 phases now shipped).
 

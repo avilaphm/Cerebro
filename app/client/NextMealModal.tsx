@@ -393,10 +393,10 @@ export default function NextMealModal({ clientId, onClose, onLogged }: Props) {
       setGenContext(data.context ?? null);
       setExpandedMeal(null);
       setStep('options');
-      // Store this generation as session memory (v1: stored only). Fire-and-forget.
+      // Store this generation as session memory / history. Fire-and-forget.
       void supabase
         .from('next_meal_sessions')
-        .insert({ client_id: clientId, meal_type: mealType, ingredients: list, craving: craving.trim() || null })
+        .insert({ client_id: clientId, meal_type: mealType, ingredients: list, craving: craving.trim() || null, meals: data.meals })
         .select('id')
         .single()
         .then(({ data: row }) => { if (row?.id) sessionIdRef.current = row.id as string; });

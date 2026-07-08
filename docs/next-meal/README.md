@@ -10,8 +10,8 @@ generation work.
 - **PRD:** Google Doc "Help Me With My Next Meal" (Pedro's). This doc is the
   engineering source of truth and supersedes the PRD where they differ.
 - **Status:** All three phases **shipped** (detection + confirmation, generation +
-  logging, recipe book + session memory). The build is feature-complete; remaining
-  items are a real-device pass and optional v2 ideas (see §8).
+  logging, "My meals" = recipe book + history). The build is feature-complete;
+  remaining items are a real-device pass and optional v2 ideas (see §8).
 
 Status legend: ✅ done · 🔜 next · ⏳ later · ⚠️ decision/limitation
 
@@ -60,7 +60,7 @@ whether anything is logged today.
 | --- | --- | --- |
 | **1. Detection & confirmation** | Entry point, meal-type step, in-app camera capture, AI ingredient detection, confirmation (chips, add, staples, craving, yes/no cards) | ✅ shipped |
 | **2. Generation & logging** | Generation edge function (full context payload + modes), 5 option cards, "I made this" → tracker, single-card regen, craving re-ask | ✅ shipped |
-| **3. Recipe book & memory** | `recipes` table, Recipe Book (search, filter, save/remove, "I made this"), generation-session memory | ✅ shipped |
+| **3. My meals (recipe book + history)** | `recipes` table, "My meals" with **Saved** (search/filter/save/remove/"I made this") and **Recent** (last 3 searches, save any past idea), session memory storing the generated meals | ✅ shipped |
 
 ---
 
@@ -84,10 +84,11 @@ only Phase 3 adds new tables.
   calories, protein, carbs, fat, prep_time, ingredients (jsonb), steps (jsonb),
   source, created_at`. RLS: admin-full + client owns own (insert/read/delete),
   mirrors `pt_nutrition_logs`.
-- `next_meal_sessions` - generation-session memory: `id, client_id, meal_type,
-  ingredients (jsonb), craving, chosen_option (jsonb), created_at`. Inserted on
-  each generation; `chosen_option` set when the client logs/saves an option.
-  v1 stores only (personalization signal for later). Same RLS pattern.
+- `next_meal_sessions` - generation-session memory / **history**: `id, client_id,
+  meal_type, ingredients (jsonb), craving, meals (jsonb, the generated options),
+  chosen_option (jsonb), created_at`. Inserted on each generation (with the full
+  `meals` list so history is revisitable); `chosen_option` set when the client
+  logs/saves. The "Recent" tab reads the last 3. Same RLS pattern.
 
 ---
 
@@ -111,7 +112,7 @@ Nutrition tab
 | --- | --- |
 | `app/client/NutritionTab.tsx` | Entry point - two equal-weight buttons; renders `NextMealModal` |
 | `app/client/NextMealModal.tsx` | The whole flow (meal type → camera → analyze → confirm → options → logged); Save-to-book bookmark + session memory |
-| `app/client/RecipeBookModal.tsx` | Recipe Book: load, search, meal-type filter, expandable cards, "I made this" + "Remove", empty state |
+| `app/client/MyMealsModal.tsx` | "My meals": **Saved** tab (search/filter/expand/"I made this"/"Remove") + **Recent** tab (last 3 searches from `next_meal_sessions`, save/log any past suggested meal) |
 | `supabase/functions/detect-fridge-ingredients/index.ts` | Vision edge function; returns `{ ok, ingredients:[{name,category,confidence}] }` |
 | `supabase/functions/suggest-next-meal/index.ts` | Generation edge function; loads targets/remaining/foods_to_avoid, returns 5 meals + context |
 | migration `next_meal_recipe_book` | Creates `recipes` + `next_meal_sessions` tables and their RLS |
@@ -166,25 +167,31 @@ the ML-assessment / Studio cameras already in the repo.)
   (single-card regen, `count:1` + `exclude` current names), and a **craving
   re-ask** ("New options" regenerates all 5 excluding the current set).
 
-### Phase 3 (recipe book + session memory) ✅
-- Migration `next_meal_recipe_book`: `recipes` + `next_meal_sessions` tables + RLS.
+### Phase 3 (My meals: recipe book + history) ✅
+- Migrations `next_meal_recipe_book` (tables + RLS) and
+  `next_meal_sessions_store_meals` (adds `meals` jsonb so history is revisitable).
 - **Save** bookmark on each option card in `NextMealModal` → insert into `recipes`
   (source `generated`); idempotent per session (a `savedNames` set + filled/disabled
   bookmark state).
-- **`RecipeBookModal`** (opened from a "Recipe book" button under the two nutrition
-  actions): loads the client's recipes, search (name/description/ingredient),
-  meal-type filter chips, expandable cards, **"I made this"** → `pt_nutrition_logs`
-  (refreshes tracker), **"Remove"** → delete row. Friendly empty state with a
-  "Find a meal" button that opens the flow.
-- **Session memory:** each generation inserts a `next_meal_sessions` row
-  (meal_type, ingredients, craving); `chosen_option` is set when the client logs or
-  saves an option. Stored only in v1.
+- **`MyMealsModal`** (opened from a "My meals" button under the two nutrition
+  actions), two tabs:
+  - **Saved** - the recipe book: search (name/description/ingredient), meal-type
+    filter chips, expandable cards, **"I made this"** → `pt_nutrition_logs`
+    (refreshes tracker), **"Remove"** → delete. Friendly empty state.
+  - **Recent** - the last 3 searches from `next_meal_sessions`, grouped by search
+    (meal type · time · craving), each with its generated meals. Any past meal has
+    **Save** (→ recipe book, deduped against already-saved) and **"I made this"**.
+- **Session memory:** each generation inserts a `next_meal_sessions` row with
+  meal_type, ingredients, craving, **and the generated `meals`**; `chosen_option`
+  is set when the client logs or saves. Powers the Recent tab now; a personalization
+  signal later.
 
 **Verified:** tsc + production build pass. Whole flow (meal type → in-app camera →
 analyze → confirm yes/no cards → 5 options → expand recipe → Save bookmark → "I made
-this") and the Recipe Book (load, "3 saved", search, meal-type filter, expand,
-I-made-this/Remove) confirmed at 390px via a throwaway probe + Playwright, with
-getUserMedia (canvas stream) and the network calls stubbed.
+this") and "My meals" (Saved: "3 saved", search, filter, expand, I-made-this/Remove;
+Recent: last searches grouped, and **saving a past meal moves it into Saved** with
+dedup) confirmed at 390px via a throwaway probe + Playwright, with getUserMedia
+(canvas stream) and the network calls stubbed.
 
 ---
 

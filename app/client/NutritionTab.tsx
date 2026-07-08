@@ -18,7 +18,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { createClient } from '@/utils/supabase/client';
 import NutritionChatModal from './NutritionChatModal';
 import NextMealModal from './NextMealModal';
-import RecipeBookModal from './RecipeBookModal';
+import MyMealsModal from './MyMealsModal';
 
 interface FoodItem {
   name: string;
@@ -496,7 +496,7 @@ export default function NutritionTab({ clientId }: Props) {
   const [loading, setLoading] = useState(true);
   const [showLogModal, setShowLogModal] = useState(false);
   const [showNextMeal, setShowNextMeal] = useState(false);
-  const [showRecipeBook, setShowRecipeBook] = useState(false);
+  const [showMyMeals, setShowMyMeals] = useState(false);
   const [nutritionJourneyExpanded, setNutritionJourneyExpanded] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deletedEntries, setDeletedEntries] = useState<DeletedEntry[]>([]);
@@ -762,11 +762,11 @@ export default function NutritionTab({ clientId }: Props) {
       <div className="mx-auto max-w-5xl">
         <button
           type="button"
-          onClick={() => setShowRecipeBook(true)}
+          onClick={() => setShowMyMeals(true)}
           className="group flex w-full items-center justify-center gap-2 border border-black/10 bg-white px-5 py-2.5 text-[0.7rem] font-medium text-black/50 transition-colors hover:border-black/25 hover:text-black"
         >
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M5 3h10v14l-5-3-5 3V3z" /></svg>
-          Recipe book
+          My meals
         </button>
       </div>
 
@@ -987,12 +987,12 @@ export default function NutritionTab({ clientId }: Props) {
         />
       )}
 
-      {showRecipeBook && (
-        <RecipeBookModal
+      {showMyMeals && (
+        <MyMealsModal
           clientId={clientId}
-          onClose={() => setShowRecipeBook(false)}
+          onClose={() => setShowMyMeals(false)}
           onLogged={() => void loadLogs(selectedDate)}
-          onStartFlow={() => { setShowRecipeBook(false); setShowNextMeal(true); }}
+          onStartFlow={() => { setShowMyMeals(false); setShowNextMeal(true); }}
         />
       )}
     </div>
