@@ -9,8 +9,9 @@ generation work.
 - **Surface:** client portal → Nutrition tab (`/client`)
 - **PRD:** Google Doc "Help Me With My Next Meal" (Pedro's). This doc is the
   engineering source of truth and supersedes the PRD where they differ.
-- **Status:** Phase 1 (detection + confirmation) and Phase 2 (generation + logging)
-  **shipped**. Phase 3 (recipe book) is next.
+- **Status:** All three phases **shipped** (detection + confirmation, generation +
+  logging, recipe book + session memory). The build is feature-complete; remaining
+  items are a real-device pass and optional v2 ideas (see §8).
 
 Status legend: ✅ done · 🔜 next · ⏳ later · ⚠️ decision/limitation
 
@@ -59,7 +60,7 @@ whether anything is logged today.
 | --- | --- | --- |
 | **1. Detection & confirmation** | Entry point, meal-type step, in-app camera capture, AI ingredient detection, confirmation (chips, add, staples, craving, yes/no cards) | ✅ shipped |
 | **2. Generation & logging** | Generation edge function (full context payload + modes), 5 option cards, "I made this" → tracker, single-card regen, craving re-ask | ✅ shipped |
-| **3. Recipe book & memory** | `recipes` table, Recipe Book tab (grid/list, search, filter, save/remove, "I made this"), generation-session memory | 🔜 next |
+| **3. Recipe book & memory** | `recipes` table, Recipe Book (search, filter, save/remove, "I made this"), generation-session memory | ✅ shipped |
 
 ---
 
@@ -78,8 +79,15 @@ only Phase 3 adds new tables.
 | **Recent meals** (avoid repeats) | `pt_nutrition_logs`, last 2-3 days | |
 | **Vision** (photo → items / macros) | reuse the `log-nutrition-batch` Claude pipeline | model `claude-sonnet-4-6` |
 
-**New persistence - Phase 3 only:** a `recipes` table (recipe book) and a small
-generation-session memory table.
+**New persistence (Phase 3, shipped):**
+- `recipes` - saved recipe book rows: `id, client_id, name, description, meal_type,
+  calories, protein, carbs, fat, prep_time, ingredients (jsonb), steps (jsonb),
+  source, created_at`. RLS: admin-full + client owns own (insert/read/delete),
+  mirrors `pt_nutrition_logs`.
+- `next_meal_sessions` - generation-session memory: `id, client_id, meal_type,
+  ingredients (jsonb), craving, chosen_option (jsonb), created_at`. Inserted on
+  each generation; `chosen_option` set when the client logs/saves an option.
+  v1 stores only (personalization signal for later). Same RLS pattern.
 
 ---
 
@@ -102,9 +110,11 @@ Nutrition tab
 | File | Role |
 | --- | --- |
 | `app/client/NutritionTab.tsx` | Entry point - two equal-weight buttons; renders `NextMealModal` |
-| `app/client/NextMealModal.tsx` | The whole flow (meal type → camera → analyze → confirm → options → logged) |
+| `app/client/NextMealModal.tsx` | The whole flow (meal type → camera → analyze → confirm → options → logged); Save-to-book bookmark + session memory |
+| `app/client/RecipeBookModal.tsx` | Recipe Book: load, search, meal-type filter, expandable cards, "I made this" + "Remove", empty state |
 | `supabase/functions/detect-fridge-ingredients/index.ts` | Vision edge function; returns `{ ok, ingredients:[{name,category,confidence}] }` |
 | `supabase/functions/suggest-next-meal/index.ts` | Generation edge function; loads targets/remaining/foods_to_avoid, returns 5 meals + context |
+| migration `next_meal_recipe_book` | Creates `recipes` + `next_meal_sessions` tables and their RLS |
 | `app/client/NutritionChatModal.tsx` | (Reference) existing food logger - camera/voice/compression patterns were ported from here |
 | `supabase/functions/log-nutrition-batch/index.ts` | (Reference) existing vision + auth + CORS pattern the edge function mirrors |
 | `supabase/functions/generate-nutrition-programme/index.ts` | (Reference) the admin-OR-owner `authorizeClient` pattern used for auth |
@@ -156,9 +166,25 @@ the ML-assessment / Studio cameras already in the repo.)
   (single-card regen, `count:1` + `exclude` current names), and a **craving
   re-ask** ("New options" regenerates all 5 excluding the current set).
 
-**Verified:** tsc + production build pass; camera overlay (shutter, thumbnails,
-count, Done) and confirm yes/no cards visually confirmed at 390px via a throwaway
-probe + Playwright (getUserMedia stubbed with a canvas stream, detection stubbed).
+### Phase 3 (recipe book + session memory) ✅
+- Migration `next_meal_recipe_book`: `recipes` + `next_meal_sessions` tables + RLS.
+- **Save** bookmark on each option card in `NextMealModal` → insert into `recipes`
+  (source `generated`); idempotent per session (a `savedNames` set + filled/disabled
+  bookmark state).
+- **`RecipeBookModal`** (opened from a "Recipe book" button under the two nutrition
+  actions): loads the client's recipes, search (name/description/ingredient),
+  meal-type filter chips, expandable cards, **"I made this"** → `pt_nutrition_logs`
+  (refreshes tracker), **"Remove"** → delete row. Friendly empty state with a
+  "Find a meal" button that opens the flow.
+- **Session memory:** each generation inserts a `next_meal_sessions` row
+  (meal_type, ingredients, craving); `chosen_option` is set when the client logs or
+  saves an option. Stored only in v1.
+
+**Verified:** tsc + production build pass. Whole flow (meal type → in-app camera →
+analyze → confirm yes/no cards → 5 options → expand recipe → Save bookmark → "I made
+this") and the Recipe Book (load, "3 saved", search, meal-type filter, expand,
+I-made-this/Remove) confirmed at 390px via a throwaway probe + Playwright, with
+getUserMedia (canvas stream) and the network calls stubbed.
 
 ---
 
@@ -174,32 +200,30 @@ probe + Playwright (getUserMedia stubbed with a canvas stream, detection stubbed
 - **Reuse over invention:** vision/auth/CORS from `log-nutrition-batch`; camera +
   voice + compression from `NutritionChatModal`; auth pattern from
   `generate-nutrition-programme`.
-- Full engineering post-mortems: `session-logs/learning-log.md` entries 079 & 080.
+- Full engineering post-mortems: `session-logs/learning-log.md` entries 079, 080,
+  082, 083.
 
 ---
 
-## 8. What's next 🔜
+## 8. Feature complete + what's next 🔜
 
-Phase 2 (generation + logging) is ✅ shipped - see §6. Next is Phase 3.
+All three phases are shipped. The remaining work is a real-device pass and
+optional v2 polish.
 
-### Phase 3 - recipe book & memory 🔜
-- `recipes` table: `id, client_id, name, description, meal_type, calories, protein,
-  carbs, fat, prep_time, ingredients (jsonb), steps (jsonb), source, created_at`.
-- Recipe Book tab in Nutrition: grid/list, search, meal-type filter, save
-  (idempotent), remove, "I made this".
-- Generation-session memory table (meal type, confirmed ingredients, chosen
-  option) - stored in v1, used as a personalization signal later.
-
-### Known gaps / open items ⚠️
-- **Real-device pass on Pedro's phone** is the outstanding test: iOS Safari
-  `getUserMedia` (camera) and a live detect → generate → "I made this" round trip
-  as the actual client. Phases 1 and 2 were verified with a stubbed probe, not a
-  real client session end to end.
-- The feature is **live to clients** and now fully functional (no interim screen).
-  Gate/hide the button in `NutritionTab` if it shouldn't be visible yet.
-- Allergy safety relies on `foods_to_avoid` being passed to `suggest-next-meal`
+### Must do before relying on it ⚠️
+- **Real-device pass on Pedro's phone**, logged in as the actual client: iOS
+  Safari `getUserMedia` (the in-app camera) and a live detect → generate →
+  Save/"I made this" round trip. Everything was verified with a stubbed probe, not
+  a real client session end to end.
+- **Allergy safety** relies on `foods_to_avoid` being passed to `suggest-next-meal`
   (it is, with a "NEVER include" instruction). Spot-check it holds for a client
   with a real allergy before trusting it for hard allergies.
-- Autocomplete uses a small hardcoded ingredient list (fine for v1).
-- No recipe persistence yet (Phase 3); a suggestion only survives if the client
-  taps "I made this" (which logs it) - otherwise it's gone on close.
+- The feature is **live to clients**. Gate/hide the two buttons in `NutritionTab`
+  if it shouldn't be visible yet.
+
+### Optional v2 ideas ⏳
+- Use `next_meal_sessions` as a personalization signal (v1 only stores it).
+- Autocomplete from a real ingredient source instead of the hardcoded list.
+- De-dupe recipe saves across sessions (currently idempotent per session only).
+- "I made this" from a recipe could deduct/scale portions; today it logs the
+  recipe's stored per-serving macros as-is.

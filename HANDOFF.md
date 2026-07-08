@@ -1,14 +1,43 @@
 # Handoff
 
 ## Last updated
-2026-07-07 by Claude - Shipped Next-Meal Phase 2 (generation + logging): suggest-next-meal edge function (remaining-macro aware, full-day vs gap-fill modes), 5 option cards with expandable recipes, "I made this" logging into pt_nutrition_logs, single-card Swap, craving re-ask. Feature doc docs/next-meal/README.md updated. Codex's Weekly Tonnage work below untouched.
+2026-07-08 by Claude - Shipped Next-Meal Phase 3 (recipe book + session memory): recipes + next_meal_sessions tables with RLS, Save bookmark on option cards, RecipeBookModal (search/filter/expand/I-made-this/remove), session memory on each generation. "Help me with my next meal" is now feature-complete (all 3 phases). Only a real-device pass remains. Source of truth: docs/next-meal/README.md.
 
 ## Last code fix commit
-6684496 - feat(nutrition): next-meal phase 2 generation
+(pending push) - feat(nutrition): next-meal phase 3 recipe book
 
 ## What just happened (read first)
 
-### Next-Meal Phase 2: generation + logging (2026-07-07, LATEST)
+### Next-Meal Phase 3: recipe book + session memory (2026-07-08, LATEST)
+
+Source of truth: `docs/next-meal/README.md` (all 3 phases now shipped).
+
+Final phase of "Help me with my next meal":
+- Migration `next_meal_recipe_book` (applied): `recipes` and `next_meal_sessions`
+  tables + RLS. RLS mirrors `pt_nutrition_logs` exactly: admin-full (Pedro emails
+  or profiles.role='admin') + client owns own (insert/read/delete;
+  next_meal_sessions also update). Confirmed pt_nutrition_logs already has a
+  `client_insert_own` policy, so Phase 2's "I made this" works for real clients.
+- `NextMealModal`: **Save** bookmark on each option card → insert into `recipes`
+  (source `generated`), idempotent per session (savedNames set + filled state).
+  Each generation inserts a `next_meal_sessions` row (meal_type, ingredients,
+  craving); `chosen_option` set on log/save.
+- `app/client/RecipeBookModal.tsx` (new): full-screen recipe book opened from a
+  "Recipe book" button under the two nutrition actions. Loads the client's
+  recipes, search (name/desc/ingredient), meal-type filter chips, expandable
+  cards, "I made this" → pt_nutrition_logs (refreshes tracker), "Remove" → delete,
+  friendly empty state with a "Find a meal" button.
+
+Verified via throwaway probe + Playwright at 390px (getUserMedia + network calls
+stubbed): full flow incl. Save bookmark toggling to saved, and the Recipe Book
+(3 saved, search filters to "yoghurt", Breakfast filter shows only the omelette,
+expand shows ingredients/steps, I-made-this/Remove render). tsc + build pass.
+
+NEXT: nothing required to ship - feature-complete. Outstanding: a real-device
+pass on Pedro's phone (iOS getUserMedia + live models as the actual client) and an
+allergy spot-check. Optional v2 ideas in docs/next-meal/README.md §8.
+
+### Next-Meal Phase 2: generation + logging (2026-07-07)
 
 Source of truth: `docs/next-meal/README.md` (updated - Phases 1 & 2 now shipped).
 

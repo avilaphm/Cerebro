@@ -161,6 +161,9 @@ export default function NextMealModal({ clientId, onClose, onLogged }: Props) {
   const [regenIndex, setRegenIndex] = useState<number | null>(null);
   const [loggingName, setLoggingName] = useState<string | null>(null);
   const [loggedName, setLoggedName] = useState<string | null>(null);
+  const [savedNames, setSavedNames] = useState<Set<string>>(new Set());
+  const [savingName, setSavingName] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -390,10 +393,50 @@ export default function NextMealModal({ clientId, onClose, onLogged }: Props) {
       setGenContext(data.context ?? null);
       setExpandedMeal(null);
       setStep('options');
+      // Store this generation as session memory (v1: stored only). Fire-and-forget.
+      void supabase
+        .from('next_meal_sessions')
+        .insert({ client_id: clientId, meal_type: mealType, ingredients: list, craving: craving.trim() || null })
+        .select('id')
+        .single()
+        .then(({ data: row }) => { if (row?.id) sessionIdRef.current = row.id as string; });
     } catch {
       setError('Something went wrong building your options. Please try again.');
       setStep(opts?.fromOptions ? 'options' : 'confirm');
     }
+  };
+
+  // Record which option the client acted on, onto the current session row.
+  const recordChosen = (meal: MealOption) => {
+    if (!sessionIdRef.current) return;
+    void supabase
+      .from('next_meal_sessions')
+      .update({ chosen_option: { name: meal.name, calories: meal.calories, meal_type: mealType } })
+      .eq('id', sessionIdRef.current);
+  };
+
+  // Save an option into the recipe book. Idempotent per session via savedNames.
+  const saveMeal = async (meal: MealOption) => {
+    if (savingName || savedNames.has(meal.name)) return;
+    setSavingName(meal.name);
+    const { error: insErr } = await supabase.from('recipes').insert({
+      client_id: clientId,
+      name: meal.name,
+      description: meal.description || null,
+      meal_type: mealType,
+      calories: meal.calories,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fat: meal.fat,
+      prep_time: meal.prepTimeMinutes,
+      ingredients: meal.ingredients,
+      steps: meal.steps,
+      source: 'generated',
+    });
+    setSavingName(null);
+    if (insErr) { setError('Could not save that recipe. Please try again.'); return; }
+    setSavedNames((prev) => new Set(prev).add(meal.name));
+    recordChosen(meal);
   };
 
   // Swap a single card for a fresh option, keeping the rest.
@@ -447,6 +490,7 @@ export default function NextMealModal({ clientId, onClose, onLogged }: Props) {
       return;
     }
     setLoggedName(meal.name);
+    recordChosen(meal);
     onLogged?.();
     setStep('done');
   };
@@ -891,7 +935,7 @@ export default function NextMealModal({ clientId, onClose, onLogged }: Props) {
                     </div>
                   )}
 
-                  <div className="flex gap-2 border-t border-black/8 px-3 py-2.5">
+                  <div className="flex items-center gap-2 border-t border-black/8 px-3 py-2.5">
                     <button
                       type="button"
                       onClick={() => void logMeal(m)}
@@ -899,6 +943,19 @@ export default function NextMealModal({ clientId, onClose, onLogged }: Props) {
                       className="flex-1 rounded-full bg-black py-2.5 text-[0.72rem] font-medium text-white transition-opacity disabled:opacity-40"
                     >
                       {loggingName === m.name ? 'Logging…' : 'I made this'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void saveMeal(m)}
+                      disabled={savingName === m.name || savedNames.has(m.name)}
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors disabled:opacity-100 ${
+                        savedNames.has(m.name) ? 'border-black bg-black text-white' : 'border-black/12 bg-white text-black/45 hover:border-black/30'
+                      }`}
+                      aria-label={savedNames.has(m.name) ? 'Saved to recipe book' : 'Save to recipe book'}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 20 20" fill={savedNames.has(m.name) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6">
+                        <path d="M5 3h10v14l-5-3-5 3V3z" />
+                      </svg>
                     </button>
                     <button
                       type="button"
