@@ -717,6 +717,15 @@ export default function PTSessionsView({
       })
       .catch((error: unknown) => {
         console.warn('Exercise classification request failed', error);
+      })
+      .finally(() => {
+        void supabase.functions
+          .invoke('compute-client-tonnage', {
+            body: { client_id: selectedClient.id },
+          })
+          .catch((error: unknown) => {
+            console.warn('Tonnage recompute request failed', error);
+          });
       });
 
     const sessionSummary = rows

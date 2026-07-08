@@ -4546,6 +4546,7 @@ this commit - Reorder PT programmes and collapse templates
 Dashboard and client portal use the liquid glass design direction from the Claude Design handoff bundle, with the client portal refined toward a lighter premium coaching cockpit.
 
 Shipped most recently:
+- Weekly tonnage Phase 2 is live for client profiles and the client app overview. Added `weekly_tonnage`, deployed `compute-client-tonnage`, and added the shared `TonnageSummaryCard`. Client overview now shows "You moved" below Workout and above Nutrition. Pedro's client profile Progress column now shows the same previous-week and month-to-date card. Client workout saves and coach PT Session saves now trigger a background recompute after exercise classification. Live smoke test on Stephen Layfield returned previous week 55,327 kg and month-to-date 63,164 kg, and REST verified cached rows for weeks starting 2026-06-29 and 2026-07-06.
 - Programme phase builder reliability update: `rebuild-programme-phase` v5 now has a deterministic fallback writer. If the AI writer times out or returns incomplete JSON, the function still returns an editable phase draft using the selected phase, requested day count, Big 5 spread, safe superset rules, and existing week blocks. The builder UI now shows an in-progress percentage bar, and the voice button preflights microphone access with clearer Chrome permission guidance.
 - Fixed phase rebuild generation timing out after context loading. `rebuild-programme-phase` v4 now sends a smaller writer prompt, removes web-search tools from the writer call, caps writer output/time, stores timeout failures cleanly, and returns handled generation errors as JSON the UI can show. Two stale timed-out phase rebuild runs were marked failed in `pt_program_generation_runs`.
 - Programme phase rebuild UI now keeps disabled agent buttons readable on the light programme editor surface. The live `rebuild-programme-phase` Edge Function now tells the chat/writer agent not to pair two big/main lifts in one superset by default and also enforces that during assembly by splitting a second main lift into its own superset id. Deployed `rebuild-programme-phase` v3 on Supabase project `otcnrkfvgyvwolironoz`.
@@ -4617,6 +4618,7 @@ Recent shipped surfaces include:
 
 ## Known Notes
 - Do not run `supabase db push`. Remote migration history is ahead of local. Use `supabase db query` or MCP migration paths.
+- Supabase CLI linked queries can hit temp-role auth failures on the pooler. If the migration/function already succeeded, verify table state through the REST API with the service role key instead of retrying `supabase db query` repeatedly.
 - Full repo lint has pre-existing failures outside recent work. Prefer targeted build/type verification.
 - Pre-commit hook rejects em dashes in markdown files. Use plain hyphens.
 - Supabase Cron job `pt-booking-weekly-reminders` is active on project `otcnrkfvgyvwolironoz` with schedule `0 22 * * 4`, which maps to Friday morning Sydney time in the current timezone.

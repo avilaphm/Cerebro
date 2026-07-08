@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Check, Loader2, Mic, Play, Save, Square } from 'lucide-react';
+import TonnageSummaryCard from '@/components/pt/TonnageSummaryCard';
 import { createClient } from '@/utils/supabase/client';
 import {
   computeAdherenceSnapshot,
@@ -2972,6 +2973,8 @@ export default function PTClientDetail({
                 <p className="mt-3 text-sm text-black/45">No metrics logged yet.</p>
               )}
             </div>
+
+            <TonnageSummaryCard clientId={client.id} variant="coach" />
 
             <div className="border border-black/10 px-6 py-5">
               <p className="text-[0.6rem] uppercase tracking-[0.16em] text-black/35">Progress snapshot</p>

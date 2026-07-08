@@ -5,6 +5,7 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Dumbbell, Home, Mic, Mic
 import { AnimatePresence, motion } from 'framer-motion';
 import { computeAdherenceSnapshot, getGoalProgressLabel, latestMetricPair, monthEndInputValue, monthStartInputValue } from '@/utils/pt/coaching';
 import { createClient } from '@/utils/supabase/client';
+import TonnageSummaryCard from '@/components/pt/TonnageSummaryCard';
 import TopUpModal from './TopUpModal';
 import {
   CANONICAL_SECTION_ORDER,
@@ -1756,6 +1757,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       })
       .catch((error: unknown) => {
         console.warn('Exercise classification request failed', error);
+      })
+      .finally(() => {
+        void supabase.functions
+          .invoke('compute-client-tonnage', {
+            body: { client_id: client.id },
+          })
+          .catch((error: unknown) => {
+            console.warn('Tonnage recompute request failed', error);
+          });
       });
 
     const linkedPlanItem = currentWeeklyPlanItems.find((item) =>
@@ -3410,6 +3420,12 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
           </div>
         </button>
       </div>
+
+      {client && (
+        <div className="mx-auto max-w-5xl">
+          <TonnageSummaryCard clientId={client.id} />
+        </div>
+      )}
 
       {client && (
         <div className="mx-auto max-w-5xl">
