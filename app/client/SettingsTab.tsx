@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, LogOut } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
 interface MetricDraft {
@@ -85,17 +85,21 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
   const [wrapUpEmail, setWrapUpEmail] = useState(true);
   const [wrapUpSaving, setWrapUpSaving] = useState(false);
   const [wrapUpMsg, setWrapUpMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutMsg, setSignOutMsg] = useState<string | null>(null);
 
   const profileMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pwMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const metricMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapUpMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const signOutMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (profileMsgTimer.current) clearTimeout(profileMsgTimer.current);
     if (pwMsgTimer.current) clearTimeout(pwMsgTimer.current);
     if (metricMsgTimer.current) clearTimeout(metricMsgTimer.current);
     if (wrapUpMsgTimer.current) clearTimeout(wrapUpMsgTimer.current);
+    if (signOutMsgTimer.current) clearTimeout(signOutMsgTimer.current);
   }, []);
 
   useEffect(() => {
@@ -261,6 +265,21 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
     }
   };
 
+  const signOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    setSignOutMsg(null);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setSigningOut(false);
+      setSignOutMsg(error.message);
+      if (signOutMsgTimer.current) clearTimeout(signOutMsgTimer.current);
+      signOutMsgTimer.current = setTimeout(() => setSignOutMsg(null), 4000);
+      return;
+    }
+    window.location.replace('/client-login');
+  };
+
   const inputCls = 'w-full border border-black/10 bg-white px-3 py-3 text-sm outline-none focus:border-black/35 transition-colors';
   const labelCls = 'block text-[0.62rem] uppercase tracking-[0.13em] text-black/40 mb-1';
 
@@ -415,6 +434,27 @@ export default function SettingsTab({ clientId, userEmail }: Props) {
         {wrapUpMsg && (
           <p className={`mt-3 text-xs ${wrapUpMsg.ok ? 'text-green-600' : 'text-red-500'}`}>{wrapUpMsg.text}</p>
         )}
+      </section>
+
+      {/* Session */}
+      <section className="border border-black/10 bg-white p-5">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-black/35">Session</p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Signed in</p>
+            <p className="mt-0.5 truncate text-xs text-black/45">{userEmail}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            disabled={signingOut}
+            className="inline-flex w-full items-center justify-center gap-2 border border-black/15 bg-white px-4 py-3 text-sm text-black/60 transition-colors hover:border-black hover:text-black disabled:opacity-40 sm:w-auto"
+          >
+            <LogOut className="h-4 w-4" />
+            {signingOut ? 'Signing out...' : 'Log out'}
+          </button>
+        </div>
+        {signOutMsg && <p className="mt-3 text-xs text-red-500">{signOutMsg}</p>}
       </section>
 
     </div>
