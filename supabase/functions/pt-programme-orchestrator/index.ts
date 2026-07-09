@@ -482,7 +482,7 @@ async function stageSynthesize(ctx: StageCtx) {
   // Final validation step.
   await setCommand(ctx, STEP_NAMES[5]);
   const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
-  const validationStep = await callAgent(ctx, 'programme-validation-agent', { programme, emphasis, constraints });
+  const validationStep = await callAgent(ctx, 'programme-validation-agent', { programme, emphasis, constraints, coach_directive: coachDirective, intent: body.intent });
   await recordStep(ctx, 6 + methodologyPhases.length, STEP_NAMES[5], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
   if (!validationStep.ok) { await failRun(ctx, `Validation failed: ${validationStep.error}`); return; }
   const validation = validationStep.output as { passed: boolean; hard_failures: string[]; findings: string[] };

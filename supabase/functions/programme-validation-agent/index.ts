@@ -67,10 +67,17 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json() as { programme: Programme; emphasis?: { needs_cardio_block?: boolean; needs_mobility_block?: boolean } };
+    const body = await req.json() as {
+      programme: Programme;
+      emphasis?: { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
+      constraints?: { equipment?: string } | null;
+      intent?: 'journey' | 'one_off';
+      coach_directive?: string;
+    };
     const programme = body.programme;
     if (!programme || !Array.isArray(programme.phases)) return json({ error: 'programme.phases required' }, 400);
 
+    const bespoke = isBespoke(body.constraints, body.intent, body.coach_directive ?? '');
     const hard_failures: string[] = [];
     const findings: string[] = [];
 
@@ -199,17 +206,42 @@ Deno.serve(async (req) => {
       if (!hasMob) findings.push('ClientAnalysis flagged mobility_block but no Stretches section found in any phase.');
     }
 
+    // BESPOKE mode: the coach asked for something the fixed 5-phase Big-5 template can't
+    // express. Keep the one universal invariant hard (every exercise links to a real library
+    // id); demote the template rules (phase count, 3-day Foundation, Big-5 presence,
+    // week_blocks, Foundation slot/family rules) to non-blocking findings so the programme
+    // can still be published for review.
+    const isUniversal = (m: string) => /missing exercise_id/.test(m);
+    const finalHard = bespoke ? hard_failures.filter(isUniversal) : hard_failures;
+    const finalFindings = bespoke
+      ? [...findings, ...hard_failures.filter((m) => !isUniversal(m)).map((m) => `[bespoke, non-blocking] ${m}`)]
+      : findings;
+
     return json({
       ok: true,
-      passed: hard_failures.length === 0,
-      hard_failures,
-      findings,
+      passed: finalHard.length === 0,
+      hard_failures: finalHard,
+      findings: finalFindings,
     });
   } catch (error) {
     console.error('programme-validation-agent error:', error);
     return json({ error: error instanceof Error ? error.message : 'Validation failed' }, 500);
   }
 });
+
+// Must match the same-named helper in programme-synthesis-agent so the validator and the
+// builder agree on which programmes are bespoke.
+function isBespoke(
+  constraints: { equipment?: string } | null | undefined,
+  intent: string | undefined,
+  coachDirective: string,
+): boolean {
+  if (intent === 'one_off') return true;
+  const eq = constraints?.equipment;
+  if (eq && ['bodyweight', 'home_minimal', 'bands', 'travel'].includes(eq)) return true;
+  const t = coachDirective.toLowerCase();
+  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
+}
 
 function sectionFor(exercises: Exercise[], idx: number): string | null {
   for (let i = idx; i >= 0; i--) {
