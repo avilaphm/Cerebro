@@ -1062,10 +1062,11 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                     const dayBands = phase.days.map((d) => groupBands(d.exercises));
                     const maxBands = Math.max(1, ...dayBands.map((b) => b.length));
                     return (
+                  <div className="max-w-full overflow-x-auto pb-3">
                   <div
-                    className="grid gap-x-3"
+                    className="grid min-w-full items-start gap-x-3"
                     style={{
-                      gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(17rem, 1fr))`,
                       gridTemplateRows: `auto repeat(${maxBands}, auto)`,
                     }}
                   >
@@ -1076,7 +1077,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                         onDragLeave={() => setDragOverDay((current) => (current === di ? null : current))}
                         onDrop={(e) => { e.preventDefault(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di); setDragEx(null); setDragOverDay(null); }}
                         style={{ gridRow: `1 / span ${maxBands + 1}`, gridTemplateRows: 'subgrid' }}
-                        className={`grid rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
+                        className={`grid w-full min-w-0 max-w-full rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
                       >
                         <div className="mb-2 flex items-start justify-between gap-1 px-1">
                           <div className="min-w-0">
@@ -1099,9 +1100,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                               setDragEx(null);
                               setDragOverDay(null);
                             }}
-                            className={`flex flex-col gap-1.5 ${bi > 0 ? 'mt-2 border-t border-dashed border-black/15 pt-2' : ''}`}
+                            className={`flex min-w-0 max-w-full flex-col gap-1.5 ${bi > 0 ? 'mt-2 border-t border-dashed border-black/15 pt-2' : ''}`}
                           >
-                            {band[0].section_start && <p className="px-1 pb-0.5 text-[0.55rem] uppercase tracking-wider text-black/30">{band[0].section_start}</p>}
+                            {band[0].section_start && <p className="truncate px-1 pb-0.5 text-[0.55rem] uppercase tracking-wider text-black/30">{band[0].section_start}</p>}
                             {band.map((ex) => {
                               const isEditing = boardEditExId === ex.id;
                               const boardMatches = isEditing ? getBoardMatches(ex.name) : [];
@@ -1122,12 +1123,12 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                     setDragEx(null);
                                     setDragOverDay(null);
                                   }}
-                                  className={`relative rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${isEditing ? 'border-black/30' : dragEx?.exId === ex.id ? 'cursor-grab opacity-40 border-black/10' : 'cursor-grab border-black/10 hover:border-black/25'}`}
+                                  className={`relative box-border w-full max-w-full min-w-0 rounded border bg-white px-2 py-1.5 text-[0.7rem] shadow-sm transition ${isEditing ? 'border-black/30' : dragEx?.exId === ex.id ? 'cursor-grab opacity-40 border-black/10' : 'cursor-grab border-black/10 hover:border-black/25'}`}
                                 >
                                   {isEditing ? (
-                                    <div onMouseDown={(e) => e.stopPropagation()}>
-                                      <div className="flex items-center gap-1">
-                                        <div className="relative flex-1">
+                                    <div className="min-w-0" onMouseDown={(e) => e.stopPropagation()}>
+                                      <div className="flex min-w-0 items-center gap-1">
+                                        <div className="relative min-w-0 flex-1">
                                           <input
                                             autoFocus
                                             draggable={false}
@@ -1140,7 +1141,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                             className="w-full border border-black/20 bg-white px-1.5 py-0.5 text-[0.7rem] outline-none focus:border-black/40"
                                           />
                                           {boardMatches.length > 0 && (
-                                            <div className="exercise-autocomplete no-glass absolute left-0 top-full z-30 w-48 border border-black/15 shadow-md max-h-44 overflow-y-auto">
+                                            <div className="exercise-autocomplete no-glass absolute left-0 top-full z-30 max-h-44 w-48 max-w-[calc(100vw-2rem)] overflow-y-auto border border-black/15 shadow-md">
                                               {boardMatches.map((libEx) => (
                                                 <button
                                                   key={libEx.id}
@@ -1154,9 +1155,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                                     });
                                                     setBoardEditExId(null);
                                                   }}
-                                                  className="w-full text-left px-2 py-1.5 text-[0.7rem] hover:bg-black/5 flex items-baseline gap-1.5"
+                                                  className="flex w-full min-w-0 items-baseline gap-1.5 px-2 py-1.5 text-left text-[0.7rem] hover:bg-black/5"
                                                 >
-                                                  <span>{libEx.name}</span>
+                                                  <span className="min-w-0 flex-1 truncate">{libEx.name}</span>
                                                   {libEx.muscles.length > 0 && <span className="text-[0.6rem] text-black/30">{libEx.muscles.slice(0, 2).join(', ')}</span>}
                                                 </button>
                                               ))}
@@ -1176,9 +1177,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                     </div>
                                   ) : (
                                     <>
-                                      <div className="flex items-start gap-1.5 leading-tight">
+                                      <div className="flex min-w-0 flex-wrap items-start gap-1.5 leading-tight">
                                         <p
-                                          className="font-medium cursor-text hover:text-black/60"
+                                          className="min-w-0 flex-1 cursor-text break-words font-medium [overflow-wrap:anywhere] hover:text-black/60"
                                           onMouseDown={(e) => {
                                             e.preventDefault();
                                             e.stopPropagation();
@@ -1191,7 +1192,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                                           const p = resolvePattern(ex, libById);
                                           if (!p) return null;
                                           return (
-                                            <span className={`mt-px shrink-0 rounded-full px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] ring-1 ring-inset ${patternChipClass(p)}`}>
+                                            <span className={`mt-px max-w-full truncate rounded-full px-1.5 text-[0.48rem] font-medium uppercase tracking-wider leading-[1.8] ring-1 ring-inset ${patternChipClass(p)}`}>
                                               {p}
                                             </span>
                                           );
@@ -1210,6 +1211,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                         )}
                       </div>
                     ))}
+                  </div>
                   </div>
                     );
                   })()}
