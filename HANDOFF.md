@@ -1,12 +1,60 @@
 # Handoff
 
 ## Last updated
-2026-07-09 by Codex - Client app Settings now has a second logout button in a bottom Session section. It shows the signed-in email, uses a LogOut icon, disables while signing out, shows Supabase sign-out errors inline, and redirects to `/client-login`.
+2026-07-09 by Codex - Programming now supports manual one-week advancement from the client profile, PT Sessions delete/swap/set-count edits persist into the active programme before session deduction, and exercise search now uses a local token/fuzzy scorer so queries like `inclined` can find `incline`.
 
 ## Last code fix commit
-f1fd7bf - feat(client): add settings logout button
+627c1bb - feat(pt): persist session programme edits
 
 ## What just happened (read first)
+
+### PT programme week advance, global session edits, and exercise search (2026-07-09, LATEST)
+
+Pedro asked for three connected PT workflow fixes:
+- On the client profile under Programmes, move the active client programme one
+  week forward manually, e.g. Hypertrophy week 7 to week 8.
+- In PT Sessions, delete an exercise while tracking and have that change persist
+  globally to the client's active programme for next time.
+- Improve exercise search so word variants such as `inclined` find `incline`,
+  without adding an insecure dependency.
+
+Shipped in code commit `627c1bb`:
+- Added shared programme cursor helpers in `utils/pt/programme.ts`:
+  `getNextProgrammeCursor()`, `getPhaseProgressFromCursor()`, and cursor-aware
+  `getCursorUpdateAfterWorkout()`.
+- Client profile active programme rows now show current phase/block/week and an
+  `Advance 1 week` button. The button updates
+  `pt_program_assignments.current_phase_index/current_block_index/current_week`
+  and writes a `programme_position_changed` event.
+- Client portal and PT Sessions now respect the stored assignment cursor for the
+  active phase, so a manual advance changes the block/week-specific prescription
+  immediately instead of being pulled backward by older incomplete logs.
+- PT Sessions now has a trash icon per exercise. Deleted exercises are hidden
+  during the session with an undo chip, excluded from set logs, and removed from
+  `pt_program_assignments.programme` on `Finish Session`.
+- Existing PT Session swaps still persist, and set-count changes from Add/Remove
+  set now persist into the active programme too. For block-based programmes this
+  writes an exercise `week_overrides` entry for the current block; otherwise it
+  updates the exercise `sets`.
+- Programme edits are saved before booking/session credit deduction, preserving
+  the existing Finish Session ordering rule.
+- Added `utils/pt/exercise-search.ts`: local token scoring with normalization,
+  suffix variants (`inclined` -> `incline`), partial matching, typo tolerance,
+  and weighted fields. Wired into PT Sessions swap search, programme editors,
+  exercise manager, related exercise picker, and PT settings exercise search.
+- No new npm search package was added. GitHub research reviewed Fuse.js,
+  MiniSearch, and FlexSearch patterns, then used a local implementation to avoid
+  new supply-chain surface.
+
+Verification:
+- `npx tsc --noEmit` passes.
+- `npx eslint utils/pt/exercise-search.ts utils/pt/programme.ts` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is
+  deprecated in favour of proxy.
+- Targeted lint on large app files is still blocked by pre-existing React
+  compiler / lint issues in `ClientPortal.tsx`, `PTSessionsView.tsx`,
+  `PTClientDetail.tsx`, and programme editor files (`set-state-in-effect`,
+  purity, unused vars, unescaped text). These are not introduced by this change.
 
 ### Client Settings logout button (2026-07-09, LATEST)
 
