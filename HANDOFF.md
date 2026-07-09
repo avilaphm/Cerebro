@@ -1,12 +1,38 @@
 # Handoff
 
 ## Last updated
-2026-07-09 by Codex - Client workout journey weeks no longer sit inside a card-like background, the active week marker is smaller with a visible pulse, and nutrition programme creation no longer shows fake percentage progress that can stall at 94%.
+2026-07-10 by Claude - Started the approved "Intelligent, self-improving PT programme generation" project. Pillar A1 (unlock client documents) shipped: profile uploader now extracts + ingests text, analysis agents read more docs (ordered, movement-assessment first), movement agent emits physio_brief.
 
 ## Last code fix commit
-1908a2a - fix(client): polish journey and nutrition loading
+c4f1995 - PT gen A1: unlock client documents for generation + physio_brief
 
 ## What just happened (read first)
+
+### Intelligent PT programme generation - Pillar A1 (2026-07-10, LATEST)
+
+Big multi-session project. Plan file: `~/.claude/plans/ok-we-need-to-squishy-honey.md`.
+Root cause of "AI ignores my request + never reads my docs": the generator is a fixed
+periodization factory - `intake_text` reaches only 2 of 6 agents then is dropped;
+`programme-synthesis-agent` returns a hardcoded Big-5 template BEFORE its LLM prompt runs
+(dead code); the validator hard-fails anything non-standard; the client-profile uploader
+never extracted document text. Three pillars planned (A smart generation → B unified
+conversational entry point → C self-improving learning loop). Task board items #1-8.
+
+**A1 shipped in `c4f1995` (code complete, typechecked, pushed):**
+- `app/dashboard/pt/clients/[id]/PTClientDetail.tsx` `handleUpload`: extracts text
+  (PDF → `/api/pt/parse-pdf`, `.txt/.md` direct) and calls `ingest-client-intake`, plus a
+  doc-type selector. Live on push (Vercel).
+- `client-analysis-agent` + `movement-analysis-agent`: doc query now
+  `order(created_at desc).limit(12)` + movement_assessment floated first.
+- `movement-analysis-agent`: emits `physio_brief` (returned in response; CONSUMED in A2).
+
+**DEPLOY DRIFT (important):** the two agent source files are committed but NOT yet deployed
+to Supabase (ref `otcnrkfvgyvwolironoz`). Task #8 batches the edge-function deploy after A2
+wires physio_brief through the orchestrator, then runs `pt-pipeline-deploy-verify`. Do NOT
+tell Pedro the pipeline changes are live until deployed. Next up: A2 (thread
+coach_directive + constraints + physio_brief through the whole pipeline via the orchestrator).
+
+
 
 ### Client workout journey and nutrition loading polish (2026-07-09, LATEST)
 
