@@ -26,6 +26,7 @@ Go upstream from symptoms to root causes. Knee pain is often weak glutes. Lower 
 
 OUTPUT FORMAT: valid JSON only, this exact shape:
 {
+  "physio_brief": string,
   "muscle_mind_map": {
     "client_id": string,
     "primary_issues": [
@@ -58,6 +59,7 @@ OUTPUT FORMAT: valid JSON only, this exact shape:
 }
 
 RULES:
+- physio_brief: a 2-4 sentence plain-English summary a coach can read at a glance — the client's key movement issues, which muscles to strengthen vs lengthen, and what to emphasise or avoid in exercise selection. This text is fed directly to the exercise-selection and programme-building steps, so make it concrete and actionable, not generic.
 - Never leave a muscle unclassified. Every muscle is either weak or tight.
 - compound_readiness: low = injuries or movement quality concerns dominate; high = clean lifting history, ready for barbell compounds from day 1; medium = somewhere between.
 - overall_level: beginner = little consistent training history, unfamiliar with compound movements; intermediate = 1-2 years consistent training; advanced = 3+ years technically proficient.
@@ -89,10 +91,14 @@ Deno.serve(async (req) => {
       admin.from('pt_clients').select('id, name, goals, notes, coaching_focus').eq('id', body.client_id).maybeSingle(),
       admin.from('pt_client_exercise_doc').select('injury_history, current_limitations, movement_assessment_summary, weak_movements, strong_movements').eq('client_id', body.client_id).maybeSingle(),
       admin.from('pt_client_brain').select('coaching_reasoning, key_phrases, important_decisions, summary_current').eq('client_id', body.client_id).maybeSingle(),
-      admin.from('pt_client_documents').select('document_type, title, content_text').eq('client_id', body.client_id).limit(5),
+      admin.from('pt_client_documents').select('document_type, title, content_text, created_at').eq('client_id', body.client_id).order('created_at', { ascending: false }).limit(12),
     ]);
 
     if (!clientRes.data) return json({ error: 'Client not found' }, 404);
+
+    // Most-recent-first, then float movement assessments to the top so the screen is never dropped.
+    const rankDoc = (t: string) => (t === 'movement_assessment' ? 0 : 1);
+    const documents = (documentsRes.data ?? []).slice().sort((a, b) => rankDoc(a.document_type) - rankDoc(b.document_type));
 
     const parts: string[] = [];
     parts.push(`CLIENT:\n${JSON.stringify(clientRes.data, null, 2)}`);
@@ -100,8 +106,8 @@ Deno.serve(async (req) => {
     if (brainRes.data) parts.push(`CLIENT BRAIN:\n${JSON.stringify(brainRes.data, null, 2)}`);
     if (body.client_analysis) parts.push(`CLIENT ANALYSIS (prior step):\n${JSON.stringify(body.client_analysis, null, 2)}`);
     if (body.intake_text) parts.push(`INTAKE NOTES:\n${body.intake_text.slice(0, 6000)}`);
-    if (documentsRes.data?.length) {
-      parts.push(`UPLOADED DOCUMENTS:\n${documentsRes.data.map((d) => `[${d.document_type}] ${d.title}:\n${(d.content_text ?? '').slice(0, 3000)}`).join('\n\n')}`);
+    if (documents.length) {
+      parts.push(`UPLOADED DOCUMENTS:\n${documents.map((d) => `[${d.document_type}] ${d.title}:\n${(d.content_text ?? '').slice(0, 3000)}`).join('\n\n')}`);
     }
     parts.push('Output the muscle_mind_map JSON now. JSON only, no prose, no code fences.');
 
@@ -131,16 +137,21 @@ Deno.serve(async (req) => {
         exerciseDoc: exerciseDocRes.data,
         brain: brainRes.data,
         clientAnalysis: body.client_analysis,
-        documents: documentsRes.data ?? [],
+        documents,
         intakeText: body.intake_text,
       });
+
+    // physio_brief drives downstream exercise selection. Prefer the model's, else summarise the mind map.
+    const rawBrief = (typeof parsed?.physio_brief === 'string' && parsed.physio_brief.trim())
+      || (typeof mindMap?.physio_brief === 'string' && (mindMap.physio_brief as string).trim());
+    const physioBrief = rawBrief ? String(rawBrief) : buildPhysioBrief(mindMap);
 
     // Persist the mind map so future sessions can access it without re-running analysis.
     await admin.from('pt_client_exercise_doc').update({
       movement_assessment_summary: mindMap,
     }).eq('client_id', body.client_id);
 
-    return json({ ok: true, muscle_mind_map: mindMap });
+    return json({ ok: true, muscle_mind_map: mindMap, physio_brief: physioBrief });
   } catch (error) {
     console.error('movement-analysis-agent error:', error);
     return json({ error: error instanceof Error ? error.message : 'Movement analysis failed' }, 500);
@@ -305,4 +316,32 @@ function muscle(
 
 function hasAny(raw: string, keywords: string[]): boolean {
   return keywords.some((keyword) => raw.includes(keyword));
+}
+
+// Deterministic physio_brief when the model didn't supply one — summarises the mind map into
+// a concrete, coach-readable sentence the exercise-selection step can act on.
+function buildPhysioBrief(mindMap: Record<string, unknown> | null): string {
+  if (!mindMap) return 'No movement documentation available — start conservatively with general strength, trunk control, and mobility, then progress compounds as movement quality confirms readiness.';
+  const issues = Array.isArray(mindMap.primary_issues) ? mindMap.primary_issues as Array<Record<string, unknown>> : [];
+  if (issues.length === 0) return 'No specific movement issues identified — build a general strength foundation with sound technique before loading heavy compounds.';
+  const issueLabels = issues.slice(0, 3).map((i) => String(i.issue ?? '')).filter(Boolean);
+  const weak: string[] = [];
+  const tight: string[] = [];
+  for (const iss of issues) {
+    const muscles = Array.isArray(iss.muscles) ? iss.muscles as Array<Record<string, unknown>> : [];
+    for (const m of muscles) {
+      const name = String(m.name ?? '');
+      if (!name) continue;
+      if (m.status === 'weak' && !weak.includes(name)) weak.push(name);
+      else if (m.status === 'tight' && !tight.includes(name)) tight.push(name);
+    }
+  }
+  const bits: string[] = [];
+  if (issueLabels.length) bits.push(`Key focus: ${issueLabels.join('; ')}.`);
+  if (weak.length) bits.push(`Strengthen ${weak.slice(0, 5).join(', ')}.`);
+  if (tight.length) bits.push(`Restore length and mobility in ${tight.slice(0, 5).join(', ')} (strengthen through range, not just stretch).`);
+  const flags = (mindMap.programme_flags ?? {}) as Record<string, unknown>;
+  if (flags.avoid_overhead_pressing_initially) bits.push('Avoid heavy overhead pressing initially.');
+  if (flags.prioritise_posterior_chain) bits.push('Prioritise posterior-chain work.');
+  return bits.join(' ');
 }

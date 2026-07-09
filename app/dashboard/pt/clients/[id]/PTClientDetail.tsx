@@ -588,6 +588,7 @@ export default function PTClientDetail({
   });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadDocType, setUploadDocType] = useState<'movement_assessment' | 'intake' | 'profile' | 'other'>('movement_assessment');
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignmentList, setAssignmentList] = useState(assignments);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -696,7 +697,37 @@ export default function PTClientDetail({
       .select()
       .single();
     if (updated) setClient(updated as PTClient);
-    setStatus('Document saved.');
+
+    // Extract the text so the document is actually read by the AI, not just stored as a file.
+    // PDFs go through the same parser the programme wizard uses; plain text is read directly.
+    setStatus('Reading document…');
+    let contentText = '';
+    try {
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch('/api/pt/parse-pdf', { method: 'POST', body: form });
+        const parsed = (await res.json()) as { text?: string; error?: string };
+        if (res.ok && parsed.text) contentText = parsed.text.trim();
+      } else if (/\.(txt|md)$/i.test(file.name)) {
+        contentText = (await file.text()).trim();
+      }
+    } catch {
+      // Non-fatal: the file is still stored and viewable even if text extraction fails.
+    }
+
+    if (contentText) {
+      setStatus('Adding document to the client brain…');
+      const { error: ingestErr } = await supabase.functions.invoke('ingest-client-intake', {
+        body: {
+          client_id: client.id,
+          files: [{ name: file.name, document_type: uploadDocType, content_text: contentText.slice(0, 100_000) }],
+        },
+      });
+      setStatus(ingestErr ? 'Document saved, but the brain update failed.' : 'Document saved and read into the client brain.');
+    } else {
+      setStatus('Document saved. No readable text extracted (Word/scanned files are stored but not read — upload a PDF or paste the text).');
+    }
     setUploading(false);
   };
 
@@ -3574,6 +3605,20 @@ export default function PTClientDetail({
 
       <div className="order-[15] border-t border-black/8 pt-6 mb-8">
         <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-4">Client profile document</h2>
+        <div className="mb-3 flex items-center gap-2">
+          <label htmlFor="upload-doc-type" className="text-[0.58rem] uppercase tracking-[0.12em] text-black/35">Document type</label>
+          <select
+            id="upload-doc-type"
+            value={uploadDocType}
+            onChange={(e) => setUploadDocType(e.target.value as typeof uploadDocType)}
+            className="border border-black/10 px-2 py-1 text-xs"
+          >
+            <option value="movement_assessment">Movement assessment</option>
+            <option value="intake">Intake</option>
+            <option value="profile">M&amp;L / profile</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
         <input
           ref={fileRef}
           type="file"
