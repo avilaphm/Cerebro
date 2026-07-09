@@ -238,13 +238,27 @@ Pedro's account first (the PEDRO_EMAILS allow-list pattern already used in the r
 ## 5. Status board (mirror of the task list)
 
 - [x] A1 Unlock client documents (commit c4f1995; frontend live; agents need deploy)
-- [ ] A2 Thread coach_directive + constraints through pipeline  <- NEXT
-- [ ] A3 Un-hardcode programme-synthesis-agent
-- [ ] A4 Phase linkage + progressive overload
-- [ ] A5 Bespoke-aware methodology + validator
-- [ ] #8 Deploy + verify Pillar A edge functions (blocked by A2, A3, A5)
-- [ ] B Unified conversational entry point (blocked by A3)
+- [x] A2 Thread coach_directive + constraints through pipeline (commit 12076a6)
+- [x] A3 Un-hardcode programme-synthesis-agent for bespoke (commit 3f0b246)
+- [x] A5 Bespoke-aware validator (commit 6b7b276); methodology count-flex deferred (standard-mode-only)
+- [ ] #8 Deploy + verify Pillar A edge functions  <- NEXT (all code committed, drift live)
+- [ ] A4 Phase linkage (prior_phase_summary) + progressive overload (total kg/week)
+- [ ] B Unified conversational entry point (blocked by A3 - done, ready)
 - [ ] C Self-improving learning loop
+
+### Current state (2026-07-10)
+Core smart-generation is CODE-COMPLETE (A1, A2, A3, A5) but NOT deployed. Changed edge
+functions committed but drifted: client-analysis-agent, movement-analysis-agent,
+pt-programme-orchestrator, exercise-intelligence-agent, methodology-plan-agent,
+programme-synthesis-agent, programme-validation-agent. Deploy all 7 to ref
+otcnrkfvgyvwolironoz, then run pt-pipeline-deploy-verify. How it behaves once deployed:
+- STANDARD clients (no bespoke signal): structure unchanged (deterministic Big-5 path);
+  exercise selection now reflects the coach's notes via the exercise-intelligence master list.
+- BESPOKE (coach types "bodyweight"/"no weights"/"at home"/"one-off", or Pillar B sets
+  constraints.equipment/intent): synthesis skips the Big-5 template and the model builds the
+  requested workout; validator demotes template rules to non-blocking findings so it publishes.
+- Note: a full "bodyweight JOURNEY" still gets barbell 1RM test phases (built inline in the
+  orchestrator). True one-offs route through build-workout-from-text in Pillar B, not here.
 
 ## 6. Verification (end to end)
 
