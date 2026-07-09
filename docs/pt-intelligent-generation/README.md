@@ -241,17 +241,17 @@ Pedro's account first (the PEDRO_EMAILS allow-list pattern already used in the r
 - [x] A2 Thread coach_directive + constraints through pipeline (commit 12076a6)
 - [x] A3 Un-hardcode programme-synthesis-agent for bespoke (commit 3f0b246)
 - [x] A5 Bespoke-aware validator (commit 6b7b276); methodology count-flex deferred (standard-mode-only)
-- [ ] #8 Deploy + verify Pillar A edge functions  <- NEXT (all code committed, drift live)
-- [ ] A4 Phase linkage (prior_phase_summary) + progressive overload (total kg/week)
-- [ ] B Unified conversational entry point (blocked by A3 - done, ready)
+- [x] #8 Deploy Pillar A edge functions (all 7 deployed 2026-07-10 via supabase CLI, live)
+- [ ] A4 Phase linkage (prior_phase_summary) + progressive overload (total kg/week)  <- NEXT
+- [ ] B Unified conversational entry point (A3 done, ready)
 - [ ] C Self-improving learning loop
 
 ### Current state (2026-07-10)
-Core smart-generation is CODE-COMPLETE (A1, A2, A3, A5) but NOT deployed. Changed edge
-functions committed but drifted: client-analysis-agent, movement-analysis-agent,
-pt-programme-orchestrator, exercise-intelligence-agent, methodology-plan-agent,
-programme-synthesis-agent, programme-validation-agent. Deploy all 7 to ref
-otcnrkfvgyvwolironoz, then run pt-pipeline-deploy-verify. How it behaves once deployed:
+Core smart-generation (A1, A2, A3, A5) is CODE-COMPLETE and DEPLOYED (all 7 edge functions
+deployed to ref otcnrkfvgyvwolironoz via `supabase functions deploy`; OPTIONS 200, orchestrator
+responds). No drift. Frontend (A1 uploader) live on Vercel. End-to-end bespoke generation still
+wants Pedro's real test on his fake client via the wizard brain dump (type e.g. "bodyweight, at
+home, no weights, focus hips, 6 exercises"). How it behaves now that it is live:
 - STANDARD clients (no bespoke signal): structure unchanged (deterministic Big-5 path);
   exercise selection now reflects the coach's notes via the exercise-intelligence master list.
 - BESPOKE (coach types "bodyweight"/"no weights"/"at home"/"one-off", or Pillar B sets

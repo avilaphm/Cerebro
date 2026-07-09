@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Started the approved "Intelligent, self-improving PT programme generation" project. Pillar A1 (unlock client documents) shipped: profile uploader now extracts + ingests text, analysis agents read more docs (ordered, movement-assessment first), movement agent emits physio_brief.
+2026-07-10 by Claude - Intelligent PT generation Pillar A core (A1, A2, A3, A5) is code-complete AND DEPLOYED. The generator now reads client documents and honors the coach's typed request; bodyweight/home/one-off requests build bespoke workouts instead of the canned Big-5 template. Next: A4 (phase linkage + total kg/week), then Pillar B (unified entry point), then C (self-improving loop).
 
 ## Last code fix commit
-c4f1995 - PT gen A1: unlock client documents for generation + physio_brief
+6b7b276 - PT gen A5: bespoke-aware validator so bodyweight/one-off programmes pass
 
 ## What just happened (read first)
 
@@ -26,11 +26,28 @@ conversational entry point → C self-improving learning loop). Task board items
   `order(created_at desc).limit(12)` + movement_assessment floated first.
 - `movement-analysis-agent`: emits `physio_brief` (returned in response; CONSUMED in A2).
 
-**DEPLOY DRIFT (important):** the two agent source files are committed but NOT yet deployed
-to Supabase (ref `otcnrkfvgyvwolironoz`). Task #8 batches the edge-function deploy after A2
-wires physio_brief through the orchestrator, then runs `pt-pipeline-deploy-verify`. Do NOT
-tell Pedro the pipeline changes are live until deployed. Next up: A2 (thread
-coach_directive + constraints + physio_brief through the whole pipeline via the orchestrator).
+**DEPLOYED 2026-07-10:** all 7 changed edge functions (client-analysis-agent,
+movement-analysis-agent, exercise-intelligence-agent, methodology-plan-agent,
+programme-synthesis-agent, programme-validation-agent, pt-programme-orchestrator) were
+deployed to ref `otcnrkfvgyvwolironoz` via `supabase functions deploy` (all verify_jwt=false
+per config.toml). Smoke test passed (OPTIONS 200, orchestrator responds). No drift.
+
+**A2/A3/A5 shipped** (commits 12076a6, 3f0b246, 6b7b276): coach_directive + structured
+constraints + physio_brief now thread through exercise-intelligence, methodology, synthesis,
+and validation. Synthesis skips the hardcoded Big-5 template in BESPOKE mode (bodyweight /
+home / minimal-equipment / one-off, detected from constraints.equipment, intent, or directive
+keywords) and lets the model build the requested workout; the validator demotes template rules
+to non-blocking findings so it publishes. Standard clients are structurally unchanged.
+
+**Full source-of-truth:** `docs/pt-intelligent-generation/README.md`. Remaining: A4 (phase
+linkage via prior_phase_summary + total kg/week loads), Pillar B (one unified entry point:
+client -> auto-show docs -> text box -> intent detect + clarifying questions -> journey or
+one-off via build-workout-from-text), Pillar C (self-improving loop off pt_events + brain).
+
+**To verify end-to-end:** open the programme wizard on a client, type a bespoke request in the
+brain dump (e.g. "bodyweight, at home, no weights, focus hips, 6 exercises"), generate, and
+confirm Foundation comes back bodyweight + hip-focused + ~6 exercises with no barbells, and
+that validation shows only "[bespoke, non-blocking]" findings.
 
 
 
