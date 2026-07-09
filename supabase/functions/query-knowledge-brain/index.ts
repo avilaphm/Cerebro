@@ -26,6 +26,7 @@ interface HistoryMessage {
 }
 
 const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
+const OPENAI_TEXT_MODEL = Deno.env.get('OPENAI_TEXT_MODEL') ?? 'gpt-5.6';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -95,7 +96,7 @@ ${knowledgeContext ? `## Knowledge base excerpts:\n${knowledgeContext}` : 'The k
     ];
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
+      model: OPENAI_TEXT_MODEL,
       temperature: 0.3,
       max_tokens: 800,
       messages,

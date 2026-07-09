@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
 
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     if (!openaiKey) return json({ error: 'OPENAI_API_KEY is not configured' }, 500);
-    const openaiModel = Deno.env.get('OPENAI_EXERCISE_IMPORT_MODEL') ?? 'gpt-4.1';
+    const openaiModel = Deno.env.get('OPENAI_EXERCISE_IMPORT_MODEL') ?? Deno.env.get('OPENAI_TEXT_MODEL') ?? 'gpt-5.6';
 
     // Step 1: extract all exercise names from the document
     const namesText = await generateTextWithOpenAI({

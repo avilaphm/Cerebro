@@ -7,6 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+const OPENAI_TEXT_MODEL = Deno.env.get('OPENAI_TEXT_MODEL') ?? 'gpt-5.6';
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -892,7 +893,7 @@ Deno.serve(async (req: Request) => {
       aiResponse = extractTextFromBlocks(response.content as unknown[]) || aiResponse;
     } else {
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4.1-mini',
+        model: OPENAI_TEXT_MODEL,
         temperature: 0.5,
         max_tokens: 700,
         messages: chatMessages,

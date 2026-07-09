@@ -8,6 +8,8 @@ const corsHeaders = {
 
 const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
 const MAX_DOCUMENT_CHARS = 45000;
+const OPENAI_TEXT_MODEL = Deno.env.get('OPENAI_TEXT_MODEL') ?? 'gpt-5.6';
+const OPENAI_RESPONSES_MODEL = Deno.env.get('OPENAI_RESPONSES_MODEL') ?? OPENAI_TEXT_MODEL;
 const DEFAULT_PRINCIPLES = `# Cerebro PT Programming Rules
 
 ## Programme Arc (New Clients)
@@ -896,7 +898,7 @@ async function generateWithFile(
     method: 'POST',
     headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: OPENAI_RESPONSES_MODEL,
       instructions: `${SYSTEM_PROMPT}\n\nPedro programming principles:\n${principles}`,
       input: [
         {
@@ -929,7 +931,7 @@ async function generateWithText(
     method: 'POST',
     headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4.1',
+      model: OPENAI_TEXT_MODEL,
       temperature: 0.2,
       response_format: { type: 'json_object' },
       messages: [
@@ -961,7 +963,7 @@ async function refineProgrammeForEquipmentAndFoundationRules(
     method: 'POST',
     headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4.1',
+      model: OPENAI_TEXT_MODEL,
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [

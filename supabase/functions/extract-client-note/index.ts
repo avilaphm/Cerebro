@@ -22,6 +22,7 @@ If the message contains nothing notable, return: { "is_notable": false }
 If it does, return: { "is_notable": true, "note": "concise note in plain English, 1-2 sentences max, written in third person e.g. Client says they are..." }
 
 Return only valid JSON. No markdown. No commentary.`;
+const OPENAI_TEXT_MODEL = Deno.env.get('OPENAI_TEXT_MODEL') ?? 'gpt-5.6';
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -52,7 +53,7 @@ Deno.serve(async (req: Request) => {
       : '';
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
+      model: OPENAI_TEXT_MODEL,
       temperature: 0.1,
       response_format: { type: 'json_object' },
       messages: [

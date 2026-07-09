@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 const PEDRO_EMAILS = ['pedro@cerebroai.au', 'avila.phm@gmail.com'];
+const OPENAI_TEXT_MODEL = Deno.env.get('OPENAI_TEXT_MODEL') ?? 'gpt-5.6';
 
 type ReviewType = 'weekly' | 'monthly';
 
@@ -215,7 +216,7 @@ Deno.serve(async (req: Request) => {
     const openai = new OpenAI({ apiKey: openaiKey });
     try {
       const response = await openai.chat.completions.create({
-        model: 'gpt-4.1-mini',
+        model: OPENAI_TEXT_MODEL,
         temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [

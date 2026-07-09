@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+const OPENAI_TEXT_MODEL = Deno.env.get('OPENAI_TEXT_MODEL') ?? 'gpt-5.6';
+const OPENAI_RESPONSES_MODEL = Deno.env.get('OPENAI_RESPONSES_MODEL') ?? OPENAI_TEXT_MODEL;
 
 interface PhaseTemplate {
   id: string;
@@ -164,7 +166,7 @@ async function generateFromText(
     method: 'POST',
     headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4.1',
+      model: OPENAI_TEXT_MODEL,
       temperature: 0.2,
       response_format: { type: 'json_object' },
       messages: [
@@ -286,7 +288,7 @@ Deno.serve(async (req: Request) => {
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    model: 'gpt-4o',
+                    model: OPENAI_RESPONSES_MODEL,
                     instructions: systemWithContext,
                     input: [
                       {
