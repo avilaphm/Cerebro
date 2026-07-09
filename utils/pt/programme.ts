@@ -135,6 +135,63 @@ export function getCursorForWeeksLeft(
   };
 }
 
+export function getNextProgrammeCursor(
+  programme: PTProgramme,
+  phaseIndexInput: number | null | undefined,
+  blockIndexInput: number | null | undefined,
+  weekInput: number | null | undefined,
+): ProgrammeCursor | null {
+  if (programme.phases.length === 0) return null;
+
+  const phaseIndex = clampNumber(phaseIndexInput ?? 0, 0, programme.phases.length - 1);
+  const phase = programme.phases[phaseIndex];
+  if (!phase) return null;
+
+  if (phase.week_blocks && phase.week_blocks.length > 0) {
+    const blockIndex = clampNumber(blockIndexInput ?? 0, 0, phase.week_blocks.length - 1);
+    const blockWeeks = phase.week_blocks[blockIndex]?.weeks ?? 1;
+    const week = clampNumber(weekInput ?? 1, 1, blockWeeks);
+
+    if (week < blockWeeks) {
+      return { phaseIndex, blockIndex, week: week + 1 };
+    }
+
+    if (blockIndex < phase.week_blocks.length - 1) {
+      return { phaseIndex, blockIndex: blockIndex + 1, week: 1 };
+    }
+  } else {
+    const totalWeeks = getPhaseTotalWeeks(phase);
+    const week = clampNumber(weekInput ?? 1, 1, totalWeeks);
+    if (week < totalWeeks) {
+      return { phaseIndex, blockIndex: 0, week: week + 1 };
+    }
+  }
+
+  if (phaseIndex < programme.phases.length - 1) {
+    return { phaseIndex: phaseIndex + 1, blockIndex: 0, week: 1 };
+  }
+
+  return null;
+}
+
+export function getPhaseProgressFromCursor(
+  phase: PTProgrammePhase | undefined,
+  blockIndexInput: number | null | undefined,
+  weekInput: number | null | undefined,
+): PhaseProgress | null {
+  if (!phase?.week_blocks || phase.week_blocks.length === 0) return null;
+
+  const blockIndex = clampNumber(blockIndexInput ?? 0, 0, phase.week_blocks.length - 1);
+  const block = phase.week_blocks[blockIndex] ?? null;
+  const weekWithinBlock = clampNumber(weekInput ?? 1, 1, block?.weeks ?? 1);
+  return {
+    blockIndex,
+    weekWithinBlock,
+    block,
+    allBlocksDone: false,
+  };
+}
+
 export function phaseIsComplete(
   logs: ProgrammeProgressWorkoutLog[],
   phaseIndex: number,
@@ -181,9 +238,34 @@ export function getCursorUpdateAfterWorkout(
   programme: PTProgramme,
   logs: ProgrammeProgressWorkoutLog[],
   phaseIndex: number,
+  currentBlockIndex?: number | null,
+  currentWeek?: number | null,
 ): ProgrammeCursor | null {
   const phase = programme.phases[phaseIndex];
   if (!phase) return null;
+
+  const hasCurrentCursor = currentBlockIndex !== null && currentBlockIndex !== undefined
+    && currentWeek !== null && currentWeek !== undefined;
+  const cursorProgress = hasCurrentCursor ? getPhaseProgressFromCursor(phase, currentBlockIndex, currentWeek) : null;
+  if (cursorProgress && phase.days.length > 0) {
+    const completedDaysForCursor = new Set(
+      logs
+        .filter((log) =>
+          log.phase_index === phaseIndex &&
+          log.block_index === cursorProgress.blockIndex &&
+          log.week_number === cursorProgress.weekWithinBlock,
+        )
+        .map((log) => log.day_index),
+    );
+
+    if (completedDaysForCursor.size < phase.days.length) {
+      return { phaseIndex, blockIndex: cursorProgress.blockIndex, week: cursorProgress.weekWithinBlock };
+    }
+
+    return getNextProgrammeCursor(programme, phaseIndex, cursorProgress.blockIndex, cursorProgress.weekWithinBlock)
+      ?? { phaseIndex, blockIndex: cursorProgress.blockIndex, week: cursorProgress.weekWithinBlock };
+  }
+
   const progress = calcPhaseProgress(logs, phaseIndex, phase.week_blocks, phase.days.length);
 
   if (progress && !progress.allBlocksDone) {

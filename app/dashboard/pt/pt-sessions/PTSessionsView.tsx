@@ -1,17 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, ChevronLeft, ChevronRight, Minus, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import {
   calcPhaseProgress,
   getCursorUpdateAfterWorkout,
   getExerciseBlockValues,
   getExerciseForBlock,
+  getPhaseProgressFromCursor,
   resolveActivePhaseIndex,
   safeProgramme,
   type PhaseProgress,
 } from '@/utils/pt/programme';
+import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import { derivePattern } from '@/utils/pt/patterns';
 import { formatBookingDate, formatBookingTime, type PTBookingAppointment } from '@/utils/pt/bookings';
 import type {
@@ -164,37 +166,122 @@ function parsePct(value?: string | null): number | null {
 
 interface OneRMResult { exercise_id: string | null; exercise_name: string; load_kg: number | null; estimated_1rm_kg: number | null; created_at: string; }
 
-function applyExerciseOverridesToProgramme(
+function removeExercisesPreservingSections(
+  exercises: PTProgrammeExercise[],
+  removedIds: Set<string>,
+): PTProgrammeExercise[] {
+  if (removedIds.size === 0) return exercises;
+
+  let currentSection = '';
+  const resolved = exercises.map((exercise) => {
+    if (exercise.section_start !== undefined) currentSection = exercise.section_start || '';
+    return { exercise, section: currentSection };
+  });
+
+  let previousSection: string | null = null;
+  return resolved
+    .filter(({ exercise }) => !removedIds.has(exercise.id))
+    .map(({ exercise, section }) => {
+      const startsSection = section !== previousSection;
+      previousSection = section;
+      return {
+        ...exercise,
+        section_start: startsSection && section ? section : undefined,
+      };
+    });
+}
+
+function applySessionEditsToProgramme(
   assignment: PTProgramAssignment,
   selectedWorkout: SelectedWorkout,
   overrides: Record<string, PTProgrammeExercise>,
-): { programme: PTProgramAssignment['programme']; changed: boolean; swapped: Array<{ from: string; to: string }> } {
+  removedIds: Set<string>,
+  setCounts: Record<string, number>,
+  blockIndex: number,
+): {
+  programme: PTProgramAssignment['programme'];
+  changed: boolean;
+  swapped: Array<{ from: string; to: string }>;
+  removed: Array<{ name: string }>;
+  setChanges: Array<{ exercise: string; from: number; to: number }>;
+} {
   const overrideEntries = Object.entries(overrides);
-  if (overrideEntries.length === 0) {
-    return { programme: assignment.programme, changed: false, swapped: [] };
-  }
-
   const programme = structuredClone(assignment.programme);
-  const day = programme.phases[selectedWorkout.phaseIndex]?.days[selectedWorkout.dayIndex];
-  if (!day) return { programme: assignment.programme, changed: false, swapped: [] };
+  const phase = programme.phases[selectedWorkout.phaseIndex];
+  const day = phase?.days[selectedWorkout.dayIndex];
+  if (!phase || !day) return { programme: assignment.programme, changed: false, swapped: [], removed: [], setChanges: [] };
 
   const swapped: Array<{ from: string; to: string }> = [];
-  day.exercises = day.exercises.map((exercise) => {
+  const removed = day.exercises
+    .filter((exercise) => removedIds.has(exercise.id))
+    .map((exercise) => ({ name: exercise.name }));
+  const setChanges: Array<{ exercise: string; from: number; to: number }> = [];
+
+  day.exercises = removeExercisesPreservingSections(day.exercises, removedIds).map((exercise) => {
     const override = overrides[exercise.id];
-    if (!override) return exercise;
-    swapped.push({ from: exercise.name, to: override.name });
-    return {
-      ...exercise,
-      exercise_id: override.exercise_id,
-      name: override.name,
-      notes: override.notes,
-      video_url: override.video_url,
-      cues: override.cues,
-      pattern: override.pattern ?? exercise.pattern ?? null,
-    };
+    let nextExercise = exercise;
+    if (override) {
+      swapped.push({ from: exercise.name, to: override.name });
+      nextExercise = {
+        ...exercise,
+        exercise_id: override.exercise_id,
+        name: override.name,
+        notes: override.notes,
+        video_url: override.video_url,
+        cues: override.cues,
+        pattern: override.pattern ?? exercise.pattern ?? null,
+      };
+    }
+
+    const requestedCount = setCounts[exercise.id];
+    const programmedCount = parseSets(getExerciseBlockValues(exercise, phase.week_blocks, blockIndex).sets);
+    if (requestedCount && requestedCount !== programmedCount) {
+      setChanges.push({ exercise: nextExercise.name, from: programmedCount, to: requestedCount });
+      if (phase.week_blocks && phase.week_blocks.length > 0) {
+        const weekOverrides = [...(nextExercise.week_overrides ?? [])];
+        const overrideIndex = weekOverrides.findIndex((item) => item.block_index === blockIndex);
+        if (overrideIndex >= 0) {
+          weekOverrides[overrideIndex] = { ...weekOverrides[overrideIndex], sets: String(requestedCount) };
+        } else {
+          weekOverrides.push({ block_index: blockIndex, sets: String(requestedCount) });
+        }
+        nextExercise = { ...nextExercise, week_overrides: weekOverrides };
+      } else {
+        nextExercise = { ...nextExercise, sets: String(requestedCount) };
+      }
+    }
+
+    return nextExercise;
   });
 
-  return { programme, changed: swapped.length > 0, swapped };
+  const changed = overrideEntries.length > 0 || removed.length > 0 || setChanges.length > 0;
+  if (!changed) {
+    return { programme: assignment.programme, changed: false, swapped: [], removed: [], setChanges: [] };
+  }
+
+  return {
+    programme,
+    changed,
+    swapped,
+    removed,
+    setChanges,
+  };
+}
+
+function hasSessionSetCountChanges(
+  day: PTProgrammeDay,
+  phase: PTProgrammePhase,
+  removedIds: Set<string>,
+  setCounts: Record<string, number>,
+  blockIndex: number,
+): boolean {
+  return day.exercises.some((exercise) => {
+    if (removedIds.has(exercise.id)) return false;
+    const requestedCount = setCounts[exercise.id];
+    if (!requestedCount) return false;
+    const programmedCount = parseSets(getExerciseBlockValues(exercise, phase.week_blocks, blockIndex).sets);
+    return requestedCount !== programmedCount;
+  });
 }
 
 function isToday(isoString: string) {
@@ -239,6 +326,7 @@ export default function PTSessionsView({
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [doneExercises, setDoneExercises] = useState<Set<string>>(new Set());
   const [exerciseOverrides, setExerciseOverrides] = useState<Record<string, PTProgrammeExercise>>({});
+  const [removedExerciseIds, setRemovedExerciseIds] = useState<Set<string>>(new Set());
   const [libExercises, setLibExercises] = useState<PTExercise[]>(exercises);
   const [swapTarget, setSwapTarget] = useState<string | null>(null);
   const [swapSearch, setSwapSearch] = useState('');
@@ -303,6 +391,7 @@ export default function PTSessionsView({
     setSetCounts({});
     setDoneExercises(new Set());
     setExerciseOverrides({});
+    setRemovedExerciseIds(new Set());
 
     const [assignmentRes, setLogsRes, workoutLogsRes, oneRMRes] = await Promise.all([
       supabase
@@ -352,9 +441,15 @@ export default function PTSessionsView({
 
   const phaseProgress = useMemo(() => {
     if (!assignment) return [];
-    return assignment.programme.phases.map((phase, phaseIndex) =>
+    const progress = assignment.programme.phases.map((phase, phaseIndex) =>
       calcPhaseProgress(workoutLogs, phaseIndex, phase.week_blocks, phase.days.length),
     );
+    if (typeof assignment.current_phase_index === 'number') {
+      const phase = assignment.programme.phases[assignment.current_phase_index];
+      const cursorProgress = getPhaseProgressFromCursor(phase, assignment.current_block_index, assignment.current_week);
+      if (cursorProgress) progress[assignment.current_phase_index] = cursorProgress;
+    }
+    return progress;
   }, [assignment, workoutLogs]);
 
   // Active phase: first phase that's not complete, or last phase
@@ -467,6 +562,8 @@ export default function PTSessionsView({
     setSetDrafts(newDrafts);
     setSetCounts(newCounts);
     setDoneExercises(new Set());
+    setExerciseOverrides({});
+    setRemovedExerciseIds(new Set());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWorkout, assignment, phaseProgress, lastSetsByExercise]);
 
@@ -530,6 +627,28 @@ export default function PTSessionsView({
     setDoneExercises((prev) => {
       const next = new Set(prev);
       if (next.has(exerciseId)) next.delete(exerciseId); else next.add(exerciseId);
+      return next;
+    });
+  }
+
+  function removeExerciseFromSession(exerciseId: string) {
+    setRemovedExerciseIds((prev) => new Set(prev).add(exerciseId));
+    setDoneExercises((prev) => {
+      const next = new Set(prev);
+      next.delete(exerciseId);
+      return next;
+    });
+    setExerciseOverrides((prev) => {
+      const next = { ...prev };
+      delete next[exerciseId];
+      return next;
+    });
+  }
+
+  function restoreRemovedExercise(exerciseId: string) {
+    setRemovedExerciseIds((prev) => {
+      const next = new Set(prev);
+      next.delete(exerciseId);
       return next;
     });
   }
@@ -629,7 +748,11 @@ export default function PTSessionsView({
     if (!phase || !day) return;
 
     setSaving(true);
-    setStatus(Object.keys(exerciseOverrides).length > 0 ? 'Saving session and programme swaps...' : 'Saving session...');
+    const blockIndexForEdit = phaseProgress[selectedWorkout.phaseIndex]?.blockIndex ?? 0;
+    const hasProgrammeEdits = Object.keys(exerciseOverrides).length > 0 ||
+      removedExerciseIds.size > 0 ||
+      hasSessionSetCountChanges(day, phase, removedExerciseIds, setCounts, blockIndexForEdit);
+    setStatus(hasProgrammeEdits ? 'Saving session and programme changes...' : 'Saving session...');
 
     const progress = phaseProgress[selectedWorkout.phaseIndex];
     const blockIndex = progress?.blockIndex ?? null;
@@ -661,7 +784,8 @@ export default function PTSessionsView({
 
     const blockIndexForSave = phaseProgress[selectedWorkout.phaseIndex]?.blockIndex ?? 0;
 
-    const rows = day.exercises.flatMap((exercise) => {
+    const activeExercises = day.exercises.filter((exercise) => !removedExerciseIds.has(exercise.id));
+    const rows = activeExercises.flatMap((exercise) => {
       const effective = exerciseOverrides[exercise.id] ?? exercise;
       const count = setCounts[exercise.id] ?? 1;
       const values = getExerciseBlockValues(effective, phase.week_blocks, blockIndexForSave);
@@ -759,8 +883,21 @@ export default function PTSessionsView({
       { id: workoutId, phase_index: selectedWorkout.phaseIndex, day_index: selectedWorkout.dayIndex,
         week_number: weekWithinBlock, block_index: blockIndex, is_quick_done: false, created_at: new Date().toISOString() },
     ];
-    const swapSync = applyExerciseOverridesToProgramme(assignment, selectedWorkout, exerciseOverrides);
-    const cursor = getCursorUpdateAfterWorkout(swapSync.programme, updatedLogs, selectedWorkout.phaseIndex);
+    const programmeSync = applySessionEditsToProgramme(
+      assignment,
+      selectedWorkout,
+      exerciseOverrides,
+      removedExerciseIds,
+      setCounts,
+      blockIndexForSave,
+    );
+    const cursor = getCursorUpdateAfterWorkout(
+      programmeSync.programme,
+      updatedLogs,
+      selectedWorkout.phaseIndex,
+      selectedWorkout.phaseIndex === assignment.current_phase_index ? assignment.current_block_index : null,
+      selectedWorkout.phaseIndex === assignment.current_phase_index ? assignment.current_week : null,
+    );
     const cursorChanged = Boolean(
       cursor &&
       (
@@ -770,9 +907,9 @@ export default function PTSessionsView({
       ),
     );
 
-    if (swapSync.changed || cursorChanged) {
+    if (programmeSync.changed || cursorChanged) {
       const assignmentPatch: Partial<PTProgramAssignment> = {};
-      if (swapSync.changed) assignmentPatch.programme = swapSync.programme;
+      if (programmeSync.changed) assignmentPatch.programme = programmeSync.programme;
       if (cursor) {
         assignmentPatch.current_phase_index = cursor.phaseIndex;
         assignmentPatch.current_block_index = cursor.blockIndex;
@@ -790,7 +927,7 @@ export default function PTSessionsView({
         return;
       }
 
-      if (swapSync.changed) {
+      if (programmeSync.swapped.length > 0) {
         await supabase.from('pt_events').insert({
           client_id: selectedClient.id,
           assignment_id: assignment.id,
@@ -800,7 +937,38 @@ export default function PTSessionsView({
             workout_log_id: workoutId,
             phase_index: selectedWorkout.phaseIndex,
             day_index: selectedWorkout.dayIndex,
-            swaps: swapSync.swapped,
+            swaps: programmeSync.swapped,
+          },
+        });
+      }
+
+      if (programmeSync.removed.length > 0) {
+        await supabase.from('pt_events').insert({
+          client_id: selectedClient.id,
+          assignment_id: assignment.id,
+          event_type: 'programme_exercise_removed',
+          metadata: {
+            source: 'pt_sessions_finish',
+            workout_log_id: workoutId,
+            phase_index: selectedWorkout.phaseIndex,
+            day_index: selectedWorkout.dayIndex,
+            removed: programmeSync.removed,
+          },
+        });
+      }
+
+      if (programmeSync.setChanges.length > 0) {
+        await supabase.from('pt_events').insert({
+          client_id: selectedClient.id,
+          assignment_id: assignment.id,
+          event_type: 'programme_sets_changed',
+          metadata: {
+            source: 'pt_sessions_finish',
+            workout_log_id: workoutId,
+            phase_index: selectedWorkout.phaseIndex,
+            day_index: selectedWorkout.dayIndex,
+            block_index: blockIndexForSave,
+            changes: programmeSync.setChanges,
           },
         });
       }
@@ -844,6 +1012,7 @@ export default function PTSessionsView({
     setSetCounts({});
     setDoneExercises(new Set());
     setExerciseOverrides({});
+    setRemovedExerciseIds(new Set());
 
     await Promise.all([refreshAppointments(), loadClientData(selectedClient.id)]);
 
@@ -851,13 +1020,7 @@ export default function PTSessionsView({
   };
 
   const filteredExercises = useMemo(() => {
-    if (!swapSearch.trim()) return libExercises.slice(0, 30);
-    const q = swapSearch.toLowerCase();
-    return libExercises.filter((e) =>
-      e.name.toLowerCase().includes(q) ||
-      e.muscles.some((m) => m.toLowerCase().includes(q)) ||
-      (e.tags ?? []).some((t) => t.toLowerCase().includes(q)),
-    ).slice(0, 30);
+    return searchExerciseLibrary(libExercises, swapSearch, 30);
   }, [libExercises, swapSearch]);
 
   // ─── Render: Workout Logger ───────────────────────────────────────────────
@@ -870,9 +1033,12 @@ export default function PTSessionsView({
 
     const progress = phaseProgress[selectedWorkout.phaseIndex];
     const blockIndex = progress?.blockIndex ?? 0;
-    const sections = getWorkoutSections(day, phase, blockIndex);
-    const totalExercises = day.exercises.length;
-    const doneCount = day.exercises.filter((e) => doneExercises.has(e.id)).length;
+    const activeExercises = removeExercisesPreservingSections(day.exercises, removedExerciseIds);
+    const removedExercises = day.exercises.filter((exercise) => removedExerciseIds.has(exercise.id));
+    const visibleDay = { ...day, exercises: activeExercises };
+    const sections = getWorkoutSections(visibleDay, phase, blockIndex);
+    const totalExercises = activeExercises.length;
+    const doneCount = activeExercises.filter((e) => doneExercises.has(e.id)).length;
 
     return (
       <div className="mx-auto max-w-3xl pb-28">
@@ -893,8 +1059,30 @@ export default function PTSessionsView({
           <span className="text-xs text-black/40">{doneCount}/{totalExercises} done</span>
         </div>
 
+        {removedExercises.length > 0 && (
+          <div className="mb-4 border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-[0.6rem] uppercase tracking-[0.14em] text-amber-700">Programme edit pending</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {removedExercises.map((exercise) => (
+                <button
+                  key={exercise.id}
+                  type="button"
+                  onClick={() => restoreRemovedExercise(exercise.id)}
+                  className="border border-amber-300 bg-white px-2.5 py-1 text-xs text-amber-800 transition-colors hover:border-amber-500"
+                >
+                  Undo remove: {exercise.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4">
-          {sections.map((section) => (
+          {totalExercises === 0 ? (
+            <div className="border border-black/10 bg-white px-5 py-8 text-center">
+              <p className="text-sm text-black/40">No exercises left in this workout.</p>
+            </div>
+          ) : sections.map((section) => (
             <section key={section.id} className="border border-black/10 bg-white">
               <div className="border-b border-black/8 px-4 py-3">
                 <p className="text-[0.6rem] uppercase tracking-[0.18em] text-black/35">{section.title}</p>
@@ -936,6 +1124,15 @@ export default function PTSessionsView({
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => removeExerciseFromSession(exercise.id)}
+                            title="Remove exercise"
+                            aria-label={`Remove ${effective.name}`}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-red-200 text-red-500 transition-colors hover:border-red-300 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={2.2} />
+                          </button>
                           <button
                             type="button"
                             onClick={() => { setSwapTarget(exercise.id); setSwapSearch(''); }}

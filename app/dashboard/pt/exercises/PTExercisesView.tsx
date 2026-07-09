@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, ChevronUp, Pencil, Search, Upload, Video, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import type { PTExercise } from '@/utils/pt/types';
 
 function getYouTubeId(url: string | null): string | null {
@@ -208,11 +209,10 @@ export default function PTExercisesView({ initialExercises }: Props) {
     setImporting(false);
   }
 
-  const filtered = exercises.filter((ex) => {
-    const q = search.toLowerCase();
-    if (q && !ex.name.toLowerCase().includes(q) &&
-        !ex.primary_muscles.some((m) => m.toLowerCase().includes(q)) &&
-        !ex.conditions.some((c) => c.toLowerCase().includes(q))) return false;
+  const searchedExercises = search.trim()
+    ? searchExerciseLibrary(exercises, search, exercises.length)
+    : exercises;
+  const filtered = searchedExercises.filter((ex) => {
     if (muscleFilter && !ex.primary_muscles.some((m) => m.toLowerCase().includes(muscleFilter.toLowerCase())) &&
         !ex.secondary_muscles.some((m) => m.toLowerCase().includes(muscleFilter.toLowerCase()))) return false;
     if (equipFilter && (ex.equipment ?? '').toLowerCase() !== equipFilter.toLowerCase()) return false;
@@ -904,9 +904,7 @@ function ProgressionEditor({
 }: { label: string; ids: string[]; exercises: PTExercise[]; onChange: (v: string[]) => void }) {
   const [query, setQuery] = useState('');
   const matches = query.length >= 2
-    ? exercises.filter(
-        (e) => e.name.toLowerCase().includes(query.toLowerCase()) && !ids.includes(e.id),
-      ).slice(0, 5)
+    ? searchExerciseLibrary(exercises.filter((e) => !ids.includes(e.id)), query, 5)
     : [];
 
   return (

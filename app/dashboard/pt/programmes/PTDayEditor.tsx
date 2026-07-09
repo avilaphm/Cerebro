@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, sortExercisesBySectionOrder } from '@/utils/pt/programme';
+import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import { MOVEMENT_PATTERNS, patternChipClass, derivePattern, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTExercise,
@@ -186,7 +187,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
   };
 
   const getLibraryMatches = (name: string) =>
-    name.length >= 2 ? libraryExercises.filter((e) => e.name.toLowerCase().includes(name.toLowerCase())).slice(0, 6) : [];
+    name.length >= 2 ? searchExerciseLibrary(libraryExercises, name, 6) : [];
 
   const handleNameChange = (idx: number, value: string) => {
     if (activeBlock >= 0) {

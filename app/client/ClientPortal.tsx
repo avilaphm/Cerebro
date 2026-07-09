@@ -13,6 +13,7 @@ import {
   getCursorUpdateAfterWorkout,
   getExerciseBlockValues,
   getExerciseForBlock,
+  getPhaseProgressFromCursor,
   resolveActivePhaseIndex,
   safeProgramme,
   type PhaseProgress,
@@ -828,9 +829,15 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   const assignment = assignments[0] ?? null;
   const phaseProgress = useMemo(() => {
     if (!assignment) return [];
-    return assignment.programme.phases.map((phase, phaseIndex) =>
+    const progress = assignment.programme.phases.map((phase, phaseIndex) =>
       calcPhaseProgress(workoutLogs, phaseIndex, phase.week_blocks, phase.days.length),
     );
+    if (typeof assignment.current_phase_index === 'number') {
+      const phase = assignment.programme.phases[assignment.current_phase_index];
+      const cursorProgress = getPhaseProgressFromCursor(phase, assignment.current_block_index, assignment.current_week);
+      if (cursorProgress) progress[assignment.current_phase_index] = cursorProgress;
+    }
+    return progress;
   }, [assignment, workoutLogs]);
 
   const activePhaseIndex = useMemo(() => {
@@ -1797,6 +1804,8 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
         assignment.programme,
         newLogs,
         selectedWorkout.phaseIndex,
+        selectedWorkout.phaseIndex === assignment.current_phase_index ? assignment.current_block_index : null,
+        selectedWorkout.phaseIndex === assignment.current_phase_index ? assignment.current_week : null,
       );
 
       if (

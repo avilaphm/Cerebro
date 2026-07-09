@@ -18,6 +18,7 @@ import {
   safeProgramme,
   groupBands,
 } from '@/utils/pt/programme';
+import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgrammeExercise, PTProgramAssignment,
@@ -673,7 +674,7 @@ export default function PTProgrammeEditView({
   });
 
   const getBoardMatches = (name: string) =>
-    name.length >= 2 ? exercises.filter((e) => e.name.toLowerCase().includes(name.toLowerCase())).slice(0, 6) : [];
+    name.length >= 2 ? searchExerciseLibrary(exercises, name, 6) : [];
 
   const patchBoardExercise = (pi: number, di: number, exId: string, patch: Partial<PTProgrammeExercise>) =>
     update((p) => {

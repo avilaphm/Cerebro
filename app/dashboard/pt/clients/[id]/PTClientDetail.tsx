@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Check, Loader2, Mic, Play, Save, Square } from 'lucide-react';
 import TonnageSummaryCard from '@/components/pt/TonnageSummaryCard';
 import { createClient } from '@/utils/supabase/client';
+import { getNextProgrammeCursor, getPhaseTotalWeeks } from '@/utils/pt/programme';
 import {
   computeAdherenceSnapshot,
   getGoalProgressLabel,
@@ -451,6 +452,30 @@ function formatWeekRange(weekStart: string) {
   return `${formatDate(weekStart)} - ${formatDate(addDays(weekStart, 6))}`;
 }
 
+function getAssignmentCursorView(assignment: PTProgramAssignment) {
+  const phaseIndex = typeof assignment.current_phase_index === 'number' ? assignment.current_phase_index : 0;
+  const phase = assignment.programme.phases[phaseIndex];
+  if (!phase) return { phaseTitle: 'No phase selected', detail: 'Week 1' };
+
+  const blockIndex = Math.max(0, assignment.current_block_index ?? 0);
+  const week = Math.max(1, assignment.current_week ?? 1);
+  const totalWeeks = getPhaseTotalWeeks(phase);
+
+  if (phase.week_blocks && phase.week_blocks.length > 0) {
+    const safeBlockIndex = Math.min(blockIndex, phase.week_blocks.length - 1);
+    const block = phase.week_blocks[safeBlockIndex];
+    const blockDetail = [
+      `Block ${safeBlockIndex + 1}`,
+      `Week ${week}`,
+      block?.sets ? `${block.sets} sets` : null,
+      block?.weight_pct ?? null,
+    ].filter(Boolean).join(' - ');
+    return { phaseTitle: phase.title, detail: blockDetail };
+  }
+
+  return { phaseTitle: phase.title, detail: `Week ${Math.min(week, totalWeeks)} of ${totalWeeks}` };
+}
+
 function planItemId() {
   return `item-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -566,6 +591,7 @@ export default function PTClientDetail({
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignmentList, setAssignmentList] = useState(assignments);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [weekAdvanceBusyId, setWeekAdvanceBusyId] = useState<string | null>(null);
   useEffect(() => { setAssignmentList(assignments); }, [assignments]);
   const [inviting, setInviting] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
@@ -996,6 +1022,82 @@ export default function PTClientDetail({
     router.refresh();
     if (failed) setAssignmentList(assignments);
   };
+
+  const advanceProgrammeWeek = async (assignmentId: string) => {
+    const target = assignmentList.find((assignment) => assignment.id === assignmentId);
+    if (!target || weekAdvanceBusyId) return;
+
+    const nextCursor = getNextProgrammeCursor(
+      target.programme,
+      target.current_phase_index,
+      target.current_block_index,
+      target.current_week,
+    );
+
+    if (!nextCursor) {
+      setStatus(`${target.name} is already at the final week.`);
+      return;
+    }
+
+    const currentPhaseIndex = typeof target.current_phase_index === 'number' ? target.current_phase_index : 0;
+    const currentPhase = target.programme.phases[currentPhaseIndex];
+    const nextPhase = target.programme.phases[nextCursor.phaseIndex];
+
+    setWeekAdvanceBusyId(assignmentId);
+    setStatus(`Moving ${target.name} forward one week...`);
+
+    const { error } = await supabase
+      .from('pt_program_assignments')
+      .update({
+        current_phase_index: nextCursor.phaseIndex,
+        current_block_index: nextCursor.blockIndex,
+        current_week: nextCursor.week,
+      })
+      .eq('id', assignmentId);
+
+    if (error) {
+      setStatus(`Could not advance week: ${error.message}`);
+      setWeekAdvanceBusyId(null);
+      return;
+    }
+
+    await supabase.from('pt_events').insert({
+      client_id: client.id,
+      assignment_id: assignmentId,
+      event_type: 'programme_position_changed',
+      metadata: {
+        source: 'manual_week_advance',
+        assignment_name: target.name,
+        from: {
+          phase_index: currentPhaseIndex,
+          phase_title: currentPhase?.title ?? null,
+          block_index: target.current_block_index,
+          week: target.current_week,
+        },
+        to: {
+          phase_index: nextCursor.phaseIndex,
+          phase_title: nextPhase?.title ?? null,
+          block_index: nextCursor.blockIndex,
+          week: nextCursor.week,
+        },
+      },
+    });
+
+    setAssignmentList((current) => current.map((assignment) => (
+      assignment.id === assignmentId
+        ? {
+          ...assignment,
+          current_phase_index: nextCursor.phaseIndex,
+          current_block_index: nextCursor.blockIndex,
+          current_week: nextCursor.week,
+        }
+        : assignment
+    )));
+    setWeekAdvanceBusyId(null);
+    setStatus(`Moved ${target.name} to ${nextPhase?.title ?? 'next phase'} - week ${nextCursor.week}.`);
+    router.refresh();
+  };
+
   const lastLogin = events.find((e) => e.event_type === 'client_login');
   const lastLoginAt = lastSignInAt ?? loginEvents[0]?.created_at ?? lastLogin?.created_at ?? null;
   const workoutActivity = events.find((e) => e.event_type === 'workout_logged');
@@ -3141,21 +3243,38 @@ export default function PTClientDetail({
             </p>
             {assignmentList.map((a) => {
               const isActive = a.status === 'active';
+              const cursor = getAssignmentCursorView(a);
+              const canAdvance = Boolean(getNextProgrammeCursor(a.programme, a.current_phase_index, a.current_block_index, a.current_week));
               return (
                 <div
                   key={a.id}
-                  className={`flex items-center justify-between gap-4 border px-5 py-4 transition-colors ${isActive ? 'border-green-300 bg-green-50/40' : 'border-black/10'}`}
+                  className={`flex flex-col gap-4 border px-5 py-4 transition-colors sm:flex-row sm:items-center sm:justify-between ${isActive ? 'border-green-300 bg-green-50/40' : 'border-black/10'}`}
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{a.name}</p>
                     <p className="text-xs text-black/40 mt-0.5">
                       {a.phase_count} phase{a.phase_count !== 1 ? 's' : ''} · {a.duration_weeks} weeks
                     </p>
+                    {isActive && (
+                      <p className="mt-2 text-xs text-black/55">
+                        {cursor.phaseTitle} · {cursor.detail}
+                      </p>
+                    )}
                     <span className={`inline-block mt-2 text-xs border px-2 py-0.5 rounded-full transition-colors ${isActive ? 'border-green-300 bg-green-50 text-green-700' : 'border-black/15 text-black/40'}`}>
                       {isActive ? 'Active - client sees this' : 'Off'}
                     </span>
                   </div>
-                  <div className="flex shrink-0 items-center gap-3">
+                  <div className="flex shrink-0 flex-wrap items-center gap-3">
+                    {isActive && (
+                      <button
+                        type="button"
+                        onClick={() => void advanceProgrammeWeek(a.id)}
+                        disabled={weekAdvanceBusyId !== null || !canAdvance}
+                        className="text-xs border border-black/20 px-3 py-1.5 transition-colors hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                      >
+                        {weekAdvanceBusyId === a.id ? 'Moving...' : 'Advance 1 week'}
+                      </button>
+                    )}
                     <Link
                       href={`/dashboard/pt/programmes/${a.id}/edit`}
                       className="text-xs border border-black/20 px-3 py-1.5 hover:bg-black hover:text-white transition-colors"

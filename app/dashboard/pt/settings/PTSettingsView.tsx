@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import type { PTExercise } from '@/utils/pt/types';
 
 const EMPTY_EXERCISE_FORM = {
@@ -80,10 +81,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
     setAddSaving(false);
   };
 
-  const filtered = exercises.filter((e) =>
-    !search || e.name.toLowerCase().includes(search.toLowerCase()) ||
-    e.muscles.join(' ').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = searchExerciseLibrary(exercises, search, exercises.length);
 
   return (
     <div className="px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">

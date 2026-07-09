@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, moveExerciseIntoProgrammeSuperset, groupBands } from '@/utils/pt/programme';
+import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
   PTExercise, PTProgramme, PTProgrammePhase, PTProgrammeDay, PTProgramTemplate, PTProgrammeExercise,
@@ -117,7 +118,7 @@ export default function PTProgrammeTemplateEditView({
     });
 
   const getBoardMatches = (name: string) =>
-    name.length >= 2 ? exercises.filter((e) => e.name.toLowerCase().includes(name.toLowerCase())).slice(0, 6) : [];
+    name.length >= 2 ? searchExerciseLibrary(exercises, name, 6) : [];
 
   const patchBoardExercise = (pi: number, di: number, exId: string, patch: Partial<PTProgrammeExercise>) =>
     update((p) => {
