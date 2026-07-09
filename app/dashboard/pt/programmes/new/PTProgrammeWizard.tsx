@@ -1134,14 +1134,12 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                 <div className="space-y-3">
                   {(() => {
                     const dayBands = phase.days.map((d) => groupBands(d.exercises));
-                    const maxBands = Math.max(1, ...dayBands.map((b) => b.length));
                     return (
                   <div className="max-w-full overflow-x-auto pb-3">
                   <div
                     className="grid min-w-full items-start gap-x-3"
                     style={{
                       gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(17rem, 1fr))`,
-                      gridTemplateRows: `auto repeat(${maxBands}, auto)`,
                     }}
                   >
                     {phase.days.map((day, di) => (
@@ -1150,8 +1148,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                         onDragOver={(e) => { e.preventDefault(); if (dragOverDay !== di) setDragOverDay(di); }}
                         onDragLeave={() => setDragOverDay((current) => (current === di ? null : current))}
                         onDrop={(e) => { e.preventDefault(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di); setDragEx(null); setDragOverDay(null); }}
-                        style={{ gridRow: `1 / span ${maxBands + 1}`, gridTemplateRows: 'subgrid' }}
-                        className={`grid w-full min-w-0 max-w-full rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
+                        className={`flex w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border p-2 transition-colors ${dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' : 'border-black/10 bg-black/[0.01]'}`}
                       >
                         <div className="mb-2 flex items-start justify-between gap-1 px-1">
                           <div className="min-w-0">

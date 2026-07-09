@@ -1441,14 +1441,12 @@ export default function PTProgrammeEditView({
               </p>
               {(() => {
                 const dayBands = phase.days.map((d) => groupBands(d.exercises));
-                const maxBands = Math.max(1, ...dayBands.map((b) => b.length));
                 return (
               <div className="max-w-full overflow-x-auto pb-3">
                 <div
                   className="grid w-max max-w-none items-start gap-x-3"
                   style={{
                     gridTemplateColumns: `repeat(${Math.max(phase.days.length, 1)}, minmax(17rem, 17rem))`,
-                    gridTemplateRows: `auto repeat(${maxBands}, auto)`,
                   }}
                 >
                 {phase.days.map((day, di) => (
@@ -1457,8 +1455,7 @@ export default function PTProgrammeEditView({
                     onDragOver={(e) => { e.preventDefault(); if (dragOverDay !== di) setDragOverDay(di); }}
                     onDragLeave={() => setDragOverDay((c) => (c === di ? null : c))}
                     onDrop={(e) => { e.preventDefault(); if (dragEx) moveExerciseToDay(dragEx.dayIndex, dragEx.exId, di); setDragEx(null); setDragOverDay(null); }}
-                    style={{ gridRow: `1 / span ${maxBands + 1}`, gridTemplateRows: 'subgrid' }}
-                    className={`grid w-full min-w-0 max-w-full rounded-lg border p-2 transition-colors ${
+                    className={`flex w-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border p-2 transition-colors ${
                       selectedDays.has(di) ? 'border-black/35 bg-black/[0.03]' :
                       dragOverDay === di ? 'border-emerald-400 bg-emerald-50/40' :
                       'border-black/10 bg-black/[0.01]'
