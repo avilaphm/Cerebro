@@ -1,14 +1,43 @@
 # Handoff
 
 ## Last updated
-2026-07-09 by Codex - Programming now supports manual one-week advancement from the client profile, PT Sessions delete/swap/set-count edits persist into the active programme before session deduction, and exercise search now uses a local token/fuzzy scorer so queries like `inclined` can find `incline`.
+2026-07-09 by Codex - Client workout journey weeks no longer sit inside a card-like background, the active week marker is smaller with a visible pulse, and nutrition programme creation no longer shows fake percentage progress that can stall at 94%.
 
 ## Last code fix commit
-627c1bb - feat(pt): persist session programme edits
+1908a2a - fix(client): polish journey and nutrition loading
 
 ## What just happened (read first)
 
-### PT programme week advance, global session edits, and exercise search (2026-07-09, LATEST)
+### Client workout journey and nutrition loading polish (2026-07-09, LATEST)
+
+Pedro shared screenshots from the client app:
+- The week list inside the workout journey had an unnecessary card-like
+  background behind Week 1/2/3 and future phase week lists.
+- The active Week 1 marker was too large and did not read as pulsing.
+- Nutrition programme creation got stuck visually at `94%`, which was misleading
+  because the number was simulated, not real backend progress.
+
+Shipped in code commit `1908a2a`:
+- Updated `app/client/ClientPortal.tsx`.
+- Removed the bordered/rounded/background wrapper from `renderWeekRail()` so
+  weeks sit directly on the journey rail for current and future phases.
+- Reduced week marker size and softened the active pulse.
+- Removed the fake `nutritionCreationProgress` state, interval, percentage ring,
+  and artificial 550ms success pause.
+- Nutrition loading now uses an indeterminate moving ring, simple active step
+  labels, and copy that says the screen will move on when saving finishes.
+
+Verification:
+- Next.js version is `16.2.10`, which is outside the vulnerable ranges listed in
+  the UI design skill gate.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is
+  deprecated in favour of proxy.
+- `npx eslint app/client/ClientPortal.tsx` is still blocked by pre-existing
+  React compiler lint in the load-progress effect plus existing unused warnings;
+  the removed nutrition-progress effect is no longer present.
+
+### PT programme week advance, global session edits, and exercise search (2026-07-09)
 
 Pedro asked for three connected PT workflow fixes:
 - On the client profile under Programmes, move the active client programme one
