@@ -1,12 +1,27 @@
 # Handoff
 
 ## Last updated
-2026-07-08 by Claude - Next-Meal: renamed "Recipe book" to "My meals" with two tabs - Saved (the recipe book) and Recent (last 3 searches from next_meal_sessions, now storing the generated meals so any past idea can be saved/logged). RecipeBookModal replaced by MyMealsModal. Guarded a savedNames crash on undefined name. Source of truth: docs/next-meal/README.md.
+2026-07-09 by Codex - Studio portrait export now matches the supplied social split-screen reference: screen capture fills the top half edge-to-edge and camera fills the bottom half edge-to-edge, with no rounded card, margins, gap, or black frame in the portrait cut.
 
 ## Last code fix commit
-c628d61 - feat(nutrition): my-meals history tab (save from past searches)
+c879d74 - fix(studio): match portrait split export
 
 ## What just happened (read first)
+
+### Studio portrait export reference match (2026-07-09, LATEST)
+
+Pedro supplied a reference where the social portrait video is a hard split:
+screen recording full-bleed on the top half, speaker camera full-bleed on the
+bottom half. Studio's portrait export was still drawing the screen as a rounded
+card with margins and a gap, leaving black space around the top screen.
+
+- Updated `app/dashboard/studio/layouts.ts` only.
+- `drawPortraitStacked()` now uses a 50/50 vertical split:
+  - top `0..50%`: screen capture, full width, cover-cropped with slight overscan.
+  - bottom `50..100%`: camera video, full width, cover-cropped.
+- Landscape recording and camera-bubble layouts were not changed.
+- Validation passed: `npm run lint -- app/dashboard/studio/layouts.ts`,
+  `npx tsc --noEmit`, and `npm run build`.
 
 ### Next-Meal: "My meals" (recipe book + history tab) (2026-07-08, LATEST)
 

@@ -102,11 +102,10 @@ function drawBubble(
 }
 
 /**
- * Portrait (9:16) repurpose of a screen + camera recording: the screen sits
- * full-width and fully readable as a rounded card across the top, and the
- * camera fills the larger lower portion (the "you talking" band). Used for the
- * second, vertical export that records alongside the landscape take. Pure and
- * defensive like drawLayout — missing sources are skipped.
+ * Portrait (9:16) repurpose of a screen + camera recording for social video:
+ * screen on the top half, speaker on the bottom half, both full-bleed. Used for
+ * the second, vertical export that records alongside the landscape take. Pure
+ * and defensive like drawLayout — missing sources are skipped.
  */
 export function drawPortraitStacked(
   ctx: CanvasRenderingContext2D,
@@ -115,34 +114,15 @@ export function drawPortraitStacked(
   camera: HTMLVideoElement | null,
 ) {
   const { width: W, height: H } = dims;
-  const scale = W / 1080;
 
   ctx.fillStyle = STAGE_BG;
   ctx.fillRect(0, 0, W, H);
 
-  const sideMargin = W * 0.04;
-  const topMargin = H * 0.045;
-  const cardW = W - sideMargin * 2;
-  const cardH = cardW * (9 / 16);
-  const radius = 24 * scale;
+  const screenH = Math.round(H * 0.5);
+  const cameraH = H - screenH;
 
-  // Screen card, top. Use cover + slight overscan instead of contain so the
-  // portrait export crops away the black border around the shared screen.
-  ctx.save();
-  roundRectPath(ctx, sideMargin, topMargin, cardW, cardH, radius);
-  ctx.clip();
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(sideMargin, topMargin, cardW, cardH);
-  if (isReady(screen)) {
-    drawCover(ctx, screen, sideMargin, topMargin, cardW, cardH, 1.1);
-  }
-  ctx.restore();
-
-  // Camera fills everything below the card, full-bleed (cover-cropped).
-  const gap = H * 0.03;
-  const faceTop = topMargin + cardH + gap;
-  const faceH = H - faceTop;
-  if (isReady(camera)) drawCover(ctx, camera, 0, faceTop, W, faceH);
+  if (isReady(screen)) drawCover(ctx, screen, 0, 0, W, screenH, 1.04);
+  if (isReady(camera)) drawCover(ctx, camera, 0, screenH, W, cameraH);
 }
 
 /**
