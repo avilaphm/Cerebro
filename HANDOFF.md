@@ -1,14 +1,39 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation Pillar A core (A1, A2, A3, A5) is code-complete AND DEPLOYED. The generator now reads client documents and honors the coach's typed request; bodyweight/home/one-off requests build bespoke workouts instead of the canned Big-5 template. Next: A4 (phase linkage + total kg/week), then Pillar B (unified entry point), then C (self-improving loop).
+2026-07-10 by Codex - Programme editor board card overflow is fixed in assigned, new, and template programme editors. Exercise cards are now width-contained inside each day column, with long names/chips wrapping/truncating inside the card instead of stretching across neighbouring columns.
 
 ## Last code fix commit
-6b7b276 - PT gen A5: bespoke-aware validator so bodyweight/one-off programmes pass
+129a294 - fix(pt): contain programme board cards
 
 ## What just happened (read first)
 
-### Intelligent PT programme generation - Pillar A1 (2026-07-10, LATEST)
+### PT programme board card containment (2026-07-10, LATEST)
+
+Pedro shared a screenshot of the board view under programme editing where exercise
+cards visually overflowed their day columns and overlapped adjacent days.
+
+Shipped in code commit `129a294`:
+- Updated the board view in `app/dashboard/pt/programmes/[id]/edit/PTProgrammeEditView.tsx`.
+- Applied the same containment rules to `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`
+  and `app/dashboard/pt/programmes/template/[id]/edit/PTProgrammeTemplateEditView.tsx`.
+- Board grids now use horizontally scrollable, minimum-width day columns.
+- Day columns, bands, and exercise cards now have explicit `min-w-0` /
+  `max-w-full` / `w-full` containment.
+- Long exercise names use `overflow-wrap:anywhere`; movement/load chips truncate
+  within the card instead of forcing card width.
+- Autocomplete rows inside board edit mode now truncate safely too.
+
+Verification:
+- Next.js version is `16.2.10`, which passes the UI skill security gate.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is
+  deprecated in favour of proxy.
+
+Note: `supabase/functions/programme-synthesis-agent/index.ts` was already modified
+before this fix and was intentionally left untouched.
+
+### Intelligent PT programme generation - Pillar A1 (2026-07-10)
 
 Big multi-session project. Plan file: `~/.claude/plans/ok-we-need-to-squishy-honey.md`.
 Root cause of "AI ignores my request + never reads my docs": the generator is a fixed
@@ -51,7 +76,7 @@ that validation shows only "[bespoke, non-blocking]" findings.
 
 
 
-### Client workout journey and nutrition loading polish (2026-07-09, LATEST)
+### Client workout journey and nutrition loading polish (2026-07-09)
 
 Pedro shared screenshots from the client app:
 - The week list inside the workout journey had an unnecessary card-like
