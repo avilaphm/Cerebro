@@ -144,6 +144,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   });
   const [progName, setProgName] = useState('');
   const [progGoal, setProgGoal] = useState('');
+  const [reproText, setReproText] = useState('');
+  const [reproBusy, setReproBusy] = useState(false);
+  const [reproStatus, setReproStatus] = useState('');
 
   const [activePhaseTab, setActivePhaseTab] = useState(0);
   const [activeDay, setActiveDay] = useState<number | null>(null);
@@ -309,6 +312,50 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     const result = data as { distributed_into?: string[]; documents_stored?: number };
     setBrainSaved(true);
     setIntakeStatus(`Brain updated. ${result.documents_stored ?? 0} source(s) stored, distributed into ${result.distributed_into?.length ?? 4} docs. Embedding in the background.`);
+  };
+
+  // Reproduce an existing workout from a PDF/text exactly, via build-workout-from-text
+  // (parses the coach's words, links the library, creates any missing exercises). The result
+  // becomes an editable draft in the wizard - it does NOT run the 3-AI generator.
+  const handleReproduce = async (fromFile?: File) => {
+    setReproBusy(true);
+    setReproStatus('Reading workout…');
+    try {
+      let text = reproText.trim();
+      if (fromFile) {
+        if (fromFile.type === 'application/pdf' || fromFile.name.toLowerCase().endsWith('.pdf')) {
+          const form = new FormData();
+          form.append('file', fromFile);
+          const res = await fetch('/api/pt/parse-pdf', { method: 'POST', body: form });
+          const parsed = await readJsonResponse<{ text?: string; error?: string }>(res, 'PDF parse failed');
+          if (!res.ok || parsed.error) { setReproStatus(parsed.error ?? 'PDF parse failed.'); setReproBusy(false); return; }
+          text = (parsed.text ?? '').trim();
+        } else {
+          text = (await fromFile.text()).trim();
+        }
+      }
+      if (text.length < 10) { setReproStatus('Add a workout PDF or paste at least a sentence of workout text.'); setReproBusy(false); return; }
+      setReproStatus('Reproducing the exact workout…');
+      const { data, error } = await supabase.functions.invoke('build-workout-from-text', { body: { text: text.slice(0, 20000) } });
+      if (error || (data as { error?: string })?.error) {
+        setReproStatus((data as { error?: string })?.error ?? await functionErrorMessage(error, 'Could not reproduce the workout.'));
+        setReproBusy(false);
+        return;
+      }
+      const result = data as { phase?: PTProgrammePhase };
+      if (!result.phase) { setReproStatus('No workout could be parsed from that file.'); setReproBusy(false); return; }
+      setProgramme(safeProgramme({ phases: [result.phase] }));
+      setProgName(result.phase.title || 'Imported workout');
+      setProgGoal(result.phase.focus || '');
+      setActivePhaseTab(0);
+      setActiveDay(null);
+      setReproBusy(false);
+      setReproStatus('');
+      setStep(3);
+    } catch (err) {
+      setReproStatus(err instanceof Error ? err.message : 'Could not reproduce the workout.');
+      setReproBusy(false);
+    }
   };
 
   const handleGenerate = async () => {
@@ -850,6 +897,46 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               </div>
             )}
           </div>
+
+          {/* Reproduce an existing workout from a PDF or text (faithful, not the 3-AI generator) */}
+          {selectedClient && (
+            <div className="border-t border-black/10 pt-5">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">Or reproduce an existing workout</p>
+              <p className="text-xs text-black/45 mb-3 max-w-2xl">Upload a workout PDF (or paste it) and the builder recreates that exact programme - same exercises, sets and reps - as an editable draft. Any exercise not in the library is created automatically.</p>
+              <div className="flex max-w-2xl flex-col gap-3">
+                <textarea
+                  value={reproText}
+                  onChange={(e) => setReproText(e.target.value)}
+                  placeholder="Paste the workout here, or upload a PDF below…"
+                  rows={4}
+                  className="border border-black/15 px-4 py-3 text-sm outline-none focus:border-black/40 resize-none"
+                />
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className={`border border-black/15 border-dashed px-4 py-2 text-sm transition-colors ${reproBusy ? 'opacity-40 cursor-default' : 'text-black/50 hover:border-black/30 hover:text-black cursor-pointer'}`}>
+                    Upload PDF / text file
+                    <input
+                      type="file"
+                      accept=".pdf,.txt,.md"
+                      className="hidden"
+                      disabled={reproBusy}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleReproduce(f); e.target.value = ''; }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void handleReproduce()}
+                    disabled={reproBusy || reproText.trim().length < 10}
+                    className="border border-black bg-black text-white px-6 py-2 text-sm hover:bg-white hover:text-black transition-colors disabled:opacity-40"
+                  >
+                    {reproBusy ? 'Reproducing…' : 'Reproduce from text'}
+                  </button>
+                </div>
+                {reproStatus && (
+                  <p className={`text-xs ${/could|fail|add a workout|no workout/i.test(reproStatus) ? 'text-red-600' : 'text-black/45'}`}>{reproStatus}</p>
+                )}
+              </div>
+            </div>
+          )}
 
         </div>
       )}
