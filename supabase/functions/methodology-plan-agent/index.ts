@@ -250,6 +250,8 @@ Deno.serve(async (req) => {
       client_analysis: Record<string, unknown>;
       phase_weeks: { foundation: number; hypertrophy: number; strength: number };
       days_per_week?: DaysPerWeek;
+      coach_directive?: string;
+      constraints?: Record<string, unknown> | null;
       run_id?: string;
     };
     if (!body.client_analysis || !body.phase_weeks) return json({ error: 'client_analysis and phase_weeks required' }, 400);
@@ -299,6 +301,9 @@ Deno.serve(async (req) => {
     }
 
     const userMessage = [
+      ...(body.coach_directive?.trim()
+        ? [`COACH REQUEST (reflect this in the split, emphasis, and coaching_notes where it does not conflict with the scaled week blocks):\n${body.coach_directive.trim().slice(0, 3000)}`]
+        : []),
       `CLIENT ANALYSIS:\n${JSON.stringify(body.client_analysis, null, 2)}`,
       `PHASE WEEKS (chosen by coach):\n${JSON.stringify(body.phase_weeks, null, 2)}`,
       `DAYS PER WEEK (chosen by coach, applies to Hypertrophy and Strength; Foundation is always 3):\n${daysPerWeek}`,

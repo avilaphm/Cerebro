@@ -99,6 +99,10 @@ Deno.serve(async (req) => {
     const body = await req.json() as {
       client_id: string;
       muscle_mind_map: Record<string, unknown>;
+      coach_directive?: string;
+      client_analysis?: Record<string, unknown>;
+      physio_brief?: string;
+      constraints?: Record<string, unknown> | null;
     };
     if (!body.client_id || !body.muscle_mind_map) {
       return json({ error: 'client_id and muscle_mind_map required' }, 400);
@@ -123,7 +127,16 @@ Deno.serve(async (req) => {
     const focusedLibrary = focusExerciseLibrary(compactLibrary, body.muscle_mind_map);
     fallbackLibrary = focusedLibrary;
 
+    const directiveParts: string[] = [];
+    if (body.coach_directive?.trim()) {
+      directiveParts.push(`COACH REQUEST (honor this when selecting exercises, equipment, and emphasis):\n${body.coach_directive.trim().slice(0, 4000)}`);
+    }
+    if (body.physio_brief?.trim()) {
+      directiveParts.push(`PHYSIO BRIEF (drive selection from this):\n${body.physio_brief.trim().slice(0, 2000)}`);
+    }
+
     const userMessage = [
+      ...directiveParts,
       `MUSCLE MIND MAP:\n${JSON.stringify(body.muscle_mind_map, null, 2)}`,
       `FOCUSED EXERCISE LIBRARY (${focusedLibrary.length} of ${compactLibrary.length} exercises -- use these ids for exercise_id matching):\n${JSON.stringify(focusedLibrary)}`,
       'Output the exercise intelligence JSON now. JSON only, no prose, no code fences.',

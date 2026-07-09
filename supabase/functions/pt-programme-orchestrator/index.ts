@@ -24,12 +24,44 @@ const STEP_NAMES = [
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
+type Constraints = {
+  equipment?: 'full_gym' | 'home_minimal' | 'bodyweight' | 'bands' | 'travel';
+  location?: string;
+  focus_areas?: string[];
+  exercises_per_day?: number;
+  session_length_min?: number;
+  avoid?: string[];
+};
+
 type OrchestratorBody = {
   client_id: string;
   phase_weeks: { foundation: number; hypertrophy: number; strength: number };
   days_per_week?: 3 | 4 | 5;
   intake_text?: string;
+  // The coach's request, structured. All optional: absent = today's behavior exactly.
+  constraints?: Constraints;
+  intent?: 'journey' | 'one_off';
 };
+
+// The coach's request as one text block: the free-form brief plus any structured constraints.
+// Threaded to every agent so the request is honored end to end, not dropped after analysis.
+function buildCoachDirective(body: OrchestratorBody): string {
+  const parts: string[] = [];
+  const t = (body.intake_text ?? '').trim();
+  if (t) parts.push(t);
+  const c = body.constraints;
+  if (c) {
+    const cons: string[] = [];
+    if (c.equipment) cons.push(`equipment: ${c.equipment.replace(/_/g, ' ')}`);
+    if (c.location) cons.push(`location: ${c.location}`);
+    if (c.focus_areas?.length) cons.push(`focus areas: ${c.focus_areas.join(', ')}`);
+    if (typeof c.exercises_per_day === 'number') cons.push(`exercises per day: ${c.exercises_per_day}`);
+    if (typeof c.session_length_min === 'number') cons.push(`session length: ${c.session_length_min} min`);
+    if (c.avoid?.length) cons.push(`avoid: ${c.avoid.join(', ')}`);
+    if (cons.length) parts.push(`COACH CONSTRAINTS - ${cons.join('; ')}.`);
+  }
+  return parts.join('\n\n');
+}
 
 // Pipeline stages. Supabase edge workers (including EdgeRuntime.waitUntil background
 // tasks) are killed at a ~150s wall-clock limit. Running the whole pipeline (4+ sequential
@@ -246,7 +278,12 @@ async function stageAnalyze(ctx: StageCtx) {
   }
   await persistMovementMindMap(ctx.admin, body.client_id, muscleMindMap);
 
-  await saveScratch(ctx, { clientAnalysis, muscleMindMap });
+  // physio_brief (from the movement agent) and coach_directive (the coach's request) are
+  // derived here and stashed so every downstream stage can honor them.
+  const physioBrief = typeof step2.output.physio_brief === 'string' ? step2.output.physio_brief : '';
+  const coachDirective = buildCoachDirective(body);
+
+  await saveScratch(ctx, { clientAnalysis, muscleMindMap, coachDirective, physioBrief, constraints: body.constraints ?? null });
   await chainToStage(ctx, STAGE_EXERCISE);
 }
 
@@ -256,12 +293,19 @@ async function stageExerciseMethodology(ctx: StageCtx) {
   const scratch = await loadScratch(ctx);
   const clientAnalysis = scratch.clientAnalysis as Record<string, unknown>;
   const muscleMindMap = scratch.muscleMindMap as Record<string, unknown>;
+  const coachDirective = (scratch.coachDirective as string) ?? '';
+  const physioBrief = (scratch.physioBrief as string) ?? '';
+  const constraints = (scratch.constraints ?? null) as Constraints | null;
   if (!clientAnalysis || !muscleMindMap) { await failRun(ctx, 'Pipeline state missing after analysis stage.'); return; }
 
   await setCommand(ctx, STEP_NAMES[2]);
   const step3 = await callAgent(ctx, 'exercise-intelligence-agent', {
     client_id: body.client_id,
     muscle_mind_map: muscleMindMap,
+    coach_directive: coachDirective,
+    client_analysis: clientAnalysis,
+    physio_brief: physioBrief,
+    constraints,
   }, 80_000);
   await recordStep(ctx, 3, STEP_NAMES[2], { client_id: body.client_id, muscle_mind_map: muscleMindMap }, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
   if (!step3.ok) { await failRun(ctx, `Exercise intelligence failed: ${step3.error}`); return; }
@@ -282,6 +326,8 @@ async function stageExerciseMethodology(ctx: StageCtx) {
     client_analysis: clientAnalysis,
     phase_weeks: body.phase_weeks,
     days_per_week: body.days_per_week ?? 3,
+    coach_directive: coachDirective,
+    constraints,
     run_id: ctx.runId,
   }, 80_000);
   await recordStep(ctx, 4, STEP_NAMES[3], { phase_weeks: body.phase_weeks }, step4.output, step4.ok ? 'succeeded' : 'failed', step4.error);
@@ -307,6 +353,9 @@ async function stageSynthesize(ctx: StageCtx) {
   const methodologyPlan = scratch.methodologyPlan as Record<string, unknown>;
   const staplesByPhase = (scratch.staplesByPhase ?? null) as Record<string, unknown> | null;
   const exerciseIntelligenceMissing = Array.isArray(scratch.exerciseIntelligenceMissing) ? scratch.exerciseIntelligenceMissing as string[] : [];
+  const coachDirective = (scratch.coachDirective as string) ?? '';
+  const physioBrief = (scratch.physioBrief as string) ?? '';
+  const constraints = (scratch.constraints ?? null) as Constraints | null;
   if (!clientAnalysis || !methodologyPlan) { await failRun(ctx, 'Pipeline state missing after exercise/methodology stage.'); return; }
 
   const methodologyPhases = (methodologyPlan.phases ?? []) as Array<Record<string, unknown>>;
@@ -389,6 +438,9 @@ async function stageSynthesize(ctx: StageCtx) {
       programme_name: programmeName,
       programme_goal: programmeGoal,
       exercise_master_list: exerciseMasterList,
+      coach_directive: coachDirective,
+      physio_brief: physioBrief,
+      constraints,
     });
 
     const stepOrder = 5 + i;
@@ -429,7 +481,7 @@ async function stageSynthesize(ctx: StageCtx) {
   // Final validation step.
   await setCommand(ctx, STEP_NAMES[5]);
   const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
-  const validationStep = await callAgent(ctx, 'programme-validation-agent', { programme, emphasis });
+  const validationStep = await callAgent(ctx, 'programme-validation-agent', { programme, emphasis, constraints });
   await recordStep(ctx, 6 + methodologyPhases.length, STEP_NAMES[5], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
   if (!validationStep.ok) { await failRun(ctx, `Validation failed: ${validationStep.error}`); return; }
   const validation = validationStep.output as { passed: boolean; hard_failures: string[]; findings: string[] };
