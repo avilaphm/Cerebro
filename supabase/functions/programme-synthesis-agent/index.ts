@@ -197,6 +197,8 @@ Deno.serve(async (req) => {
         "BESPOKE MODE: The coach's request overrides the standard-structure hard rules. "
         + 'Rules 2 and 3 (fixed 3-day Foundation, all-Big-5 every hypertrophy/strength day) and the fixed 6-exercise / 3-superset count DO NOT apply. '
         + 'Build exactly what the coach asked: honor the equipment available (if bodyweight or "no weights", use NO barbell/dumbbell/machine/cable exercises, only bodyweight or the named equipment), the requested number of exercises per day, the focus area(s), and any avoid list. '
+        + 'MOVEMENT PATTERN COVERAGE + VARIETY: across the workout, cover the fundamental patterns the available equipment allows - hinge, squat, horizontal push, vertical push, horizontal pull, vertical pull, plus core/anti-rotation. Do NOT repeat the same exercise, and do not stack multiple variations of one pattern in a single day; vary exercises across days and pick different movements even when a focus area is given (a "hip" focus still needs push and pull work for balance). '
+        + 'For BODYWEIGHT specifically, choose from patterns like: hinge = single-leg / B-stance RDL, good morning, hip thrust, Nordic curl, glute bridge; squat = squat, split squat, step-up, cossack, pistol progression; horizontal push = push-up variations; vertical push = pike push-up, handstand progression; horizontal pull = inverted / towel row; vertical pull = pull-up, chin-up, band-assisted pull; core = plank, hollow hold, dead bug, leg raise. Prefer library exercises that match these; if the ideal pattern exercise is not in the library, add its name to missing_exercises rather than repeating another exercise. '
         + 'Still obey: every exercise_id is a real library id; canonical section order (Warm Up, Workout, MetCon, Stretches); open with a short warm-up unless the coach said otherwise.',
       );
     }
@@ -226,7 +228,11 @@ Deno.serve(async (req) => {
     const parsed = parseJson(text);
     if (!parsed) return json({ error: 'Programme synthesis did not return valid JSON', raw: text }, 502);
 
-    const enriched = enrichPhase(parsed, library, body.methodology_plan_phase);
+    let enriched = enrichPhase(parsed, library, body.methodology_plan_phase);
+    // In bespoke mode the model may pick pattern exercises the library doesn't have yet (common
+    // for bodyweight). Create real cards for them so they link and pass validation, instead of
+    // being dropped - this is what gives bespoke workouts genuine movement variety.
+    if (bespoke) enriched = await resolveMissingBespokeExercises(admin, enriched, library);
 
     return json({ ok: true, ...enriched });
   } catch (error) {
@@ -283,6 +289,73 @@ function enrichPhase(parsed: Record<string, unknown>, library: ExerciseRow[], me
     missing_exercises: allMissing,
     unresolved_count: unresolved.length,
   };
+}
+
+// Bespoke create-missing: any exercise the model named but that isn't linked to a real library
+// row gets a card created (upsert on the lower(name) unique index) and re-linked, mirroring
+// ensureExerciseCardsForMasterList in the orchestrator. Guarantees bespoke variety survives.
+async function resolveMissingBespokeExercises(
+  admin: ReturnType<typeof createClient>,
+  enriched: Record<string, unknown>,
+  library: ExerciseRow[],
+): Promise<Record<string, unknown>> {
+  const byId = new Set(library.map((e) => e.id));
+  const phase = (enriched.phase ?? {}) as Record<string, unknown>;
+  const days = (phase.days as Array<Record<string, unknown>>) ?? [];
+
+  const unlinked: Array<Record<string, unknown>> = [];
+  for (const day of days) {
+    for (const ex of ((day.exercises as Array<Record<string, unknown>>) ?? [])) {
+      const id = ex.exercise_id as string | undefined;
+      const name = (ex.name as string | undefined)?.trim();
+      if (name && (!id || !byId.has(id))) unlinked.push(ex);
+    }
+  }
+  if (unlinked.length === 0) return enriched;
+
+  const names = Array.from(new Set(unlinked.map((e) => String(e.name)).filter(Boolean)));
+  const { data: existing } = await admin.from('pt_exercises').select('id, name, video_url, cues').in('name', names);
+  const byName = new Map<string, { id: string; video_url: string | null; cues: unknown }>(
+    (existing ?? []).map((r: { id: string; name: string; video_url: string | null; cues: unknown }) => [r.name.toLowerCase(), r]),
+  );
+
+  const toCreate = names.filter((n) => !byName.has(n.toLowerCase()));
+  if (toCreate.length > 0) {
+    const { data: created } = await admin
+      .from('pt_exercises')
+      .upsert(toCreate.map((name) => ({
+        name,
+        muscles: [],
+        primary_muscles: [],
+        secondary_muscles: [],
+        purpose: null,
+        equipment: null,
+        video_url: null,
+        cues: [],
+        setup_cues: [],
+        tags: ['ai-generated', 'needs-video', 'bespoke'],
+        conditions: [],
+        source: 'ai',
+      })), { onConflict: 'name' })
+      .select('id, name, video_url, cues');
+    (created ?? []).forEach((r: { id: string; name: string; video_url: string | null; cues: unknown }) => byName.set(r.name.toLowerCase(), r));
+  }
+
+  for (const ex of unlinked) {
+    const row = byName.get(String(ex.name).toLowerCase());
+    if (row) {
+      ex.exercise_id = row.id;
+      ex.video_url = row.video_url ?? null;
+      ex.cues = row.cues ?? [];
+    }
+  }
+
+  const stillMissing = unlinked
+    .filter((ex) => !byName.has(String(ex.name).toLowerCase()))
+    .map((ex) => String(ex.name));
+  enriched.missing_exercises = stillMissing;
+  enriched.unresolved_count = stillMissing.length;
+  return enriched;
 }
 
 function buildDeterministicPhase(
