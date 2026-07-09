@@ -1,12 +1,26 @@
 # Handoff
 
 ## Last updated
-2026-07-09 by Codex - Studio portrait export now matches the supplied social split-screen reference: screen capture fills the top half edge-to-edge and camera fills the bottom half edge-to-edge, with no rounded card, margins, gap, or black frame in the portrait cut.
+2026-07-09 by Codex - Client app Settings now has a second logout button in a bottom Session section. It shows the signed-in email, uses a LogOut icon, disables while signing out, shows Supabase sign-out errors inline, and redirects to `/client-login`.
 
 ## Last code fix commit
-3690d4a - fix(studio): match portrait split export
+f1fd7bf - feat(client): add settings logout button
 
 ## What just happened (read first)
+
+### Client Settings logout button (2026-07-09, LATEST)
+
+Pedro asked for another logout button in the client app Settings tab.
+
+- Updated `app/client/SettingsTab.tsx`.
+- Added a bottom `Session` section with signed-in email and a `LogOut` icon
+  button.
+- Button calls `supabase.auth.signOut()` and redirects to `/client-login`,
+  matching the existing header sign-out behavior.
+- Added disabled state while signing out and inline error feedback if Supabase
+  sign-out fails.
+- Validation passed: `npm run lint -- app/client/SettingsTab.tsx`,
+  `npx tsc --noEmit`, and `npm run build`.
 
 ### Studio portrait export reference match (2026-07-09, LATEST)
 
