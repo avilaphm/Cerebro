@@ -4,7 +4,7 @@
 2026-07-09 by Codex - Studio portrait export now matches the supplied social split-screen reference: screen capture fills the top half edge-to-edge and camera fills the bottom half edge-to-edge, with no rounded card, margins, gap, or black frame in the portrait cut.
 
 ## Last code fix commit
-c879d74 - fix(studio): match portrait split export
+3690d4a - fix(studio): match portrait split export
 
 ## What just happened (read first)
 
