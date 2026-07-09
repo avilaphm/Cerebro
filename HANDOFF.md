@@ -1,12 +1,29 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Codex - Programme editor board card overflow is fixed in assigned, new, and template programme editors. Exercise cards are now width-contained inside each day column, with long names/chips wrapping/truncating inside the card instead of stretching across neighbouring columns.
+2026-07-10 by Claude - Intelligent PT generation: Pillar A core (A1/A2/A3/A5) DEPLOYED, plus movement-pattern variety in bespoke workouts (deployed) and a wizard "reproduce workout from PDF/text" feature. (Codex separately shipped the programme board card containment fix, commit 129a294.)
 
 ## Last code fix commit
-129a294 - fix(pt): contain programme board cards
+2ab6990 - PT gen: reproduce a workout from a PDF/text in the programme creator
 
 ## What just happened (read first)
+
+### Intelligent PT generation - Pillar A + post-test enhancements (2026-07-10, Claude)
+
+Full source-of-truth: `docs/pt-intelligent-generation/README.md`. Pillar A core is DEPLOYED
+(all 7 edge functions, ref otcnrkfvgyvwolironoz): the generator reads client documents and
+honors the coach's typed request; bodyweight/home/one-off requests build BESPOKE workouts
+(model-built, not the canned Big-5 template) and the validator lets them publish. Two
+enhancements after Pedro's first test:
+- Bespoke workouts now enforce movement-pattern coverage (hinge, squat, H/V push, H/V pull,
+  core) + variety, and create missing pattern exercises so variety is not capped by the
+  library (programme-synthesis-agent, deployed, commit 939bb5f).
+- Wizard Step 1 can REPRODUCE an exact workout from an uploaded PDF or pasted text via
+  build-workout-from-text (parses, links library, creates missing), landing in the Step 3
+  editor - it does not run the 3-AI generator (commit 2ab6990, frontend live on push).
+Remaining: A4 (phase linkage + total kg/week), Pillar B (unified entry point), C (self-improving loop).
+
+
 
 ### PT programme board card containment (2026-07-10, LATEST)
 

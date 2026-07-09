@@ -242,6 +242,8 @@ Pedro's account first (the PEDRO_EMAILS allow-list pattern already used in the r
 - [x] A3 Un-hardcode programme-synthesis-agent for bespoke (commit 3f0b246)
 - [x] A5 Bespoke-aware validator (commit 6b7b276); methodology count-flex deferred (standard-mode-only)
 - [x] #8 Deploy Pillar A edge functions (all 7 deployed 2026-07-10 via supabase CLI, live)
+- [x] Post-test: bespoke movement-pattern coverage + variety + create-missing (commit 939bb5f, deployed)
+- [x] Post-test: reproduce exact workout from PDF/text in wizard Step 1 via build-workout-from-text (commit 2ab6990, frontend)
 - [ ] A4 Phase linkage (prior_phase_summary) + progressive overload (total kg/week)  <- NEXT
 - [ ] B Unified conversational entry point (A3 done, ready)
 - [ ] C Self-improving learning loop
