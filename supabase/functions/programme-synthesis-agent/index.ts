@@ -145,6 +145,10 @@ Deno.serve(async (req) => {
       programme_name?: string;
       programme_goal?: string;
       exercise_master_list?: Array<{ exercise_id: string | null; name: string; difficulty: number }>;
+      coach_directive?: string;
+      physio_brief?: string;
+      constraints?: { equipment?: string; location?: string; focus_areas?: string[]; exercises_per_day?: number; session_length_min?: number; avoid?: string[] } | null;
+      intent?: 'journey' | 'one_off';
     };
     if (!body.client_analysis || !body.methodology_plan_phase || typeof body.phase_index !== 'number') {
       return json({ error: 'client_analysis, methodology_plan_phase, and phase_index required' }, 400);
@@ -175,10 +179,30 @@ Deno.serve(async (req) => {
         .map((e) => e.exercise_id as string),
     );
 
-    const deterministic = buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis, body.muscle_mind_map ?? {}, priorityIds);
+    // BESPOKE mode (bodyweight / home / minimal-equipment / one-off request): skip the
+    // deterministic Big-5 template and let the model build exactly what the coach asked.
+    // STANDARD mode keeps the proven deterministic path (Big-5 anchored); its accessories
+    // already reflect the coach's request via the exercise-intelligence master list (priorityIds).
+    const bespoke = isBespoke(body.constraints, body.intent, body.coach_directive ?? '');
+    const deterministic = bespoke
+      ? null
+      : buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis, body.muscle_mind_map ?? {}, priorityIds, body.constraints ?? null);
     if (deterministic) return json({ ok: true, ...deterministic });
 
+    const directiveParts: string[] = [];
+    if (body.coach_directive?.trim()) directiveParts.push(`COACH REQUEST (honor this exactly):\n${body.coach_directive.trim().slice(0, 4000)}`);
+    if (body.physio_brief?.trim()) directiveParts.push(`PHYSIO BRIEF:\n${body.physio_brief.trim().slice(0, 2000)}`);
+    if (bespoke) {
+      directiveParts.push(
+        "BESPOKE MODE: The coach's request overrides the standard-structure hard rules. "
+        + 'Rules 2 and 3 (fixed 3-day Foundation, all-Big-5 every hypertrophy/strength day) and the fixed 6-exercise / 3-superset count DO NOT apply. '
+        + 'Build exactly what the coach asked: honor the equipment available (if bodyweight or "no weights", use NO barbell/dumbbell/machine/cable exercises, only bodyweight or the named equipment), the requested number of exercises per day, the focus area(s), and any avoid list. '
+        + 'Still obey: every exercise_id is a real library id; canonical section order (Warm Up, Workout, MetCon, Stretches); open with a short warm-up unless the coach said otherwise.',
+      );
+    }
+
     const userMessage = [
+      ...directiveParts,
       `CLIENT ANALYSIS:\n${JSON.stringify(body.client_analysis, null, 2)}`,
       `PHASE INDEX:\n${body.phase_index}`,
       `METHODOLOGY PLAN PHASE:\n${JSON.stringify(body.methodology_plan_phase, null, 2)}`,
@@ -269,6 +293,7 @@ function buildDeterministicPhase(
   analysis: Record<string, unknown>,
   muscleMindMap: Record<string, unknown> = {},
   priorityIds: Set<string> = new Set(),
+  constraints: { equipment?: string } | null = null,
 ): Record<string, unknown> | null {
   const type = String(methodologyPhase.type ?? '').toLowerCase();
   const weekBlocks = (methodologyPhase.week_blocks as Array<Record<string, unknown>> | undefined) ?? [];
@@ -350,7 +375,7 @@ function buildDeterministicPhase(
 
   if (type === 'foundation') {
     const sets = String((weekBlocks[0]?.sets as string | undefined) ?? '2');
-    const isGymAccess = inferGymAccess(analysis);
+    const isGymAccess = inferGymAccess(analysis, constraints);
     const foundationLibrary = prepareFoundationLibrary(library, analysis, isGymAccess);
     const foundationContext = foundationPriorityContext(analysis, muscleMindMap);
     const days = [0, 1, 2].map((dayIndex) => {
@@ -823,7 +848,25 @@ function fillFoundationPool(primary: ExerciseRow[], fallback: ExerciseRow[], cou
   }).slice(0, count);
 }
 
-function inferGymAccess(analysis: Record<string, unknown>): boolean {
+// Bespoke = the coach asked for something the fixed 5-phase Big-5 factory can't express:
+// bodyweight/home/minimal-equipment, or an explicit one-off. In bespoke mode we skip the
+// deterministic builder and let the model honor the request.
+function isBespoke(
+  constraints: { equipment?: string } | null | undefined,
+  intent: string | undefined,
+  coachDirective: string,
+): boolean {
+  if (intent === 'one_off') return true;
+  const eq = constraints?.equipment;
+  if (eq && ['bodyweight', 'home_minimal', 'bands', 'travel'].includes(eq)) return true;
+  const t = coachDirective.toLowerCase();
+  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
+}
+
+function inferGymAccess(analysis: Record<string, unknown>, constraints?: { equipment?: string } | null): boolean {
+  const eq = constraints?.equipment;
+  if (eq === 'full_gym') return true;
+  if (eq && ['bodyweight', 'home_minimal', 'bands', 'travel'].includes(eq)) return false;
   const raw = JSON.stringify(analysis).toLowerCase();
   const limitedSignals = [
     'bands only',

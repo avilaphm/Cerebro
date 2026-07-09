@@ -441,6 +441,7 @@ async function stageSynthesize(ctx: StageCtx) {
       coach_directive: coachDirective,
       physio_brief: physioBrief,
       constraints,
+      intent: body.intent,
     });
 
     const stepOrder = 5 + i;
