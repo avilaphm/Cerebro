@@ -80,6 +80,12 @@ const NUTRITION_CREATION_PHRASES = [
   'Tracking can vary 10-20% on calories and macronutrients, so do not get too caught up in the numbers. They are there to give you a high-level understanding of what you are eating.',
 ];
 
+const NUTRITION_CREATION_STEPS = [
+  'Calculating targets',
+  'Matching workout phases',
+  'Saving your plan',
+];
+
 interface SpeechResultItemLike { transcript: string; }
 interface SpeechResultLike { isFinal: boolean; length: number; [index: number]: SpeechResultItemLike; }
 interface SpeechEventLike extends Event { results: ArrayLike<SpeechResultLike>; resultIndex: number; }
@@ -573,7 +579,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     activity_level: '3',
   });
   const [nutritionSubmitting, setNutritionSubmitting] = useState(false);
-  const [nutritionCreationProgress, setNutritionCreationProgress] = useState(0);
   const [setDrafts, setSetDrafts] = useState<Record<string, SetDraft>>({});
   const [setCounts, setSetCounts] = useState<Record<string, number>>({});
   const [sectionNotes, setSectionNotes] = useState<Record<string, string>>({});
@@ -587,18 +592,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     document.body.style.overflow = journeyPopup !== null ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [journeyPopup]);
-  useEffect(() => {
-    if (!nutritionSubmitting) return;
-    setNutritionCreationProgress(8);
-    const timer = window.setInterval(() => {
-      setNutritionCreationProgress((current) => {
-        if (current >= 94) return current;
-        const increment = current < 40 ? 7 : current < 74 ? 5 : 2;
-        return Math.min(94, current + increment);
-      });
-    }, 850);
-    return () => window.clearInterval(timer);
-  }, [nutritionSubmitting]);
   const [recordingNoteKey, setRecordingNoteKey] = useState<string | null>(null);
   const noteRecognitionRef = useRef<SpeechRecogLike | null>(null);
   const noteInterimRef = useRef('');
@@ -1427,7 +1420,6 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
     }
 
     setNutritionSubmitting(true);
-    setNutritionCreationProgress(8);
     setStatus('');
     const { error } = await supabase.functions.invoke('generate-nutrition-programme', {
       body: {
@@ -1449,12 +1441,9 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
       } catch { /* ignore parse failure */ }
       setStatus(message);
       setNutritionSubmitting(false);
-      setNutritionCreationProgress(0);
       return;
     }
 
-    setNutritionCreationProgress(100);
-    await new Promise((resolve) => window.setTimeout(resolve, 550));
     setStatus('');
     setNutritionSubmitting(false);
     await loadPortal();
@@ -1859,61 +1848,46 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
   );
 
   const renderNutritionCreationScreen = () => {
-    const phraseIndex = nutritionCreationProgress < 28 ? 0 : nutritionCreationProgress < 52 ? 1 : nutritionCreationProgress < 76 ? 2 : 3;
-    const circumference = 2 * Math.PI * 44;
-    const dashOffset = circumference * (1 - nutritionCreationProgress / 100);
-
     return (
       <div className="mx-auto flex min-h-[calc(100dvh-11rem)] max-w-3xl items-center">
-        <section className="w-full border border-black/10 bg-white p-6 text-center md:p-8">
+        <section className="w-full border border-black/10 bg-white p-6 text-center md:p-8" aria-live="polite">
           <p className="text-[0.65rem] uppercase tracking-[0.2em] text-black/35">Nutrition setup</p>
           <h2 className="mt-3 font-display text-3xl font-light tracking-[-0.02em] md:text-4xl">
             Creating your nutrition programme
           </h2>
 
           <div className="mx-auto mt-8 flex h-32 w-32 items-center justify-center">
-            <div className="relative h-28 w-28">
-              <svg className="absolute inset-0 -rotate-90" width="112" height="112" viewBox="0 0 112 112">
-                <circle cx="56" cy="56" r="44" fill="none" stroke="currentColor" strokeWidth="5" className="text-black/8" />
-                <circle
-                  cx="56"
-                  cy="56"
-                  r="44"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                  className="text-black transition-all duration-700"
-                  style={{
-                    strokeDasharray: `${circumference}`,
-                    strokeDashoffset: `${dashOffset}`,
-                  }}
-                />
-              </svg>
-              <span className="absolute inset-0 flex items-center justify-center text-2xl font-semibold tabular-nums">
-                {nutritionCreationProgress}%
+            <div className="relative flex h-28 w-28 items-center justify-center">
+              <div className="absolute inset-0 rounded-full border-[5px] border-black/8" />
+              <div className="absolute inset-0 animate-spin rounded-full border-[5px] border-transparent border-r-black/30 border-t-black" />
+              <span className="text-[0.62rem] uppercase tracking-[0.16em] text-black/45">
+                Working
               </span>
             </div>
           </div>
 
           <div className="mx-auto mt-6 max-w-xl">
-            <p className="min-h-[4.25rem] text-sm leading-relaxed text-black/60">
-              {NUTRITION_CREATION_PHRASES[phraseIndex]}
-            </p>
-            <div className="mt-5 grid grid-cols-4 gap-2">
-              {NUTRITION_CREATION_PHRASES.map((phrase, index) => {
-                const active = index <= phraseIndex;
-                return (
-                  <div
-                    key={phrase}
-                    className={`h-1 rounded-full transition-colors ${active ? 'bg-black' : 'bg-black/10'}`}
-                  />
-                );
-              })}
+            <div className="grid gap-2 text-left sm:grid-cols-3">
+              {NUTRITION_CREATION_STEPS.map((step) => (
+                <div key={step} className="border border-black/8 bg-[#fcfcfa] px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-black/20" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-black" />
+                    </span>
+                    <p className="text-[0.6rem] uppercase tracking-[0.12em] text-black/50">{step}</p>
+                  </div>
+                </div>
+              ))}
             </div>
+            <p className="mt-5 text-sm leading-relaxed text-black/60">
+              {NUTRITION_CREATION_PHRASES[3]}
+            </p>
           </div>
 
-          <p className="mt-6 text-xs text-black/35">This usually takes a moment. Keep this page open.</p>
+          <p className="mt-6 text-xs text-black/35">
+            The ring keeps moving while the programme is still being created. This screen will move on as soon as saving finishes.
+          </p>
         </section>
       </div>
     );
@@ -2128,22 +2102,22 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
 
       return (
         <div
-          className={`relative mt-4 overflow-hidden rounded-[1.4rem] border px-3 py-4 transition-colors sm:px-4 ${
+          className={`relative mt-3 transition-opacity ${
             isReachedPhase
-              ? 'border-black/8 bg-[#fcfcfa]'
-              : 'border-black/[0.04] bg-white/25 opacity-[0.42]'
+              ? ''
+              : 'opacity-[0.42]'
           }`}
         >
-          <div className="relative pl-8">
-            <div className={`absolute bottom-1 left-[0.72rem] top-1 w-px ${isReachedPhase ? 'bg-black/8' : 'bg-black/[0.04]'}`} />
+          <div className="relative pl-7">
+            <div className={`absolute bottom-1 left-[0.55rem] top-1 w-px ${isReachedPhase ? 'bg-black/8' : 'bg-black/[0.04]'}`} />
             {isReachedPhase && (
               <div
-                className="absolute left-[0.72rem] top-1 w-px bg-[rgb(46,213,115)] transition-all duration-700"
+                className="absolute left-[0.55rem] top-1 w-px bg-[rgb(46,213,115)] transition-all duration-700"
                 style={{ height: `${Math.max(12, Math.min(100, ((progress?.blockIndex ?? -1) + 1) / visibleBlocks.length * 100))}%` }}
               />
             )}
 
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {visibleBlocks.map((block, index) => {
                 const isBlockDone = isDonePhase || (progress !== null && progress.blockIndex > index);
                 const isBlockActive = isActivePhase && progress !== null && progress.blockIndex === index;
@@ -2151,25 +2125,25 @@ export default function ClientPortal({ userEmail }: { userEmail: string }) {
                 const weekSets = block.sets?.trim();
                 const weekPct = block.weight_pct?.trim();
                 return (
-                  <div key={`week-${index}`} className="relative flex items-center gap-3 rounded-[0.9rem] px-1 py-1">
+                  <div key={`week-${index}`} className="relative flex min-h-7 items-center gap-3">
                     {isBlockActive && (
-                      <span className="absolute left-[0.72rem] top-1/2 z-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full bg-black/25" />
+                      <span className="absolute left-[0.55rem] top-1/2 z-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 animate-ping rounded-full bg-black/18" />
                     )}
                     <div
-                      className={`absolute left-[0.72rem] top-1/2 z-10 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all ${
+                      className={`absolute left-[0.55rem] top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-all ${
                         isBlockDone
-                          ? 'border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
+                          ? 'h-2.5 w-2.5 border-[rgb(46,213,115)] bg-[rgb(46,213,115)]'
                           : isBlockActive
-                            ? 'border-black bg-black shadow-[0_0_0_3px_rgba(0,0,0,0.08)]'
+                            ? 'h-2.5 w-2.5 border-black bg-black shadow-[0_0_0_3px_rgba(0,0,0,0.08)]'
                             : isReachedPhase
-                              ? 'border-black/18 bg-white'
-                              : 'border-black/[0.08] bg-white/35'
+                              ? 'h-2.5 w-2.5 border-black/18 bg-white'
+                              : 'h-2.5 w-2.5 border-black/[0.08] bg-white/35'
                       }`}
                     >
-                      {isBlockDone && <Check className="absolute inset-0 m-auto h-2 w-2 text-white" />}
+                      {isBlockDone && <Check className="absolute inset-0 m-auto h-1.5 w-1.5 text-white" />}
                     </div>
 
-                    <div className="min-w-0 pl-4 translate-y-px">
+                    <div className="min-w-0 pl-4">
                       <div className="flex items-center gap-2">
                         <p className={`text-[0.72rem] font-medium leading-none ${isReachedPhase ? 'text-black' : 'text-black/45'}`}>{weekLabel}</p>
                         {weekSets && (
