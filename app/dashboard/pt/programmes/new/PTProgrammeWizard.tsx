@@ -135,6 +135,10 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
   const [clientId, setClientId] = useState('');
   const [brainDump, setBrainDump] = useState('');
+  const [clarifyQuestions, setClarifyQuestions] = useState<string[]>([]);
+  const [clarifyAnswers, setClarifyAnswers] = useState<string[]>([]);
+  const [clarifyChecked, setClarifyChecked] = useState(false);
+  const [clarifyBusy, setClarifyBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genStatus, setGenStatus] = useState('');
@@ -391,18 +395,53 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     }
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (opts?: { skipClarify?: boolean }) => {
     if (!clientId) {
       setGenStatus('Select a client first — the 3-AI pipeline needs the client brain to generate.');
       return;
     }
+
+    // Pillar B pre-flight: on the first Generate, ask the AI whether it needs anything clarified.
+    // If it returns questions, pause here and render them; the coach answers and hits Continue.
+    // opts.skipClarify is passed by the Continue/Skip buttons to bypass the check (state set is async).
+    if (!clarifyChecked && !opts?.skipClarify) {
+      setClarifyBusy(true);
+      setGenStatus('Checking I have what I need…');
+      try {
+        const { data: clarifyData } = await supabase.functions.invoke('suggest-clarifying-questions', {
+          body: { client_id: clientId, request_text: brainDump },
+        });
+        const qs = ((clarifyData as { questions?: string[] })?.questions ?? []).filter((q) => typeof q === 'string' && q.trim());
+        setClarifyBusy(false);
+        setGenStatus('');
+        if (qs.length > 0) {
+          setClarifyQuestions(qs);
+          setClarifyAnswers(qs.map(() => ''));
+          return; // pause; the clarify panel renders below on step 1
+        }
+      } catch {
+        setClarifyBusy(false);
+        setGenStatus('');
+      }
+      setClarifyChecked(true);
+    }
+
+    // Fold any ANSWERED clarifying questions into the request so the whole pipeline sees them.
+    const answered = clarifyQuestions
+      .map((q, i) => ({ q, a: (clarifyAnswers[i] ?? '').trim() }))
+      .filter((x) => x.a);
+    const clarifications = answered.length > 0
+      ? `\n\nCoach clarifications:\n${answered.map((x) => `Q: ${x.q}\nA: ${x.a}`).join('\n')}`
+      : '';
+    const effectiveIntake = `${brainDump}${clarifications}`.trim();
+
     setGenerating(true);
     setStep(2);
 
-    if (intakeFiles.length > 0 || brainDump.trim()) {
+    if (intakeFiles.length > 0 || effectiveIntake) {
       setGenStatus('Saving intake to client brain…');
       const { data: ingestData, error: ingestError } = await supabase.functions.invoke('ingest-client-intake', {
-        body: { client_id: clientId, files: intakeFiles, notes_text: brainDump },
+        body: { client_id: clientId, files: intakeFiles, notes_text: effectiveIntake },
       });
       if (ingestError || (ingestData as { error?: string })?.error) {
         setGenStatus((ingestData as { error?: string })?.error ?? await functionErrorMessage(ingestError, 'Brain save failed.'));
@@ -415,7 +454,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     setGenStatus('Starting pipeline…');
     const phaseWeeks = inferPhaseWeeks(programme.phases);
     const { data, error } = await supabase.functions.invoke('pt-programme-orchestrator', {
-      body: { client_id: clientId, phase_weeks: phaseWeeks, days_per_week: daysPerWeek, intake_text: brainDump },
+      body: { client_id: clientId, phase_weeks: phaseWeeks, days_per_week: daysPerWeek, intake_text: effectiveIntake },
     });
 
     if (error || (data as { error?: string })?.error) {
@@ -912,14 +951,50 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               <div className="space-y-3">
                 <button
                   onClick={() => void handleGenerate()}
-                  disabled={generating}
+                  disabled={generating || clarifyBusy}
                   className="border border-black bg-black text-white px-8 py-3 text-sm hover:bg-white hover:text-black transition-colors disabled:opacity-40"
                 >
-                  {generating ? genStatus || 'Generating…' : 'Generate'}
+                  {generating ? genStatus || 'Generating…' : clarifyBusy ? 'Checking…' : 'Generate'}
                 </button>
                 {brainSaved && <p className="text-xs text-emerald-700">✓ Client brain updated</p>}
                 {genStatus && !generating && (
                   <p className={`text-xs ${genStatus.toLowerCase().includes('fail') || genStatus.toLowerCase().includes('timed out') || genStatus.toLowerCase().includes('error') ? 'text-red-600' : 'text-black/40'}`}>{genStatus}</p>
+                )}
+
+                {clarifyQuestions.length > 0 && !clarifyChecked && (
+                  <div className="mt-2 max-w-2xl border border-black/15 bg-black/[0.02] p-4">
+                    <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/40 mb-2">A few questions first</p>
+                    <p className="text-xs text-black/45 mb-3">Answer what you can — it makes the programme far more specific. Leave any blank and I&apos;ll use my best judgement.</p>
+                    <div className="space-y-3">
+                      {clarifyQuestions.map((q, i) => (
+                        <div key={i}>
+                          <label className="mb-1 block text-sm text-black/70">{q}</label>
+                          <input
+                            type="text"
+                            value={clarifyAnswers[i] ?? ''}
+                            onChange={(e) => setClarifyAnswers((cur) => { const next = [...cur]; next[i] = e.target.value; return next; })}
+                            className="w-full border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setClarifyChecked(true); void handleGenerate({ skipClarify: true }); }}
+                        className="border border-black bg-black px-5 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black"
+                      >
+                        Continue with these answers
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setClarifyChecked(true); setClarifyQuestions([]); void handleGenerate({ skipClarify: true }); }}
+                        className="border border-black/15 px-4 py-2 text-xs text-black/50 transition-colors hover:border-black/30 hover:text-black"
+                      >
+                        Skip and generate anyway
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
