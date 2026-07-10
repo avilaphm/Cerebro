@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation: Pillar A core DEPLOYED, plus three post-test fixes: (1) bespoke movement-pattern variety + create-missing; (2) fixed the bespoke-journey timeout (parallel phase builds + skip barbell 1RM phases for bodyweight); (3) ONE smart document upload that classifies + routes (workout to reproduce, client info to the brain) via new classify-document. All deployed; build passes.
+2026-07-10 by Claude - Intelligent PT generation: Pillar A CONFIRMED WORKING by Pedro (bespoke bodyweight generation produces a real bodyweight programme). Key fix: bespoke detection now derives from the client analysis equipment (not just the text box), computed once and passed as an explicit flag to all agents. Also shipped A4 v1 (phase-to-phase accessory progression). Remaining big pieces (fresh-context worthy): A4 deep adaptive linkage via per-phase stage chaining; Pillar B clarifying-questions; Pillar C self-improving loop. Full detail in docs/pt-intelligent-generation/README.md.
 
 ## Last code fix commit
-1d1b54c - PT gen: one smart document upload that routes to the right pathway
+e596dac - PT gen A4 (v1): phase-to-phase accessory progression
 
 ## What just happened (read first)
 

@@ -246,6 +246,16 @@ Pedro's account first (the PEDRO_EMAILS allow-list pattern already used in the r
 - [x] Post-test: reproduce exact workout from PDF/text in wizard Step 1 via build-workout-from-text (commit 2ab6990, frontend)
 - [x] Post-test: fixed bespoke-journey timeout - build phases concurrently + skip barbell 1RM phases for bespoke (commit, orchestrator deployed)
 - [x] Post-test: ONE smart document upload - new classify-document routes workout->reproduce vs knowledge->brain; removed the two separate upload boxes (commit 1d1b54c, classify-document deployed)
+- [x] Post-test FIX (confirmed working): bespoke detection now derives from the CLIENT ANALYSIS (analysisIndicatesBespoke reads ClientAnalysis.constraints.equipment), computed once in the orchestrator and passed as an explicit `bespoke` flag to synthesis + validation; hard equipment filter in the bespoke prompt. Root cause was bespoke only reading this run's text box, not brain-stored equipment. (deployed)
+- [x] A4 v1: phase-to-phase accessory PROGRESSION (offset accessory window by phaseIndex so Strength differs from Hypertrophy; parallel-safe). Deep adaptive linkage (Phase 2 from Phase 1's actual built content) still TODO - needs per-phase stage chaining (see note). Loads/total-kg already handled post-1RM by recalculate-percentage-loads (needs a saved assignment, so not a generation-time step).
+
+### A4 deep-linkage note (for a fresh session)
+The timeout fix made stageSynthesize build phases via Promise.all (parallel), which is why
+deep linkage is deferred: real "Phase 2 built from Phase 1's actual exercises" needs sequential
+build. The robust way is PER-PHASE STAGE CHAINING - process one phase per orchestrator
+self-invocation (cursor in _scratch), accumulate built phases, so each phase gets a fresh ~150s
+budget AND the previous phase's content. That also permanently kills the bespoke timeout class.
+Migration `20260610072245_programme_phase_cursor.sql` may already have scaffolding to reuse.
 - [ ] A4 Phase linkage (prior_phase_summary) + progressive overload (total kg/week)  <- NEXT
 - [ ] B Unified conversational entry point (A3 done, ready)
 - [ ] C Self-improving learning loop
