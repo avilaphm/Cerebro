@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation: Pillar A CONFIRMED WORKING. Now also shipped: A4 v1 (accessory progression), C v1 (self-improving loop - distill-coaching-learnings + client card), and Pillar B clarifying questions (suggest-clarifying-questions pre-flight in the wizard: asks 1-3 questions before generating when info is thin + no assessment, folds answers into the request). Remaining: A4 deep linkage (per-phase stage chaining); rest of C (overview-wide ask-why + global pedro_methodology doc); optional B web_search research. Full detail in docs/pt-intelligent-generation/README.md.
+2026-07-10 by Claude - Intelligent PT generation nearly complete. Pillar A (confirmed working), Pillar B (clarifying questions + smart upload + reproduce), Pillar C (self-improving loop: per-client learnings AND global pedro_methodology doc that compounds across all clients), A4 v1 (accessory progression) all shipped + deployed. ONLY REMAINING BIG ITEM: A4 deep linkage (per-phase stage chaining refactor - also kills the timeout class). Optional extras: overview-wide ask-why surface, B web_search research, methodology count-flex. Full detail in docs/pt-intelligent-generation/README.md.
 
 ## Last code fix commit
-0524a63 - PT gen B: AI asks clarifying questions before generating
+daa6b11 - PT gen C (global): Pedro methodology loop across all clients
 
 ## What just happened (read first)
 
