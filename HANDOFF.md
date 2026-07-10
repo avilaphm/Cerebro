@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation: Pillar A CONFIRMED WORKING. Also shipped A4 v1 (accessory progression) and C v1 (self-improving loop first slice: distill-coaching-learnings edge function + "Teach the AI from your changes" card on the client page, writes durable rules into pt_client_brain.important_decisions which generation reads). Remaining: A4 deep linkage (per-phase stage chaining), Pillar B clarifying-questions, rest of C (overview-wide ask-why + global pedro_methodology doc). Full detail in docs/pt-intelligent-generation/README.md.
+2026-07-10 by Claude - Intelligent PT generation: Pillar A CONFIRMED WORKING. Now also shipped: A4 v1 (accessory progression), C v1 (self-improving loop - distill-coaching-learnings + client card), and Pillar B clarifying questions (suggest-clarifying-questions pre-flight in the wizard: asks 1-3 questions before generating when info is thin + no assessment, folds answers into the request). Remaining: A4 deep linkage (per-phase stage chaining); rest of C (overview-wide ask-why + global pedro_methodology doc); optional B web_search research. Full detail in docs/pt-intelligent-generation/README.md.
 
 ## Last code fix commit
-2426e3a - PT gen C (v1): self-improving loop - learn from coach's programme edits
+0524a63 - PT gen B: AI asks clarifying questions before generating
 
 ## What just happened (read first)
 

@@ -251,17 +251,18 @@ Pillar A - smart generation:
   - Bespoke detection from the CLIENT ANALYSIS (the key reliability fix, CONFIRMED): `analysisIndicatesBespoke` reads `ClientAnalysis.constraints.equipment`, computed once in the orchestrator, passed as an explicit `bespoke` flag to synthesis + validation; hard equipment filter in the bespoke prompt. Fixes "bodyweight lives in the brain, not this run's text box" -> was being ignored.
   - A4 v1 (e596dac): Strength pulls different accessories than Hypertrophy (offset by phaseIndex). Parallel-safe.
 
-Pillar B (partial - the upload/routing half):
+Pillar B - unified entry point + clarifying questions:
 - Reproduce a workout from a PDF/text exactly (2ab6990): via `build-workout-from-text`, lands in the editor for review.
 - ONE smart document upload (1d1b54c): new `classify-document` routes an upload to reproduce (workout) vs ingest-to-brain (client knowledge). The two separate upload boxes were removed.
+- Clarifying questions (0524a63): on Generate, a pre-flight `suggest-clarifying-questions` edge fn checks the request + what's already known (docs/brain/goals). If critical info is missing and no assessment is on file, the wizard pauses and asks 1-3 questions; the coach answers (or skips) and the answers are folded into the request the whole pipeline sees. Pre-flight in the wizard, not the stage machine; on model error it asks nothing.
 
 Pillar C (v1 - per-client learn-from-edits loop):
 - `distill-coaching-learnings` (2426e3a): reads recent programme-edit `pt_events` + the coach's "why", distils durable rules, writes them into `pt_client_brain.important_decisions` (read by client-analysis at generation). "Teach the AI from your changes" card on the client page.
 
 ### MISSING / TODO (next builds, all specced in sections above)
 1. **A4 deep linkage** - convert `stageSynthesize` to PER-PHASE STAGE CHAINING (one phase per orchestrator self-invocation, cursor in `_scratch`). Gives real "Phase 2 built from Phase 1's actual content" AND permanently kills the bespoke timeout class. Migration `20260610072245_programme_phase_cursor.sql` may have scaffolding. (v1 accessory progression is shipped; this is the deep version.)
-2. **Pillar B clarifying questions** - orchestrator emits `clarifying_questions` when there's no assessment doc + an ambiguous request; run status `awaiting_input` (wizard already polls); pause without chaining; resume on answers merged into `coach_directive`. Optional `web_search` research for the no-doc/bespoke case (the "boat crew" example).
-3. **Pillar C rest** - overview-wide "recent changes -> tell me why" capture; a GLOBAL `pedro_methodology` `pt_knowledge_documents` row (source='pedro_methodology') fed into `retrieve-knowledge-context` so learnings compound across ALL clients, not just per-client.
+2. **Pillar C rest** - overview-wide "recent changes -> tell me why" capture; a GLOBAL `pedro_methodology` `pt_knowledge_documents` row (source='pedro_methodology') fed into `retrieve-knowledge-context` so learnings compound across ALL clients, not just per-client.
+3. **Optional Pillar B extra** - `web_search` research for the no-doc/bespoke case (the "boat crew" example) so bespoke plans can cite external guidance. The clarifying-questions half is now done (0524a63).
 4. **Methodology count-flex** (minor, standard-mode-only): warmup/main/superset counts flexible to `constraints.exercises_per_day`.
 
 ### Current live behavior
