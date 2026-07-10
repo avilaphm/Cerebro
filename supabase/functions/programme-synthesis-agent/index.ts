@@ -150,6 +150,7 @@ Deno.serve(async (req) => {
       constraints?: { equipment?: string; location?: string; focus_areas?: string[]; exercises_per_day?: number; session_length_min?: number; avoid?: string[] } | null;
       intent?: 'journey' | 'one_off';
       bespoke?: boolean;
+      prior_phases?: Array<{ title?: string; exercises?: string[] }>;
     };
     if (!body.client_analysis || !body.methodology_plan_phase || typeof body.phase_index !== 'number') {
       return json({ error: 'client_analysis, methodology_plan_phase, and phase_index required' }, 400);
@@ -195,6 +196,10 @@ Deno.serve(async (req) => {
     const directiveParts: string[] = [];
     if (body.coach_directive?.trim()) directiveParts.push(`COACH REQUEST (honor this exactly):\n${body.coach_directive.trim().slice(0, 4000)}`);
     if (body.physio_brief?.trim()) directiveParts.push(`PHYSIO BRIEF:\n${body.physio_brief.trim().slice(0, 2000)}`);
+    if (Array.isArray(body.prior_phases) && body.prior_phases.length > 0) {
+      const priorText = body.prior_phases.map((p) => `${p.title ?? 'Phase'}: ${(p.exercises ?? []).join(', ')}`).join('\n');
+      directiveParts.push(`PHASES ALREADY BUILT FOR THIS CLIENT (this phase must PROGRESS from them - advance load/complexity and vary the accessories so it is a clear next step, while keeping the anchor lifts continuous; do not just repeat an earlier phase's day):\n${priorText.slice(0, 2500)}`);
+    }
     if (bespoke) {
       directiveParts.push(
         "BESPOKE MODE: The coach's request overrides the standard-structure hard rules. "

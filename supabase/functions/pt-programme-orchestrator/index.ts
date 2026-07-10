@@ -407,128 +407,115 @@ async function stageSynthesize(ctx: StageCtx) {
   const { data: big5Rows } = await ctx.admin.from('pt_exercises').select('id, video_url, cues').in('id', BIG5_IDS);
   const big5Map = new Map((big5Rows ?? []).map((e: { id: string; video_url: string | null; cues: unknown }) => [e.id, e]));
 
-  const phases: Record<string, unknown>[] = [];
-  let programmeName = '';
-  let programmeGoal = '';
-  const allMissing: string[] = [];
-
-  // Detect bespoke here (same rule as the synthesis/validation agents) so we can (a) drop the
-  // barbell 1RM test phases that make no sense for a bodyweight/minimal-equipment request, and
-  // (b) build every phase CONCURRENTLY. Bespoke builds each phase with its own LLM call, and
-  // running those sequentially blew the ~150s worker limit (timed out around Phase 3).
-  // We OR in the client-analysis equipment so a bodyweight/no-weights intent kept in the brain
-  // (not this run's text) still makes the whole programme bespoke. Computed once, passed down.
+  // Detect bespoke (same rule as the synthesis/validation agents): drop the barbell 1RM test
+  // phases for a bodyweight/minimal-equipment request, and steer the synthesis prompt. We OR in
+  // the client-analysis equipment so a bodyweight/no-weights intent kept in the brain (not this
+  // run's text) still makes the whole programme bespoke.
   const bespoke = isBespokeRequest(constraints, body.intent, coachDirective) || analysisIndicatesBespoke(clientAnalysis);
 
-  const build1rmPhase = (i: number, phaseType: string): Record<string, unknown> => {
-    const isRetest = phaseType.includes('retest');
-    const phaseTitle = isRetest ? '1RM Retest' : '1RM Test';
-    return {
-      id: isRetest ? 'phase-1rm-retest' : 'phase-1rm-test',
-      title: phaseTitle,
-      focus: 'Measure baseline strength across the Big 5 lifts.',
-      weeks: String(methodologyPhases[i].weeks ?? '1'),
-      progression: 'One testing week. Load to a true 1RM on each lift.',
-      week_blocks: [],
-      days: [{
-        id: 'day-1',
-        title: `Day 1 - ${phaseTitle}`,
-        focus: 'Big 5 strength testing',
-        exercises: BIG5_IDS.map((id, idx) => ({
-          id: `ex-${BIG5_LABELS[idx].toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${idx + 1}`,
-          exercise_id: id,
-          name: BIG5_LABELS[idx],
-          sets: '5',
-          reps: '1',
-          rest: '3-5 min',
-          notes: 'Ramp up: empty bar, 50%, 65%, 75%, 85%, then 100% 1RM attempt.',
-          section_start: idx === 0 ? 'Workout' : null,
-          superset_id: null,
-          video_url: (big5Map.get(id) as { video_url?: string | null } | undefined)?.video_url ?? null,
-          cues: (big5Map.get(id) as { cues?: unknown } | undefined)?.cues ?? [],
-        })),
-      }],
-    };
-  };
+  // PER-PHASE STAGE CHAINING: build ONE phase per orchestrator invocation. Each phase gets a fresh
+  // ~150s worker budget (so a bespoke journey of 3 LLM builds can never time out), AND is built
+  // from the phases already built before it (real Phase-2-from-Phase-1 progression). The cursor and
+  // the accumulated phases live in _scratch across the self-invocations.
+  const cursor = typeof scratch.synthCursor === 'number' ? scratch.synthCursor as number : 0;
+  const builtPhases = Array.isArray(scratch.builtPhases) ? scratch.builtPhases as Record<string, unknown>[] : [];
+  const synthMissing = Array.isArray(scratch.synthMissing) ? scratch.synthMissing as string[] : [];
+  const synthName = (scratch.synthName as string) ?? '';
+  const synthGoal = (scratch.synthGoal as string) ?? '';
 
-  type PhaseBuild = {
-    i: number;
-    commandName: string;
-    kind: '1rm' | 'synth' | 'skip';
-    ok: boolean;
-    error?: string;
-    phase?: Record<string, unknown>;
-    name?: string;
-    goal?: string;
-    missing: string[];
-    output?: Record<string, unknown>;
-  };
-
-  await setCommand(ctx, synthesisCommandName(methodologyPhases[methodologyPhases.length - 1], methodologyPhases.length - 1));
-
-  const builds: PhaseBuild[] = await Promise.all(methodologyPhases.map(async (mp, i): Promise<PhaseBuild> => {
-    const commandName = synthesisCommandName(mp, i);
+  if (cursor < methodologyPhases.length) {
+    const mp = methodologyPhases[cursor];
+    const commandName = synthesisCommandName(mp, cursor);
+    await setCommand(ctx, commandName);
     const phaseType = String(mp.type ?? '').toLowerCase();
     const is1rm = phaseType === '1rm_test' || phaseType === '1rm_retest' ||
       (phaseType.includes('1rm') && (phaseType.includes('test') || phaseType.includes('retest')));
 
-    if (is1rm) {
-      if (bespoke) return { i, commandName, kind: 'skip', ok: true, missing: [] };
-      return {
-        i, commandName, kind: '1rm', ok: true, missing: [],
-        phase: build1rmPhase(i, phaseType),
-        name: '1RM Test',
-        goal: 'Establish 1RM baseline for percentage-based programming.',
+    let built: Record<string, unknown> | null = null;
+    let builtName: string | undefined;
+    let builtGoal: string | undefined;
+    let builtMissing: string[] = [];
+
+    if (is1rm && bespoke) {
+      // Barbell 1RM testing is meaningless for a bodyweight/minimal-equipment programme; skip it.
+      await recordStep(ctx, 5 + cursor, commandName, { phase_index: cursor, skipped: 'bespoke_no_1rm' }, { ok: true, skipped: true }, 'succeeded');
+    } else if (is1rm) {
+      const isRetest = phaseType.includes('retest');
+      const phaseTitle = isRetest ? '1RM Retest' : '1RM Test';
+      built = {
+        id: isRetest ? 'phase-1rm-retest' : 'phase-1rm-test',
+        title: phaseTitle,
+        focus: 'Measure baseline strength across the Big 5 lifts.',
+        weeks: String(mp.weeks ?? '1'),
+        progression: 'One testing week. Load to a true 1RM on each lift.',
+        week_blocks: [],
+        days: [{
+          id: 'day-1',
+          title: `Day 1 - ${phaseTitle}`,
+          focus: 'Big 5 strength testing',
+          exercises: BIG5_IDS.map((id, idx) => ({
+            id: `ex-${BIG5_LABELS[idx].toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${idx + 1}`,
+            exercise_id: id,
+            name: BIG5_LABELS[idx],
+            sets: '5',
+            reps: '1',
+            rest: '3-5 min',
+            notes: 'Ramp up: empty bar, 50%, 65%, 75%, 85%, then 100% 1RM attempt.',
+            section_start: idx === 0 ? 'Workout' : null,
+            superset_id: null,
+            video_url: (big5Map.get(id) as { video_url?: string | null } | undefined)?.video_url ?? null,
+            cues: (big5Map.get(id) as { cues?: unknown } | undefined)?.cues ?? [],
+          })),
+        }],
       };
+      builtName = '1RM Test';
+      builtGoal = 'Establish 1RM baseline for percentage-based programming.';
+      await recordStep(ctx, 5 + cursor, commandName, { phase_index: cursor }, { ok: true, phase: built }, 'succeeded');
+    } else {
+      const step = await callAgent(ctx, 'programme-synthesis-agent', {
+        client_analysis: clientAnalysis,
+        muscle_mind_map: muscleMindMap,
+        methodology_plan_phase: mp,
+        phase_index: cursor,
+        programme_name: '',
+        programme_goal: '',
+        exercise_master_list: exerciseMasterList,
+        coach_directive: coachDirective,
+        physio_brief: physioBrief,
+        constraints,
+        intent: body.intent,
+        bespoke,
+        prior_phases: summarizePriorPhases(builtPhases),
+      });
+      await recordStep(ctx, 5 + cursor, commandName, { phase_index: cursor, methodology_plan_phase: mp }, step.output, step.ok ? 'succeeded' : 'failed', step.error);
+      if (!step.ok || !step.output.phase) {
+        await failRun(ctx, `Programme synthesis failed at phase ${cursor + 1}: ${step.error ?? 'no phase returned'}`);
+        return;
+      }
+      built = step.output.phase as Record<string, unknown>;
+      builtName = step.output.name as string | undefined;
+      builtGoal = step.output.goal as string | undefined;
+      builtMissing = (step.output.missing_exercises as string[] | undefined) ?? [];
     }
 
-    const step = await callAgent(ctx, 'programme-synthesis-agent', {
-      client_analysis: clientAnalysis,
-      muscle_mind_map: muscleMindMap,
-      methodology_plan_phase: mp,
-      phase_index: i,
-      programme_name: '',
-      programme_goal: '',
-      exercise_master_list: exerciseMasterList,
-      coach_directive: coachDirective,
-      physio_brief: physioBrief,
-      constraints,
-      intent: body.intent,
-      bespoke,
+    const isFirstBuilt = builtPhases.length === 0 && built !== null;
+    await saveScratch(ctx, {
+      synthCursor: cursor + 1,
+      builtPhases: built ? [...builtPhases, built] : builtPhases,
+      synthMissing: [...synthMissing, ...builtMissing],
+      synthName: isFirstBuilt ? (builtName ?? '') : synthName,
+      synthGoal: isFirstBuilt ? (builtGoal ?? '') : synthGoal,
     });
-    return {
-      i, commandName, kind: 'synth', ok: step.ok, error: step.error, output: step.output,
-      phase: step.output.phase as Record<string, unknown> | undefined,
-      name: step.output.name as string | undefined,
-      goal: step.output.goal as string | undefined,
-      missing: (step.output.missing_exercises as string[] | undefined) ?? [],
-    };
-  }));
-
-  // Assemble in phase order (Promise.all preserves order). Record steps and fail fast on error.
-  for (const b of builds) {
-    if (b.kind === 'skip') {
-      await recordStep(ctx, 5 + b.i, b.commandName, { phase_index: b.i, skipped: 'bespoke_no_1rm' }, { ok: true, skipped: true }, 'succeeded');
-      continue;
-    }
-    if (!b.ok || !b.phase) {
-      await recordStep(ctx, 5 + b.i, b.commandName, { phase_index: b.i }, b.output ?? {}, 'failed', b.error);
-      await failRun(ctx, `Programme synthesis failed at phase ${b.i + 1}: ${b.error ?? 'no phase returned'}`);
-      return;
-    }
-    await recordStep(ctx, 5 + b.i, b.commandName, { phase_index: b.i, methodology_plan_phase: methodologyPhases[b.i] }, b.kind === '1rm' ? { ok: true, phase: b.phase } : (b.output ?? {}), 'succeeded');
-    phases.push(b.phase);
-    allMissing.push(...b.missing);
+    await chainToStage(ctx, STAGE_SYNTHESIZE);
+    return;
   }
 
-  const firstBuilt = builds.find((b) => b.kind !== 'skip');
-  if (firstBuilt) {
-    programmeName = firstBuilt.name ?? '';
-    programmeGoal = firstBuilt.goal ?? '';
-  }
-
+  // All phases built -> finalize.
+  const phases = builtPhases;
+  const programmeName = synthName;
+  const programmeGoal = synthGoal;
   const programme = { phases };
-  const missingExercises = Array.from(new Set([...allMissing, ...exerciseIntelligenceMissing]));
+  const missingExercises = Array.from(new Set([...synthMissing, ...exerciseIntelligenceMissing]));
 
   // Programme B/modifier pass: re-check the programme against the client brain-derived
   // movement map and exercise intelligence before validation.
@@ -581,6 +568,16 @@ async function stageSynthesize(ctx: StageCtx) {
       findings: validation.findings,
     });
   }
+}
+
+// Compact summary of the phases already built, passed to synthesis so a phase can progress from
+// what came before it (Phase 2 accessories build on Phase 1, Phase 3 on Phase 2).
+function summarizePriorPhases(builtPhases: Record<string, unknown>[]): Array<{ title: string; exercises: string[] }> {
+  return builtPhases.map((p) => {
+    const days = (p.days as Array<Record<string, unknown>> | undefined) ?? [];
+    const names = days.flatMap((d) => ((d.exercises as Array<Record<string, unknown>> | undefined) ?? []).map((e) => String(e.name ?? ''))).filter(Boolean);
+    return { title: String(p.title ?? ''), exercises: Array.from(new Set(names)).slice(0, 24) };
+  });
 }
 
 function synthesisCommandName(phase: Record<string, unknown>, index: number): string {
