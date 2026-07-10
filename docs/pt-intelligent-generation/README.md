@@ -244,6 +244,8 @@ Pedro's account first (the PEDRO_EMAILS allow-list pattern already used in the r
 - [x] #8 Deploy Pillar A edge functions (all 7 deployed 2026-07-10 via supabase CLI, live)
 - [x] Post-test: bespoke movement-pattern coverage + variety + create-missing (commit 939bb5f, deployed)
 - [x] Post-test: reproduce exact workout from PDF/text in wizard Step 1 via build-workout-from-text (commit 2ab6990, frontend)
+- [x] Post-test: fixed bespoke-journey timeout - build phases concurrently + skip barbell 1RM phases for bespoke (commit, orchestrator deployed)
+- [x] Post-test: ONE smart document upload - new classify-document routes workout->reproduce vs knowledge->brain; removed the two separate upload boxes (commit 1d1b54c, classify-document deployed)
 - [ ] A4 Phase linkage (prior_phase_summary) + progressive overload (total kg/week)  <- NEXT
 - [ ] B Unified conversational entry point (A3 done, ready)
 - [ ] C Self-improving learning loop

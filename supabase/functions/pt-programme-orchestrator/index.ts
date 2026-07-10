@@ -76,6 +76,18 @@ function isBespokeRequest(
   return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
 }
 
+// The client-analysis agent distils equipment/environment from ALL sources (this run's brain
+// dump, the client brain, uploaded docs). Treat "no weights / bodyweight / home-only / bands-only"
+// there as bespoke even when the coach did not repeat it in this run's text box. This is what
+// makes the whole programme honor bodyweight when the info lives in the brain, not the text.
+function analysisIndicatesBespoke(clientAnalysis: Record<string, unknown> | null | undefined): boolean {
+  const constraints = (clientAnalysis?.constraints ?? null) as Record<string, unknown> | null;
+  const eq = constraints?.equipment;
+  const arr = Array.isArray(eq) ? eq : (typeof eq === 'string' ? [eq] : []);
+  const joined = arr.map((x) => String(x)).join(' ').toLowerCase();
+  return /bodyweight|body weight|no weight|no equipment|home[- ]?only|home environment|bands?[- ]?only|minimal equipment|travel|hotel/.test(joined);
+}
+
 // Pipeline stages. Supabase edge workers (including EdgeRuntime.waitUntil background
 // tasks) are killed at a ~150s wall-clock limit. Running the whole pipeline (4+ sequential
 // Claude agent calls + synthesis + validation) in one worker reliably exceeded that and
@@ -399,7 +411,9 @@ async function stageSynthesize(ctx: StageCtx) {
   // barbell 1RM test phases that make no sense for a bodyweight/minimal-equipment request, and
   // (b) build every phase CONCURRENTLY. Bespoke builds each phase with its own LLM call, and
   // running those sequentially blew the ~150s worker limit (timed out around Phase 3).
-  const bespoke = isBespokeRequest(constraints, body.intent, coachDirective);
+  // We OR in the client-analysis equipment so a bodyweight/no-weights intent kept in the brain
+  // (not this run's text) still makes the whole programme bespoke. Computed once, passed down.
+  const bespoke = isBespokeRequest(constraints, body.intent, coachDirective) || analysisIndicatesBespoke(clientAnalysis);
 
   const build1rmPhase = (i: number, phaseType: string): Record<string, unknown> => {
     const isRetest = phaseType.includes('retest');
@@ -475,6 +489,7 @@ async function stageSynthesize(ctx: StageCtx) {
       physio_brief: physioBrief,
       constraints,
       intent: body.intent,
+      bespoke,
     });
     return {
       i, commandName, kind: 'synth', ok: step.ok, error: step.error, output: step.output,
@@ -522,7 +537,7 @@ async function stageSynthesize(ctx: StageCtx) {
   // Final validation step.
   await setCommand(ctx, STEP_NAMES[5]);
   const emphasis = (clientAnalysis.emphasis ?? {}) as { needs_cardio_block?: boolean; needs_mobility_block?: boolean };
-  const validationStep = await callAgent(ctx, 'programme-validation-agent', { programme, emphasis, constraints, coach_directive: coachDirective, intent: body.intent });
+  const validationStep = await callAgent(ctx, 'programme-validation-agent', { programme, emphasis, constraints, coach_directive: coachDirective, intent: body.intent, bespoke });
   await recordStep(ctx, 6 + methodologyPhases.length, STEP_NAMES[5], {}, validationStep.output, validationStep.ok ? 'succeeded' : 'failed', validationStep.error);
   if (!validationStep.ok) { await failRun(ctx, `Validation failed: ${validationStep.error}`); return; }
   const validation = validationStep.output as { passed: boolean; hard_failures: string[]; findings: string[] };

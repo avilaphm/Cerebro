@@ -73,11 +73,12 @@ Deno.serve(async (req) => {
       constraints?: { equipment?: string } | null;
       intent?: 'journey' | 'one_off';
       coach_directive?: string;
+      bespoke?: boolean;
     };
     const programme = body.programme;
     if (!programme || !Array.isArray(programme.phases)) return json({ error: 'programme.phases required' }, 400);
 
-    const bespoke = isBespoke(body.constraints, body.intent, body.coach_directive ?? '');
+    const bespoke = typeof body.bespoke === 'boolean' ? body.bespoke : isBespoke(body.constraints, body.intent, body.coach_directive ?? '');
     const hard_failures: string[] = [];
     const findings: string[] = [];
 

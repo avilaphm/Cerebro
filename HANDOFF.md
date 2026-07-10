@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation: Pillar A core (A1/A2/A3/A5) DEPLOYED, plus movement-pattern variety in bespoke workouts (deployed) and a wizard "reproduce workout from PDF/text" feature. (Codex separately shipped the programme board card containment fix, commit 129a294.)
+2026-07-10 by Claude - Intelligent PT generation: Pillar A core DEPLOYED, plus three post-test fixes: (1) bespoke movement-pattern variety + create-missing; (2) fixed the bespoke-journey timeout (parallel phase builds + skip barbell 1RM phases for bodyweight); (3) ONE smart document upload that classifies + routes (workout to reproduce, client info to the brain) via new classify-document. All deployed; build passes.
 
 ## Last code fix commit
-2ab6990 - PT gen: reproduce a workout from a PDF/text in the programme creator
+1d1b54c - PT gen: one smart document upload that routes to the right pathway
 
 ## What just happened (read first)
 

@@ -149,6 +149,7 @@ Deno.serve(async (req) => {
       physio_brief?: string;
       constraints?: { equipment?: string; location?: string; focus_areas?: string[]; exercises_per_day?: number; session_length_min?: number; avoid?: string[] } | null;
       intent?: 'journey' | 'one_off';
+      bespoke?: boolean;
     };
     if (!body.client_analysis || !body.methodology_plan_phase || typeof body.phase_index !== 'number') {
       return json({ error: 'client_analysis, methodology_plan_phase, and phase_index required' }, 400);
@@ -183,7 +184,9 @@ Deno.serve(async (req) => {
     // deterministic Big-5 template and let the model build exactly what the coach asked.
     // STANDARD mode keeps the proven deterministic path (Big-5 anchored); its accessories
     // already reflect the coach's request via the exercise-intelligence master list (priorityIds).
-    const bespoke = isBespoke(body.constraints, body.intent, body.coach_directive ?? '');
+    // Trust the orchestrator's computed flag (it also reads the client-analysis equipment);
+    // fall back to local detection for direct callers.
+    const bespoke = typeof body.bespoke === 'boolean' ? body.bespoke : isBespoke(body.constraints, body.intent, body.coach_directive ?? '');
     const deterministic = bespoke
       ? null
       : buildDeterministicPhase(body.methodology_plan_phase, library, filtered, body.phase_index, body.client_analysis, body.muscle_mind_map ?? {}, priorityIds, body.constraints ?? null);
@@ -196,7 +199,8 @@ Deno.serve(async (req) => {
       directiveParts.push(
         "BESPOKE MODE: The coach's request overrides the standard-structure hard rules. "
         + 'Rules 2 and 3 (fixed 3-day Foundation, all-Big-5 every hypertrophy/strength day) and the fixed 6-exercise / 3-superset count DO NOT apply. '
-        + 'Build exactly what the coach asked: honor the equipment available (if bodyweight or "no weights", use NO barbell/dumbbell/machine/cable exercises, only bodyweight or the named equipment), the requested number of exercises per day, the focus area(s), and any avoid list. '
+        + 'Build exactly what the coach asked: honor the equipment available, the requested number of exercises per day, the focus area(s), and any avoid list. '
+        + 'EQUIPMENT IS A HARD FILTER. If the request is bodyweight / "no weights" / home-only, you must NOT use any exercise whose name or equipment implies external load: no Back Squat, Front Squat, Conventional/Romanian/Trap-bar Deadlift, Barbell/DB Bench, Barbell/DB Bulgarian Split Squat, Leg Press, Cable/Machine/Smith exercises, Kettlebell, or anything containing Barbell/BB/Dumbbell/DB/Cable/Machine/Leg Press. Substitute the bodyweight variant of that pattern: barbell/goblet squat -> bodyweight squat / split squat / step-up / pistol progression; deadlift/RDL -> single-leg RDL (bodyweight) / Nordic curl / band good morning / hip thrust; bench/DB press -> push-up variations; row -> inverted (bodyweight) row; overhead press -> pike push-up. Bands and a pull-up bar are allowed only if the coach mentioned them. '
         + 'MOVEMENT PATTERN COVERAGE + VARIETY: across the workout, cover the fundamental patterns the available equipment allows - hinge, squat, horizontal push, vertical push, horizontal pull, vertical pull, plus core/anti-rotation. Do NOT repeat the same exercise, and do not stack multiple variations of one pattern in a single day; vary exercises across days and pick different movements even when a focus area is given (a "hip" focus still needs push and pull work for balance). '
         + 'For BODYWEIGHT specifically, choose from patterns like: hinge = single-leg / B-stance RDL, good morning, hip thrust, Nordic curl, glute bridge; squat = squat, split squat, step-up, cossack, pistol progression; horizontal push = push-up variations; vertical push = pike push-up, handstand progression; horizontal pull = inverted / towel row; vertical pull = pull-up, chin-up, band-assisted pull; core = plank, hollow hold, dead bug, leg raise. Prefer library exercises that match these; if the ideal pattern exercise is not in the library, add its name to missing_exercises rather than repeating another exercise. '
         + 'Still obey: every exercise_id is a real library id; canonical section order (Warm Up, Workout, MetCon, Stretches); open with a short warm-up unless the coach said otherwise.',
