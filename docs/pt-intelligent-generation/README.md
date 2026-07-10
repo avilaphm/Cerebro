@@ -262,9 +262,11 @@ Pillar C - self-improving loop:
 
 ### MISSING / TODO (next builds, all specced in sections above)
 1. **A4 deep linkage** (the one remaining big item) - convert `stageSynthesize` to PER-PHASE STAGE CHAINING (one phase per orchestrator self-invocation, cursor in `_scratch`). Gives real "Phase 2 built from Phase 1's actual content" AND permanently kills the bespoke timeout class. Migration `20260610072245_programme_phase_cursor.sql` may have scaffolding. (v1 accessory progression is shipped; this is the deep version.)
-2. **Optional Pillar C extra** - an overview-wide "recent changes -> tell me why" prompt (the per-client + global loops are done; this is just a second, roster-level surface); auto-run distill on a schedule (like `weekly-client-brain-review`).
-3. **Optional Pillar B extra** - `web_search` research for the no-doc/bespoke case (the "boat crew" example) so bespoke plans can cite external guidance. Clarifying-questions half is done (0524a63).
+2. **Optional Pillar B extra** - `web_search` research for the no-doc/bespoke case (the "boat crew" example) so bespoke plans can cite external guidance. Clarifying-questions half is done (0524a63).
+3. **Optional Pillar C extra** - auto-run distill on a schedule (like `weekly-client-brain-review`) so learnings accrue without a manual click. (Per-client, global, AND overview ask-why surfaces are all done - see below.)
 4. **Methodology count-flex** (minor, standard-mode-only): warmup/main/superset counts flexible to `constraints.exercises_per_day`.
+
+Pillar C ask-why surface (2e2e5a9): the PT overview now has a "Recent changes - tell me why" card (RecentChangesReview) listing clients whose programmes were edited without a saved reason; the coach explains why and it distils into that client's brain. Completes the proactive half of the loop.
 
 ### Current live behavior
 - STANDARD clients (no bespoke signal): structure unchanged (deterministic Big-5 path); exercise selection now reflects the coach's notes + physio brief via the exercise-intelligence master list; Strength accessories differ from Hypertrophy.
