@@ -235,47 +235,41 @@ Pedro's account first (the PEDRO_EMAILS allow-list pattern already used in the r
 
 ---
 
-## 5. Status board (mirror of the task list)
+## 5. Progress (as of 2026-07-10)
 
-- [x] A1 Unlock client documents (commit c4f1995; frontend live; agents need deploy)
-- [x] A2 Thread coach_directive + constraints through pipeline (commit 12076a6)
-- [x] A3 Un-hardcode programme-synthesis-agent for bespoke (commit 3f0b246)
-- [x] A5 Bespoke-aware validator (commit 6b7b276); methodology count-flex deferred (standard-mode-only)
-- [x] #8 Deploy Pillar A edge functions (all 7 deployed 2026-07-10 via supabase CLI, live)
-- [x] Post-test: bespoke movement-pattern coverage + variety + create-missing (commit 939bb5f, deployed)
-- [x] Post-test: reproduce exact workout from PDF/text in wizard Step 1 via build-workout-from-text (commit 2ab6990, frontend)
-- [x] Post-test: fixed bespoke-journey timeout - build phases concurrently + skip barbell 1RM phases for bespoke (commit, orchestrator deployed)
-- [x] Post-test: ONE smart document upload - new classify-document routes workout->reproduce vs knowledge->brain; removed the two separate upload boxes (commit 1d1b54c, classify-document deployed)
-- [x] Post-test FIX (confirmed working): bespoke detection now derives from the CLIENT ANALYSIS (analysisIndicatesBespoke reads ClientAnalysis.constraints.equipment), computed once in the orchestrator and passed as an explicit `bespoke` flag to synthesis + validation; hard equipment filter in the bespoke prompt. Root cause was bespoke only reading this run's text box, not brain-stored equipment. (deployed)
-- [x] A4 v1: phase-to-phase accessory PROGRESSION (offset accessory window by phaseIndex so Strength differs from Hypertrophy; parallel-safe). Deep adaptive linkage (Phase 2 from Phase 1's actual built content) still TODO - needs per-phase stage chaining (see note). Loads/total-kg already handled post-1RM by recalculate-percentage-loads (needs a saved assignment, so not a generation-time step).
+### DONE + DEPLOYED (live on ref otcnrkfvgyvwolironoz; Pillar A confirmed working by Pedro)
 
-- [x] C v1 (self-improving loop, first slice): new distill-coaching-learnings edge function reads recent programme-edit pt_events + the coach's "why", distils durable rules, writes them to pt_client_brain.important_decisions (read by client-analysis at generation). "Teach the AI from your changes" card on the client page (commit 2426e3a, deployed). Next C: overview-wide "recent changes - tell me why" prompts; global pedro_methodology knowledge doc feeding retrieve-knowledge-context for ALL clients.
-- [ ] B (clarifying questions): NOT started. When no assessment doc + ambiguous request, orchestrator should emit clarifying_questions, set run status 'awaiting_input' (wizard already polls), pause without chaining, resume on answers merged into coach_directive. See PILLAR B section.
+Pillar A - smart generation:
+- A1 Unlock documents (c4f1995): client-profile uploader extracts + ingests text; analysis agents read up to 12 docs, most-recent-first, movement assessments floated first; movement agent emits `physio_brief`.
+- A2 Thread the request (12076a6): `coach_directive` + structured `constraints` + `physio_brief` threaded to exercise-intelligence, methodology, synthesis, validation (previously dropped after 2 agents).
+- A3 Un-hardcode synthesis (3f0b246): BESPOKE mode skips the hardcoded Big-5 template so the model builds the requested workout; STANDARD keeps the deterministic Big-5 path.
+- A5 Bespoke-aware validator (6b7b276): template rules (5 phases / 3-day Foundation / Big-5) become non-blocking findings in bespoke; the one hard rule kept everywhere is "every exercise links to a real library id".
+- Deploy: all 7 pipeline edge functions deployed via supabase CLI + smoke-tested.
+- Post-test, all deployed:
+  - Movement-pattern variety + create-missing (939bb5f): bespoke enforces hinge / squat / H+V push / H+V pull / core coverage and creates library cards for any pattern exercise not yet in the library.
+  - Bespoke-journey TIMEOUT FIX: phases build CONCURRENTLY; bespoke skips the barbell 1RM phases.
+  - Bespoke detection from the CLIENT ANALYSIS (the key reliability fix, CONFIRMED): `analysisIndicatesBespoke` reads `ClientAnalysis.constraints.equipment`, computed once in the orchestrator, passed as an explicit `bespoke` flag to synthesis + validation; hard equipment filter in the bespoke prompt. Fixes "bodyweight lives in the brain, not this run's text box" -> was being ignored.
+  - A4 v1 (e596dac): Strength pulls different accessories than Hypertrophy (offset by phaseIndex). Parallel-safe.
 
-### A4 deep-linkage note (for a fresh session)
-The timeout fix made stageSynthesize build phases via Promise.all (parallel), which is why
-deep linkage is deferred: real "Phase 2 built from Phase 1's actual exercises" needs sequential
-build. The robust way is PER-PHASE STAGE CHAINING - process one phase per orchestrator
-self-invocation (cursor in _scratch), accumulate built phases, so each phase gets a fresh ~150s
-budget AND the previous phase's content. That also permanently kills the bespoke timeout class.
-Migration `20260610072245_programme_phase_cursor.sql` may already have scaffolding to reuse.
-- [ ] A4 Phase linkage (prior_phase_summary) + progressive overload (total kg/week)  <- NEXT
-- [ ] B Unified conversational entry point (A3 done, ready)
-- [ ] C Self-improving learning loop
+Pillar B (partial - the upload/routing half):
+- Reproduce a workout from a PDF/text exactly (2ab6990): via `build-workout-from-text`, lands in the editor for review.
+- ONE smart document upload (1d1b54c): new `classify-document` routes an upload to reproduce (workout) vs ingest-to-brain (client knowledge). The two separate upload boxes were removed.
 
-### Current state (2026-07-10)
-Core smart-generation (A1, A2, A3, A5) is CODE-COMPLETE and DEPLOYED (all 7 edge functions
-deployed to ref otcnrkfvgyvwolironoz via `supabase functions deploy`; OPTIONS 200, orchestrator
-responds). No drift. Frontend (A1 uploader) live on Vercel. End-to-end bespoke generation still
-wants Pedro's real test on his fake client via the wizard brain dump (type e.g. "bodyweight, at
-home, no weights, focus hips, 6 exercises"). How it behaves now that it is live:
-- STANDARD clients (no bespoke signal): structure unchanged (deterministic Big-5 path);
-  exercise selection now reflects the coach's notes via the exercise-intelligence master list.
-- BESPOKE (coach types "bodyweight"/"no weights"/"at home"/"one-off", or Pillar B sets
-  constraints.equipment/intent): synthesis skips the Big-5 template and the model builds the
-  requested workout; validator demotes template rules to non-blocking findings so it publishes.
-- Note: a full "bodyweight JOURNEY" still gets barbell 1RM test phases (built inline in the
-  orchestrator). True one-offs route through build-workout-from-text in Pillar B, not here.
+Pillar C (v1 - per-client learn-from-edits loop):
+- `distill-coaching-learnings` (2426e3a): reads recent programme-edit `pt_events` + the coach's "why", distils durable rules, writes them into `pt_client_brain.important_decisions` (read by client-analysis at generation). "Teach the AI from your changes" card on the client page.
+
+### MISSING / TODO (next builds, all specced in sections above)
+1. **A4 deep linkage** - convert `stageSynthesize` to PER-PHASE STAGE CHAINING (one phase per orchestrator self-invocation, cursor in `_scratch`). Gives real "Phase 2 built from Phase 1's actual content" AND permanently kills the bespoke timeout class. Migration `20260610072245_programme_phase_cursor.sql` may have scaffolding. (v1 accessory progression is shipped; this is the deep version.)
+2. **Pillar B clarifying questions** - orchestrator emits `clarifying_questions` when there's no assessment doc + an ambiguous request; run status `awaiting_input` (wizard already polls); pause without chaining; resume on answers merged into `coach_directive`. Optional `web_search` research for the no-doc/bespoke case (the "boat crew" example).
+3. **Pillar C rest** - overview-wide "recent changes -> tell me why" capture; a GLOBAL `pedro_methodology` `pt_knowledge_documents` row (source='pedro_methodology') fed into `retrieve-knowledge-context` so learnings compound across ALL clients, not just per-client.
+4. **Methodology count-flex** (minor, standard-mode-only): warmup/main/superset counts flexible to `constraints.exercises_per_day`.
+
+### Current live behavior
+- STANDARD clients (no bespoke signal): structure unchanged (deterministic Big-5 path); exercise selection now reflects the coach's notes + physio brief via the exercise-intelligence master list; Strength accessories differ from Hypertrophy.
+- BESPOKE (coach types bodyweight/no-weights/home/one-off, OR the client brain/analysis indicates it): the model builds the requested workout with movement-pattern variety, missing exercises are auto-created, barbell 1RM phases are skipped, and the validator lets it publish.
+- Documents: any upload is auto-classified and routed (reproduce vs brain). Reproduce recreates a workout exactly.
+- Loads / total-kg-per-week: handled AFTER testing by `recalculate-percentage-loads` (needs a saved assignment + a 1RM), not at generation time.
+- Self-improving: when the coach edits a client's programme and clicks "Learn from my recent changes", durable rules are written into that client's brain and used by the next generation.
 
 ## 6. Verification (end to end)
 
