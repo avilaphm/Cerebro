@@ -592,6 +592,8 @@ export default function PTClientDetail({
   const [learnWhy, setLearnWhy] = useState('');
   const [learnBusy, setLearnBusy] = useState(false);
   const [learnResult, setLearnResult] = useState<{ learnings?: string[]; summary?: string; events_used?: number; error?: string } | null>(null);
+  const [methodBusy, setMethodBusy] = useState(false);
+  const [methodResult, setMethodResult] = useState<{ rules?: string[]; summary?: string; error?: string } | null>(null);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignmentList, setAssignmentList] = useState(assignments);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -694,6 +696,18 @@ export default function PTClientDetail({
     }
     setLearnResult(data as { learnings?: string[]; summary?: string; events_used?: number });
     setLearnWhy('');
+  };
+
+  const runGlobalMethodology = async () => {
+    setMethodBusy(true);
+    setMethodResult(null);
+    const { data, error } = await supabase.functions.invoke('distill-global-methodology', { body: {} });
+    setMethodBusy(false);
+    if (error || (data as { error?: string })?.error) {
+      setMethodResult({ error: (data as { error?: string })?.error ?? 'Could not update methodology.' });
+      return;
+    }
+    setMethodResult(data as { rules?: string[]; summary?: string });
   };
 
   const handleUpload = async (file: File) => {
@@ -3715,6 +3729,38 @@ export default function PTClientDetail({
             )}
           </div>
         )}
+
+        <div className="mt-5 border-t border-black/8 pt-4">
+          <p className="text-xs text-black/45 mb-2 max-w-2xl">Roll up your patterns across <span className="font-medium text-black/70">all</span> clients into your global coaching methodology — it then guides how every new programme is built.</p>
+          <button
+            onClick={() => void runGlobalMethodology()}
+            disabled={methodBusy}
+            className="border border-black/20 px-4 py-2 text-xs transition-colors hover:border-black/40 disabled:opacity-40"
+          >
+            {methodBusy ? 'Updating…' : 'Update my global coaching methodology'}
+          </button>
+          {methodResult && (
+            <div className="mt-3 max-w-2xl text-sm">
+              {methodResult.error ? (
+                <p className="text-xs text-red-600">{methodResult.error}</p>
+              ) : (
+                <>
+                  {methodResult.summary && <p className="mb-2 text-black/60">{methodResult.summary}</p>}
+                  {(methodResult.rules ?? []).length > 0 ? (
+                    <>
+                      <ul className="list-disc space-y-1 pl-5 text-black/70">
+                        {(methodResult.rules ?? []).map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                      <p className="mt-2 text-xs text-emerald-700">✓ Saved as your methodology — every new programme will use it.</p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-black/45">Not enough coaching signal yet — save some per-client learnings first.</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {status && <p className="order-[17] text-xs text-black/50 mb-6">{status}</p>}

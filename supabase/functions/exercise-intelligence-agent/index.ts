@@ -103,6 +103,7 @@ Deno.serve(async (req) => {
       client_analysis?: Record<string, unknown>;
       physio_brief?: string;
       constraints?: Record<string, unknown> | null;
+      methodology_guidance?: string;
     };
     if (!body.client_id || !body.muscle_mind_map) {
       return json({ error: 'client_id and muscle_mind_map required' }, 400);
@@ -133,6 +134,9 @@ Deno.serve(async (req) => {
     }
     if (body.physio_brief?.trim()) {
       directiveParts.push(`PHYSIO BRIEF (drive selection from this):\n${body.physio_brief.trim().slice(0, 2000)}`);
+    }
+    if (body.methodology_guidance?.trim()) {
+      directiveParts.push(`PEDRO'S COACHING METHODOLOGY (learned from his own coaching; apply to every client unless this client's data overrides it):\n${body.methodology_guidance.trim().slice(0, 3000)}`);
     }
 
     const userMessage = [

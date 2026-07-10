@@ -329,8 +329,8 @@ async function loadArchitectureChunks(
   const { data } = await adminClient
     .from('pt_knowledge_documents')
     .select('title, content_text')
-    .or('source.eq.cerebro_architecture,title.ilike.%CEREBRO MASTER SYSTEM PROMPT%,title.ilike.%CEREBRO CLIENT ANALYSIS%')
-    .limit(4);
+    .or('source.eq.cerebro_architecture,source.eq.pedro_methodology,title.ilike.%CEREBRO MASTER SYSTEM PROMPT%,title.ilike.%CEREBRO CLIENT ANALYSIS%')
+    .limit(5);
 
   const docs = ((data ?? []) as Array<{ title: string; content_text: string | null }>)
     .filter((doc) => doc.content_text?.trim());

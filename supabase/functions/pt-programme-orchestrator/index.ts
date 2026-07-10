@@ -323,6 +323,10 @@ async function stageExerciseMethodology(ctx: StageCtx) {
   const constraints = (scratch.constraints ?? null) as Constraints | null;
   if (!clientAnalysis || !muscleMindMap) { await failRun(ctx, 'Pipeline state missing after analysis stage.'); return; }
 
+  // Pedro's global coaching methodology (learned across all clients) - applied to every generation.
+  const { data: methRow } = await ctx.admin.from('pt_knowledge_documents').select('content_text').eq('source', 'pedro_methodology').limit(1).maybeSingle();
+  const methodologyGuidance = ((methRow?.content_text as string | undefined) ?? '').trim();
+
   await setCommand(ctx, STEP_NAMES[2]);
   const step3 = await callAgent(ctx, 'exercise-intelligence-agent', {
     client_id: body.client_id,
@@ -331,6 +335,7 @@ async function stageExerciseMethodology(ctx: StageCtx) {
     client_analysis: clientAnalysis,
     physio_brief: physioBrief,
     constraints,
+    methodology_guidance: methodologyGuidance,
   }, 80_000);
   await recordStep(ctx, 3, STEP_NAMES[2], { client_id: body.client_id, muscle_mind_map: muscleMindMap }, step3.output, step3.ok ? 'succeeded' : 'failed', step3.error);
   if (!step3.ok) { await failRun(ctx, `Exercise intelligence failed: ${step3.error}`); return; }
