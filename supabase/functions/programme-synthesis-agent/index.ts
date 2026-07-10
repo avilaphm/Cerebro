@@ -412,8 +412,11 @@ function buildDeterministicPhase(
       const big5Count = dayBig5.length;
       const accessoryTarget = Math.max(0, 6 - big5Count); // Aim for 6 exercises in Workout section
       const accessorySlots: ExerciseRow[] = [];
+      // Offset the accessory window by phaseIndex so later phases (e.g. Strength, index 3)
+      // pull DIFFERENT accessories than earlier ones (Hypertrophy, index 2) from the same
+      // client-specific pool - visible phase-to-phase progression rather than identical days.
       for (let i = 0; i < accessoryTarget; i++) {
-        const pick = accessoryPool[(dayIndex * accessoryTarget + i) % Math.max(1, accessoryPool.length)];
+        const pick = accessoryPool[(phaseIndex * 2 + dayIndex * accessoryTarget + i) % Math.max(1, accessoryPool.length)];
         if (pick && !accessorySlots.includes(pick)) accessorySlots.push(pick);
       }
       const exercises: Array<Record<string, unknown>> = [
