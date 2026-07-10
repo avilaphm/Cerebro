@@ -7,6 +7,7 @@ import ClientWeeklyOverview, {
   type OverviewNutritionLog,
   type OverviewWorkoutLog,
 } from './ClientWeeklyOverview';
+import RecentChangesReview from './RecentChangesReview';
 interface PTEvent {
   id: string;
   client_id: string;
@@ -241,6 +242,10 @@ export default async function PTOverviewPage() {
         nutritionDocs={nutritionDocs}
         workoutLogs={trackingWorkoutLogs}
       />
+
+      <div className="mb-12">
+        <RecentChangesReview />
+      </div>
 
       <section className="mb-14">
         <div className="mb-5 flex items-baseline justify-between gap-3">
