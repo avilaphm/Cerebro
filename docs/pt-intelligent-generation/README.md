@@ -260,8 +260,15 @@ Pillar C - self-improving loop:
 - Per-client (2426e3a): `distill-coaching-learnings` reads recent programme-edit `pt_events` + the coach's "why", distils durable rules, writes them into `pt_client_brain.important_decisions` (read by client-analysis at generation). "Teach the AI from your changes" card on the client page.
 - GLOBAL (daa6b11): `distill-global-methodology` rolls up programme edits + per-client learnings across ALL clients into general rules, saved as a single `pedro_methodology` `pt_knowledge_documents` doc. Consumed two ways: orchestrator loads it and threads it into the exercise-intelligence agent (the master list feeds every client's exercise picks), and `retrieve-knowledge-context` guarantee-loads it into the methodology agent. "Update my global coaching methodology" button on the client page. This is the compounding loop: every client's coaching improves the whole system.
 
-### MISSING / TODO (next builds, all specced in sections above)
-1. **A4 deep linkage** (the one remaining big item) - convert `stageSynthesize` to PER-PHASE STAGE CHAINING (one phase per orchestrator self-invocation, cursor in `_scratch`). Gives real "Phase 2 built from Phase 1's actual content" AND permanently kills the bespoke timeout class. Migration `20260610072245_programme_phase_cursor.sql` may have scaffolding. (v1 accessory progression is shipped; this is the deep version.)
+### DONE: A4 deep linkage (31c2c76, VERIFIED)
+`stageSynthesize` is now PER-PHASE STAGE CHAINING: one phase per orchestrator self-invocation,
+cursor + built phases in `_scratch`. Each phase gets a fresh ~150s budget (bespoke timeout class
+permanently gone) AND is built from the phases before it (`summarizePriorPhases` -> synthesis
+`prior_phases`, so Phase 2 progresses off Phase 1, Phase 3 off Phase 2). Verified live on a
+bodyweight run (Robyn): needs_review, validation passed, 3 bodyweight phases (no barbell 1RM),
+257s no timeout, Phase 3 progressed to Eccentric Pull-Up from earlier Australian Pull-Up.
+
+### MISSING / TODO (only optional extras remain)
 2. **Optional Pillar B extra** - `web_search` research for the no-doc/bespoke case (the "boat crew" example) so bespoke plans can cite external guidance. Clarifying-questions half is done (0524a63).
 3. **Optional Pillar C extra** - auto-run distill on a schedule (like `weekly-client-brain-review`) so learnings accrue without a manual click. (Per-client, global, AND overview ask-why surfaces are all done - see below.)
 4. **Methodology count-flex** (minor, standard-mode-only): warmup/main/superset counts flexible to `constraints.exercises_per_day`.

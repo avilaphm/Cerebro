@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation essentially complete. Pillar A (confirmed working), Pillar B (clarifying questions + smart upload + reproduce), Pillar C FULLY DONE (self-improving loop: per-client learnings + global pedro_methodology doc + overview "recent changes - tell me why" surface), A4 v1 (accessory progression) all shipped + deployed. ONLY REMAINING ITEM: A4 deep linkage (per-phase stage chaining refactor - risky, best done fresh; also kills the timeout class). Optional: B web_search research, scheduled auto-distill, methodology count-flex. Full detail in docs/pt-intelligent-generation/README.md.
+2026-07-10 by Claude - Intelligent PT generation project COMPLETE. Pillars A (smart generation), B (unified entry + clarifying questions), C (self-improving loop: per-client + global methodology + overview ask-why), and A4 (phase progression + deep per-phase-chaining linkage) all shipped, deployed, and VERIFIED end-to-end on a live bodyweight run (needs_review, validation passed, 3 bodyweight phases, no timeout, real phase progression). Only optional extras remain (B web_search research, scheduled auto-distill, methodology count-flex). Full detail in docs/pt-intelligent-generation/README.md.
 
 ## Last code fix commit
-2e2e5a9 - PT gen C: overview "recent changes - tell me why" surface
+31c2c76 - PT gen A4 (deep): per-phase stage chaining + real phase linkage
 
 ## What just happened (read first)
 
