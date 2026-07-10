@@ -589,6 +589,9 @@ export default function PTClientDetail({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadDocType, setUploadDocType] = useState<'movement_assessment' | 'intake' | 'profile' | 'other'>('movement_assessment');
+  const [learnWhy, setLearnWhy] = useState('');
+  const [learnBusy, setLearnBusy] = useState(false);
+  const [learnResult, setLearnResult] = useState<{ learnings?: string[]; summary?: string; events_used?: number; error?: string } | null>(null);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignmentList, setAssignmentList] = useState(assignments);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -676,6 +679,21 @@ export default function PTClientDetail({
       .eq('id', client.id);
     if (!error) setClient((c) => ({ ...c, price_tier: tierDraft }));
     setTierSaving(false);
+  };
+
+  const runDistill = async () => {
+    setLearnBusy(true);
+    setLearnResult(null);
+    const { data, error } = await supabase.functions.invoke('distill-coaching-learnings', {
+      body: { client_id: client.id, why: learnWhy },
+    });
+    setLearnBusy(false);
+    if (error || (data as { error?: string })?.error) {
+      setLearnResult({ error: (data as { error?: string })?.error ?? 'Could not learn from changes.' });
+      return;
+    }
+    setLearnResult(data as { learnings?: string[]; summary?: string; events_used?: number });
+    setLearnWhy('');
   };
 
   const handleUpload = async (file: File) => {
@@ -3653,6 +3671,49 @@ export default function PTClientDetail({
           >
             {uploading ? 'Uploading…' : '+ Upload client profile (PDF, Word, or text)'}
           </button>
+        )}
+      </div>
+
+      <div className="order-[16] border-t border-black/8 pt-6 mb-8">
+        <h2 className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-2">Teach the AI from your changes</h2>
+        <p className="text-xs text-black/45 mb-3 max-w-2xl">When you swap or adjust exercises in this client&apos;s programme, tell the AI why. It distils durable coaching rules into the client&apos;s brain, so future generated programmes reflect how you actually coach this person.</p>
+        <textarea
+          value={learnWhy}
+          onChange={(e) => setLearnWhy(e.target.value)}
+          placeholder="Why did you make your recent changes? (optional) e.g. swapped deep squats for hip hinges — knee sensitivity"
+          rows={2}
+          className="w-full max-w-2xl border border-black/15 px-3 py-2 text-sm outline-none focus:border-black/40 resize-none mb-2"
+        />
+        <button
+          onClick={() => void runDistill()}
+          disabled={learnBusy}
+          className="border border-black bg-black px-5 py-2 text-sm text-white transition-colors hover:bg-white hover:text-black disabled:opacity-40"
+        >
+          {learnBusy ? 'Learning…' : 'Learn from my recent changes'}
+        </button>
+        {learnResult && (
+          <div className="mt-3 max-w-2xl text-sm">
+            {learnResult.error ? (
+              <p className="text-xs text-red-600">{learnResult.error}</p>
+            ) : (
+              <>
+                <p className="mb-2 text-black/60">
+                  {learnResult.summary}
+                  {typeof learnResult.events_used === 'number' && ` (${learnResult.events_used} change${learnResult.events_used === 1 ? '' : 's'} reviewed)`}
+                </p>
+                {(learnResult.learnings ?? []).length > 0 ? (
+                  <>
+                    <ul className="list-disc space-y-1 pl-5 text-black/70">
+                      {(learnResult.learnings ?? []).map((l, i) => <li key={i}>{l}</li>)}
+                    </ul>
+                    <p className="mt-2 text-xs text-emerald-700">✓ Saved to this client&apos;s brain — future programmes will use it.</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-black/45">No durable learnings extracted yet — make some programme changes first, then try again.</p>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
 
