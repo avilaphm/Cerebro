@@ -249,6 +249,9 @@ Pedro's account first (the PEDRO_EMAILS allow-list pattern already used in the r
 - [x] Post-test FIX (confirmed working): bespoke detection now derives from the CLIENT ANALYSIS (analysisIndicatesBespoke reads ClientAnalysis.constraints.equipment), computed once in the orchestrator and passed as an explicit `bespoke` flag to synthesis + validation; hard equipment filter in the bespoke prompt. Root cause was bespoke only reading this run's text box, not brain-stored equipment. (deployed)
 - [x] A4 v1: phase-to-phase accessory PROGRESSION (offset accessory window by phaseIndex so Strength differs from Hypertrophy; parallel-safe). Deep adaptive linkage (Phase 2 from Phase 1's actual built content) still TODO - needs per-phase stage chaining (see note). Loads/total-kg already handled post-1RM by recalculate-percentage-loads (needs a saved assignment, so not a generation-time step).
 
+- [x] C v1 (self-improving loop, first slice): new distill-coaching-learnings edge function reads recent programme-edit pt_events + the coach's "why", distils durable rules, writes them to pt_client_brain.important_decisions (read by client-analysis at generation). "Teach the AI from your changes" card on the client page (commit 2426e3a, deployed). Next C: overview-wide "recent changes - tell me why" prompts; global pedro_methodology knowledge doc feeding retrieve-knowledge-context for ALL clients.
+- [ ] B (clarifying questions): NOT started. When no assessment doc + ambiguous request, orchestrator should emit clarifying_questions, set run status 'awaiting_input' (wizard already polls), pause without chaining, resume on answers merged into coach_directive. See PILLAR B section.
+
 ### A4 deep-linkage note (for a fresh session)
 The timeout fix made stageSynthesize build phases via Promise.all (parallel), which is why
 deep linkage is deferred: real "Phase 2 built from Phase 1's actual exercises" needs sequential

@@ -1,10 +1,10 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation: Pillar A CONFIRMED WORKING by Pedro (bespoke bodyweight generation produces a real bodyweight programme). Key fix: bespoke detection now derives from the client analysis equipment (not just the text box), computed once and passed as an explicit flag to all agents. Also shipped A4 v1 (phase-to-phase accessory progression). Remaining big pieces (fresh-context worthy): A4 deep adaptive linkage via per-phase stage chaining; Pillar B clarifying-questions; Pillar C self-improving loop. Full detail in docs/pt-intelligent-generation/README.md.
+2026-07-10 by Claude - Intelligent PT generation: Pillar A CONFIRMED WORKING. Also shipped A4 v1 (accessory progression) and C v1 (self-improving loop first slice: distill-coaching-learnings edge function + "Teach the AI from your changes" card on the client page, writes durable rules into pt_client_brain.important_decisions which generation reads). Remaining: A4 deep linkage (per-phase stage chaining), Pillar B clarifying-questions, rest of C (overview-wide ask-why + global pedro_methodology doc). Full detail in docs/pt-intelligent-generation/README.md.
 
 ## Last code fix commit
-e596dac - PT gen A4 (v1): phase-to-phase accessory progression
+2426e3a - PT gen C (v1): self-improving loop - learn from coach's programme edits
 
 ## What just happened (read first)
 
