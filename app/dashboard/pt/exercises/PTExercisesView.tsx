@@ -90,6 +90,8 @@ export default function PTExercisesView({ initialExercises }: Props) {
   const [draft, setDraft] = useState<Partial<PTExercise>>({});
   const [saving, setSaving] = useState(false);
   const [findingVideo, setFindingVideo] = useState(false);
+  const [findingMissingVideos, setFindingMissingVideos] = useState(false);
+  const [videoBatchStatus, setVideoBatchStatus] = useState('');
   const [flashMsg, setFlashMsg] = useState('');
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSetupCues, setShowSetupCues] = useState(false);
@@ -219,6 +221,8 @@ export default function PTExercisesView({ initialExercises }: Props) {
     if (videoFilter === 'missing' && ex.video_url?.trim()) return false;
     return true;
   });
+  const missingVideoExercises = exercises.filter((ex) => !ex.video_url?.trim());
+  const missingVideoCount = missingVideoExercises.length;
 
   function openExercise(ex: PTExercise) {
     setSelected(ex);
@@ -293,6 +297,51 @@ export default function PTExercisesView({ initialExercises }: Props) {
     }
   }
 
+  async function findMissingVideos() {
+    if (findingMissingVideos || missingVideoCount === 0) return;
+    setFindingMissingVideos(true);
+    setVideoBatchStatus(`0/${missingVideoCount}`);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      let populated = 0;
+      const missing: string[] = [];
+      const batchSize = 25;
+
+      for (let start = 0; start < missingVideoExercises.length; start += batchSize) {
+        const batch = missingVideoExercises.slice(start, start + batchSize);
+        setVideoBatchStatus(`${Math.min(start + batch.length, missingVideoCount)}/${missingVideoCount}`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/search-exercise-videos`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token ?? ''}`,
+          },
+          body: JSON.stringify({ exercise_ids: batch.map((ex) => ex.id) }),
+        });
+        const result = await res.json();
+        if (!res.ok || result.error) throw new Error(result.error ?? 'Video search failed');
+        populated += Number(result.populated ?? 0);
+        if (Array.isArray(result.missing)) missing.push(...result.missing);
+      }
+
+      const nextExercises = await fetchAllPTExercises(supabase);
+      setExercises(nextExercises);
+      const updatedSelected = selected ? nextExercises.find((ex) => ex.id === selected.id) : null;
+      if (updatedSelected) {
+        setSelected(updatedSelected);
+        if (editing) setDraft((d) => ({ ...d, video_url: updatedSelected.video_url }));
+      }
+
+      flash(`Found ${populated} video${populated === 1 ? '' : 's'}${missing.length ? `, ${missing.length} still missing` : ''}`);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Video search failed');
+    } finally {
+      setFindingMissingVideos(false);
+      setVideoBatchStatus('');
+    }
+  }
+
   const videoId = getYouTubeId(editing ? (draft.video_url ?? null) : selected?.video_url ?? null);
 
   return (
@@ -311,6 +360,16 @@ export default function PTExercisesView({ initialExercises }: Props) {
           >
             <Upload className="h-3.5 w-3.5" />
             Import exercises
+          </button>
+          <button
+            type="button"
+            onClick={findMissingVideos}
+            disabled={findingMissingVideos || missingVideoCount === 0}
+            className="no-glass flex items-center gap-1.5 rounded-lg border border-black/12 bg-white px-3 py-1.5 text-xs font-medium text-black hover:border-black/30 disabled:cursor-not-allowed disabled:opacity-40"
+            title={missingVideoCount === 0 ? 'Every exercise already has a video' : `Find videos for ${missingVideoCount} exercise${missingVideoCount === 1 ? '' : 's'}`}
+          >
+            <Video className="h-3.5 w-3.5" />
+            {findingMissingVideos ? `Finding ${videoBatchStatus || 'videos'}...` : `Find missing videos${missingVideoCount ? ` (${missingVideoCount})` : ''}`}
           </button>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black/30" />
