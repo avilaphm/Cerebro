@@ -1,12 +1,50 @@
 # Handoff
 
 ## Last updated
-2026-07-11 by Codex - Programme wizard client-evidence dossier shipped. Selecting a client now surfaces profile documents, M&L/PAR-Q notes, brain, exercise, nutrition, and lifestyle context as selectable evidence pills, with inline read/edit/save, one coach brief box with live voice transcription, and generation wired to selected evidence only. Supabase functions deployed for selected-document filtering. Local workflow skill `skills/pt-programme-intake-context` was created outside the app git repo and added to the root AGENTS skill chain.
+2026-07-11 by Codex - Equipment-aware programme generation shipped. Programme Wizard Step 1 now has Gym / Bodyweight / Bands + small DB / Bodyweight + band pills that flow into orchestrator constraints, analysis, synthesis, validation, and the edit-learning loop. Exercise search aliases now cover DB/KB/BB/incline/deadlift-style queries with larger editor dropdowns. Missing AI-selected exercises now create `pt_exercises` placeholder cards with `video_url = null`. Local workflow skill `skills/pt-programme-intake-context` was updated outside the app git repo.
 
 ## Last code fix commit
-efae3c9 - PT programme wizard: client evidence dossier + selected evidence generation
+154dfc7 - PT programme wizard: equipment-aware generation + search aliases
 
 ## What just happened (read first)
+
+### Equipment-aware programme generation and search (2026-07-11, Codex)
+
+Pedro asked for explicit training-environment pills before generation and better exercise search.
+
+Shipped in code commit `154dfc7`:
+- Added Step 1 `Training environment` pills in
+  `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`:
+  Gym, Bodyweight, Bands + small DB, Bodyweight + band.
+- The selected equipment mode is passed as structured `constraints.equipment` and included in
+  the coach directive, clarifying-question check, programme generation request, programme events,
+  and edit-learning context.
+- Limited-equipment modes now trigger the bespoke synthesis path so bodyweight/band programmes do
+  not get forced through the fixed full-gym Big-5 template.
+- `client-analysis-agent`, `exercise-intelligence-agent`, `programme-synthesis-agent`,
+  `programme-validation-agent`, and `pt-programme-orchestrator` now understand the new equipment
+  modes.
+- Synthesis filters the exercise library by equipment before presenting it to the model.
+- If the AI selects an ideal exercise that is not in `pt_exercises`, the server creates a
+  placeholder exercise card tagged `ai-generated` / `needs-video` with `video_url = null`.
+- Uploaded reference workouts are stored as durable client evidence marked as Pedro programming
+  references so future generations can learn from them.
+- Exercise search now expands aliases: `db` -> dumbbell, `kb` -> kettlebell, `bb` -> barbell,
+  `inclined` / `incleined` -> incline, and `rdl` -> Romanian deadlift/deadlift.
+- Programme editor dropdowns now request 24 matches instead of 6, so broad searches like `db`,
+  `kb`, `bb`, and `deadlift` show a real list of options.
+
+Deployed:
+- Supabase functions deployed on project `otcnrkfvgyvwolironoz`:
+  `pt-programme-orchestrator`, `client-analysis-agent`, `exercise-intelligence-agent`,
+  `programme-synthesis-agent`, `programme-validation-agent`, `distill-coaching-learnings`.
+
+Validation:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is deprecated
+  in favour of proxy.
+- `python3 .../quick_validate.py skills/pt-programme-intake-context` passes.
+- `git diff --check` passes.
 
 ### Programme wizard client evidence dossier (2026-07-11, Codex)
 
