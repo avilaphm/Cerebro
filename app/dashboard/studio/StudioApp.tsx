@@ -103,7 +103,10 @@ export default function StudioApp() {
   const [systemAudio, setSystemAudio] = useState(false);
   // Also record a portrait (9:16) cut alongside the landscape take. Desktop
   // (screen+face) only — camera-only mode is already a single portrait video.
-  const [makePortrait, setMakePortrait] = useState(true);
+  // Defaults OFF: the simultaneous second encode roughly doubles the recording
+  // load and is the main driver of lag / audio-video drift on the composited-
+  // canvas path. Opt in per recording when the social cut is actually needed.
+  const [makePortrait, setMakePortrait] = useState(false);
   // Desktop layout: 1 screen+cam bubble, 2 camera only, 3 screen only.
   const [layout, setLayout] = useState<LayoutId>(1);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -875,7 +878,12 @@ function SetupControls({
       >
         <span className="flex items-center gap-2">
           <Smartphone className="h-4 w-4" />
-          Portrait cut
+          <span className="flex flex-col items-start leading-tight">
+            <span>Portrait cut</span>
+            <span className="text-[11px] font-normal text-black/40">
+              Second export — adds load
+            </span>
+          </span>
         </span>
         <span
           className={`text-xs font-medium ${makePortrait ? 'text-emerald-600' : 'text-black/40'}`}

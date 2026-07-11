@@ -88,8 +88,12 @@ export interface UseMediaStreams {
 export function useMediaStreams(orientation: Orientation = 'landscape'): UseMediaStreams {
   // Read through a ref so the acquire callbacks stay referentially stable (other
   // effects depend on their identity) while always seeing the latest orientation.
+  // useRef seeds the correct initial value; the effect keeps it in sync on change
+  // (assigning .current during render is disallowed by react-hooks/refs).
   const orientationRef = useRef<Orientation>(orientation);
-  orientationRef.current = orientation;
+  useEffect(() => {
+    orientationRef.current = orientation;
+  }, [orientation]);
 
   const [cameras, setCameras] = useState<DeviceOption[]>([]);
   const [mics, setMics] = useState<DeviceOption[]>([]);
