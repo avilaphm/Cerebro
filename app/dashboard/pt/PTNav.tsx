@@ -15,6 +15,7 @@ const NAV = [
   { label: 'Programmes',  href: '/dashboard/pt/programmes' },
   { label: 'Exercises',   href: '/dashboard/pt/exercises' },
   { label: 'Knowledge',   href: '/dashboard/pt/knowledge' },
+  { label: 'AI Training', href: '/dashboard/pt/ai-training' },
   { label: 'Emails',      href: '/dashboard/pt/emails' },
   { label: 'Settings',    href: '/dashboard/pt/settings' },
 ];
