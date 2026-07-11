@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { Orientation } from './types';
+
 export interface DeviceOption {
   deviceId: string;
   label: string;
@@ -38,11 +40,20 @@ interface ScreenShareOptions extends DisplayMediaStreamOptions {
   selfBrowserSurface?: 'include' | 'exclude';
 }
 
-function studioCameraConstraints(deviceId?: string): MediaTrackConstraints {
+// Request a capture resolution that matches the target orientation. A phone held
+// in portrait otherwise hands back a landscape (1920x1080) frame, which then gets
+// cover-cropped into the portrait stage — that is the "sideways / zoomed-in"
+// camera. In portrait we ask for a tall frame so the sensor delivers portrait
+// pixels and no crop is needed. Desktop (landscape) is unchanged.
+function studioCameraConstraints(
+  deviceId?: string,
+  orientation: Orientation = 'landscape',
+): MediaTrackConstraints {
+  const portrait = orientation === 'portrait';
   return {
     deviceId: deviceId ? { exact: deviceId } : undefined,
-    width: { ideal: 1920, max: 1920 },
-    height: { ideal: 1080, max: 1080 },
+    width: { ideal: portrait ? 1080 : 1920, max: 1920 },
+    height: { ideal: portrait ? 1920 : 1080, max: 1920 },
     frameRate: { ideal: 30, max: 30 },
   };
 }
@@ -74,7 +85,12 @@ export interface UseMediaStreams {
  * unmount so no camera light is ever left on, and reports human-readable
  * errors per source instead of dead-ending.
  */
-export function useMediaStreams(): UseMediaStreams {
+export function useMediaStreams(orientation: Orientation = 'landscape'): UseMediaStreams {
+  // Read through a ref so the acquire callbacks stay referentially stable (other
+  // effects depend on their identity) while always seeing the latest orientation.
+  const orientationRef = useRef<Orientation>(orientation);
+  orientationRef.current = orientation;
+
   const [cameras, setCameras] = useState<DeviceOption[]>([]);
   const [mics, setMics] = useState<DeviceOption[]>([]);
   const [camMicStream, setCamMicStream] = useState<MediaStream | null>(null);
@@ -109,7 +125,7 @@ export function useMediaStreams(): UseMediaStreams {
       setCamMicError(null);
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: studioCameraConstraints(cameraId),
+          video: studioCameraConstraints(cameraId, orientationRef.current),
           audio: micId ? { deviceId: { exact: micId } } : true,
         });
         stopStream(camMicRef.current);
@@ -141,7 +157,7 @@ export function useMediaStreams(): UseMediaStreams {
       setCamMicError(null);
       try {
         const fresh = await navigator.mediaDevices.getUserMedia({
-          video: studioCameraConstraints(cameraId),
+          video: studioCameraConstraints(cameraId, orientationRef.current),
           audio: false,
         });
         const nextVideo = fresh.getVideoTracks()[0];

@@ -128,7 +128,7 @@ export default function StudioApp() {
     startScreen,
     stopAll,
     registerScreenEnded,
-  } = useMediaStreams();
+  } = useMediaStreams(config.orientation);
 
   const recorder = useRecorder();
   const portraitRecorder = useRecorder();
@@ -182,11 +182,14 @@ export default function StudioApp() {
     portraitActive: dualExport,
   });
 
-  // Acquire camera + mic on first mount.
+  // Acquire camera + mic. Keyed on orientation so that when a mobile browser
+  // resolves to camera-only (portrait) after hydration, the first stream is
+  // re-acquired in portrait instead of a cropped landscape frame. Desktop stays
+  // landscape and runs once.
   useEffect(() => {
     void startCamMic();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [config.orientation]);
 
   // Bind streams to the hidden source videos the compositor draws from.
   useEffect(() => {
