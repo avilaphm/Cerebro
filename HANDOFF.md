@@ -1,12 +1,50 @@
 # Handoff
 
 ## Last updated
-2026-07-10 by Claude - Intelligent PT generation project COMPLETE. Pillars A (smart generation), B (unified entry + clarifying questions), C (self-improving loop: per-client + global methodology + overview ask-why), and A4 (phase progression + deep per-phase-chaining linkage) all shipped, deployed, and VERIFIED end-to-end on a live bodyweight run (needs_review, validation passed, 3 bodyweight phases, no timeout, real phase progression). Only optional extras remain (B web_search research, scheduled auto-distill, methodology count-flex). Full detail in docs/pt-intelligent-generation/README.md.
+2026-07-11 by Codex - Programme wizard client-evidence dossier shipped. Selecting a client now surfaces profile documents, M&L/PAR-Q notes, brain, exercise, nutrition, and lifestyle context as selectable evidence pills, with inline read/edit/save, one coach brief box with live voice transcription, and generation wired to selected evidence only. Supabase functions deployed for selected-document filtering. Local workflow skill `skills/pt-programme-intake-context` was created outside the app git repo and added to the root AGENTS skill chain.
 
 ## Last code fix commit
-31c2c76 - PT gen A4 (deep): per-phase stage chaining + real phase linkage
+efae3c9 - PT programme wizard: client evidence dossier + selected evidence generation
 
 ## What just happened (read first)
+
+### Programme wizard client evidence dossier (2026-07-11, Codex)
+
+Pedro reported that Anne-Maree McDonald had PAR-Q and M&L data, but the new programme
+wizard showed "No profile document yet" because Step 1 only checked
+`pt_clients.document_url`. Live DB verification showed Anne-Maree has:
+- 2 `pt_client_documents`
+- 5 `pt_client_notes`
+- 1 each in `pt_client_brain`, `pt_client_exercise_doc`, `pt_client_nutrition_doc`,
+  and `pt_client_lifestyle_doc`
+
+Shipped in code commit `efae3c9`:
+- `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx` now loads a client dossier
+  from profile fields, `pt_client_documents`, active PAR-Q/M&L/client notes, client brain,
+  exercise, nutrition, and lifestyle docs.
+- Sources render as selectable pills/cards with readable previews. Pedro can open a source,
+  edit it inline, save it, and stay inside the programme wizard.
+- Step 1 is streamlined into: client dossier, upload document, training days, then one
+  coach brief/brain dump box.
+- Voice input now streams interim speech into the coach brief box in real time.
+- Generate passes a selected-evidence block into the orchestrator and sends selected document
+  IDs to the analysis functions.
+- Step 4 now asks Pedro why he changed the generated programme before finalising, detects
+  swaps/removals/set changes from the generated baseline, writes programme edit events, and
+  calls `distill-coaching-learnings` so future generation can learn from those edits.
+- `pt-programme-orchestrator`, `client-analysis-agent`, and `movement-analysis-agent` now
+  accept `selected_document_ids` plus `selected_documents_only` and filter document retrieval
+  accordingly.
+
+Deployed:
+- Supabase functions deployed on project `otcnrkfvgyvwolironoz`:
+  `pt-programme-orchestrator`, `client-analysis-agent`, `movement-analysis-agent`.
+
+Validation:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is deprecated
+  in favour of proxy.
+- `git diff --check` passes.
 
 ### Intelligent PT generation - Pillar A + post-test enhancements (2026-07-10, Claude)
 
