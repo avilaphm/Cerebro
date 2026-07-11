@@ -70,9 +70,11 @@ export function useRecorder() {
   }, [clearTimer]);
 
   // onComplete fires from the recorder's own stop event (external system), so
-  // downstream state changes happen in a callback, not inside an effect.
+  // downstream state changes happen in a callback, not inside an effect. It
+  // receives the finished result so callers can grab the blob synchronously
+  // (React state updates a render later — too late for offline processing).
   const start = useCallback(
-    (stream: MediaStream, bitrate: number, onComplete?: () => void) => {
+    (stream: MediaStream, bitrate: number, onComplete?: (result: RecordingResult) => void) => {
       chunksRef.current = [];
       setResult(null);
       const mimeType = pickMimeType();
@@ -93,10 +95,11 @@ export function useRecorder() {
       recorder.onstop = () => {
         const type = mimeType || 'video/webm';
         const blob = new Blob(chunksRef.current, { type });
-        setResult({ url: URL.createObjectURL(blob), blob, mimeType: type });
+        const finished: RecordingResult = { url: URL.createObjectURL(blob), blob, mimeType: type };
+        setResult(finished);
         setStatus('stopped');
         clearTimer();
-        onComplete?.();
+        onComplete?.(finished);
       };
       recorderRef.current = recorder;
       // Timeslice so data flushes periodically; protects long recordings.

@@ -3,8 +3,9 @@ export type Orientation = 'landscape' | 'portrait';
 export type BubblePosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export type BubbleSize = 'small' | 'medium' | 'large';
 
-// Recorder lifecycle. Countdown / pause land in Phase 2.
-export type StudioPhase = 'setup' | 'recording' | 'review';
+// Recorder lifecycle. 'processing' = raw take captured, compositing the
+// landscape + portrait exports offline before review.
+export type StudioPhase = 'setup' | 'recording' | 'processing' | 'review';
 
 export interface CanvasDims {
   width: number;

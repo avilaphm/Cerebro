@@ -26,8 +26,9 @@ import { useRecorder } from './useRecorder';
 import { useStudioHotkeys } from './useHotkeys';
 import { useDocumentPip, useDocumentPipSupported } from './useDocumentPip';
 import { SelfViewPip } from './SelfViewPip';
-import { mergeAudioTracks } from './audio';
-import type { CompositorConfig, CanvasWithCapture, LayoutId, StudioPhase } from './types';
+import { composeExports } from './composeExports';
+import type { RecordingResult } from './useRecorder';
+import type { CompositorConfig, LayoutId, StudioPhase } from './types';
 import { ORIENTATION_DIMS } from './types';
 
 const LANDSCAPE_BITRATE = 8_000_000;
@@ -110,6 +111,13 @@ export default function StudioApp() {
   // Desktop layout: 1 screen+cam bubble, 2 camera only, 3 screen only.
   const [layout, setLayout] = useState<LayoutId>(1);
   const [countdown, setCountdown] = useState<number | null>(null);
+  // Composited exports, produced AFTER the raw take is captured (see
+  // finalizeRecording → composeExports). Camera-only mode puts the raw camera
+  // straight into portraitExport with no compositing.
+  const [landscapeExport, setLandscapeExport] = useState<RecordingResult | null>(null);
+  const [portraitExport, setPortraitExport] = useState<RecordingResult | null>(null);
+  const [processProgress, setProcessProgress] = useState(0);
+  const [processError, setProcessError] = useState<string | null>(null);
   // Camera-only mode: mobile browsers have no getDisplayMedia (screen capture),
   // so Studio becomes a portrait talking-head recorder instead of dead-ending.
   const cameraOnly = !useScreenCaptureSupported();
@@ -145,11 +153,15 @@ export default function StudioApp() {
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const configRef = useRef(config);
   const phaseRef = useRef<StudioPhase>(phase);
-  const recordingStreamRef = useRef<MediaStream | null>(null);
-  const portraitStreamRef = useRef<MediaStream | null>(null);
+  // Raw takes captured during recording; consumed by composeExports on stop.
+  const screenBlobRef = useRef<Blob | null>(null);
+  const cameraBlobRef = useRef<Blob | null>(null);
   const pendingStopsRef = useRef(0);
   const countdownRef = useRef<number | null>(null);
-  const audioCleanupRef = useRef<(() => void) | null>(null);
+  // Latest values read inside the recorder stop callbacks (which close over
+  // start-time state), kept fresh via refs so finalize sees the real values.
+  const makePortraitRef = useRef(makePortrait);
+  const elapsedRef = useRef(0);
 
   // Stop both takes together. Safe when portrait wasn't started — an unstarted
   // recorder's stop() is a no-op.
@@ -174,6 +186,12 @@ export default function StudioApp() {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+  useEffect(() => {
+    makePortraitRef.current = makePortrait;
+  }, [makePortrait]);
+  useEffect(() => {
+    elapsedRef.current = recorder.elapsedMs;
+  }, [recorder.elapsedMs]);
 
   useCompositor({
     canvasRef,
@@ -219,24 +237,70 @@ export default function StudioApp() {
     return () => registerScreenEnded(null);
   }, [registerScreenEnded, stopRecording]);
 
-  // Called once both recordings have stopped: review the take and free every
-  // capture source so no camera light lingers.
-  const finalizeRecording = useCallback(() => {
-    audioCleanupRef.current?.();
-    audioCleanupRef.current = null;
-    recordingStreamRef.current?.getTracks().forEach((t) => t.stop());
-    recordingStreamRef.current = null;
-    portraitStreamRef.current?.getTracks().forEach((t) => t.stop());
-    portraitStreamRef.current = null;
+  // Called once the raw take(s) have flushed. Frees the live capture sources,
+  // then composites the landscape + portrait cuts offline (desktop) or hands the
+  // raw camera straight to review (camera-only). Runs after capture, so the
+  // compositing that was too heavy live now has CPU headroom → no lag, no drift.
+  const finalizeRecording = useCallback(async () => {
     stopAll();
-    setPhase('review');
-  }, [stopAll]);
+    const cameraBlob = cameraBlobRef.current;
 
-  // Landscape and portrait recorders stop independently; finalize only after
-  // the last one has flushed its blob so neither take is truncated.
-  const handleRecorderComplete = useCallback(() => {
+    if (cameraOnly) {
+      if (cameraBlob) {
+        setPortraitExport({
+          url: URL.createObjectURL(cameraBlob),
+          blob: cameraBlob,
+          mimeType: cameraBlob.type || 'video/webm',
+        });
+      }
+      setPhase('review');
+      return;
+    }
+
+    const screenBlob = screenBlobRef.current;
+    if (!screenBlob || !cameraBlob) {
+      setProcessError('The recording could not be captured. Please try again.');
+      setPhase('review');
+      return;
+    }
+
+    setProcessProgress(0);
+    setProcessError(null);
+    setPhase('processing');
+    try {
+      const out = await composeExports({
+        screenBlob,
+        cameraBlob,
+        config: configRef.current,
+        makePortrait: makePortraitRef.current,
+        expectedDurationMs: elapsedRef.current,
+        onProgress: setProcessProgress,
+      });
+      setLandscapeExport({
+        url: URL.createObjectURL(out.landscape),
+        blob: out.landscape,
+        mimeType: out.mimeType,
+      });
+      if (out.portrait) {
+        setPortraitExport({
+          url: URL.createObjectURL(out.portrait),
+          blob: out.portrait,
+          mimeType: out.mimeType,
+        });
+      }
+    } catch {
+      setProcessError(
+        'Could not build the landscape + portrait cuts from the recording. Please try again.',
+      );
+    }
+    setPhase('review');
+  }, [cameraOnly, stopAll]);
+
+  // Each raw recorder stops independently; finalize only after the last one has
+  // flushed its blob so neither take is truncated.
+  const onRawSegmentDone = useCallback(() => {
     pendingStopsRef.current -= 1;
-    if (pendingStopsRef.current <= 0) finalizeRecording();
+    if (pendingStopsRef.current <= 0) void finalizeRecording();
   }, [finalizeRecording]);
 
   const handleShareScreen = useCallback(() => {
@@ -245,47 +309,45 @@ export default function StudioApp() {
 
   const startRecording = useCallback(() => {
     closePip();
-    const canvas = canvasRef.current as CanvasWithCapture | null;
-    if (!canvas || !camMicStream) return;
+    if (!camMicStream) return;
     if (!cameraOnly && !screenStream) return;
 
-    const portraitCanvas = portraitCanvasRef.current as CanvasWithCapture | null;
-    const portraitStream = dualExport && portraitCanvas ? portraitCanvas.captureStream(30) : null;
-    const primaryStream = canvas.captureStream(30);
+    screenBlobRef.current = null;
+    cameraBlobRef.current = null;
+    setLandscapeExport(null);
+    setPortraitExport(null);
+    setProcessError(null);
 
-    const screenAudioAvailable = Boolean(systemAudio && screenStream?.getAudioTracks().length);
-    if (screenAudioAvailable) {
-      const audio = mergeAudioTracks([camMicStream, screenStream], portraitStream ? 2 : 1);
-      audioCleanupRef.current = audio.cleanup;
-      if (audio.tracks[0]) primaryStream.addTrack(audio.tracks[0]);
-      if (portraitStream && audio.tracks[1]) portraitStream.addTrack(audio.tracks[1]);
+    // Record the RAW sources directly — the browser's hardware-accelerated path,
+    // no canvas compositing, so recording is lag-free and audio stays locked to
+    // picture. The landscape + portrait cuts are composited afterward from these
+    // takes (finalizeRecording → composeExports). The camera take carries the
+    // mic; the screen take carries system audio when it is enabled.
+    if (cameraOnly) {
+      pendingStopsRef.current = 1;
+      recorder.start(camMicStream, PORTRAIT_BITRATE, (res) => {
+        cameraBlobRef.current = res.blob;
+        onRawSegmentDone();
+      });
     } else {
-      const micTrack = camMicStream.getAudioTracks()[0];
-      audioCleanupRef.current = null;
-      if (micTrack) {
-        primaryStream.addTrack(micTrack);
-        if (portraitStream) portraitStream.addTrack(micTrack);
-      }
+      pendingStopsRef.current = 2;
+      recorder.start(screenStream!, LANDSCAPE_BITRATE, (res) => {
+        screenBlobRef.current = res.blob;
+        onRawSegmentDone();
+      });
+      portraitRecorder.start(camMicStream, PORTRAIT_BITRATE, (res) => {
+        cameraBlobRef.current = res.blob;
+        onRawSegmentDone();
+      });
     }
-
-    recordingStreamRef.current = primaryStream;
-    portraitStreamRef.current = portraitStream;
-
-    const primaryBitrate = config.orientation === 'portrait' ? PORTRAIT_BITRATE : LANDSCAPE_BITRATE;
-    pendingStopsRef.current = portraitStream ? 2 : 1;
-    recorder.start(primaryStream, primaryBitrate, handleRecorderComplete);
-    if (portraitStream) portraitRecorder.start(portraitStream, PORTRAIT_BITRATE, handleRecorderComplete);
     setPhase('recording');
   }, [
     camMicStream,
     screenStream,
-    systemAudio,
     cameraOnly,
-    dualExport,
-    config.orientation,
     recorder,
     portraitRecorder,
-    handleRecorderComplete,
+    onRawSegmentDone,
     closePip,
   ]);
 
@@ -302,6 +364,18 @@ export default function StudioApp() {
   const returnToSetup = useCallback(() => {
     recorder.reset();
     portraitRecorder.reset();
+    setLandscapeExport((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+    setPortraitExport((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+    setProcessError(null);
+    setProcessProgress(0);
+    screenBlobRef.current = null;
+    cameraBlobRef.current = null;
     setPhase('setup');
     void startCamMic(selectedCamera || undefined, selectedMic || undefined);
   }, [recorder, portraitRecorder, startCamMic, selectedCamera, selectedMic]);
@@ -397,6 +471,11 @@ export default function StudioApp() {
   const cameraValue = selectedCamera || camMicStream?.getVideoTracks()[0]?.getSettings().deviceId || '';
   const micValue = selectedMic || camMicStream?.getAudioTracks()[0]?.getSettings().deviceId || '';
 
+  // Review reads the composited exports. Camera-only has no landscape cut, so
+  // its single video is the primary export.
+  const primaryExport = cameraOnly ? portraitExport : landscapeExport;
+  const secondaryPortraitExport = cameraOnly ? null : portraitExport;
+
   return (
     <div className="cerebro-studio p-4 sm:p-6 md:p-8">
       <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black/40 mb-2">
@@ -483,6 +562,18 @@ export default function StudioApp() {
                 Tap or press Esc to cancel
               </span>
             </button>
+          )}
+
+          {phase === 'processing' && (
+            <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-sm">
+              <span className="font-display text-2xl font-light text-white">Processing…</span>
+              <span className="text-sm tabular-nums text-white/70">
+                Building your landscape + portrait cuts — {Math.round(processProgress * 100)}%
+              </span>
+              <span className="max-w-xs px-6 text-center text-[0.7rem] leading-relaxed text-white/45">
+                Takes about as long as the recording. Keep this tab open.
+              </span>
+            </div>
           )}
 
           {phase === 'recording' && (
@@ -598,42 +689,53 @@ export default function StudioApp() {
             </div>
           )}
 
-          {phase === 'review' && recorder.result && (
+          {phase === 'review' && primaryExport && (
             <ReviewControls
               durationMs={recorder.elapsedMs}
               primaryLabel={cameraOnly ? 'Video' : 'Landscape'}
-              primarySizeBytes={recorder.result.blob.size}
+              primarySizeBytes={primaryExport.blob.size}
               onDownloadPrimary={() =>
-                downloadBlob(recorder.result!.url, cameraOnly ? 'portrait' : 'landscape')
+                downloadBlob(primaryExport.url, cameraOnly ? 'portrait' : 'landscape')
               }
-              portraitSizeBytes={portraitRecorder.result?.blob.size ?? null}
+              portraitSizeBytes={secondaryPortraitExport?.blob.size ?? null}
               onDownloadPortrait={
-                portraitRecorder.result
-                  ? () => downloadBlob(portraitRecorder.result!.url, 'portrait')
+                secondaryPortraitExport
+                  ? () => downloadBlob(secondaryPortraitExport.url, 'portrait')
                   : null
               }
               onRecordAgain={returnToSetup}
               onDiscard={returnToSetup}
             />
           )}
+
+          {phase === 'review' && !primaryExport && (
+            <div className="space-y-4">
+              <p className="text-sm text-red-600">
+                {processError ?? 'Nothing was recorded. Please try again.'}
+              </p>
+              <button type="button" onClick={returnToSetup} className={DARK_BTN}>
+                <RotateCcw className="h-4 w-4" /> Record again
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {phase === 'review' && recorder.result && (
+      {phase === 'review' && primaryExport && (
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_20rem]">
           <div className={`overflow-hidden rounded-2xl bg-black ${isPortrait ? 'flex justify-center' : ''}`}>
             <video
-              src={recorder.result.url}
+              src={primaryExport.url}
               controls
               playsInline
               className={`block ${isPortrait ? 'aspect-[9/16] h-[68vh] max-w-full' : 'aspect-video w-full'}`}
             />
           </div>
           <div className="space-y-4 self-start">
-            {portraitRecorder.result && (
+            {secondaryPortraitExport && (
               <div className="flex justify-center overflow-hidden rounded-2xl bg-black">
                 <video
-                  src={portraitRecorder.result.url}
+                  src={secondaryPortraitExport.url}
                   controls
                   playsInline
                   className="block aspect-[9/16] max-h-[70vh] max-w-full"
@@ -641,9 +743,9 @@ export default function StudioApp() {
               </div>
             )}
             <p className="rounded-xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/55">
-              {portraitRecorder.result
+              {secondaryPortraitExport
                 ? 'Two WebM files — landscape and portrait. Convert to MP4 for LinkedIn with CapCut or ffmpeg.'
-                : 'WebM downloads. Convert to MP4 for LinkedIn with CapCut or ffmpeg.'}
+                : 'WebM download. Convert to MP4 for LinkedIn with CapCut or ffmpeg.'}
             </p>
           </div>
         </div>
