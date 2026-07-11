@@ -1,12 +1,37 @@
 # Handoff
 
 ## Last updated
-2026-07-11 by Codex - Programme editor exercise flow tightened. Board view now has a per-day `+` button, the day edit surface is taller, and every PT exercise-consuming page now paginates through the full `pt_exercises` library instead of stopping at the first 400/1000 rows. Supabase now has 1,373 exercises after adding 23 missing intuitive lower-body/RDL aliases.
+2026-07-11 by Codex - Exercise video search is now bulkable. Ran the existing `search-exercise-videos` automation across the 22 remaining manual exercises and verified `1373/1373` exercises now have video URLs. Exercise Library now has a `Find missing videos` button that batches missing rows in groups of 25.
 
 ## Last code fix commit
-a842e6e - PT programme editor: taller edit surface, board add-exercise button, full exercise-library loader
+d4adb62 - Exercise Library one-click missing-video automation
 
 ## What just happened (read first)
+
+### Exercise Library bulk missing-video automation (2026-07-11, Codex)
+
+Pedro was manually clicking `Find video` on one exercise, selecting another exercise, and repeating.
+
+Live automation run:
+- Verified `pt_exercises` had `1373` rows and `22` missing `video_url` values.
+- All 22 missing rows were `source = manual`.
+- Ran the existing Supabase Edge Function `search-exercise-videos` in batch mode using the
+  service role token.
+- Function returned `{ "populated": 22, "missing": [] }`.
+- Post-run verification: `1373` total, `1373` with video, `0` missing.
+
+Code change:
+- `app/dashboard/pt/exercises/PTExercisesView.tsx` now has a header button:
+  `Find missing videos (N)`.
+- The button uses the same `search-exercise-videos` function, but batches missing exercise IDs
+  in groups of 25 so future imports can be processed with one click instead of manual repeats.
+- The button disables when there are no missing videos and shows progress like `Finding 25/80...`.
+
+Validation:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is deprecated
+  in favour of proxy.
+- `git diff --check` passes.
 
 ### Programme editor add-exercise flow and full exercise library loading (2026-07-11, Codex)
 
