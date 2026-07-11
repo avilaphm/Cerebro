@@ -70,7 +70,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json() as { client_id?: string; intake_text?: string; selected_document_ids?: string[]; selected_documents_only?: boolean };
+    const body = await req.json() as {
+      client_id?: string;
+      intake_text?: string;
+      selected_document_ids?: string[];
+      selected_documents_only?: boolean;
+      constraints?: Record<string, unknown> | null;
+    };
     if (!body.client_id) return json({ error: 'client_id required' }, 400);
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -113,6 +119,7 @@ Deno.serve(async (req) => {
       lifestyle: lifestyleRes.data,
       documents,
       intakeText: body.intake_text,
+      constraints: body.constraints ?? null,
     });
 
     let analysis: Record<string, unknown> | null = null;
@@ -141,6 +148,7 @@ Deno.serve(async (req) => {
         lifestyle: lifestyleRes.data,
         documents,
         intakeText: body.intake_text,
+        constraints: body.constraints ?? null,
       });
     }
 
@@ -159,9 +167,11 @@ function buildUserMessage(ctx: {
   lifestyle: Record<string, unknown> | null;
   documents: Array<{ document_type: string; title: string; content_text: string | null }>;
   intakeText?: string;
+  constraints?: Record<string, unknown> | null;
 }): string {
   const parts: string[] = [];
   parts.push(`CLIENT BASICS:\n${JSON.stringify(ctx.client, null, 2)}`);
+  if (ctx.constraints) parts.push(`STRUCTURED COACH CONSTRAINTS:\n${JSON.stringify(ctx.constraints, null, 2)}`);
   if (ctx.master) parts.push(`MASTER BRAIN:\n${JSON.stringify(ctx.master, null, 2)}`);
   if (ctx.nutrition) parts.push(`NUTRITION DOC:\n${JSON.stringify(ctx.nutrition, null, 2)}`);
   if (ctx.exercise) parts.push(`EXERCISE DOC:\n${JSON.stringify(ctx.exercise, null, 2)}`);
@@ -231,18 +241,23 @@ function buildFallbackClientAnalysis(ctx: {
   lifestyle: Record<string, unknown> | null;
   documents: Array<{ document_type: string; title: string; content_text: string | null }>;
   intakeText?: string;
+  constraints?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   const raw = [
     JSON.stringify(ctx.client),
     JSON.stringify(ctx.master ?? {}),
     JSON.stringify(ctx.exercise ?? {}),
     JSON.stringify(ctx.lifestyle ?? {}),
+    JSON.stringify(ctx.constraints ?? {}),
     ctx.intakeText ?? '',
     ...ctx.documents.map((doc) => doc.content_text ?? ''),
   ].join('\n').toLowerCase();
   const injuries = keywordList(raw, ['shoulder', 'knee', 'back', 'hip', 'ankle', 'neck', 'wrist', 'elbow']);
   const mobility = keywordList(raw, ['tight', 'mobility', 'stiff', 'range of motion', 'rotation', 'flexor', 'adductor', 'hamstring', 'thoracic']);
-  const equipment = keywordList(raw, ['gym', 'dumbbell', 'barbell', 'kettlebell', 'cable', 'machine', 'band', 'bodyweight', 'home']);
+  const equipment = Array.from(new Set([
+    ...keywordList(raw, ['gym', 'dumbbell', 'barbell', 'kettlebell', 'cable', 'machine', 'band', 'bodyweight', 'home', 'bands_small_dumbbells', 'bodyweight_band']),
+    ...structuredEquipment(ctx.constraints),
+  ]));
   const goals = typeof ctx.client.goals === 'string' ? ctx.client.goals : '';
   const needsCardio = /fat loss|conditioning|cardio|fitness|body composition|weight loss/.test(raw);
   const needsMobility = mobility.length > 0 || /desk|sedentary|stiff|pain/.test(raw);
@@ -286,6 +301,18 @@ function buildFallbackClientAnalysis(ctx: {
 
 function keywordList(raw: string, keywords: string[]): string[] {
   return keywords.filter((keyword) => raw.includes(keyword));
+}
+
+function structuredEquipment(constraints?: Record<string, unknown> | null): string[] {
+  const equipment = typeof constraints?.equipment === 'string' ? constraints.equipment : '';
+  if (equipment === 'full_gym') return ['gym', 'barbell', 'dumbbell', 'kettlebell', 'cable', 'machine'];
+  if (equipment === 'bodyweight') return ['bodyweight', 'home', 'no equipment'];
+  if (equipment === 'bands_small_dumbbells') return ['band', 'dumbbell', 'home', 'small dumbbells'];
+  if (equipment === 'bodyweight_band') return ['bodyweight', 'band', 'home'];
+  if (equipment === 'bands') return ['band', 'home'];
+  if (equipment === 'home_minimal') return ['home', 'minimal equipment'];
+  if (equipment === 'travel') return ['travel', 'minimal equipment'];
+  return [];
 }
 
 function stringValue(value: unknown, fallback: string): string {

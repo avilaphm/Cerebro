@@ -25,7 +25,7 @@ const STEP_NAMES = [
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 type Constraints = {
-  equipment?: 'full_gym' | 'home_minimal' | 'bodyweight' | 'bands' | 'travel';
+  equipment?: 'full_gym' | 'home_minimal' | 'bodyweight' | 'bands' | 'bands_small_dumbbells' | 'bodyweight_band' | 'travel';
   location?: string;
   focus_areas?: string[];
   exercises_per_day?: number;
@@ -73,9 +73,9 @@ function isBespokeRequest(
 ): boolean {
   if (intent === 'one_off') return true;
   const eq = constraints?.equipment;
-  if (eq && ['bodyweight', 'home_minimal', 'bands', 'travel'].includes(eq)) return true;
+  if (eq && ['bodyweight', 'home_minimal', 'bands', 'bands_small_dumbbells', 'bodyweight_band', 'travel'].includes(eq)) return true;
   const t = coachDirective.toLowerCase();
-  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
+  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\bbodyweight\s*\+\s*bands?\b|\bbands?\s*\+\s*(small\s*)?(db|dumbbells?)\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
 }
 
 // The client-analysis agent distils equipment/environment from ALL sources (this run's brain
@@ -87,7 +87,7 @@ function analysisIndicatesBespoke(clientAnalysis: Record<string, unknown> | null
   const eq = constraints?.equipment;
   const arr = Array.isArray(eq) ? eq : (typeof eq === 'string' ? [eq] : []);
   const joined = arr.map((x) => String(x)).join(' ').toLowerCase();
-  return /bodyweight|body weight|no weight|no equipment|home[- ]?only|home environment|bands?[- ]?only|minimal equipment|travel|hotel/.test(joined);
+  return /bodyweight|body weight|no weight|no equipment|home[- ]?only|home environment|bands?[- ]?only|bodyweight band|bands small dumbbells|minimal equipment|travel|hotel/.test(joined);
 }
 
 // Pipeline stages. Supabase edge workers (including EdgeRuntime.waitUntil background
@@ -289,6 +289,7 @@ async function stageAnalyze(ctx: StageCtx) {
     intake_text: body.intake_text,
     selected_document_ids: body.selected_document_ids ?? [],
     selected_documents_only: body.selected_documents_only === true,
+    constraints: body.constraints ?? null,
   }, 75_000);
   await recordStep(ctx, 1, STEP_NAMES[0], { client_id: body.client_id }, step1.output, step1.ok ? 'succeeded' : 'failed', step1.error);
   if (!step1.ok) { await failRun(ctx, `Client analysis failed: ${step1.error}`); return; }
@@ -301,6 +302,7 @@ async function stageAnalyze(ctx: StageCtx) {
     intake_text: body.intake_text,
     selected_document_ids: body.selected_document_ids ?? [],
     selected_documents_only: body.selected_documents_only === true,
+    constraints: body.constraints ?? null,
   }, 80_000);
   await recordStep(ctx, 2, STEP_NAMES[1], { client_id: body.client_id }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);
   if (!step2.ok) { await failRun(ctx, `Movement analysis failed: ${step2.error}`); return; }
@@ -525,6 +527,7 @@ async function stageSynthesize(ctx: StageCtx) {
   const programmeGoal = synthGoal;
   const programme = { phases };
   const missingExercises = Array.from(new Set([...synthMissing, ...exerciseIntelligenceMissing]));
+  await ensureExerciseCardsForNames(ctx.admin, missingExercises);
 
   // Programme B/modifier pass: re-check the programme against the client brain-derived
   // movement map and exercise intelligence before validation.
@@ -694,6 +697,48 @@ async function ensureExerciseCardsForMasterList(
     const id = byName.get(text(exercise.name, '').toLowerCase()) ?? null;
     return { ...exercise, exercise_id: id };
   });
+}
+
+async function ensureExerciseCardsForNames(
+  admin: ReturnType<typeof createClient>,
+  rawNames: unknown[],
+) {
+  const names = Array.from(new Set(rawNames.map(cleanMissingExerciseName).filter(Boolean)));
+  if (names.length === 0) return;
+
+  const { data: existing } = await admin
+    .from('pt_exercises')
+    .select('name')
+    .in('name', names);
+  const existingNames = new Set((existing ?? []).map((row: { name: string }) => row.name.toLowerCase()));
+  const inserts = names
+    .filter((name) => !existingNames.has(name.toLowerCase()))
+    .map((name) => ({
+      name,
+      muscles: [],
+      primary_muscles: [],
+      secondary_muscles: [],
+      purpose: null,
+      equipment: null,
+      video_url: null,
+      cues: [],
+      setup_cues: [],
+      tags: ['ai-generated', 'needs-video', 'programme-generation'],
+      conditions: [],
+      source: 'ai',
+    }));
+  if (inserts.length > 0) {
+    await admin.from('pt_exercises').upsert(inserts, { onConflict: 'name' });
+  }
+}
+
+function cleanMissingExerciseName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/^[^:]{0,80}:\s*/, '')
+    .replace(/^[^/]{0,80}\/[^:]{0,80}:\s*/, '')
+    .trim()
+    .slice(0, 120);
 }
 
 async function persistProgrammeStaples(

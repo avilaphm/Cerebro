@@ -187,7 +187,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
   };
 
   const getLibraryMatches = (name: string) =>
-    name.length >= 2 ? searchExerciseLibrary(libraryExercises, name, 6) : [];
+    name.length >= 2 ? searchExerciseLibrary(libraryExercises, name, 24) : [];
 
   const handleNameChange = (idx: number, value: string) => {
     if (activeBlock >= 0) {

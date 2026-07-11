@@ -30,8 +30,35 @@ function uniqueTokens(value: string): string[] {
     });
 }
 
+const TOKEN_ALIASES: Record<string, string[]> = {
+  bb: ['barbell', 'barbells', 'back', 'bar'],
+  barbell: ['bb', 'barbells'],
+  barbells: ['bb', 'barbell'],
+  db: ['dumbbell', 'dumbbells'],
+  dumbbell: ['db', 'dumbbells'],
+  dumbbells: ['db', 'dumbbell'],
+  kb: ['kettlebell', 'kettlebells'],
+  kettlebell: ['kb', 'kettlebells'],
+  kettlebells: ['kb', 'kettlebell'],
+  bw: ['bodyweight', 'body'],
+  bodyweight: ['bw', 'body'],
+  band: ['bands', 'resistance'],
+  bands: ['band', 'resistance'],
+  resistance: ['band', 'bands'],
+  incline: ['inclined'],
+  inclined: ['incline'],
+  incleined: ['incline'],
+  inc: ['incline'],
+  rdl: ['romanian', 'deadlift'],
+  romanian: ['rdl', 'deadlift'],
+  ohp: ['overhead', 'shoulder', 'press'],
+  pulldown: ['pull', 'down', 'lat'],
+  'pullup': ['pull', 'up', 'pull-up'],
+};
+
 function tokenVariants(token: string): string[] {
   const variants = new Set([token]);
+  for (const alias of TOKEN_ALIASES[token] ?? []) variants.add(alias);
 
   if (token.length > 4 && token.endsWith('ed')) {
     variants.add(token.slice(0, -1));
@@ -47,6 +74,10 @@ function tokenVariants(token: string): string[] {
   }
   if (token.length > 3 && token.endsWith('s')) {
     variants.add(token.slice(0, -1));
+  }
+
+  for (const alias of [...variants]) {
+    for (const nested of TOKEN_ALIASES[alias] ?? []) variants.add(nested);
   }
 
   return [...variants].filter((variant) => variant.length >= 2);

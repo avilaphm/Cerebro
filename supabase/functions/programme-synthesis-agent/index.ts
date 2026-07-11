@@ -57,6 +57,7 @@ OUTPUT FORMAT — valid JSON only, matching this exact shape:
         "exercises": [
           {
             "exercise_id": string,                 // MUST be a real id from the EXERCISE LIBRARY
+            "name": string | null,                 // required when exercise_id is null; optional/null for linked library exercises
             "sets": string,                        // sets for this exercise (typically matches week_blocks[0].sets)
             "reps": string,                        // rep range e.g. "8-12" or "10-12"
             "section_start": "Warm Up" | "Workout" | "MetCon" | "Stretches" | null,
@@ -71,8 +72,9 @@ OUTPUT FORMAT — valid JSON only, matching this exact shape:
 
 HARD RULES (violating any = failure):
 
-1. EVERY exercise.exercise_id MUST be a real id from the EXERCISE LIBRARY. If you can't find a suitable exercise,
-   add the desired name to "missing_exercises" and skip — do NOT invent an exercise_id.
+1. Prefer existing exercise_id values from the EXERCISE LIBRARY. If the ideal exercise for this client is not in the library,
+   include the exercise anyway with "exercise_id": null and "name": the exact exercise name. The server will create a real
+   exercise card with video_url=null for Pedro to add the video later. Do NOT invent exercise_id values.
 
 2. FOUNDATION PHASE: exactly 3 full-body days. Day 1, Day 2, Day 3 are different workouts but cover the full body.
    - Infer equipment from ClientAnalysis.constraints.equipment and cited notes. If equipment is not explicitly bands-only,
@@ -123,7 +125,7 @@ HARD RULES (violating any = failure):
 
 11. Keep output compact: focus/progression are one sentence each, no extra fields.
 
-12. Do not include exercise name, video_url, cues, exercise instance id, rest, or notes. The server attaches those.
+12. Do not include video_url, cues, exercise instance id, rest, or notes. The server attaches those. Include name only when exercise_id is null because the ideal exercise is not in the library.
 
 13. Return minified JSON only. Do not wrap it in markdown fences.`;
 
@@ -165,7 +167,10 @@ Deno.serve(async (req) => {
     const library: ExerciseRow[] = rawExercises ?? [];
     if (library.length === 0) return json({ error: 'Exercise library is empty' }, 500);
 
-    const filtered = filterLibraryForClient(library, body.client_analysis);
+    const filtered = filterLibraryForEquipment(
+      filterLibraryForClient(library, body.client_analysis),
+      body.constraints ?? null,
+    );
 
     const compactLibrary = filtered.map((e) => ({
       id: e.id,
@@ -205,10 +210,10 @@ Deno.serve(async (req) => {
         "BESPOKE MODE: The coach's request overrides the standard-structure hard rules. "
         + 'Rules 2 and 3 (fixed 3-day Foundation, all-Big-5 every hypertrophy/strength day) and the fixed 6-exercise / 3-superset count DO NOT apply. '
         + 'Build exactly what the coach asked: honor the equipment available, the requested number of exercises per day, the focus area(s), and any avoid list. '
-        + 'EQUIPMENT IS A HARD FILTER. If the request is bodyweight / "no weights" / home-only, you must NOT use any exercise whose name or equipment implies external load: no Back Squat, Front Squat, Conventional/Romanian/Trap-bar Deadlift, Barbell/DB Bench, Barbell/DB Bulgarian Split Squat, Leg Press, Cable/Machine/Smith exercises, Kettlebell, or anything containing Barbell/BB/Dumbbell/DB/Cable/Machine/Leg Press. Substitute the bodyweight variant of that pattern: barbell/goblet squat -> bodyweight squat / split squat / step-up / pistol progression; deadlift/RDL -> single-leg RDL (bodyweight) / Nordic curl / band good morning / hip thrust; bench/DB press -> push-up variations; row -> inverted (bodyweight) row; overhead press -> pike push-up. Bands and a pull-up bar are allowed only if the coach mentioned them. '
+        + 'EQUIPMENT IS A HARD FILTER. If the request is bodyweight / "no weights" / home-only, you must NOT use any exercise whose name or equipment implies external load: no Back Squat, Front Squat, Conventional/Romanian/Trap-bar Deadlift, Barbell/DB Bench, Barbell/DB Bulgarian Split Squat, Leg Press, Cable/Machine/Smith exercises, Kettlebell, or anything containing Barbell/BB/Dumbbell/DB/Cable/Machine/Leg Press. Substitute the bodyweight variant of that pattern: barbell/goblet squat -> bodyweight squat / split squat / step-up / pistol progression; deadlift/RDL -> single-leg RDL (bodyweight) / Nordic curl / band good morning / hip thrust; bench/DB press -> push-up variations; row -> inverted (bodyweight) row; overhead press -> pike push-up. Bands and a pull-up bar are allowed only if the coach mentioned them. If the request is bands + small dumbbells, use only bodyweight, resistance-band/miniband, and light dumbbell exercises. If the request is bodyweight + band, use only bodyweight and resistance-band/miniband exercises. '
         + 'MOVEMENT PATTERN COVERAGE + VARIETY: across the workout, cover the fundamental patterns the available equipment allows - hinge, squat, horizontal push, vertical push, horizontal pull, vertical pull, plus core/anti-rotation. Do NOT repeat the same exercise, and do not stack multiple variations of one pattern in a single day; vary exercises across days and pick different movements even when a focus area is given (a "hip" focus still needs push and pull work for balance). '
-        + 'For BODYWEIGHT specifically, choose from patterns like: hinge = single-leg / B-stance RDL, good morning, hip thrust, Nordic curl, glute bridge; squat = squat, split squat, step-up, cossack, pistol progression; horizontal push = push-up variations; vertical push = pike push-up, handstand progression; horizontal pull = inverted / towel row; vertical pull = pull-up, chin-up, band-assisted pull; core = plank, hollow hold, dead bug, leg raise. Prefer library exercises that match these; if the ideal pattern exercise is not in the library, add its name to missing_exercises rather than repeating another exercise. '
-        + 'Still obey: every exercise_id is a real library id; canonical section order (Warm Up, Workout, MetCon, Stretches); open with a short warm-up unless the coach said otherwise.',
+        + 'For BODYWEIGHT specifically, choose from patterns like: hinge = single-leg / B-stance RDL, good morning, hip thrust, Nordic curl, glute bridge; squat = squat, split squat, step-up, cossack, pistol progression; horizontal push = push-up variations; vertical push = pike push-up, handstand progression; horizontal pull = inverted / towel row; vertical pull = pull-up, chin-up, band-assisted pull; core = plank, hollow hold, dead bug, leg raise. Prefer library exercises that match these; if the ideal pattern exercise is not in the library, output it with exercise_id=null and a name instead of repeating another exercise. '
+        + 'Still obey: use a real exercise_id when selecting an existing library exercise; use exercise_id=null plus name when the ideal exercise is not in the library; canonical section order (Warm Up, Workout, MetCon, Stretches); open with a short warm-up unless the coach said otherwise.',
       );
     }
 
@@ -238,10 +243,9 @@ Deno.serve(async (req) => {
     if (!parsed) return json({ error: 'Programme synthesis did not return valid JSON', raw: text }, 502);
 
     let enriched = enrichPhase(parsed, library, body.methodology_plan_phase);
-    // In bespoke mode the model may pick pattern exercises the library doesn't have yet (common
-    // for bodyweight). Create real cards for them so they link and pass validation, instead of
-    // being dropped - this is what gives bespoke workouts genuine movement variety.
-    if (bespoke) enriched = await resolveMissingBespokeExercises(admin, enriched, library);
+    // The model may pick ideal exercises the library doesn't have yet. Create real cards for
+    // them so they link and pass validation, instead of being dropped.
+    enriched = await resolveMissingExercises(admin, enriched, library);
 
     return json({ ok: true, ...enriched });
   } catch (error) {
@@ -300,10 +304,11 @@ function enrichPhase(parsed: Record<string, unknown>, library: ExerciseRow[], me
   };
 }
 
-// Bespoke create-missing: any exercise the model named but that isn't linked to a real library
-// row gets a card created (upsert on the lower(name) unique index) and re-linked, mirroring
-// ensureExerciseCardsForMasterList in the orchestrator. Guarantees bespoke variety survives.
-async function resolveMissingBespokeExercises(
+// Create-missing: any exercise the model named but that isn't linked to a real library row
+// gets a card created (upsert on name) and re-linked, mirroring ensureExerciseCardsForMasterList
+// in the orchestrator. Names returned in missing_exercises also get placeholder cards so Pedro
+// can attach videos later even if the model skipped them.
+async function resolveMissingExercises(
   admin: ReturnType<typeof createClient>,
   enriched: Record<string, unknown>,
   library: ExerciseRow[],
@@ -320,9 +325,16 @@ async function resolveMissingBespokeExercises(
       if (name && (!id || !byId.has(id))) unlinked.push(ex);
     }
   }
-  if (unlinked.length === 0) return enriched;
 
-  const names = Array.from(new Set(unlinked.map((e) => String(e.name)).filter(Boolean)));
+  const missingNames = Array.isArray(enriched.missing_exercises)
+    ? enriched.missing_exercises.map(cleanMissingExerciseName).filter(Boolean)
+    : [];
+  const names = Array.from(new Set([
+    ...unlinked.map((e) => String(e.name)).filter(Boolean),
+    ...missingNames,
+  ]));
+  if (names.length === 0) return enriched;
+
   const { data: existing } = await admin.from('pt_exercises').select('id, name, video_url, cues').in('name', names);
   const byName = new Map<string, { id: string; video_url: string | null; cues: unknown }>(
     (existing ?? []).map((r: { id: string; name: string; video_url: string | null; cues: unknown }) => [r.name.toLowerCase(), r]),
@@ -362,9 +374,18 @@ async function resolveMissingBespokeExercises(
   const stillMissing = unlinked
     .filter((ex) => !byName.has(String(ex.name).toLowerCase()))
     .map((ex) => String(ex.name));
-  enriched.missing_exercises = stillMissing;
+  enriched.missing_exercises = Array.from(new Set([...missingNames, ...stillMissing])).filter(Boolean);
   enriched.unresolved_count = stillMissing.length;
   return enriched;
+}
+
+function cleanMissingExerciseName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/^[^:]{0,80}:\s*/, '')
+    .replace(/^[^/]{0,80}\/[^:]{0,80}:\s*/, '')
+    .trim()
+    .slice(0, 120);
 }
 
 function buildDeterministicPhase(
@@ -943,15 +964,15 @@ function isBespoke(
 ): boolean {
   if (intent === 'one_off') return true;
   const eq = constraints?.equipment;
-  if (eq && ['bodyweight', 'home_minimal', 'bands', 'travel'].includes(eq)) return true;
+  if (eq && ['bodyweight', 'home_minimal', 'bands', 'bands_small_dumbbells', 'bodyweight_band', 'travel'].includes(eq)) return true;
   const t = coachDirective.toLowerCase();
-  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
+  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\bbodyweight\s*\+\s*bands?\b|\bbands?\s*\+\s*(small\s*)?(db|dumbbells?)\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
 }
 
 function inferGymAccess(analysis: Record<string, unknown>, constraints?: { equipment?: string } | null): boolean {
   const eq = constraints?.equipment;
   if (eq === 'full_gym') return true;
-  if (eq && ['bodyweight', 'home_minimal', 'bands', 'travel'].includes(eq)) return false;
+  if (eq && ['bodyweight', 'home_minimal', 'bands', 'bands_small_dumbbells', 'bodyweight_band', 'travel'].includes(eq)) return false;
   const raw = JSON.stringify(analysis).toLowerCase();
   const limitedSignals = [
     'bands only',
@@ -963,6 +984,8 @@ function inferGymAccess(analysis: Record<string, unknown>, constraints?: { equip
     'no gym',
     'without gym',
     'minimal equipment',
+    'bands small dumbbells',
+    'bodyweight band',
     'travel workout',
     'hotel workout',
   ];
@@ -1079,6 +1102,33 @@ function slugExerciseId(name: string, index: number): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
   return `ex-${slug || 'exercise'}-${index}`;
+}
+
+function filterLibraryForEquipment(library: ExerciseRow[], constraints?: { equipment?: string } | null): ExerciseRow[] {
+  const mode = constraints?.equipment;
+  if (!mode || mode === 'full_gym') return library;
+  const limited = library.filter((exercise) => isExerciseCompatibleWithEquipment(exercise, mode));
+  return limited.length >= 40 ? limited : library.filter((exercise) => !isClearlyGymOnly(exercise));
+}
+
+function isExerciseCompatibleWithEquipment(exercise: ExerciseRow, mode: string): boolean {
+  const value = `${exercise.name} ${exercise.equipment ?? ''} ${(exercise.tags ?? []).join(' ')}`.toLowerCase();
+  if (isClearlyGymOnly(exercise)) return false;
+  if (mode === 'bodyweight') {
+    return !/\b(db|dumbbell|dumbbells|kb|kettlebell|kettlebells|band|bands|resistance band|barbell|bb|cable|machine|smith|leg press)\b/.test(value);
+  }
+  if (mode === 'bodyweight_band' || mode === 'bands') {
+    return !/\b(db|dumbbell|dumbbells|kb|kettlebell|kettlebells|barbell|bb|cable|machine|smith|leg press)\b/.test(value);
+  }
+  if (mode === 'bands_small_dumbbells' || mode === 'home_minimal' || mode === 'travel') {
+    return !/\b(kb|kettlebell|kettlebells|barbell|bb|cable|machine|smith|leg press|hack squat)\b/.test(value);
+  }
+  return true;
+}
+
+function isClearlyGymOnly(exercise: ExerciseRow): boolean {
+  const value = `${exercise.name} ${exercise.equipment ?? ''} ${(exercise.tags ?? []).join(' ')}`.toLowerCase();
+  return /\b(barbell|bb|smith|cable|machine|leg press|hack squat|lat pulldown|seated row|chest press machine|knee extension|leg extension|hamstring curl machine)\b/.test(value);
 }
 
 function filterLibraryForClient(library: ExerciseRow[], analysis: Record<string, unknown>): ExerciseRow[] {

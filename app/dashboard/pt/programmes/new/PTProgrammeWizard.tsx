@@ -50,6 +50,44 @@ interface CurrentWorkoutImportResult {
 }
 
 type IntakeFile = { name: string; document_type: 'intake' | 'movement_assessment' | 'profile' | 'other'; content_text: string };
+type EquipmentModeId = 'full_gym' | 'bodyweight' | 'bands_small_dumbbells' | 'bodyweight_band';
+
+const EQUIPMENT_MODES: Array<{
+  id: EquipmentModeId;
+  label: string;
+  description: string;
+  directive: string;
+  location: 'gym' | 'home';
+}> = [
+  {
+    id: 'full_gym',
+    label: 'Gym',
+    description: 'Full gym access.',
+    directive: 'TRAINING ENVIRONMENT: Gym / full gym access. Use the best exercises for the client from gym equipment unless the selected evidence or coach brief says otherwise.',
+    location: 'gym',
+  },
+  {
+    id: 'bodyweight',
+    label: 'Bodyweight',
+    description: 'No external load.',
+    directive: 'TRAINING ENVIRONMENT: Bodyweight only. Do not use barbells, dumbbells, kettlebells, cables, machines, leg press, benches, or loaded exercises. Use bodyweight patterns and create missing exercise cards when the ideal bodyweight variation is not in the library.',
+    location: 'home',
+  },
+  {
+    id: 'bands_small_dumbbells',
+    label: 'Bands + small DB',
+    description: 'Bands and light dumbbells only.',
+    directive: 'TRAINING ENVIRONMENT: Bands plus small dumbbells only. Do not use barbells, heavy dumbbells, kettlebells, cables, machines, leg press, or gym-only exercises. Prefer resistance-band, miniband, light-dumbbell, and bodyweight options.',
+    location: 'home',
+  },
+  {
+    id: 'bodyweight_band',
+    label: 'Bodyweight + band',
+    description: 'Bodyweight and bands only.',
+    directive: 'TRAINING ENVIRONMENT: Bodyweight plus resistance bands only. Do not use dumbbells, kettlebells, barbells, cables, machines, leg press, or gym-only exercises. Use bodyweight patterns, band-resisted patterns, and band-assisted pull/push variations.',
+    location: 'home',
+  },
+];
 
 type ClientEvidenceSaveMode = 'document' | 'note' | 'ingest';
 
@@ -366,6 +404,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [brainSaved, setBrainSaved] = useState(false);
   const [uploadDocType, setUploadDocType] = useState<IntakeFile['document_type']>('intake');
   const [daysPerWeek, setDaysPerWeek] = useState<3 | 4 | 5>(3);
+  const [equipmentMode, setEquipmentMode] = useState<EquipmentModeId>('full_gym');
   const [clientEvidence, setClientEvidence] = useState<ClientEvidenceSource[]>([]);
   const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
@@ -381,6 +420,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const voiceFinalRef = useRef('');
 
   const selectedClient = clients.find((c) => c.id === clientId) ?? null;
+  const selectedEquipment = EQUIPMENT_MODES.find((mode) => mode.id === equipmentMode) ?? EQUIPMENT_MODES[0];
 
   const update = (fn: (p: PTProgramme) => PTProgramme) =>
     setProgramme((cur) => fn(structuredClone(cur)));
@@ -868,6 +908,22 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         }
         const result = data as { phase?: PTProgrammePhase };
         if (!result.phase) { setReproStatus('No workout could be parsed from that document.'); setReproBusy(false); return; }
+        void supabase.functions.invoke('ingest-client-intake', {
+          body: {
+            client_id: clientId,
+            files: [{
+              name: `Reference workout - ${fname || cls.title || result.phase.title || 'uploaded workout'}`,
+              document_type: 'other',
+              content_text: [
+                'REFERENCE WORKOUT FOR PROGRAMME GENERATION',
+                'Pedro uploaded this workout as an example of programming style, exercise selection, structure, progression, and constraints to consider in future programmes.',
+                `Selected equipment mode at upload: ${selectedEquipment.label}`,
+                '',
+                text.slice(0, 100000),
+              ].join('\n'),
+            }],
+          },
+        });
         const importedProgramme = safeProgramme({ phases: [result.phase] });
         setProgramme(importedProgramme);
         setGeneratedProgrammeBaseline(importedProgramme);
@@ -916,7 +972,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       setClarifyBusy(true);
       setGenStatus('Checking I have what I need…');
       try {
-        const clarifyRequest = [brainDump.trim(), selectedEvidenceBlock].filter(Boolean).join('\n\n');
+        const clarifyRequest = [selectedEquipment.directive, brainDump.trim(), selectedEvidenceBlock].filter(Boolean).join('\n\n');
         const { data: clarifyData } = await supabase.functions.invoke('suggest-clarifying-questions', {
           body: { client_id: clientId, request_text: clarifyRequest },
         });
@@ -943,7 +999,13 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       ? `\n\nCoach clarifications:\n${answered.map((x) => `Q: ${x.q}\nA: ${x.a}`).join('\n')}`
       : '';
     const coachBrief = `${brainDump}${clarifications}`.trim();
+    const equipmentDirective = selectedEquipment.directive;
+    const brainNote = [
+      equipmentMode !== 'full_gym' ? equipmentDirective : '',
+      coachBrief,
+    ].filter(Boolean).join('\n\n').trim();
     const effectiveIntake = [
+      equipmentDirective,
       coachBrief ? `COACH PROGRAMME BRIEF:\n${coachBrief}` : '',
       selectedEvidenceBlock,
     ].filter(Boolean).join('\n\n---\n\n').trim();
@@ -951,10 +1013,10 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     setGenerating(true);
     setStep(2);
 
-    if (intakeFiles.length > 0 || coachBrief) {
+    if (intakeFiles.length > 0 || brainNote) {
       setGenStatus('Saving intake to client brain…');
       const { data: ingestData, error: ingestError } = await supabase.functions.invoke('ingest-client-intake', {
-        body: { client_id: clientId, files: intakeFiles, notes_text: coachBrief },
+        body: { client_id: clientId, files: intakeFiles, notes_text: brainNote },
       });
       if (ingestError || (ingestData as { error?: string })?.error) {
         setGenStatus((ingestData as { error?: string })?.error ?? await functionErrorMessage(ingestError, 'Brain save failed.'));
@@ -978,6 +1040,10 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         intake_text: effectiveIntake,
         selected_document_ids: selectedDocumentIds,
         selected_documents_only: hasDocumentEvidence,
+        constraints: {
+          equipment: equipmentMode,
+          location: selectedEquipment.location,
+        },
       },
     });
 
@@ -1195,7 +1261,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   };
 
   const getBoardMatches = (name: string) =>
-    name.length >= 2 ? searchExerciseLibrary(exercises, name, 6) : [];
+    name.length >= 2 ? searchExerciseLibrary(exercises, name, 24) : [];
 
   const patchBoardExercise = (pi: number, di: number, exId: string, patch: Partial<PTProgrammeExercise>) =>
     update((p) => {
@@ -1306,7 +1372,13 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         await supabase.from('pt_events').insert({
           client_id: clientId,
           event_type: 'programme_assigned',
-          metadata: { template_name: progName, assignment_id: assignment.id, generation_run_id: generationRunId },
+          metadata: {
+            template_name: progName,
+            assignment_id: assignment.id,
+            generation_run_id: generationRunId,
+            equipment_mode: equipmentMode,
+            equipment_label: selectedEquipment.label,
+          },
         });
         if (editEvents.length > 0) {
           await supabase.from('pt_events').insert(
@@ -1319,6 +1391,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                 template_id: template.id,
                 generation_run_id: generationRunId,
                 source: 'programme_wizard_finalise',
+                equipment_mode: equipmentMode,
+                equipment_label: selectedEquipment.label,
               },
             })),
           );
@@ -1326,7 +1400,15 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         if (editEvents.length > 0 || learnWhy.trim()) {
           setLearnStatus('Teaching the generator from your edits…');
           const { data: learnData, error: learnError } = await supabase.functions.invoke('distill-coaching-learnings', {
-            body: { client_id: clientId, why: learnWhy },
+            body: {
+              client_id: clientId,
+              why: learnWhy,
+              generation_context: {
+                equipment_mode: equipmentMode,
+                equipment_label: selectedEquipment.label,
+                coach_brief: brainDump.trim(),
+              },
+            },
           });
           if (learnError || (learnData as { error?: string })?.error) {
             setLearnStatus((learnData as { error?: string })?.error ?? 'Programme saved, but the learning step did not finish.');
@@ -1519,6 +1601,30 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                 {evidenceStatus && clientEvidence.length > 0 && (
                   <p className={`mt-3 text-xs ${/could|fail|error|empty/i.test(evidenceStatus) ? 'text-red-600' : 'text-emerald-700'}`}>{evidenceStatus}</p>
                 )}
+              </div>
+            </section>
+          )}
+
+          {selectedClient && (
+            <section className="max-w-3xl border border-black/10 bg-white/70 px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Training environment</p>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-black/40">
+                This is a hard filter for exercise selection before the AI builds the programme.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {EQUIPMENT_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => setEquipmentMode(mode.id)}
+                    className={`rounded-full border px-4 py-2 text-left text-xs transition-colors sm:text-sm ${
+                      equipmentMode === mode.id ? 'border-black bg-black text-white' : 'border-black/15 bg-white text-black/65 hover:border-black/30 hover:text-black'
+                    }`}
+                  >
+                    <span className="block font-medium">{mode.label}</span>
+                    <span className={`block text-[0.65rem] sm:text-xs ${equipmentMode === mode.id ? 'text-white/55' : 'text-black/35'}`}>{mode.description}</span>
+                  </button>
+                ))}
               </div>
             </section>
           )}

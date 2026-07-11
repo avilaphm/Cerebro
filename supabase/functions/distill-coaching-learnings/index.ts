@@ -58,7 +58,11 @@ Deno.serve(async (req) => {
       if (profile?.role !== 'admin') return json({ error: 'Only the coach can distil learnings.' }, 403);
     }
 
-    const body = await req.json() as { client_id?: string; why?: string };
+    const body = await req.json() as {
+      client_id?: string;
+      why?: string;
+      generation_context?: Record<string, unknown>;
+    };
     if (!body.client_id) return json({ error: 'client_id required' }, 400);
 
     // Recent programme changes for this client (last 40, last 90 days).
@@ -91,9 +95,10 @@ Deno.serve(async (req) => {
 
     const userMessage = [
       `RECENT PROGRAMME CHANGES (most recent first):\n${changeLines.join('\n')}`,
+      body.generation_context ? `PROGRAMME GENERATION CONTEXT:\n${JSON.stringify(body.generation_context).slice(0, 1200)}` : '',
       body.why?.trim() ? `COACH'S EXPLANATION OF WHY:\n${body.why.trim().slice(0, 2000)}` : 'The coach did not add an explanation.',
       'Distil the durable coaching learnings now. JSON only.',
-    ].join('\n\n---\n\n');
+    ].filter(Boolean).join('\n\n---\n\n');
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
     let parsed: { learnings?: string[]; summary?: string } | null = null;

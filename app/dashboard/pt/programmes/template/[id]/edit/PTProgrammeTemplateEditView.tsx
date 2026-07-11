@@ -118,7 +118,7 @@ export default function PTProgrammeTemplateEditView({
     });
 
   const getBoardMatches = (name: string) =>
-    name.length >= 2 ? searchExerciseLibrary(exercises, name, 6) : [];
+    name.length >= 2 ? searchExerciseLibrary(exercises, name, 24) : [];
 
   const patchBoardExercise = (pi: number, di: number, exId: string, patch: Partial<PTProgrammeExercise>) =>
     update((p) => {

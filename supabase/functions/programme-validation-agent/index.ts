@@ -239,9 +239,9 @@ function isBespoke(
 ): boolean {
   if (intent === 'one_off') return true;
   const eq = constraints?.equipment;
-  if (eq && ['bodyweight', 'home_minimal', 'bands', 'travel'].includes(eq)) return true;
+  if (eq && ['bodyweight', 'home_minimal', 'bands', 'bands_small_dumbbells', 'bodyweight_band', 'travel'].includes(eq)) return true;
   const t = coachDirective.toLowerCase();
-  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
+  return /\bbodyweight\b|\bno weights?\b|\bno equipment\b|\bat home\b|\bhome workout\b|\bno gym\b|\bwithout gym\b|\bbands? only\b|\bbodyweight\s*\+\s*bands?\b|\bbands?\s*\+\s*(small\s*)?(db|dumbbells?)\b|\btravel workout\b|\bhotel\b|\bone[- ]?off\b/.test(t);
 }
 
 function sectionFor(exercises: Exercise[], idx: number): string | null {

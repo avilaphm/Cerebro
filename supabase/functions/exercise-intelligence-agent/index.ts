@@ -132,6 +132,9 @@ Deno.serve(async (req) => {
     if (body.coach_directive?.trim()) {
       directiveParts.push(`COACH REQUEST (honor this when selecting exercises, equipment, and emphasis):\n${body.coach_directive.trim().slice(0, 4000)}`);
     }
+    if (body.constraints) {
+      directiveParts.push(`STRUCTURED COACH CONSTRAINTS (equipment is a hard filter):\n${JSON.stringify(body.constraints, null, 2)}`);
+    }
     if (body.physio_brief?.trim()) {
       directiveParts.push(`PHYSIO BRIEF (drive selection from this):\n${body.physio_brief.trim().slice(0, 2000)}`);
     }
