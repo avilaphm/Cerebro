@@ -1,12 +1,35 @@
 # Handoff
 
 ## Last updated
-2026-07-11 by Codex - Exercise video search is now bulkable. Ran the existing `search-exercise-videos` automation across the 22 remaining manual exercises and verified `1373/1373` exercises now have video URLs. Exercise Library now has a `Find missing videos` button that batches missing rows in groups of 25.
+2026-07-11 by Codex - Created `CEREBRO_STATE.md`, a factual product/technical state document covering current product flows, architecture, Supabase schema/RLS, external integrations, hardcoded Pedro/account assumptions, single-trainer assumptions, AI pipeline, client app state, known debt, and unbuilt work.
 
 ## Last code fix commit
 d4adb62 - Exercise Library one-click missing-video automation
 
 ## What just happened (read first)
+
+### App state document (2026-07-11, Codex)
+
+Pedro asked for a comprehensive current-state document focused on integrations and single-user
+assumptions.
+
+Created:
+- `CEREBRO_STATE.md`
+
+Coverage:
+- Product overview and feature status: solid / works but fragile / half-built / stubbed.
+- Architecture and codebase structure.
+- Live Supabase schema grouped by table purpose, key columns, and RLS posture.
+- External integrations and credential locations.
+- Exhaustive hardcoded Pedro/account/environment assumptions found from repo and live Supabase
+  policy inspection.
+- Single-trainer assumptions rated easy/moderate/significant.
+- Current AI programme-generation pipeline and what would need to change for another trainer.
+- Client-facing app state, known debt, and unbuilt work.
+
+Validation:
+- `wc -w CEREBRO_STATE.md` returns `2238`, below Pedro's requested ~4000 word limit.
+- Documentation-only change; no build was run.
 
 ### Exercise Library bulk missing-video automation (2026-07-11, Codex)
 
