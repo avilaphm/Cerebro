@@ -1,12 +1,51 @@
 # Handoff
 
 ## Last updated
-2026-07-11 by Codex - Equipment-aware programme generation shipped. Programme Wizard Step 1 now has Gym / Bodyweight / Bands + small DB / Bodyweight + band pills that flow into orchestrator constraints, analysis, synthesis, validation, and the edit-learning loop. Exercise search aliases now cover DB/KB/BB/incline/deadlift-style queries with larger editor dropdowns. Missing AI-selected exercises now create `pt_exercises` placeholder cards with `video_url = null`. Local workflow skill `skills/pt-programme-intake-context` was updated outside the app git repo.
+2026-07-11 by Codex - Programme editor exercise flow tightened. Board view now has a per-day `+` button, the day edit surface is taller, and every PT exercise-consuming page now paginates through the full `pt_exercises` library instead of stopping at the first 400/1000 rows. Supabase now has 1,373 exercises after adding 23 missing intuitive lower-body/RDL aliases.
 
 ## Last code fix commit
-154dfc7 - PT programme wizard: equipment-aware generation + search aliases
+a842e6e - PT programme editor: taller edit surface, board add-exercise button, full exercise-library loader
 
 ## What just happened (read first)
+
+### Programme editor add-exercise flow and full exercise library loading (2026-07-11, Codex)
+
+Pedro reported three linked issues in the programme editor:
+- The exercise edit screen was too short.
+- Board view needed a `+` action per day so an exercise can be added directly to a day and edited.
+- Exercise search looked like it was missing known DB/KB/single-leg/RDL exercises.
+
+Shipped in code commit `a842e6e`:
+- `app/dashboard/pt/programmes/PTDayEditor.tsx` now uses a much taller edit viewport:
+  `max-h-[calc(100dvh-8rem)]`, `min-h-[36rem]`, and `lg:min-h-[42rem]`.
+- Added shared `createBlankProgrammeExercise()` in `utils/pt/programme.ts`.
+- Added compact per-day `+` buttons in board view for:
+  `app/dashboard/pt/programmes/new/PTProgrammeWizard.tsx`,
+  `app/dashboard/pt/programmes/[id]/edit/PTProgrammeEditView.tsx`, and
+  `app/dashboard/pt/programmes/template/[id]/edit/PTProgrammeTemplateEditView.tsx`.
+- Added `utils/pt/exercise-library.ts` with `fetchAllPTExercises()`, a paginated loader
+  that reads `pt_exercises` in 1,000-row pages up to 20,000 rows.
+- Replaced the old capped exercise fetches across programme, exercise, settings, and PT session
+  surfaces. The new programme page previously had an explicit `.limit(400)`, and other surfaces
+  were vulnerable to Supabase's default REST page cap.
+
+Live Supabase verification:
+- `select count(*) from public.pt_exercises` returned `1350` before the alias upsert.
+- RDL/deadlift query showed Pedro's existing rows were present, including `Single Leg DB RDL`,
+  `Dumbbell Single Leg Romanian Deadlift`, `Single-Leg Dumbbell RDL (full single leg)`,
+  `Single-Leg Kettlebell RDL`, and other RDL variants.
+- Added 23 intuitive alias rows for missing exact names, including:
+  `Single-Leg Dumbbell RDL`, `Single-Leg Barbell RDL`, `Bodyweight Single-Leg RDL`,
+  `B-Stance Barbell RDL`, `Double Dumbbell Romanian Deadlift`,
+  `Kettlebell Romanian Deadlift`, `Kickstand Dumbbell RDL`, and related lower-body variants.
+- Post-upsert count is `1373`.
+- The wanted exact-name comparison now returns zero missing rows.
+
+Validation:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is deprecated
+  in favour of proxy.
+- `git diff --check` passes.
 
 ### Equipment-aware programme generation and search (2026-07-11, Codex)
 
