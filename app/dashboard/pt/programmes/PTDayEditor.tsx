@@ -502,7 +502,7 @@ export default function PTDayEditor({ exercises, libraryExercises, weekBlocks, o
   };
 
   return (
-    <div className="flex max-h-[calc(100dvh-15rem)] min-h-[28rem] flex-col overflow-hidden">
+    <div className="flex max-h-[calc(100dvh-8rem)] min-h-[36rem] flex-col overflow-hidden lg:min-h-[42rem]">
       {/* Block selector */}
       {blocks.length > 0 && (
         <div className="mb-4 border border-black/10 bg-[#f7f4ef] p-3">

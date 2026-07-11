@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import type { PTClient, PTExercise } from '@/utils/pt/types';
+import { fetchAllPTExercises } from '@/utils/pt/exercise-library';
 import PTProgrammeWizard from './PTProgrammeWizard';
 
 export default async function NewProgrammePage() {
@@ -7,13 +8,13 @@ export default async function NewProgrammePage() {
 
   const [clientRes, exerciseRes] = await Promise.all([
     supabase.from('pt_clients').select('*').in('status', ['invited', 'active']).order('name'),
-    supabase.from('pt_exercises').select('*').order('name').limit(400),
+    fetchAllPTExercises(supabase),
   ]);
 
   return (
     <PTProgrammeWizard
       clients={(clientRes.data ?? []) as PTClient[]}
-      exercises={(exerciseRes.data ?? []) as PTExercise[]}
+      exercises={exerciseRes as PTExercise[]}
     />
   );
 }

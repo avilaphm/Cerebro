@@ -13,6 +13,21 @@ export const DEFAULT_PROGRAMME_PHASES: Omit<PTProgrammePhase, 'id'>[] = [
   { title: 'Re-testing 1 RM', focus: 'Strength reassessment', weeks: '1', progression: '', days: [] },
 ];
 
+export function createBlankProgrammeExercise(sectionStart?: string): PTProgrammeExercise {
+  return {
+    id: makeId('ex'),
+    exercise_id: null,
+    name: '',
+    sets: '2',
+    reps: '8-12',
+    rest: '60 sec',
+    notes: '',
+    video_url: null,
+    cues: [],
+    section_start: sectionStart,
+  };
+}
+
 export interface ProgrammeProgressWorkoutLog {
   phase_index: number;
   day_index: number;

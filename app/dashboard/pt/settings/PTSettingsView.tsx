@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { fetchAllPTExercises } from '@/utils/pt/exercise-library';
 import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import type { PTExercise } from '@/utils/pt/types';
 
@@ -49,8 +50,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
       setStatus(error.message);
     } else {
       setStatus(`${toImport.length} exercises imported.`);
-      const { data } = await supabase.from('pt_exercises').select('*').order('name');
-      setExercises((data ?? []) as PTExercise[]);
+      setExercises(await fetchAllPTExercises(supabase));
     }
     setImporting(false);
   };
@@ -72,8 +72,7 @@ export default function PTSettingsView({ exercises: initialExercises }: { exerci
     if (error) {
       setStatus(error.message);
     } else {
-      const { data } = await supabase.from('pt_exercises').select('*').order('name');
-      setExercises((data ?? []) as PTExercise[]);
+      setExercises(await fetchAllPTExercises(supabase));
       setAddForm(EMPTY_EXERCISE_FORM);
       setShowAddModal(false);
       setStatus('Exercise saved.');

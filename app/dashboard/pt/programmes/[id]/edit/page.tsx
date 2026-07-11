@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
 import { safeProgramme } from '@/utils/pt/programme';
+import { fetchAllPTExercises } from '@/utils/pt/exercise-library';
 import type { PTProgramAssignment, PTExercise } from '@/utils/pt/types';
 import PTProgrammeEditView from './PTProgrammeEditView';
 
@@ -21,7 +22,7 @@ export default async function PTProgrammeEditPage({
       .select('*, pt_clients(name, email)')
       .eq('id', id)
       .single(),
-    supabase.from('pt_exercises').select('*').order('name'),
+    fetchAllPTExercises(supabase),
     supabase
       .from('pt_phase_nutrition')
       .select('*')
@@ -59,7 +60,7 @@ export default async function PTProgrammeEditPage({
   return (
     <PTProgrammeEditView
       assignment={assignment}
-      exercises={(exercisesRes.data ?? []) as PTExercise[]}
+      exercises={exercisesRes as PTExercise[]}
       highlight={highlight}
       phaseNutrition={dbPhaseNutrition}
       nutritionDraftFromRun={nutritionDraftFromRun}

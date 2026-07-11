@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Check, ChevronDown, FileText, Loader2, Mic, Save, Square, Upload } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays, moveExerciseIntoProgrammeSuperset, appendDaysToFoundationPhase, groupBands } from '@/utils/pt/programme';
+import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays, moveExerciseIntoProgrammeSuperset, appendDaysToFoundationPhase, groupBands, createBlankProgrammeExercise } from '@/utils/pt/programme';
 import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
@@ -1237,6 +1237,17 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     p.phases[pi].days[di] = { ...p.phases[pi].days[di], ...patch }; return p;
   });
 
+  const addExerciseToDay = (pi: number, di: number) => {
+    const day = programme.phases[pi]?.days[di];
+    const exercise = createBlankProgrammeExercise(day?.exercises.length ? undefined : 'Workout');
+    update((p) => {
+      const targetDay = p.phases[pi]?.days[di];
+      if (targetDay) targetDay.exercises.push(exercise);
+      return p;
+    });
+    setBoardEditExId(exercise.id);
+  };
+
   const deleteDay = (pi: number, di: number) => {
     update((p) => { p.phases[pi].days.splice(di, 1); return p; });
     if (activeDay === di) setActiveDay(null);
@@ -2004,6 +2015,14 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
                             {day.focus && <p className="mt-0.5 truncate text-[0.62rem] text-black/35">{day.focus}</p>}
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => addExerciseToDay(activePhaseTab, di)}
+                              className="flex h-5 w-5 items-center justify-center rounded-full border border-black/15 text-xs leading-none text-black/45 hover:border-black/35 hover:text-black"
+                              title="Add exercise"
+                            >
+                              +
+                            </button>
                             <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="text-[0.6rem] text-black/35 hover:text-black">edit</button>
                             <button type="button" onClick={() => deleteDay(activePhaseTab, di)} className="text-[0.65rem] text-black/25 hover:text-red-500 transition-colors" title="Delete day">×</button>
                           </div>

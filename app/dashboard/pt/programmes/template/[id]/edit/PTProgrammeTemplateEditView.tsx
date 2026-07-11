@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
-import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, moveExerciseIntoProgrammeSuperset, groupBands } from '@/utils/pt/programme';
+import { makeId, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, getPhaseStartWeeks, moveExerciseBetweenProgrammeDays, moveExerciseIntoProgrammeSuperset, groupBands, createBlankProgrammeExercise } from '@/utils/pt/programme';
 import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import { patternChipClass, resolvePattern } from '@/utils/pt/patterns';
 import type {
@@ -100,6 +100,17 @@ export default function PTProgrammeTemplateEditView({
   const patchDay = (pi: number, di: number, patch: Partial<PTProgrammeDay>) => update((p) => {
     p.phases[pi].days[di] = { ...p.phases[pi].days[di], ...patch }; return p;
   });
+
+  const addExerciseToDay = (pi: number, di: number) => {
+    const day = programme.phases[pi]?.days[di];
+    const exercise = createBlankProgrammeExercise(day?.exercises.length ? undefined : 'Workout');
+    update((p) => {
+      const targetDay = p.phases[pi]?.days[di];
+      if (targetDay) targetDay.exercises.push(exercise);
+      return p;
+    });
+    setBoardEditExId(exercise.id);
+  };
 
   const moveExerciseToDay = (fromDay: number, exId: string, toDay: number, beforeExId?: string) =>
     update((p) => {
@@ -482,7 +493,17 @@ export default function PTProgrammeTemplateEditView({
                         )}
                         <p className="text-xs font-medium leading-tight truncate">{day.title || `Day ${di + 1}`}</p>
                       </div>
-                      <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="shrink-0 text-[0.6rem] text-black/35 hover:text-black">edit</button>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => addExerciseToDay(activePhaseTab, di)}
+                          className="flex h-5 w-5 items-center justify-center rounded-full border border-black/15 text-xs leading-none text-black/45 hover:border-black/35 hover:text-black"
+                          title="Add exercise"
+                        >
+                          +
+                        </button>
+                        <button type="button" onClick={() => { setBoardView(false); setActiveDay(di); }} className="text-[0.6rem] text-black/35 hover:text-black">edit</button>
+                      </div>
                     </div>
                     {dayBands[di].map((band, bi) => (
                       <div

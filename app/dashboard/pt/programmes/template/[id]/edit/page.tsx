@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
 import { safeProgramme } from '@/utils/pt/programme';
+import { fetchAllPTExercises } from '@/utils/pt/exercise-library';
 import type { PTProgramTemplate, PTExercise } from '@/utils/pt/types';
 import PTProgrammeTemplateEditView from './PTProgrammeTemplateEditView';
 
@@ -10,7 +11,7 @@ export default async function PTProgrammeTemplateEditPage({ params }: { params: 
 
   const [templateRes, exercisesRes] = await Promise.all([
     supabase.from('pt_program_templates').select('*').eq('id', id).single(),
-    supabase.from('pt_exercises').select('*').order('name'),
+    fetchAllPTExercises(supabase),
   ]);
 
   if (templateRes.error || !templateRes.data) notFound();
@@ -23,7 +24,7 @@ export default async function PTProgrammeTemplateEditPage({ params }: { params: 
   return (
     <PTProgrammeTemplateEditView
       template={template}
-      exercises={(exercisesRes.data ?? []) as PTExercise[]}
+      exercises={exercisesRes as PTExercise[]}
     />
   );
 }

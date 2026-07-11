@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
+import { fetchAllPTExercises } from '@/utils/pt/exercise-library';
 import type { PTClient, PTExercise } from '@/utils/pt/types';
 import type { PTBookingAppointment } from '@/utils/pt/bookings';
 import PTSessionsView from './PTSessionsView';
@@ -16,10 +17,7 @@ export default async function PTSessionsPage() {
       .select('*')
       .in('status', ['invited', 'active'])
       .order('name', { ascending: true }),
-    supabase
-      .from('pt_exercises')
-      .select('*')
-      .order('name', { ascending: true }),
+    fetchAllPTExercises(supabase),
     supabase
       .from('pt_booking_appointments')
       .select('*, pt_clients(id, name, email, sessions_remaining)')
@@ -30,7 +28,7 @@ export default async function PTSessionsPage() {
   ]);
 
   const clients = (clientRes.data ?? []) as PTClient[];
-  const exercises = (exerciseRes.data ?? []) as PTExercise[];
+  const exercises = exerciseRes as PTExercise[];
   const appointments = (appointmentRes.data ?? []) as PTBookingAppointment[];
 
   return (

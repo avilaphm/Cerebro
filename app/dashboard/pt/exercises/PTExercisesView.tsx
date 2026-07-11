@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, ChevronUp, Pencil, Search, Upload, Video, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import { fetchAllPTExercises } from '@/utils/pt/exercise-library';
 import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
 import type { PTExercise } from '@/utils/pt/types';
 
@@ -198,9 +199,7 @@ export default function PTExercisesView({ initialExercises }: Props) {
       setImportResult(result);
       setImportStage('');
       if (result.added > 0) {
-        // Reload full exercise list
-        const { data } = await supabase.from('pt_exercises').select('*').order('name');
-        if (data) setExercises(data as PTExercise[]);
+        setExercises(await fetchAllPTExercises(supabase));
         flash(`${result.added} new exercises added to the library`);
       }
     } catch (err) {
