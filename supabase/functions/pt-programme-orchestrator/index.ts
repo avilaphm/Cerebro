@@ -38,6 +38,8 @@ type OrchestratorBody = {
   phase_weeks: { foundation: number; hypertrophy: number; strength: number };
   days_per_week?: 3 | 4 | 5;
   intake_text?: string;
+  selected_document_ids?: string[];
+  selected_documents_only?: boolean;
   // The coach's request, structured. All optional: absent = today's behavior exactly.
   constraints?: Constraints;
   intent?: 'journey' | 'one_off';
@@ -282,7 +284,12 @@ async function stageAnalyze(ctx: StageCtx) {
   const { body } = ctx;
 
   await setCommand(ctx, STEP_NAMES[0]);
-  const step1 = await callAgent(ctx, 'client-analysis-agent', { client_id: body.client_id, intake_text: body.intake_text }, 75_000);
+  const step1 = await callAgent(ctx, 'client-analysis-agent', {
+    client_id: body.client_id,
+    intake_text: body.intake_text,
+    selected_document_ids: body.selected_document_ids ?? [],
+    selected_documents_only: body.selected_documents_only === true,
+  }, 75_000);
   await recordStep(ctx, 1, STEP_NAMES[0], { client_id: body.client_id }, step1.output, step1.ok ? 'succeeded' : 'failed', step1.error);
   if (!step1.ok) { await failRun(ctx, `Client analysis failed: ${step1.error}`); return; }
   const clientAnalysis = step1.output.analysis as Record<string, unknown>;
@@ -292,6 +299,8 @@ async function stageAnalyze(ctx: StageCtx) {
     client_id: body.client_id,
     client_analysis: clientAnalysis,
     intake_text: body.intake_text,
+    selected_document_ids: body.selected_document_ids ?? [],
+    selected_documents_only: body.selected_documents_only === true,
   }, 80_000);
   await recordStep(ctx, 2, STEP_NAMES[1], { client_id: body.client_id }, step2.output, step2.ok ? 'succeeded' : 'failed', step2.error);
   if (!step2.ok) { await failRun(ctx, `Movement analysis failed: ${step2.error}`); return; }

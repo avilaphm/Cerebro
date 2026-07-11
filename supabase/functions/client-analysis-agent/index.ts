@@ -70,10 +70,20 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json() as { client_id?: string; intake_text?: string };
+    const body = await req.json() as { client_id?: string; intake_text?: string; selected_document_ids?: string[]; selected_documents_only?: boolean };
     if (!body.client_id) return json({ error: 'client_id required' }, 400);
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const selectedDocumentIds = Array.isArray(body.selected_document_ids)
+      ? body.selected_document_ids.filter((id): id is string => typeof id === 'string' && id.length > 0).slice(0, 20)
+      : [];
+    const selectedDocumentsOnly = body.selected_documents_only === true;
+    const documentsQuery = admin
+      .from('pt_client_documents')
+      .select('id, document_type, title, content_text, created_at')
+      .eq('client_id', body.client_id)
+      .order('created_at', { ascending: false })
+      .limit(12);
 
     const [clientRes, masterRes, nutritionRes, exerciseRes, lifestyleRes, documentsRes] = await Promise.all([
       admin.from('pt_clients').select('id, name, last_name, email, goals, notes, lifestyle_context, coaching_focus, event_goal, regular_training_slot').eq('id', body.client_id).maybeSingle(),
@@ -81,7 +91,11 @@ Deno.serve(async (req) => {
       admin.from('pt_client_nutrition_doc').select('typical_meals, favourite_foods, foods_to_avoid, nutrition_obstacles, eating_habits, daily_targets, recent_wins, recurring_gaps').eq('client_id', body.client_id).maybeSingle(),
       admin.from('pt_client_exercise_doc').select('strong_movements, weak_movements, disliked_exercises, injury_history, current_limitations, current_1rm, movement_assessment_summary, progression_strategy').eq('client_id', body.client_id).maybeSingle(),
       admin.from('pt_client_lifestyle_doc').select('sleep_baseline, stress_patterns, schedule_notes, social_context, recurring_challenges, wins, goals_context').eq('client_id', body.client_id).maybeSingle(),
-      admin.from('pt_client_documents').select('document_type, title, content_text, created_at').eq('client_id', body.client_id).order('created_at', { ascending: false }).limit(12),
+      selectedDocumentsOnly
+        ? selectedDocumentIds.length > 0
+          ? documentsQuery.in('id', selectedDocumentIds)
+          : Promise.resolve({ data: [], error: null })
+        : documentsQuery,
     ]);
 
     if (clientRes.error || !clientRes.data) return json({ error: 'Client not found' }, 404);

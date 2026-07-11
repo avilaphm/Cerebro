@@ -82,16 +82,32 @@ Deno.serve(async (req) => {
       client_id: string;
       client_analysis?: Record<string, unknown>;
       intake_text?: string;
+      selected_document_ids?: string[];
+      selected_documents_only?: boolean;
     };
     if (!body.client_id) return json({ error: 'client_id required' }, 400);
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const selectedDocumentIds = Array.isArray(body.selected_document_ids)
+      ? body.selected_document_ids.filter((id): id is string => typeof id === 'string' && id.length > 0).slice(0, 20)
+      : [];
+    const selectedDocumentsOnly = body.selected_documents_only === true;
+    const documentsQuery = admin
+      .from('pt_client_documents')
+      .select('id, document_type, title, content_text, created_at')
+      .eq('client_id', body.client_id)
+      .order('created_at', { ascending: false })
+      .limit(12);
 
     const [clientRes, exerciseDocRes, brainRes, documentsRes] = await Promise.all([
       admin.from('pt_clients').select('id, name, goals, notes, coaching_focus').eq('id', body.client_id).maybeSingle(),
       admin.from('pt_client_exercise_doc').select('injury_history, current_limitations, movement_assessment_summary, weak_movements, strong_movements').eq('client_id', body.client_id).maybeSingle(),
       admin.from('pt_client_brain').select('coaching_reasoning, key_phrases, important_decisions, summary_current').eq('client_id', body.client_id).maybeSingle(),
-      admin.from('pt_client_documents').select('document_type, title, content_text, created_at').eq('client_id', body.client_id).order('created_at', { ascending: false }).limit(12),
+      selectedDocumentsOnly
+        ? selectedDocumentIds.length > 0
+          ? documentsQuery.in('id', selectedDocumentIds)
+          : Promise.resolve({ data: [], error: null })
+        : documentsQuery,
     ]);
 
     if (!clientRes.data) return json({ error: 'Client not found' }, 404);

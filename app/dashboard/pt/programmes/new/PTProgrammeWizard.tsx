@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Check, ChevronDown, FileText, Loader2, Mic, Save, Square, Upload } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { makeId, safeProgramme, countProgrammeWeeks, parseWeekBlocks, formatWeekBlocks, DEFAULT_PROGRAMME_PHASES, moveExerciseBetweenProgrammeDays, moveExerciseIntoProgrammeSuperset, appendDaysToFoundationPhase, groupBands } from '@/utils/pt/programme';
 import { searchExerciseLibrary } from '@/utils/pt/exercise-search';
@@ -46,6 +47,192 @@ interface ProgrammingAgentDraft {
 interface CurrentWorkoutImportResult {
   created_exercises?: Array<{ name: string; exercise_id: string }>;
   matched_count?: number;
+}
+
+type IntakeFile = { name: string; document_type: 'intake' | 'movement_assessment' | 'profile' | 'other'; content_text: string };
+
+type ClientEvidenceSaveMode = 'document' | 'note' | 'ingest';
+
+interface ClientEvidenceSource {
+  id: string;
+  label: string;
+  title: string;
+  sourceId?: string;
+  createdAt?: string | null;
+  content: string;
+  preview: string;
+  saveMode: ClientEvidenceSaveMode;
+  storagePath?: string | null;
+}
+
+interface ClientDocumentEvidenceRow {
+  id: string;
+  created_at: string;
+  document_type: IntakeFile['document_type'];
+  title: string;
+  storage_path: string | null;
+  content_text: string | null;
+  parsed_summary?: Record<string, unknown> | null;
+  analysis?: Record<string, unknown> | null;
+  status?: string | null;
+}
+
+interface ClientNoteEvidenceRow {
+  id: string;
+  created_at: string;
+  content: string;
+  context?: Record<string, unknown> | null;
+  is_active?: boolean | null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function hasEvidenceValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+  return true;
+}
+
+function formatEvidenceValue(value: unknown): string {
+  if (!hasEvidenceValue(value)) return '';
+  if (typeof value === 'string') return value.trim();
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function buildEvidenceContent(fields: Array<[string, unknown]>): string {
+  return fields
+    .filter(([, value]) => hasEvidenceValue(value))
+    .map(([label, value]) => `${label}\n${formatEvidenceValue(value)}`)
+    .join('\n\n')
+    .trim();
+}
+
+function previewText(content: string): string {
+  return content.replace(/\s+/g, ' ').trim().slice(0, 180);
+}
+
+function evidenceDate(iso?: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function documentLabel(doc: ClientDocumentEvidenceRow): string {
+  const parsedSource = typeof doc.parsed_summary?.source === 'string' ? doc.parsed_summary.source : '';
+  const analysisSource = typeof doc.analysis?.source === 'string' ? doc.analysis.source : '';
+  if (parsedSource === 'ml_client_intelligence' || analysisSource === 'ml_client_intelligence' || /m\s*&\s*l/i.test(doc.title)) return 'M&L profile';
+  if (doc.document_type === 'movement_assessment') return 'Movement';
+  if (doc.document_type === 'profile') return 'Profile';
+  if (doc.document_type === 'intake') return 'Intake';
+  return 'Document';
+}
+
+function noteLabel(note: ClientNoteEvidenceRow): string {
+  const context = asRecord(note.context);
+  if (context.source === 'movement_assessment_intake') return 'PAR-Q';
+  if (context.source === 'ml_assessment') {
+    if (context.stage === 'final') return 'M&L final';
+    if (context.stage === 'part_2_lifestyle') return 'M&L part 2';
+    if (context.stage === 'part_1_chat') return 'M&L part 1';
+    return 'M&L';
+  }
+  return 'Note';
+}
+
+function noteTitle(note: ClientNoteEvidenceRow): string {
+  const context = asRecord(note.context);
+  if (context.source === 'movement_assessment_intake') return 'PAR-Q / movement assessment intake';
+  if (context.source === 'ml_assessment') {
+    if (context.stage === 'final') return 'M & L Assessment completed';
+    if (context.stage === 'part_2_lifestyle') return 'M & L Assessment / Part 2';
+    if (context.stage === 'part_1_chat') return 'M & L Assessment / Part 1';
+    return 'M & L Assessment';
+  }
+  return note.content.slice(0, 80) || 'Client note';
+}
+
+function buildNoteContent(note: ClientNoteEvidenceRow): string {
+  const context = asRecord(note.context);
+  const contextContent = buildEvidenceContent(Object.entries(context));
+  return [
+    note.content ? `Note\n${note.content}` : '',
+    contextContent ? `Structured context\n${contextContent}` : '',
+  ].filter(Boolean).join('\n\n').trim();
+}
+
+function buildSelectedEvidenceBlock(sources: ClientEvidenceSource[], selectedIds: string[]): string {
+  const selected = sources.filter((source) => selectedIds.includes(source.id) && source.content.trim());
+  if (selected.length === 0) return '';
+  let total = 0;
+  const chunks: string[] = [];
+  for (const source of selected) {
+    const remaining = 30_000 - total;
+    if (remaining <= 0) break;
+    const body = source.content.slice(0, Math.min(3_000, remaining));
+    total += body.length;
+    chunks.push(`SOURCE: ${source.label} - ${source.title}${source.createdAt ? ` (${evidenceDate(source.createdAt)})` : ''}\n${body}`);
+  }
+  return `SELECTED CLIENT EVIDENCE FOR THIS PROGRAMME\n${chunks.join('\n\n---\n\n')}`;
+}
+
+function flattenProgrammeExercises(programme: PTProgramme) {
+  return programme.phases.flatMap((phase, phaseIndex) =>
+    phase.days.flatMap((day, dayIndex) =>
+      day.exercises.map((exercise, exerciseIndex) => ({
+        key: `${phaseIndex}:${dayIndex}:${exerciseIndex}`,
+        phase: phase.title || `Phase ${phaseIndex + 1}`,
+        day: day.title || `Day ${dayIndex + 1}`,
+        name: exercise.name,
+        sets: exercise.sets,
+        reps: exercise.reps,
+        rest: exercise.rest,
+      })),
+    ),
+  );
+}
+
+function buildProgrammeEditEvents(before: PTProgramme | null, after: PTProgramme) {
+  if (!before) return [];
+  const oldRows = flattenProgrammeExercises(before);
+  const newRows = flattenProgrammeExercises(after);
+  const newByKey = new Map(newRows.map((row) => [row.key, row]));
+  const removed = oldRows.filter((row) => !newByKey.has(row.key)).slice(0, 20);
+  const swapped = oldRows
+    .map((oldRow) => {
+      const next = newByKey.get(oldRow.key);
+      if (!next || oldRow.name.trim().toLowerCase() === next.name.trim().toLowerCase()) return null;
+      return { from: oldRow.name, to: next.name, phase: next.phase, day: next.day };
+    })
+    .filter((row): row is { from: string; to: string; phase: string; day: string } => Boolean(row))
+    .slice(0, 20);
+  const setChanges = oldRows
+    .map((oldRow) => {
+      const next = newByKey.get(oldRow.key);
+      if (!next || oldRow.name.trim().toLowerCase() !== next.name.trim().toLowerCase()) return null;
+      if (oldRow.sets === next.sets && oldRow.reps === next.reps && oldRow.rest === next.rest) return null;
+      return {
+        exercise: next.name,
+        phase: next.phase,
+        day: next.day,
+        from: { sets: oldRow.sets, reps: oldRow.reps, rest: oldRow.rest },
+        to: { sets: next.sets, reps: next.reps, rest: next.rest },
+      };
+    })
+    .filter((row): row is { exercise: string; phase: string; day: string; from: { sets: string; reps: string; rest: string }; to: { sets: string; reps: string; rest: string } } => Boolean(row))
+    .slice(0, 20);
+
+  const events: Array<{ event_type: 'programme_exercise_swapped' | 'programme_exercise_removed' | 'programme_sets_changed'; metadata: Record<string, unknown> }> = [];
+  if (swapped.length > 0) events.push({ event_type: 'programme_exercise_swapped', metadata: { swaps: swapped } });
+  if (removed.length > 0) events.push({ event_type: 'programme_exercise_removed', metadata: { removed } });
+  if (setChanges.length > 0) events.push({ event_type: 'programme_sets_changed', metadata: { set_changes: setChanges } });
+  return events;
 }
 
 function draftReviewSummary(draft: ProgrammingAgentDraft, fallback: string) {
@@ -128,7 +315,7 @@ async function functionErrorMessage(error: unknown, fallback: string): Promise<s
 }
 
 export default function PTProgrammeWizard({ clients, exercises }: { clients: PTClient[]; exercises: PTExercise[] }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
@@ -169,23 +356,339 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const [validationSummary, setValidationSummary] = useState<Record<string, unknown>>({});
   const [phaseNutritionDraft, setPhaseNutritionDraft] = useState<unknown[]>([]);
   const [completedSteps, setCompletedSteps] = useState<Array<{ name: string; elapsed: number }>>([]);
+  const [generatedProgrammeBaseline, setGeneratedProgrammeBaseline] = useState<PTProgramme | null>(null);
+  const [learnWhy, setLearnWhy] = useState('');
+  const [learnStatus, setLearnStatus] = useState('');
 
-  type IntakeFile = { name: string; document_type: 'intake' | 'movement_assessment' | 'profile' | 'other'; content_text: string };
   const [intakeFiles, setIntakeFiles] = useState<IntakeFile[]>([]);
   const [ingesting, setIngesting] = useState(false);
   const [intakeStatus, setIntakeStatus] = useState('');
   const [brainSaved, setBrainSaved] = useState(false);
   const [uploadDocType, setUploadDocType] = useState<IntakeFile['document_type']>('intake');
   const [daysPerWeek, setDaysPerWeek] = useState<3 | 4 | 5>(3);
+  const [clientEvidence, setClientEvidence] = useState<ClientEvidenceSource[]>([]);
+  const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceStatus, setEvidenceStatus] = useState('');
+  const [openEvidenceId, setOpenEvidenceId] = useState<string | null>(null);
+  const [evidenceDraft, setEvidenceDraft] = useState('');
+  const [savingEvidenceId, setSavingEvidenceId] = useState<string | null>(null);
 
   const srRef = useRef<SpeechRecognitionLike | null>(null);
   const srPhaseRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceTranscriptRef = useRef('');
+  const voiceBaseRef = useRef('');
+  const voiceFinalRef = useRef('');
 
   const selectedClient = clients.find((c) => c.id === clientId) ?? null;
 
   const update = (fn: (p: PTProgramme) => PTProgramme) =>
     setProgramme((cur) => fn(structuredClone(cur)));
+
+  const loadClientEvidence = useCallback(async (targetClientId: string) => {
+    const client = clients.find((c) => c.id === targetClientId);
+    if (!client) {
+      setClientEvidence([]);
+      setSelectedEvidenceIds([]);
+      return;
+    }
+
+    setEvidenceLoading(true);
+    setEvidenceStatus('');
+    const [documentsRes, notesRes, brainRes, exerciseRes, nutritionRes, lifestyleRes] = await Promise.all([
+      supabase
+        .from('pt_client_documents')
+        .select('id, created_at, document_type, title, storage_path, content_text, status, parsed_summary, analysis')
+        .eq('client_id', targetClientId)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('pt_client_notes')
+        .select('id, created_at, content, context, is_active')
+        .eq('client_id', targetClientId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(30),
+      supabase
+        .from('pt_client_brain')
+        .select('summary_current, summary_30d, summary_60d, personality_notes, key_phrases, milestones, open_loops, coaching_reasoning, important_decisions, updated_at')
+        .eq('client_id', targetClientId)
+        .maybeSingle(),
+      supabase
+        .from('pt_client_exercise_doc')
+        .select('strong_movements, weak_movements, disliked_exercises, injury_history, current_limitations, current_1rm, movement_assessment_summary, progression_strategy, updated_at')
+        .eq('client_id', targetClientId)
+        .maybeSingle(),
+      supabase
+        .from('pt_client_nutrition_doc')
+        .select('typical_meals, favourite_foods, foods_to_avoid, nutrition_obstacles, eating_habits, daily_targets, recent_wins, recurring_gaps, updated_at')
+        .eq('client_id', targetClientId)
+        .maybeSingle(),
+      supabase
+        .from('pt_client_lifestyle_doc')
+        .select('sleep_baseline, stress_patterns, schedule_notes, social_context, recurring_challenges, wins, goals_context, updated_at')
+        .eq('client_id', targetClientId)
+        .maybeSingle(),
+    ]);
+
+    const nextSources: ClientEvidenceSource[] = [];
+    const clientContent = buildEvidenceContent([
+      ['Goals', client.goals],
+      ['Notes', client.notes],
+      ['Lifestyle context', client.lifestyle_context],
+      ['Coaching focus', client.coaching_focus],
+      ['Event goal', client.event_goal],
+      ['Regular training slot', client.regular_training_slot],
+      ['Height cm', client.height_cm],
+      ['Current weight kg', client.current_weight_kg],
+      ['Activity', client.activity_tag],
+    ]);
+    if (clientContent) {
+      nextSources.push({
+        id: `client:${client.id}`,
+        label: 'Client',
+        title: 'Client profile fields',
+        content: clientContent,
+        preview: previewText(clientContent),
+        saveMode: 'ingest',
+        createdAt: client.created_at ?? null,
+      });
+    }
+
+    const documents = (documentsRes.data ?? []) as ClientDocumentEvidenceRow[];
+    documents.forEach((doc) => {
+      const content = doc.content_text?.trim() || buildEvidenceContent([
+        ['Parsed summary', doc.parsed_summary],
+        ['Analysis', doc.analysis],
+      ]);
+      if (!content) return;
+      nextSources.push({
+        id: `document:${doc.id}`,
+        sourceId: doc.id,
+        label: documentLabel(doc),
+        title: doc.title,
+        createdAt: doc.created_at,
+        content,
+        preview: previewText(content),
+        saveMode: 'document',
+        storagePath: doc.storage_path,
+      });
+    });
+
+    const notes = ((notesRes.data ?? []) as ClientNoteEvidenceRow[])
+      .filter((note) => {
+        const source = asRecord(note.context).source;
+        return source === 'movement_assessment_intake' || source === 'ml_assessment' || !source;
+      });
+    notes.forEach((note) => {
+      const content = buildNoteContent(note);
+      if (!content) return;
+      nextSources.push({
+        id: `note:${note.id}`,
+        sourceId: note.id,
+        label: noteLabel(note),
+        title: noteTitle(note),
+        createdAt: note.created_at,
+        content,
+        preview: previewText(content),
+        saveMode: 'note',
+      });
+    });
+
+    const brain = asRecord(brainRes.data);
+    const brainContent = buildEvidenceContent([
+      ['Current summary', brain.summary_current],
+      ['30 day summary', brain.summary_30d],
+      ['60 day summary', brain.summary_60d],
+      ['Key phrases', brain.key_phrases],
+      ['Milestones', brain.milestones],
+      ['Open loops', brain.open_loops],
+      ['Important decisions', brain.important_decisions],
+      ['Personality notes', brain.personality_notes],
+      ['Coaching reasoning', brain.coaching_reasoning],
+    ]);
+    if (brainContent) {
+      nextSources.push({
+        id: 'brain:master',
+        label: 'Brain',
+        title: 'Client brain summary',
+        createdAt: typeof brain.updated_at === 'string' ? brain.updated_at : null,
+        content: brainContent,
+        preview: previewText(brainContent),
+        saveMode: 'ingest',
+      });
+    }
+
+    const exerciseDoc = asRecord(exerciseRes.data);
+    const exerciseContent = buildEvidenceContent([
+      ['Strong movements', exerciseDoc.strong_movements],
+      ['Weak movements', exerciseDoc.weak_movements],
+      ['Disliked exercises', exerciseDoc.disliked_exercises],
+      ['Injury history', exerciseDoc.injury_history],
+      ['Current limitations', exerciseDoc.current_limitations],
+      ['Current 1RM', exerciseDoc.current_1rm],
+      ['Movement assessment summary', exerciseDoc.movement_assessment_summary],
+      ['Progression strategy', exerciseDoc.progression_strategy],
+    ]);
+    if (exerciseContent) {
+      nextSources.push({
+        id: 'brain:exercise',
+        label: 'Exercise',
+        title: 'Training and movement intelligence',
+        createdAt: typeof exerciseDoc.updated_at === 'string' ? exerciseDoc.updated_at : null,
+        content: exerciseContent,
+        preview: previewText(exerciseContent),
+        saveMode: 'ingest',
+      });
+    }
+
+    const nutritionDoc = asRecord(nutritionRes.data);
+    const nutritionContent = buildEvidenceContent([
+      ['Typical meals', nutritionDoc.typical_meals],
+      ['Favourite foods', nutritionDoc.favourite_foods],
+      ['Foods to avoid', nutritionDoc.foods_to_avoid],
+      ['Nutrition obstacles', nutritionDoc.nutrition_obstacles],
+      ['Eating habits', nutritionDoc.eating_habits],
+      ['Daily targets', nutritionDoc.daily_targets],
+      ['Recent wins', nutritionDoc.recent_wins],
+      ['Recurring gaps', nutritionDoc.recurring_gaps],
+    ]);
+    if (nutritionContent) {
+      nextSources.push({
+        id: 'brain:nutrition',
+        label: 'Nutrition',
+        title: 'Nutrition context',
+        createdAt: typeof nutritionDoc.updated_at === 'string' ? nutritionDoc.updated_at : null,
+        content: nutritionContent,
+        preview: previewText(nutritionContent),
+        saveMode: 'ingest',
+      });
+    }
+
+    const lifestyleDoc = asRecord(lifestyleRes.data);
+    const lifestyleContent = buildEvidenceContent([
+      ['Sleep baseline', lifestyleDoc.sleep_baseline],
+      ['Stress patterns', lifestyleDoc.stress_patterns],
+      ['Schedule notes', lifestyleDoc.schedule_notes],
+      ['Social context', lifestyleDoc.social_context],
+      ['Recurring challenges', lifestyleDoc.recurring_challenges],
+      ['Wins', lifestyleDoc.wins],
+      ['Goals context', lifestyleDoc.goals_context],
+    ]);
+    if (lifestyleContent) {
+      nextSources.push({
+        id: 'brain:lifestyle',
+        label: 'Lifestyle',
+        title: 'Lifestyle and schedule context',
+        createdAt: typeof lifestyleDoc.updated_at === 'string' ? lifestyleDoc.updated_at : null,
+        content: lifestyleContent,
+        preview: previewText(lifestyleContent),
+        saveMode: 'ingest',
+      });
+    }
+
+    setClientEvidence(nextSources);
+    setSelectedEvidenceIds((current) => {
+      const ids = nextSources.map((source) => source.id);
+      if (current.length === 0) return ids;
+      const currentSet = new Set(current);
+      const retained = ids.filter((id) => currentSet.has(id));
+      return retained.length > 0 ? retained : ids;
+    });
+    setOpenEvidenceId((current) => current && nextSources.some((source) => source.id === current) ? current : null);
+    if (documentsRes.error || notesRes.error || brainRes.error || exerciseRes.error || nutritionRes.error || lifestyleRes.error) {
+      setEvidenceStatus('Some client evidence could not be loaded.');
+    } else if (nextSources.length === 0) {
+      setEvidenceStatus('No client evidence found yet.');
+    }
+    setEvidenceLoading(false);
+  }, [clients, supabase]);
+
+  useEffect(() => {
+    if (!clientId) {
+      setClientEvidence([]);
+      setSelectedEvidenceIds([]);
+      setOpenEvidenceId(null);
+      setEvidenceDraft('');
+      setEvidenceStatus('');
+      return;
+    }
+    void loadClientEvidence(clientId);
+  }, [clientId, loadClientEvidence]);
+
+  const selectedEvidenceBlock = useMemo(
+    () => buildSelectedEvidenceBlock(clientEvidence, selectedEvidenceIds),
+    [clientEvidence, selectedEvidenceIds],
+  );
+
+  const toggleEvidence = (sourceId: string) => {
+    setSelectedEvidenceIds((current) =>
+      current.includes(sourceId)
+        ? current.filter((id) => id !== sourceId)
+        : [...current, sourceId],
+    );
+  };
+
+  const openEvidence = (source: ClientEvidenceSource) => {
+    setOpenEvidenceId((current) => current === source.id ? null : source.id);
+    setEvidenceDraft(source.content);
+    setEvidenceStatus('');
+  };
+
+  const saveEvidence = async (source: ClientEvidenceSource) => {
+    if (!clientId) return;
+    const draft = evidenceDraft.trim();
+    if (!draft) {
+      setEvidenceStatus('Evidence text cannot be empty.');
+      return;
+    }
+    setSavingEvidenceId(source.id);
+    setEvidenceStatus('Saving source…');
+    if (source.saveMode === 'document' && source.sourceId) {
+      const { error } = await supabase
+        .from('pt_client_documents')
+        .update({ content_text: draft, status: 'analysed', updated_at: new Date().toISOString() })
+        .eq('id', source.sourceId);
+      if (error) {
+        setEvidenceStatus(error.message);
+        setSavingEvidenceId(null);
+        return;
+      }
+    } else if (source.saveMode === 'note' && source.sourceId) {
+      const { error } = await supabase
+        .from('pt_client_notes')
+        .update({ content: draft })
+        .eq('id', source.sourceId);
+      if (error) {
+        setEvidenceStatus(error.message);
+        setSavingEvidenceId(null);
+        return;
+      }
+    } else {
+      const { data, error } = await supabase.functions.invoke('ingest-client-intake', {
+        body: {
+          client_id: clientId,
+          notes_text: `Coach updated ${source.label} source "${source.title}" inside the programme builder:\n\n${draft}`,
+        },
+      });
+      if (error || (data as { error?: string })?.error) {
+        setEvidenceStatus((data as { error?: string })?.error ?? await functionErrorMessage(error, 'Could not save source.'));
+        setSavingEvidenceId(null);
+        return;
+      }
+    }
+    setClientEvidence((current) =>
+      current.map((item) => item.id === source.id ? { ...item, content: draft, preview: previewText(draft) } : item),
+    );
+    setEvidenceStatus('Source saved. Client intelligence refreshed.');
+    setSavingEvidenceId(null);
+    await loadClientEvidence(clientId);
+  };
+
+  const openEvidenceStorage = async (path: string) => {
+    const { data } = await supabase.storage.from('pt-client-docs').createSignedUrl(path, 3600);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -217,7 +720,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       if (typeof draft.run_id === 'string') setGenerationRunId(draft.run_id);
       if (draft.validation_summary) setValidationSummary(draft.validation_summary);
       if (Array.isArray(draft.phase_nutrition)) setPhaseNutritionDraft(draft.phase_nutrition);
-      setProgramme(safeProgramme(draft.programme));
+      const loadedProgramme = safeProgramme(draft.programme);
+      setProgramme(loadedProgramme);
+      setGeneratedProgrammeBaseline(loadedProgramme);
       setAgentDraftSummary(draftReviewSummary(draft, 'AI draft loaded. Review and edit before creating.'));
       setStep(2);
     } catch {
@@ -363,7 +868,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         }
         const result = data as { phase?: PTProgrammePhase };
         if (!result.phase) { setReproStatus('No workout could be parsed from that document.'); setReproBusy(false); return; }
-        setProgramme(safeProgramme({ phases: [result.phase] }));
+        const importedProgramme = safeProgramme({ phases: [result.phase] });
+        setProgramme(importedProgramme);
+        setGeneratedProgrammeBaseline(importedProgramme);
         setProgName(result.phase.title || cls.title || 'Imported workout');
         setProgGoal(result.phase.focus || '');
         setActivePhaseTab(0);
@@ -389,6 +896,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       setBrainSaved(true);
       setReproBusy(false);
       setReproStatus(`Added to the client brain as ${cls.document_type.replace(/_/g, ' ')}.`);
+      await loadClientEvidence(clientId);
     } catch (err) {
       setReproStatus(err instanceof Error ? err.message : 'Could not process the document.');
       setReproBusy(false);
@@ -408,8 +916,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       setClarifyBusy(true);
       setGenStatus('Checking I have what I need…');
       try {
+        const clarifyRequest = [brainDump.trim(), selectedEvidenceBlock].filter(Boolean).join('\n\n');
         const { data: clarifyData } = await supabase.functions.invoke('suggest-clarifying-questions', {
-          body: { client_id: clientId, request_text: brainDump },
+          body: { client_id: clientId, request_text: clarifyRequest },
         });
         const qs = ((clarifyData as { questions?: string[] })?.questions ?? []).filter((q) => typeof q === 'string' && q.trim());
         setClarifyBusy(false);
@@ -433,15 +942,19 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     const clarifications = answered.length > 0
       ? `\n\nCoach clarifications:\n${answered.map((x) => `Q: ${x.q}\nA: ${x.a}`).join('\n')}`
       : '';
-    const effectiveIntake = `${brainDump}${clarifications}`.trim();
+    const coachBrief = `${brainDump}${clarifications}`.trim();
+    const effectiveIntake = [
+      coachBrief ? `COACH PROGRAMME BRIEF:\n${coachBrief}` : '',
+      selectedEvidenceBlock,
+    ].filter(Boolean).join('\n\n---\n\n').trim();
 
     setGenerating(true);
     setStep(2);
 
-    if (intakeFiles.length > 0 || effectiveIntake) {
+    if (intakeFiles.length > 0 || coachBrief) {
       setGenStatus('Saving intake to client brain…');
       const { data: ingestData, error: ingestError } = await supabase.functions.invoke('ingest-client-intake', {
-        body: { client_id: clientId, files: intakeFiles, notes_text: effectiveIntake },
+        body: { client_id: clientId, files: intakeFiles, notes_text: coachBrief },
       });
       if (ingestError || (ingestData as { error?: string })?.error) {
         setGenStatus((ingestData as { error?: string })?.error ?? await functionErrorMessage(ingestError, 'Brain save failed.'));
@@ -453,8 +966,19 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
 
     setGenStatus('Starting pipeline…');
     const phaseWeeks = inferPhaseWeeks(programme.phases);
+    const selectedDocumentIds = selectedEvidenceIds
+      .filter((id) => id.startsWith('document:'))
+      .map((id) => id.replace('document:', ''));
+    const hasDocumentEvidence = clientEvidence.some((source) => source.id.startsWith('document:'));
     const { data, error } = await supabase.functions.invoke('pt-programme-orchestrator', {
-      body: { client_id: clientId, phase_weeks: phaseWeeks, days_per_week: daysPerWeek, intake_text: effectiveIntake },
+      body: {
+        client_id: clientId,
+        phase_weeks: phaseWeeks,
+        days_per_week: daysPerWeek,
+        intake_text: effectiveIntake,
+        selected_document_ids: selectedDocumentIds,
+        selected_documents_only: hasDocumentEvidence,
+      },
     });
 
     if (error || (data as { error?: string })?.error) {
@@ -525,7 +1049,9 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
       if (row.status === 'needs_review' || row.status === 'approved' || row.status === 'saved') {
         const draft = row.programme_draft as unknown;
         const vs = (row.validation_summary ?? {}) as Record<string, unknown>;
-        setProgramme(safeProgramme(draft));
+        const generatedProgramme = safeProgramme(draft);
+        setProgramme(generatedProgramme);
+        setGeneratedProgrammeBaseline(generatedProgramme);
         setProgName(typeof vs.name === 'string' ? vs.name : '');
         setProgGoal(typeof vs.goal === 'string' ? vs.goal : '');
         const hf = Array.isArray(vs.hard_failures) ? vs.hard_failures as string[] : [];
@@ -555,15 +1081,26 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     if (!SR) { setGenStatus('Browser dictation not available. Type instead.'); return; }
     const r = new SR();
     srRef.current = r;
+    voiceBaseRef.current = brainDump.trim();
+    voiceFinalRef.current = '';
     r.continuous = true; r.interimResults = true; r.lang = 'en-AU';
     r.onresult = (e) => {
+      let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
+        const transcript = result?.[0]?.transcript ?? '';
         if (result?.isFinal) {
-          const transcript = result[0]?.transcript ?? '';
-          if (transcript) setBrainDump((cur) => (cur ? `${cur} ${transcript}` : transcript).trim());
+          if (transcript) voiceFinalRef.current = `${voiceFinalRef.current} ${transcript}`.trim();
+        } else if (transcript) {
+          interim = `${interim} ${transcript}`.trim();
         }
       }
+      const next = [voiceBaseRef.current, voiceFinalRef.current, interim]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      setBrainDump(next);
     };
     r.onend = () => { setListening(false); srRef.current = null; };
     r.start(); setListening(true);
@@ -706,6 +1243,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
   const save = async () => {
     if (!progName.trim()) return;
     setSaving(true);
+    setLearnStatus('');
 
     const { data: template, error: tErr } = await supabase
       .from('pt_program_templates')
@@ -743,6 +1281,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         current_week: 1,
       }).select('id').single();
       if (!aErr && assignment) {
+        const editEvents = buildProgrammeEditEvents(generatedProgrammeBaseline, programme);
         if (phaseNutritionDraft.length > 0) {
           await supabase.from('pt_phase_nutrition').upsert(
             phaseNutritionDraft.map((item, index) => {
@@ -767,8 +1306,35 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
         await supabase.from('pt_events').insert({
           client_id: clientId,
           event_type: 'programme_assigned',
-          metadata: { template_name: progName },
+          metadata: { template_name: progName, assignment_id: assignment.id, generation_run_id: generationRunId },
         });
+        if (editEvents.length > 0) {
+          await supabase.from('pt_events').insert(
+            editEvents.map((event) => ({
+              client_id: clientId,
+              event_type: event.event_type,
+              metadata: {
+                ...event.metadata,
+                assignment_id: assignment.id,
+                template_id: template.id,
+                generation_run_id: generationRunId,
+                source: 'programme_wizard_finalise',
+              },
+            })),
+          );
+        }
+        if (editEvents.length > 0 || learnWhy.trim()) {
+          setLearnStatus('Teaching the generator from your edits…');
+          const { data: learnData, error: learnError } = await supabase.functions.invoke('distill-coaching-learnings', {
+            body: { client_id: clientId, why: learnWhy },
+          });
+          if (learnError || (learnData as { error?: string })?.error) {
+            setLearnStatus((learnData as { error?: string })?.error ?? 'Programme saved, but the learning step did not finish.');
+          } else {
+            const result = learnData as { summary?: string; learnings?: string[] };
+            setLearnStatus(result.summary ?? 'Programme saved and client learning updated.');
+          }
+        }
         router.push(`/dashboard/pt/clients/${clientId}`);
         return;
       }
@@ -787,6 +1353,8 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
     }
     setActiveDay(null);
   };
+  const openEvidenceSource = openEvidenceId ? clientEvidence.find((source) => source.id === openEvidenceId) ?? null : null;
+  const finalEditEvents = buildProgrammeEditEvents(generatedProgrammeBaseline, programme);
 
   return (
     <div className={`${step === 3 && boardView ? 'max-w-7xl' : 'max-w-4xl'} px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10`}>
@@ -837,110 +1405,209 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
           </div>
 
           {selectedClient && (
-            <div className="border border-black/8 p-5 max-w-sm">
-              <p className="text-xs text-black/40 mb-3">
-                {selectedClient.document_url ? '✓ Client profile document on file' : 'No profile document yet'}
-              </p>
-              {selectedClient.goals && <p className="text-sm text-black/60">{selectedClient.goals}</p>}
-            </div>
-          )}
-
-          {/* One smart upload: routes a workout to reproduce, client info to the brain */}
-          {selectedClient && (
-            <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">Upload a document</p>
-              <p className="text-xs text-black/45 mb-3 max-w-2xl">Drop in anything for this client - an intake form, a movement or M&amp;L assessment, or a workout you wrote. The builder sorts it automatically: client info goes into the brain to inform generation; a workout is reproduced exactly as an editable draft.</p>
-              <div className="flex max-w-2xl flex-col gap-3">
-                <textarea
-                  value={reproText}
-                  onChange={(e) => setReproText(e.target.value)}
-                  placeholder="Paste a document or workout here, or upload a file below…"
-                  rows={3}
-                  className="border border-black/15 px-4 py-3 text-sm outline-none focus:border-black/40 resize-none"
-                />
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className={`border border-black/15 border-dashed px-4 py-2 text-sm transition-colors ${reproBusy ? 'opacity-40 cursor-default' : 'text-black/50 hover:border-black/30 hover:text-black cursor-pointer'}`}>
-                    Upload PDF / text file
-                    <input
-                      type="file"
-                      accept=".pdf,.txt,.md,.text,application/pdf,text/plain,text/markdown"
-                      className="hidden"
-                      disabled={reproBusy}
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleSmartDocument(f); e.target.value = ''; }}
-                    />
-                  </label>
+            <section className="max-w-3xl border border-black/10 bg-white/70">
+              <div className="flex flex-col gap-3 border-b border-black/8 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Client intelligence</p>
+                  <p className="mt-1 text-sm text-black/60">
+                    {evidenceLoading ? 'Loading sources…' : `${clientEvidence.length} source${clientEvidence.length === 1 ? '' : 's'} found · ${selectedEvidenceIds.length} selected`}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => void handleSmartDocument()}
-                    disabled={reproBusy || reproText.trim().length < 10}
-                    className="border border-black bg-black text-white px-6 py-2 text-sm hover:bg-white hover:text-black transition-colors disabled:opacity-40"
+                    onClick={() => setSelectedEvidenceIds(clientEvidence.map((source) => source.id))}
+                    className="border border-black/15 px-3 py-1.5 text-xs text-black/50 transition-colors hover:border-black/30 hover:text-black"
                   >
-                    {reproBusy ? 'Working…' : 'Process document'}
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEvidenceIds([])}
+                    className="border border-black/15 px-3 py-1.5 text-xs text-black/50 transition-colors hover:border-black/30 hover:text-black"
+                  >
+                    Clear
                   </button>
                 </div>
-                {reproStatus && (
-                  <p className={`text-xs ${/could|fail|no workout|select a client|upload a document|at least a sentence/i.test(reproStatus) ? 'text-red-600' : 'text-black/45'}`}>{reproStatus}</p>
+              </div>
+
+              <div className="px-5 py-4">
+                {evidenceLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-black/45">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading client evidence
+                  </div>
+                ) : clientEvidence.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {clientEvidence.map((source) => {
+                      const selected = selectedEvidenceIds.includes(source.id);
+                      const open = openEvidenceId === source.id;
+                      return (
+                        <button
+                          key={source.id}
+                          type="button"
+                          onClick={() => openEvidence(source)}
+                          className={`group flex max-w-full items-center gap-2 border px-3 py-2 text-left text-xs transition-colors ${
+                            open ? 'border-black bg-black text-white' : selected ? 'border-black/25 bg-white text-black' : 'border-black/10 bg-white text-black/35 hover:border-black/25 hover:text-black'
+                          }`}
+                        >
+                          <span
+                            role="checkbox"
+                            aria-checked={selected}
+                            tabIndex={-1}
+                            onClick={(e) => { e.stopPropagation(); toggleEvidence(source.id); }}
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center border ${
+                              selected ? open ? 'border-white bg-white text-black' : 'border-black bg-black text-white' : open ? 'border-white/50' : 'border-black/20'
+                            }`}
+                          >
+                            {selected && <Check className="h-3 w-3" />}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{source.label}</span>
+                            <span className={`block max-w-[12rem] truncate ${open ? 'text-white/60' : 'text-black/35'}`}>{source.title}</span>
+                          </span>
+                          <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-black/40">{evidenceStatus || 'No client evidence found yet.'}</p>
+                )}
+
+                {openEvidenceSource && (
+                  <div className="mt-4 border border-black/10 bg-[#fbfbf8]">
+                    <div className="flex flex-col gap-3 border-b border-black/8 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">{openEvidenceSource.label}</p>
+                        <p className="mt-1 truncate text-sm font-medium text-black">{openEvidenceSource.title}</p>
+                        {openEvidenceSource.createdAt && (
+                          <p className="mt-0.5 text-xs text-black/35">{evidenceDate(openEvidenceSource.createdAt)}</p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {openEvidenceSource.storagePath && (
+                          <button
+                            type="button"
+                            onClick={() => void openEvidenceStorage(openEvidenceSource.storagePath as string)}
+                            className="inline-flex items-center gap-1.5 border border-black/15 bg-white px-3 py-1.5 text-xs text-black/50 transition-colors hover:border-black/30 hover:text-black"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            PDF
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void saveEvidence(openEvidenceSource)}
+                          disabled={savingEvidenceId === openEvidenceSource.id}
+                          className="inline-flex items-center gap-1.5 border border-black bg-black px-3 py-1.5 text-xs text-white transition-colors hover:bg-white hover:text-black disabled:opacity-40"
+                        >
+                          {savingEvidenceId === openEvidenceSource.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={evidenceDraft}
+                      onChange={(e) => setEvidenceDraft(e.target.value)}
+                      rows={10}
+                      className="block w-full resize-y border-0 bg-transparent px-4 py-4 font-mono text-xs leading-6 text-black/70 outline-none"
+                    />
+                  </div>
+                )}
+
+                {evidenceStatus && clientEvidence.length > 0 && (
+                  <p className={`mt-3 text-xs ${/could|fail|error|empty/i.test(evidenceStatus) ? 'text-red-600' : 'text-emerald-700'}`}>{evidenceStatus}</p>
                 )}
               </div>
-            </div>
+            </section>
           )}
 
-          {/* Training days */}
           {selectedClient && (
-            <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Training days per week (Phase 2 & 3)</p>
-              <p className="text-xs text-black/40 mb-3 max-w-2xl">
-                Foundation is always 3 full-body days. For Hypertrophy and Strength, pick the split. 3 days = full body, 4 = upper/lower, 5 = lower/push/pull/lower/upper. Big 5 lifts are auto-distributed so each is trained 2x/week on 4 and 5-day splits.
+            <section className="max-w-3xl border border-black/10 bg-white/70 px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Upload document</p>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-black/45">
+                PDF or text files are sorted automatically: client evidence is added to the dossier; workout documents are reproduced as editable drafts.
               </p>
-              <div className="flex gap-2">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <label className={`inline-flex items-center gap-2 border border-dashed px-4 py-2 text-sm transition-colors ${reproBusy ? 'cursor-default opacity-40' : 'cursor-pointer border-black/15 text-black/55 hover:border-black/30 hover:text-black'}`}>
+                  <Upload className="h-4 w-4" />
+                  PDF / text file
+                  <input
+                    type="file"
+                    accept=".pdf,.txt,.md,.text,application/pdf,text/plain,text/markdown"
+                    className="hidden"
+                    disabled={reproBusy}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleSmartDocument(f); e.target.value = ''; }}
+                  />
+                </label>
+                {reproBusy && <span className="inline-flex items-center gap-2 text-xs text-black/45"><Loader2 className="h-3.5 w-3.5 animate-spin" />Working</span>}
+              </div>
+              {reproStatus && (
+                <p className={`mt-3 text-xs ${/could|fail|no workout|select a client|upload a document|at least a sentence/i.test(reproStatus) ? 'text-red-600' : 'text-black/45'}`}>{reproStatus}</p>
+              )}
+            </section>
+          )}
+
+          {selectedClient && (
+            <section className="max-w-3xl border border-black/10 bg-white/70 px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Training days per week</p>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-black/40">
+                Foundation stays 3 full-body days. Hypertrophy and Strength use the split below.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
                 {([3, 4, 5] as const).map((d) => (
                   <button
                     key={d}
                     type="button"
                     onClick={() => setDaysPerWeek(d)}
                     className={`border px-4 py-2 text-sm transition-colors ${
-                      daysPerWeek === d ? 'border-black bg-black text-white' : 'border-black/15 hover:border-black/30'
+                      daysPerWeek === d ? 'border-black bg-black text-white' : 'border-black/15 bg-white hover:border-black/30'
                     }`}
                   >
                     {d} days/week
                   </button>
                 ))}
               </div>
-            </div>
+            </section>
           )}
 
-          {/* Brain dump */}
           {selectedClient && (
-            <div>
-              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-3">Brain dump</p>
-              <div className="flex max-w-2xl flex-col gap-3 sm:flex-row">
+            <section className="max-w-3xl border border-black/10 bg-white/70 px-5 py-4">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">Brain dump</p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                 <textarea
                   value={brainDump}
                   onChange={(e) => setBrainDump(e.target.value)}
-                  placeholder="Describe the phases, goals, schedule, exercises, progressions, injuries, anything…"
-                  rows={5}
-                  className="flex-1 border border-black/15 px-4 py-3 text-sm outline-none focus:border-black/40 resize-none"
+                  placeholder="Goals, constraints, schedule, equipment, exercises to include or avoid, anything else..."
+                  rows={6}
+                  className="min-h-36 flex-1 resize-y border border-black/15 bg-white px-4 py-3 text-sm leading-6 outline-none focus:border-black/40"
                 />
                 <div className="flex flex-col gap-2 sm:w-32">
                   {listening ? (
-                    <div className="flex flex-col gap-1">
-                      <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600 text-center">● Recording</span>
-                      <button type="button" onClick={stopDictation} className="border border-black bg-black text-white px-3 py-2 text-xs hover:bg-white hover:text-black transition-colors">
+                    <>
+                      <span className="inline-flex items-center justify-center gap-2 border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">
+                        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                        Recording
+                      </span>
+                      <button type="button" onClick={stopDictation} className="inline-flex items-center justify-center gap-2 border border-black bg-black px-3 py-2 text-xs text-white transition-colors hover:bg-white hover:text-black">
+                        <Square className="h-3.5 w-3.5" />
                         Done
                       </button>
-                    </div>
+                    </>
                   ) : (
                     <button
                       type="button"
                       onClick={startDictation}
-                      className="border border-black/15 px-4 py-3 text-sm hover:border-black/30 transition-colors"
+                      className="inline-flex items-center justify-center gap-2 border border-black/15 bg-white px-4 py-3 text-sm transition-colors hover:border-black/30"
                     >
+                      <Mic className="h-4 w-4" />
                       Voice
                     </button>
                   )}
                 </div>
               </div>
-            </div>
+            </section>
           )}
 
           {/* Single Generate button */}
@@ -1501,6 +2168,34 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
             </div>
           </div>
 
+          {selectedClient && (
+            <div className="border border-black/10 px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[0.6rem] uppercase tracking-[0.15em] text-black/35">Teach the next programme</p>
+                  <p className="mt-1 text-xs leading-5 text-black/45">
+                    {finalEditEvents.length > 0
+                      ? `${finalEditEvents.length} edit signal${finalEditEvents.length === 1 ? '' : 's'} detected from the generated draft.`
+                      : 'No structural edit signal detected yet.'}
+                  </p>
+                </div>
+                {finalEditEvents.length > 0 && (
+                  <span className="shrink-0 border border-emerald-200 bg-emerald-50 px-2 py-1 text-[0.58rem] uppercase tracking-[0.12em] text-emerald-700">
+                    Learning ready
+                  </span>
+                )}
+              </div>
+              <textarea
+                value={learnWhy}
+                onChange={(e) => setLearnWhy(e.target.value)}
+                placeholder="Why did you change it? e.g. removed deep squats because her knee felt sensitive, kept hip hinges because glutes need more exposure..."
+                rows={3}
+                className="mt-3 w-full resize-y border border-black/15 px-3 py-2 text-sm leading-6 outline-none focus:border-black/40"
+              />
+              {learnStatus && <p className="mt-2 text-xs text-black/45">{learnStatus}</p>}
+            </div>
+          )}
+
           <div className="flex gap-3 pt-2">
             <button onClick={() => setStep(3)} className="border border-black/15 px-5 py-2.5 text-sm hover:bg-black/5 transition-colors">
               ← Back
@@ -1510,7 +2205,7 @@ export default function PTProgrammeWizard({ clients, exercises }: { clients: PTC
               disabled={saving || !progName.trim()}
               className="flex-1 border border-black bg-black text-white py-2.5 text-sm disabled:opacity-30 hover:bg-white hover:text-black transition-colors"
             >
-              {saving ? 'Creating…' : `Create draft${selectedClient ? ` for ${selectedClient.name}` : ''}`}
+              {saving ? (learnStatus ? 'Teaching…' : 'Creating…') : `Create draft${selectedClient ? ` for ${selectedClient.name}` : ''}`}
             </button>
           </div>
         </div>
