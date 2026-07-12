@@ -27,6 +27,7 @@ import { useStudioHotkeys } from './useHotkeys';
 import { useDocumentPip, useDocumentPipSupported } from './useDocumentPip';
 import { SelfViewPip } from './SelfViewPip';
 import { composeExports } from './composeExports';
+import { extensionForMimeType, labelForMimeType } from './recordingFormat';
 import type { RecordingResult } from './useRecorder';
 import type { CompositorConfig, LayoutId, StudioPhase } from './types';
 import { ORIENTATION_DIMS } from './types';
@@ -74,12 +75,12 @@ function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
-function makeFilename(kind?: string): string {
+function makeFilename(kind: string | undefined, mimeType: string): string {
   const d = new Date();
   const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(
     d.getHours(),
   )}${pad(d.getMinutes())}`;
-  return `cerebro-studio-${stamp}${kind ? `-${kind}` : ''}.webm`;
+  return `cerebro-studio-${stamp}${kind ? `-${kind}` : ''}.${extensionForMimeType(mimeType)}`;
 }
 
 function formatDuration(ms: number): string {
@@ -380,10 +381,10 @@ export default function StudioApp() {
     void startCamMic(selectedCamera || undefined, selectedMic || undefined);
   }, [recorder, portraitRecorder, startCamMic, selectedCamera, selectedMic]);
 
-  const downloadBlob = useCallback((url: string, kind?: string) => {
+  const downloadBlob = useCallback((url: string, mimeType: string, kind?: string) => {
     const a = document.createElement('a');
     a.href = url;
-    a.download = makeFilename(kind);
+    a.download = makeFilename(kind, mimeType);
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -694,13 +695,24 @@ export default function StudioApp() {
               durationMs={recorder.elapsedMs}
               primaryLabel={cameraOnly ? 'Video' : 'Landscape'}
               primarySizeBytes={primaryExport.blob.size}
+              primaryMimeType={primaryExport.mimeType}
               onDownloadPrimary={() =>
-                downloadBlob(primaryExport.url, cameraOnly ? 'portrait' : 'landscape')
+                downloadBlob(
+                  primaryExport.url,
+                  primaryExport.mimeType,
+                  cameraOnly ? 'portrait' : 'landscape',
+                )
               }
               portraitSizeBytes={secondaryPortraitExport?.blob.size ?? null}
+              portraitMimeType={secondaryPortraitExport?.mimeType ?? null}
               onDownloadPortrait={
                 secondaryPortraitExport
-                  ? () => downloadBlob(secondaryPortraitExport.url, 'portrait')
+                  ? () =>
+                      downloadBlob(
+                        secondaryPortraitExport.url,
+                        secondaryPortraitExport.mimeType,
+                        'portrait',
+                      )
                   : null
               }
               onRecordAgain={returnToSetup}
@@ -744,8 +756,8 @@ export default function StudioApp() {
             )}
             <p className="rounded-xl border border-black/10 bg-black/[0.02] p-4 text-xs leading-relaxed text-black/55">
               {secondaryPortraitExport
-                ? 'Two WebM files — landscape and portrait. Convert to MP4 for LinkedIn with CapCut or ffmpeg.'
-                : 'WebM download. Convert to MP4 for LinkedIn with CapCut or ffmpeg.'}
+                ? `Two ${labelForMimeType(primaryExport.mimeType)} files: landscape and portrait.`
+                : `${labelForMimeType(primaryExport.mimeType)} file ready to download.`}
             </p>
           </div>
         </div>
@@ -1026,8 +1038,10 @@ interface ReviewControlsProps {
   durationMs: number;
   primaryLabel: string;
   primarySizeBytes: number;
+  primaryMimeType: string;
   onDownloadPrimary: () => void;
   portraitSizeBytes: number | null;
+  portraitMimeType: string | null;
   onDownloadPortrait: (() => void) | null;
   onRecordAgain: () => void;
   onDiscard: () => void;
@@ -1037,8 +1051,10 @@ function ReviewControls({
   durationMs,
   primaryLabel,
   primarySizeBytes,
+  primaryMimeType,
   onDownloadPrimary,
   portraitSizeBytes,
+  portraitMimeType,
   onDownloadPortrait,
   onRecordAgain,
   onDiscard,
@@ -1055,6 +1071,14 @@ function ReviewControls({
         </div>
         <div>
           <p className="font-mono tabular-nums text-black">
+            {portraitMimeType && portraitMimeType !== primaryMimeType
+              ? 'Mixed'
+              : labelForMimeType(primaryMimeType)}
+          </p>
+          <p className="text-xs text-black/45">Format</p>
+        </div>
+        <div>
+          <p className="font-mono tabular-nums text-black">
             {formatBytes(primarySizeBytes + (portraitSizeBytes ?? 0))}
           </p>
           <p className="text-xs text-black/45">{hasPortrait ? 'Total size' : 'Size'}</p>
@@ -1062,11 +1086,13 @@ function ReviewControls({
       </div>
 
       <button type="button" onClick={onDownloadPrimary} className={`w-full ${DARK_BTN}`}>
-        <Download className="h-4 w-4" /> Download {hasPortrait ? primaryLabel.toLowerCase() : ''}
+        <Download className="h-4 w-4" /> Download {labelForMimeType(primaryMimeType)}{' '}
+        {primaryLabel.toLowerCase()}
       </button>
       {hasPortrait && onDownloadPortrait && (
         <button type="button" onClick={onDownloadPortrait} className={`w-full ${LIGHT_BTN}`}>
-          <Smartphone className="h-4 w-4" /> Download portrait
+          <Smartphone className="h-4 w-4" /> Download{' '}
+          {labelForMimeType(portraitMimeType ?? primaryMimeType)} portrait
         </button>
       )}
       <button type="button" onClick={onRecordAgain} className={`w-full ${LIGHT_BTN}`}>

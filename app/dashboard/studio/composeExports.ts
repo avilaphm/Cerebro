@@ -1,4 +1,5 @@
 import { drawLayout, drawPortraitStacked } from './layouts';
+import { pickStudioRecordingFormat } from './recordingFormat';
 import { ORIENTATION_DIMS, type CanvasWithCapture, type CompositorConfig } from './types';
 
 const FPS = 30;
@@ -6,17 +7,6 @@ const MIN_RENDER_INTERVAL_MS = 1000 / FPS - 2;
 const LANDSCAPE_BITRATE = 8_000_000;
 const PORTRAIT_BITRATE = 6_000_000;
 const CANVAS_CONTEXT_OPTIONS: CanvasRenderingContext2DSettings = { alpha: false };
-
-const MIME_CANDIDATES = [
-  'video/webm;codecs=h264,opus',
-  'video/webm;codecs=vp8,opus',
-  'video/webm;codecs=vp9,opus',
-  'video/webm',
-];
-
-function pickMimeType(): string {
-  return MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
-}
 
 export interface ComposeExportsParams {
   screenBlob: Blob;
@@ -63,13 +53,14 @@ function recorderFor(stream: MediaStream, bitrate: number, mimeType: string) {
     mimeType: mimeType || undefined,
     videoBitsPerSecond: bitrate,
   });
+  const actualMimeType = rec.mimeType || mimeType || 'video/webm';
   rec.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data);
   };
   const done = new Promise<Blob>((resolve) => {
-    rec.onstop = () => resolve(new Blob(chunks, { type: mimeType || 'video/webm' }));
+    rec.onstop = () => resolve(new Blob(chunks, { type: actualMimeType }));
   });
-  return { rec, done };
+  return { rec, done, mimeType: actualMimeType };
 }
 
 /**
@@ -89,7 +80,8 @@ export async function composeExports({
   expectedDurationMs,
   onProgress,
 }: ComposeExportsParams): Promise<ComposeExportsResult> {
-  const mimeType = pickMimeType();
+  const format = pickStudioRecordingFormat();
+  const mimeType = format.mimeType;
   const screen = loadVideo(screenBlob);
   const camera = loadVideo(cameraBlob);
   await Promise.all([screen.ready, camera.ready]);
@@ -206,5 +198,5 @@ export async function composeExports({
   URL.revokeObjectURL(screen.url);
   URL.revokeObjectURL(camera.url);
 
-  return { landscape, portrait, mimeType: mimeType || 'video/webm' };
+  return { landscape, portrait, mimeType: landscapeRec.mimeType };
 }

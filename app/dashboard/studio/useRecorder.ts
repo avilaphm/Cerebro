@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { pickStudioRecordingFormat } from './recordingFormat';
 
 export type RecorderStatus = 'idle' | 'recording' | 'stopped';
 
@@ -8,19 +9,6 @@ export interface RecordingResult {
   url: string;
   blob: Blob;
   mimeType: string;
-}
-
-const MIME_CANDIDATES = [
-  // Prefer lower-latency / cheaper encoders before VP9. Chrome may not expose
-  // WebM+H264 everywhere, so this safely falls through to VP8.
-  'video/webm;codecs=h264,opus',
-  'video/webm;codecs=vp8,opus',
-  'video/webm;codecs=vp9,opus',
-  'video/webm',
-];
-
-function pickMimeType(): string {
-  return MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
 }
 
 function describeVideoTracks(stream: MediaStream) {
@@ -77,14 +65,15 @@ export function useRecorder() {
     (stream: MediaStream, bitrate: number, onComplete?: (result: RecordingResult) => void) => {
       chunksRef.current = [];
       setResult(null);
-      const mimeType = pickMimeType();
+      const format = pickStudioRecordingFormat();
       const recorder = new MediaRecorder(stream, {
-        mimeType: mimeType || undefined,
+        mimeType: format.mimeType || undefined,
         videoBitsPerSecond: bitrate,
       });
+      const actualMimeType = recorder.mimeType || format.mimeType;
       console.info('[Studio recorder] start', {
-        requestedMimeType: mimeType || 'browser default',
-        actualMimeType: recorder.mimeType || mimeType || 'browser default',
+        requestedMimeType: format.mimeType || 'browser default',
+        actualMimeType: actualMimeType || 'browser default',
         videoBitsPerSecond: bitrate,
         videoTracks: describeVideoTracks(stream),
         audioTrackCount: stream.getAudioTracks().length,
@@ -93,7 +82,7 @@ export function useRecorder() {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
-        const type = mimeType || 'video/webm';
+        const type = actualMimeType || 'video/webm';
         const blob = new Blob(chunksRef.current, { type });
         const finished: RecordingResult = { url: URL.createObjectURL(blob), blob, mimeType: type };
         setResult(finished);

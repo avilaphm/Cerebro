@@ -1,12 +1,33 @@
 # Handoff
 
 ## Last updated
-2026-07-11 by Codex - Created `CEREBRO_STATE.md`, a factual product/technical state document covering current product flows, architecture, Supabase schema/RLS, external integrations, hardcoded Pedro/account assumptions, single-trainer assumptions, AI pipeline, client app state, known debt, and unbuilt work.
+2026-07-13 by Codex - Studio downloads now prefer real MP4 output instead of WebM. The raw recorder and offline landscape/portrait composer share an MP4-first MediaRecorder format selector, and review/download filenames/buttons now reflect the actual blob type.
 
 ## Last code fix commit
-d4adb62 - Exercise Library one-click missing-video automation
+Latest commit - Studio MP4 recording downloads
 
 ## What just happened (read first)
+
+### Studio MP4 download output (2026-07-13, Codex)
+
+Pedro asked for Studio recordings to download as MP4 files after recording, not WebM files that
+need converting before editing.
+
+Changed:
+- Added `app/dashboard/studio/recordingFormat.ts` as the shared Studio recording format selector.
+- `useRecorder.ts` now prefers browser-supported `video/mp4` candidates before WebM fallbacks and
+  stores the browser's actual recorder MIME type on the finished blob.
+- `composeExports.ts` uses the same MP4-first format selection for the offline landscape and
+  portrait cuts.
+- `StudioApp.tsx` now names downloads with `.mp4` when the blob is MP4 and `.webm` only when the
+  browser falls back to WebM. Review UI shows the actual format and buttons say `Download MP4 ...`
+  when MP4 was produced.
+
+Validation:
+- `npx tsc --noEmit` passes.
+- `npm run build` passes. Existing warning only: Next.js middleware convention is deprecated in
+  favour of proxy.
+- `git diff --check` passes.
 
 ### App state document (2026-07-11, Codex)
 
