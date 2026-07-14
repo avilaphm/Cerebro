@@ -12,6 +12,11 @@ interface StudioHotkeys {
   // Picture-in-Picture window so shortcuts also fire while it is focused. `null`
   // (the floating window isn't open) attaches nothing.
   target?: Window | null;
+  // Compositing now happens offline after the take is captured, so switching
+  // layout mid-recording has no live effect — it would only silently change
+  // what gets painted at finalize time. Defaults to true (setup screen); pass
+  // false during recording to keep 1/2/3/Space inert while Esc still stops.
+  layoutSwitchingEnabled?: boolean;
 }
 
 /**
@@ -20,7 +25,14 @@ interface StudioHotkeys {
  * form control, and Space blurs the focused control + preventDefaults so it
  * doesn't also scroll the page or re-trigger a button.
  */
-export function useStudioHotkeys({ enabled, onLayout, onCycle, onEscape, target }: StudioHotkeys) {
+export function useStudioHotkeys({
+  enabled,
+  onLayout,
+  onCycle,
+  onEscape,
+  target,
+  layoutSwitchingEnabled = true,
+}: StudioHotkeys) {
   useEffect(() => {
     const win = target === undefined ? (typeof window !== 'undefined' ? window : null) : target;
     if (!enabled || !win) return;
@@ -32,8 +44,9 @@ export function useStudioHotkeys({ enabled, onLayout, onCycle, onEscape, target 
         return;
       }
       if (e.key === '1' || e.key === '2' || e.key === '3') {
-        onLayout(Number(e.key) as LayoutId);
+        if (layoutSwitchingEnabled) onLayout(Number(e.key) as LayoutId);
       } else if (e.key === ' ' || e.code === 'Space') {
+        if (!layoutSwitchingEnabled) return;
         e.preventDefault();
         (win.document.activeElement as HTMLElement | null)?.blur?.();
         onCycle();
@@ -43,5 +56,5 @@ export function useStudioHotkeys({ enabled, onLayout, onCycle, onEscape, target 
     };
     win.addEventListener('keydown', handler);
     return () => win.removeEventListener('keydown', handler);
-  }, [enabled, onLayout, onCycle, onEscape, target]);
+  }, [enabled, onLayout, onCycle, onEscape, target, layoutSwitchingEnabled]);
 }

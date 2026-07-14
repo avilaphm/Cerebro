@@ -1,5 +1,5 @@
 import { drawLayout, drawPortraitStacked } from './layouts';
-import { pickStudioRecordingFormat } from './recordingFormat';
+import { formatForStream, pickExportRecordingFormat } from './recordingFormat';
 import { ORIENTATION_DIMS, type CanvasWithCapture, type CompositorConfig } from './types';
 
 const FPS = 30;
@@ -16,8 +16,17 @@ export interface ComposeExportsParams {
   // Duration of the raw take (ms) — WebM blobs from MediaRecorder often report
   // duration: Infinity, so we drive the progress bar off the known elapsed time.
   expectedDurationMs: number;
+  // AudioContext created during the Record click. Chrome only lets a context
+  // start 'running' when it is created inside a user gesture on the page —
+  // compose often runs with no gesture available (recording stopped from the
+  // native "Stop sharing" bar), and a context created suspended here would mix
+  // pure silence into both exports.
+  audioCtx?: AudioContext | null;
   onProgress?: (fraction: number) => void;
 }
+
+// HTMLMediaElement.captureStream() exists in Chrome but not in lib.dom here.
+type ElementWithCapture = HTMLVideoElement & { captureStream?: () => MediaStream };
 
 export interface ComposeExportsResult {
   landscape: Blob;
@@ -29,7 +38,12 @@ function loadVideo(blob: Blob): { video: HTMLVideoElement; url: string; ready: P
   const url = URL.createObjectURL(blob);
   const video = document.createElement('video');
   video.src = url;
-  video.muted = true; // routed through Web Audio for recording, never to speakers
+  // Do NOT mute this element. In Chrome, muting an element also silences the
+  // MediaElementAudioSourceNode created from it below — the mic/system audio
+  // would never reach the export at all. createMediaElementSource already
+  // detaches the element's output from the speakers once connected to a
+  // Web Audio graph, so nothing becomes audible during processing anyway.
+  video.volume = 1;
   video.playsInline = true;
   video.preload = 'auto';
   // Kept in the DOM but off-screen: a detached / display:none video can be
@@ -78,22 +92,45 @@ export async function composeExports({
   config,
   makePortrait,
   expectedDurationMs,
+  audioCtx: providedAudioCtx,
   onProgress,
 }: ComposeExportsParams): Promise<ComposeExportsResult> {
-  const format = pickStudioRecordingFormat();
+  const format = pickExportRecordingFormat();
   const mimeType = format.mimeType;
   const screen = loadVideo(screenBlob);
   const camera = loadVideo(cameraBlob);
   await Promise.all([screen.ready, camera.ready]);
 
+  // Diagnostics: this is how a face-only / silent export regression gets
+  // caught next time instead of only surfacing as a user report.
+  console.info('[Studio compose]', {
+    screen: {
+      sourceMimeType: screenBlob.type,
+      videoWidth: screen.video.videoWidth,
+      videoHeight: screen.video.videoHeight,
+      duration: screen.video.duration,
+      readyState: screen.video.readyState,
+    },
+    camera: {
+      sourceMimeType: cameraBlob.type,
+      videoWidth: camera.video.videoWidth,
+      videoHeight: camera.video.videoHeight,
+      duration: camera.video.duration,
+      readyState: camera.video.readyState,
+    },
+    exportMimeType: mimeType || 'browser default',
+  });
+
   const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  const audioCtx = AudioCtx ? new AudioCtx() : null;
+  const audioCtx = providedAudioCtx ?? (AudioCtx ? new AudioCtx() : null);
   await audioCtx?.resume().catch(() => {});
+  const mixerRunning = audioCtx?.state === 'running';
   const outputs = makePortrait ? 2 : 1;
-  const dests = audioCtx
-    ? Array.from({ length: outputs }, () => audioCtx.createMediaStreamDestination())
-    : [];
-  if (audioCtx) {
+  // One mixed audio track per export (landscape / portrait).
+  const exportAudioTracks: (MediaStreamTrack | undefined)[] = [];
+  let audioPath: 'web-audio-mix' | 'element-capture' | 'none' = 'none';
+  if (audioCtx && mixerRunning) {
+    const dests = Array.from({ length: outputs }, () => audioCtx.createMediaStreamDestination());
     // Both takes may carry audio (camera → mic, screen → system). A take with no
     // audio track just contributes silence; connecting it is harmless.
     for (const el of [camera.video, screen.video]) {
@@ -104,7 +141,31 @@ export async function composeExports({
         /* element unsupported for capture — skip its audio */
       }
     }
+    dests.forEach((d, i) => {
+      exportAudioTracks[i] = d.stream.getAudioTracks()[0];
+    });
+    audioPath = 'web-audio-mix';
+  } else {
+    // Last resort so the exports are never silent: tap the element's audio via
+    // captureStream(), which needs no AudioContext. Only one take can feed each
+    // export this way, so the mic (camera take) wins over system audio. The
+    // element is not rerouted into a graph on this path, so the take is audible
+    // through the speakers while processing — acceptable for an emergency path.
+    const capture = (el: HTMLVideoElement) =>
+      (el as ElementWithCapture).captureStream?.().getAudioTracks()[0];
+    const track = capture(camera.video) ?? capture(screen.video);
+    if (track) {
+      exportAudioTracks[0] = track;
+      if (outputs > 1) exportAudioTracks[1] = track.clone();
+      audioPath = 'element-capture';
+    }
   }
+  console.info('[Studio compose] audio', {
+    audioContextState: audioCtx?.state ?? 'unavailable',
+    providedByRecordClick: !!providedAudioCtx,
+    audioPath,
+    exportAudioTrackCount: exportAudioTracks.filter(Boolean).length,
+  });
 
   const land = ORIENTATION_DIMS.landscape;
   const port = ORIENTATION_DIMS.portrait;
@@ -123,19 +184,21 @@ export async function composeExports({
   }
 
   const landscapeStream = (landscapeCanvas as CanvasWithCapture).captureStream(FPS);
-  if (dests[0]?.stream.getAudioTracks()[0]) {
-    landscapeStream.addTrack(dests[0].stream.getAudioTracks()[0]);
+  if (exportAudioTracks[0]) {
+    landscapeStream.addTrack(exportAudioTracks[0]);
   }
-  const landscapeRec = recorderFor(landscapeStream, LANDSCAPE_BITRATE, mimeType);
+  const landscapeFormat = formatForStream(format, landscapeStream);
+  const landscapeRec = recorderFor(landscapeStream, LANDSCAPE_BITRATE, landscapeFormat.mimeType);
 
   let portraitRec: ReturnType<typeof recorderFor> | null = null;
   let portraitStream: MediaStream | null = null;
   if (portraitCanvas) {
     portraitStream = (portraitCanvas as CanvasWithCapture).captureStream(FPS);
-    if (dests[1]?.stream.getAudioTracks()[0]) {
-      portraitStream.addTrack(dests[1].stream.getAudioTracks()[0]);
+    if (exportAudioTracks[1]) {
+      portraitStream.addTrack(exportAudioTracks[1]);
     }
-    portraitRec = recorderFor(portraitStream, PORTRAIT_BITRATE, mimeType);
+    const portraitFormat = formatForStream(format, portraitStream);
+    portraitRec = recorderFor(portraitStream, PORTRAIT_BITRATE, portraitFormat.mimeType);
   }
 
   // First frame before the recorders start so neither opens on a blank canvas.

@@ -1,12 +1,43 @@
 # Handoff
 
 ## Last updated
-2026-07-13 by Codex - Studio downloads now prefer real MP4 output instead of WebM. The raw recorder and offline landscape/portrait composer share an MP4-first MediaRecorder format selector, and review/download filenames/buttons now reflect the actual blob type.
+2026-07-14 by Claude - Studio recording fixes: landscape export missing the screen, and exports coming out silent. Raw takes are WebM again (downloads stay MP4), replay elements are unmuted, the export mixer's AudioContext is created on the Record click, layout is frozen at record start, and System audio defaults ON.
 
 ## Last code fix commit
-Latest commit - Studio MP4 recording downloads
+Latest commit - Studio landscape + audio export fixes
 
 ## What just happened (read first)
+
+### Studio landscape + silent-export fixes (2026-07-14, Claude)
+
+Pedro reported two regressions after the MP4 switch: the landscape export contained only his
+camera (no screen), and exports had no sound unless the "System audio" toggle was on. He
+requires mic audio to always be captured.
+
+Root causes and fixes (all in `app/dashboard/studio/`):
+- Raw internal takes were recorded as fragmented MP4, which Chrome replays unreliably through
+  the `<video>` blob round trip that `composeExports` depends on. The stalled screen replay
+  produced face-only landscape cuts. `recordingFormat.ts` now has `pickRawRecordingFormat()`
+  (WebM-first, MP4 fallback for iOS) for the internal takes and `pickExportRecordingFormat()`
+  (MP4-first) for everything downloadable. Camera-only mobile mode still downloads MP4.
+- The compose replay videos were `muted`, which in Chrome also silences their
+  `MediaElementAudioSourceNode`, the only path mic audio takes into the exports. Unmuted now
+  (element sources never reach the speakers anyway).
+- The mix AudioContext was created after recording stopped. When the recording ends via the
+  native "Stop sharing" bar there is no page gesture, so the context started suspended and
+  mixed silence. `StudioApp.tsx` now creates it inside the Record click (`beginCountdown`)
+  and hands it to `composeExports`; a captureStream()-based fallback keeps mic audio even if
+  the context still isn't running.
+- Layout is snapshotted at record start (`recordingConfigRef`) and layout hotkeys/UI are
+  disabled while recording, since a stray Space mid-take used to silently turn the whole landscape
+  export camera-only.
+- `systemAudio` now defaults ON; the toggle only adds/removes system audio, never the mic.
+- Compose logs `[Studio compose]` diagnostics (per-take dimensions/duration/readyState and
+  audio path/context state) so the next regression is visible in the console.
+
+Validation:
+- `npx tsc --noEmit` passes. Pedro is testing live recordings himself (screen fix already
+  confirmed working by him; audio fix awaiting his next test).
 
 ### Studio MP4 download output (2026-07-13, Codex)
 

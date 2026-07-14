@@ -27,7 +27,12 @@ import { useStudioHotkeys } from './useHotkeys';
 import { useDocumentPip, useDocumentPipSupported } from './useDocumentPip';
 import { SelfViewPip } from './SelfViewPip';
 import { composeExports } from './composeExports';
-import { extensionForMimeType, labelForMimeType } from './recordingFormat';
+import {
+  extensionForMimeType,
+  labelForMimeType,
+  pickExportRecordingFormat,
+  pickRawRecordingFormat,
+} from './recordingFormat';
 import type { RecordingResult } from './useRecorder';
 import type { CompositorConfig, LayoutId, StudioPhase } from './types';
 import { ORIENTATION_DIMS } from './types';
@@ -71,6 +76,13 @@ const LAYOUT_META: Record<LayoutId, { label: string; needsScreen: boolean }> = {
   3: { label: 'Screen', needsScreen: true },
 };
 
+function createStudioAudioContext(): AudioContext | null {
+  const AudioCtx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  return AudioCtx ? new AudioCtx() : null;
+}
+
 function pad(n: number) {
   return String(n).padStart(2, '0');
 }
@@ -102,7 +114,11 @@ export default function StudioApp() {
   const [phase, setPhase] = useState<StudioPhase>('setup');
   const [selectedCamera, setSelectedCamera] = useState('');
   const [selectedMic, setSelectedMic] = useState('');
-  const [systemAudio, setSystemAudio] = useState(false);
+  // Defaults ON: Pedro wants sound captured without having to remember to flip
+  // this toggle every time. Mic audio is always captured regardless of this
+  // setting (see finalizeRecording/composeExports) — this only governs
+  // whether system/tab audio is additionally requested from getDisplayMedia.
+  const [systemAudio, setSystemAudio] = useState(true);
   // Also record a portrait (9:16) cut alongside the landscape take. Desktop
   // (screen+face) only — camera-only mode is already a single portrait video.
   // Defaults ON: Pedro records once and downloads BOTH landscape (YouTube) and
@@ -153,12 +169,23 @@ export default function StudioApp() {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const configRef = useRef(config);
+  // Snapshot of configRef taken the instant recording starts. Compositing now
+  // runs offline at stop time, so if we read configRef.current there instead,
+  // a stray layout hotkey mid-recording would silently swap the layout for the
+  // whole export. finalizeRecording reads this frozen copy, never the live one.
+  const recordingConfigRef = useRef(config);
   const phaseRef = useRef<StudioPhase>(phase);
   // Raw takes captured during recording; consumed by composeExports on stop.
   const screenBlobRef = useRef<Blob | null>(null);
   const cameraBlobRef = useRef<Blob | null>(null);
   const pendingStopsRef = useRef(0);
   const countdownRef = useRef<number | null>(null);
+  // AudioContext for the offline export mix, created inside the Record click.
+  // Chrome only lets a context start 'running' when created during a user
+  // gesture on the page; finalizeRecording often has no gesture at all (the
+  // native "Stop sharing" bar is browser UI), and a suspended context would
+  // silently mix no audio into the exports.
+  const audioCtxRef = useRef<AudioContext | null>(null);
   // Latest values read inside the recorder stop callbacks (which close over
   // start-time state), kept fresh via refs so finalize sees the real values.
   const makePortraitRef = useRef(makePortrait);
@@ -247,6 +274,9 @@ export default function StudioApp() {
     const cameraBlob = cameraBlobRef.current;
 
     if (cameraOnly) {
+      // No compositing step — the mixer context is unused here.
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
       if (cameraBlob) {
         setPortraitExport({
           url: URL.createObjectURL(cameraBlob),
@@ -268,13 +298,17 @@ export default function StudioApp() {
     setProcessProgress(0);
     setProcessError(null);
     setPhase('processing');
+    // Hand mixer ownership to composeExports — it closes the context on teardown.
+    const mixerCtx = audioCtxRef.current;
+    audioCtxRef.current = null;
     try {
       const out = await composeExports({
         screenBlob,
         cameraBlob,
-        config: configRef.current,
+        config: recordingConfigRef.current,
         makePortrait: makePortraitRef.current,
         expectedDurationMs: elapsedRef.current,
+        audioCtx: mixerCtx,
         onProgress: setProcessProgress,
       });
       setLandscapeExport({
@@ -318,6 +352,8 @@ export default function StudioApp() {
     setLandscapeExport(null);
     setPortraitExport(null);
     setProcessError(null);
+    // Freeze the layout for this take — see recordingConfigRef's comment.
+    recordingConfigRef.current = configRef.current;
 
     // Record the RAW sources directly — the browser's hardware-accelerated path,
     // no canvas compositing, so recording is lag-free and audio stays locked to
@@ -325,18 +361,22 @@ export default function StudioApp() {
     // takes (finalizeRecording → composeExports). The camera take carries the
     // mic; the screen take carries system audio when it is enabled.
     if (cameraOnly) {
+      // Camera-only mode has no compositing step — this raw take IS the
+      // download, so it needs the export (MP4-first) format, not the raw one.
       pendingStopsRef.current = 1;
-      recorder.start(camMicStream, PORTRAIT_BITRATE, (res) => {
+      recorder.start(camMicStream, PORTRAIT_BITRATE, pickExportRecordingFormat(), (res) => {
         cameraBlobRef.current = res.blob;
         onRawSegmentDone();
       });
     } else {
+      // Desktop raw takes are internal intermediates replayed through <video>
+      // by composeExports — WebM-first survives that round trip reliably.
       pendingStopsRef.current = 2;
-      recorder.start(screenStream!, LANDSCAPE_BITRATE, (res) => {
+      recorder.start(screenStream!, LANDSCAPE_BITRATE, pickRawRecordingFormat(), (res) => {
         screenBlobRef.current = res.blob;
         onRawSegmentDone();
       });
-      portraitRecorder.start(camMicStream, PORTRAIT_BITRATE, (res) => {
+      portraitRecorder.start(camMicStream, PORTRAIT_BITRATE, pickRawRecordingFormat(), (res) => {
         cameraBlobRef.current = res.blob;
         onRawSegmentDone();
       });
@@ -405,6 +445,10 @@ export default function StudioApp() {
   const beginCountdown = useCallback(() => {
     if (!canRecord || countdownRef.current !== null) return;
     closePip();
+    // Created here, inside the click, so it starts (and stays) 'running' for
+    // the offline mix no matter how the recording later ends.
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = createStudioAudioContext();
     let n = 3;
     setCountdown(n);
     countdownRef.current = window.setInterval(() => {
@@ -422,6 +466,14 @@ export default function StudioApp() {
 
   useEffect(() => () => cancelCountdown(), [cancelCountdown]);
 
+  useEffect(
+    () => () => {
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+    },
+    [],
+  );
+
   const cycleLayout = useCallback(() => setLayout((l) => ((l % 3) + 1) as LayoutId), []);
 
   const onEscape = useCallback(() => {
@@ -434,6 +486,11 @@ export default function StudioApp() {
     onLayout: setLayout,
     onCycle: cycleLayout,
     onEscape,
+    // Compositing runs offline at stop time now, so layout switching only ever
+    // does something meaningful before recording starts. Esc must still work
+    // during recording (it's the stop shortcut), so the hook stays enabled —
+    // only 1/2/3/Space are gated off.
+    layoutSwitchingEnabled: phase === 'setup',
   });
 
   // Mirror the hotkeys onto the floating window so 1/2/3, Space and Esc work
@@ -617,7 +674,7 @@ export default function StudioApp() {
 
         {/* Controls */}
         <div className="cb-card space-y-5 rounded-2xl border border-black/10 p-5">
-          {!cameraOnly && phase !== 'review' && (
+          {!cameraOnly && phase === 'setup' && (
             <LayoutSwitcher layout={config.layout} onSelect={setLayout} />
           )}
 
@@ -826,7 +883,7 @@ function LayoutSwitcher({ layout, onSelect }: { layout: LayoutId; onSelect: (id:
         })}
       </div>
       <p className="text-[0.65rem] leading-relaxed text-black/40">
-        1 / 2 / 3 switch · Space cycles · Esc stops
+        1 / 2 / 3 switch · Space cycles — locked in once recording starts · Esc stops
       </p>
     </div>
   );

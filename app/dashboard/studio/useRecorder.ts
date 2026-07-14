@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { pickStudioRecordingFormat } from './recordingFormat';
+import { formatForStream, type StudioRecordingFormat } from './recordingFormat';
 
 export type RecorderStatus = 'idle' | 'recording' | 'stopped';
 
@@ -61,18 +61,28 @@ export function useRecorder() {
   // downstream state changes happen in a callback, not inside an effect. It
   // receives the finished result so callers can grab the blob synchronously
   // (React state updates a render later — too late for offline processing).
+  //
+  // `format` is supplied by the caller rather than picked in here: this hook
+  // records two very different things (raw internal takes vs. a camera-only
+  // download that goes straight to the user), and each wants a different
+  // format policy. See pickRawRecordingFormat / pickExportRecordingFormat.
   const start = useCallback(
-    (stream: MediaStream, bitrate: number, onComplete?: (result: RecordingResult) => void) => {
+    (
+      stream: MediaStream,
+      bitrate: number,
+      format: StudioRecordingFormat,
+      onComplete?: (result: RecordingResult) => void,
+    ) => {
       chunksRef.current = [];
       setResult(null);
-      const format = pickStudioRecordingFormat();
+      const effectiveFormat = formatForStream(format, stream);
       const recorder = new MediaRecorder(stream, {
-        mimeType: format.mimeType || undefined,
+        mimeType: effectiveFormat.mimeType || undefined,
         videoBitsPerSecond: bitrate,
       });
-      const actualMimeType = recorder.mimeType || format.mimeType;
+      const actualMimeType = recorder.mimeType || effectiveFormat.mimeType;
       console.info('[Studio recorder] start', {
-        requestedMimeType: format.mimeType || 'browser default',
+        requestedMimeType: effectiveFormat.mimeType || 'browser default',
         actualMimeType: actualMimeType || 'browser default',
         videoBitsPerSecond: bitrate,
         videoTracks: describeVideoTracks(stream),
