@@ -213,7 +213,7 @@ export async function composeExports({
 
   let lastRenderAt = 0;
   let raf = 0;
-  const loop = () => {
+  const tick = () => {
     const now = performance.now();
     if (now - lastRenderAt >= MIN_RENDER_INTERVAL_MS) {
       lastRenderAt = now;
@@ -222,7 +222,27 @@ export async function composeExports({
         onProgress(Math.min(1, (camera.video.currentTime * 1000) / expectedDurationMs));
       }
     }
-    raf = requestAnimationFrame(loop);
+  };
+  // The paint loop must be driven by a Web Worker timer, not rAF: Chrome
+  // freezes rAF in a hidden tab, and processing often runs while the user is
+  // in another app (recording stopped from the "Stop sharing" bar). A frozen
+  // loop kept recording one stale canvas frame while audio played on — the
+  // "video frozen for 30-50s, audio perfect" exports. Same fix as the live
+  // compositor's watchdog (see tick.worker.ts).
+  const startLoop = (): Worker | null => {
+    try {
+      const w = new Worker(new URL('./tick.worker.ts', import.meta.url));
+      w.onmessage = tick;
+      w.postMessage({ type: 'start', fps: FPS });
+      return w;
+    } catch {
+      const loop = () => {
+        tick();
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+      return null;
+    }
   };
 
   const ended = new Promise<void>((resolve) => {
@@ -238,10 +258,14 @@ export async function composeExports({
   screen.video.currentTime = 0;
   camera.video.currentTime = 0;
   await Promise.all([screen.video.play(), camera.video.play()]);
-  raf = requestAnimationFrame(loop);
+  const worker = startLoop();
 
   await ended;
-  cancelAnimationFrame(raf);
+  if (worker) {
+    worker.postMessage({ type: 'stop' });
+    worker.terminate();
+  }
+  if (raf) cancelAnimationFrame(raf);
   // Flush one final frame, then stop.
   paint();
   landscapeRec.rec.stop();

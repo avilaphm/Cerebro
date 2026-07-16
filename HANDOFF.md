@@ -1,12 +1,23 @@
 # Handoff
 
 ## Last updated
-2026-07-14 by Claude - Studio recording fixes: landscape export missing the screen, and exports coming out silent. Raw takes are WebM again (downloads stay MP4), replay elements are unmuted, the export mixer's AudioContext is created on the Record click, layout is frozen at record start, and System audio defaults ON.
+2026-07-16 by Claude - Studio processing no longer freezes the exported video when the tab is hidden: the offline compose paint loop now runs on a tick.worker timer instead of requestAnimationFrame. Audio was already correct; frozen 30-50s video stretches were rAF being throttled while Pedro was in another app during processing.
 
 ## Last code fix commit
-Latest commit - Studio landscape + audio export fixes
+Latest commit - Studio compose loop worker tick (hidden-tab freeze fix)
 
 ## What just happened (read first)
+
+### Studio hidden-tab processing freeze (2026-07-16, Claude)
+
+Pedro recorded 3 videos; 2 had 30-50s stretches of frozen video with perfect audio. Cause:
+`composeExports` painted frames via requestAnimationFrame, which Chrome freezes in hidden
+tabs. Processing typically starts while Pedro is still in another app (he stops via the
+native "Stop sharing" bar), so the export recorded a stale canvas frame until he returned
+to the tab. Fix: the compose paint loop is driven by `tick.worker.ts` (worker timers are
+not throttled in hidden tabs), with rAF kept only as a fallback when the Worker cannot be
+created. Same approach as the live compositor watchdog (commit 13d7e2f). Validation:
+`npx tsc --noEmit` passes; Pedro live test pending.
 
 ### Studio landscape + silent-export fixes (2026-07-14, Claude)
 
