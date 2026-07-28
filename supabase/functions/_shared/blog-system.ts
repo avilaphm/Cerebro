@@ -67,6 +67,19 @@ SOURCE STANDARD
 ANGLE STANDARD
 Each angle must target one specific reader and one recognisable scene. Examples include a planner comparing programme versions late at night, a project controls lead rebuilding a monthly deck, or a director waiting three weeks for information that has already gone stale.
 
+READABILITY STANDARD
+- Write for a smart, busy operator who should understand every angle on the first read.
+- Keep the industry language they use, including project controls, cost actuals, critical path, P6 and change orders when relevant.
+- Do not stack jargon, abstract nouns or multiple ideas inside one sentence.
+- Use one clear thought per sentence. Prefer familiar words and concrete verbs.
+- If a technical term is necessary, make its practical meaning obvious in the same sentence.
+- Depth must come from the evidence and insight, not complicated wording.
+
+ABSOLUTE PUNCTUATION RULE
+- Never use em dashes, en dashes or double hyphens anywhere in the response.
+- This applies to findings, audience language, angle titles, scenes, tensions, cases, takeaways, source titles and key facts.
+- Use commas, colons or full stops instead. Write numeric ranges with "to".
+
 Each angle needs:
 - a concrete opening scene;
 - an expensive operational tension;
@@ -122,8 +135,20 @@ PEDRO VOICE
 - Use "really", "actually", "I reckon", "Here's the thing" or "Anyway" only when natural.
 - Bold but fair. State the take, then give the useful nuance.
 
+EASY TO READ, STILL DEEP
+- Write for a smart, busy reader. They should not need to reread a sentence to connect the argument.
+- Use plain words for the explanation and precise industry terms for the work itself.
+- Keep useful terms such as project controls, cost actuals, critical path, P6, programme, change order and earned value when relevant.
+- Explain what a technical term means for the job, the decision or the money the first time it matters.
+- Put one main idea in each sentence. Most sentences should stay under 20 words.
+- Break a chain of logic into short steps. Do not make the reader carry three clauses at once.
+- Keep paragraphs short, usually one to three sentences.
+- Depth comes from a specific example, strong evidence and a useful implication. Never use complicated wording to sound intelligent.
+- Open loops and re-hooks must be easy to follow. Remind the reader what question is still open before moving deeper.
+
 ABSOLUTE VOICE RULES
 - Never use em dashes, en dashes or double hyphens.
+- This applies to every returned field, including the title, meta description, article and quality check.
 - Never use: AI-powered, streamline, optimize, workflow automation, digital transformation, solutions, synergy, innovative, cutting edge, revolutionary, game-changing, empowering, unlock potential, 10x, fast-paced world.
 - Never start with "In today's" or "Imagine".
 - No generic introduction explaining what the article will cover.
@@ -178,11 +203,14 @@ Apply the requested change while preserving the research integrity, inline sourc
 
 Non-negotiable:
 - Never use em dashes, en dashes or double hyphens.
+- This applies to the complete returned article, including headings, link labels and quoted text.
 - Do not introduce a new fact, statistic, quote, case, outcome or first-person experience unless it is present in the supplied research packet.
 - Do not remove a citation while keeping the factual claim it supported.
 - Do not turn public research into something Pedro claims to have witnessed.
 - Keep one specific construction, engineering, infrastructure or advisory reader.
 - Keep the opening loop, natural re-hooks, full payoff and practical ending.
+- Make every sentence easy to understand on the first read. Keep the industry terms, but explain their practical meaning and split dense logic into short steps.
+- Preserve depth through evidence, examples and implications, not long sentences or abstract language.
 - No corporate filler or banned Cerebro vocabulary.
 - Return only the complete updated Markdown article. No preamble.`;
 
@@ -199,6 +227,9 @@ You must:
 - Preserve the opening loop, story spine, Pedro voice, 1,200 to 1,800 word target and exact final H2 "What to take back to work".
 - Preserve the title outside the article body. Return only the corrected article body.
 - Never use em dashes, en dashes or double hyphens.
+- This applies to the corrected article and every issue description.
+- Rewrite any sentence that needs a second read. Keep precise industry terms, but explain what they mean for the work, decision or cost.
+- Prefer one idea per sentence and short paragraphs. Preserve depth through evidence and insight.
 
 Return only valid JSON:
 {
@@ -247,33 +278,60 @@ export function parseJsonObject<T>(raw: string): T | null {
   }
 }
 
+export function removeDashPunctuation(value: string): string {
+  const cleanText = (text: string) => text
+    .replace(/(\d)[ \t]*[—–][ \t]*(\d)/g, '$1 to $2')
+    .replace(/[ \t]*[—–][ \t]*/g, ', ')
+    .replace(/[ \t]*-{2,}[ \t]*/g, ', ')
+    .replace(/,[ \t]*([,.;:!?])/g, '$1')
+    .replace(/,[ \t]*,/g, ',')
+    .replace(/[ \t]{2,}/g, ' ');
+
+  const urlPattern = /https?:\/\/[^\s)]+/g;
+  let cleaned = '';
+  let previousIndex = 0;
+
+  for (const match of value.matchAll(urlPattern)) {
+    const index = match.index ?? previousIndex;
+    cleaned += cleanText(value.slice(previousIndex, index));
+    cleaned += match[0];
+    previousIndex = index + match[0].length;
+  }
+
+  cleaned += cleanText(value.slice(previousIndex));
+  return cleaned.trim();
+}
+
 export function normaliseResearchPacket(input: Partial<BlogResearchPacket>): BlogResearchPacket {
+  const clean = (value: unknown, maxLength: number) =>
+    removeDashPunctuation(String(value ?? '')).slice(0, maxLength);
+
   const sources = Array.isArray(input.sources)
     ? input.sources
         .filter((source) => source && typeof source.url === 'string' && /^https?:\/\//.test(source.url))
         .map((source) => ({
-          title: String(source.title ?? 'Untitled source').slice(0, 300),
+          title: clean(source.title ?? 'Untitled source', 300),
           url: String(source.url),
-          publisher: String(source.publisher ?? 'Unknown publisher').slice(0, 160),
+          publisher: clean(source.publisher ?? 'Unknown publisher', 160),
           published_at: source.published_at ? String(source.published_at).slice(0, 10) : null,
           source_type: ['primary', 'industry', 'public_discussion'].includes(source.source_type)
             ? source.source_type
             : 'industry',
-          key_fact: String(source.key_fact ?? '').slice(0, 800),
+          key_fact: clean(source.key_fact, 800),
         })) as BlogSource[]
     : [];
 
   const validUrls = new Set(sources.map((source) => source.url));
   const angles = Array.isArray(input.angles)
     ? input.angles.slice(0, 3).map((angle, index) => ({
-        id: String(angle.id ?? `angle-${index + 1}`),
-        working_title: String(angle.working_title ?? `Research angle ${index + 1}`).slice(0, 120),
-        target_reader: String(angle.target_reader ?? '').slice(0, 300),
-        opening_scene: String(angle.opening_scene ?? '').slice(0, 800),
-        central_tension: String(angle.central_tension ?? '').slice(0, 800),
-        belief_shift: String(angle.belief_shift ?? '').slice(0, 800),
-        real_case: String(angle.real_case ?? '').slice(0, 1200),
-        practical_takeaway: String(angle.practical_takeaway ?? '').slice(0, 800),
+        id: clean(angle.id ?? `angle-${index + 1}`, 120),
+        working_title: clean(angle.working_title ?? `Research angle ${index + 1}`, 120),
+        target_reader: clean(angle.target_reader, 300),
+        opening_scene: clean(angle.opening_scene, 800),
+        central_tension: clean(angle.central_tension, 800),
+        belief_shift: clean(angle.belief_shift, 800),
+        real_case: clean(angle.real_case, 1200),
+        practical_takeaway: clean(angle.practical_takeaway, 800),
         source_urls: Array.isArray(angle.source_urls)
           ? angle.source_urls.map(String).filter((url) => validUrls.has(url))
           : [],
@@ -281,9 +339,11 @@ export function normaliseResearchPacket(input: Partial<BlogResearchPacket>): Blo
     : [];
 
   return {
-    findings: Array.isArray(input.findings) ? input.findings.map(String).slice(0, 8) : [],
+    findings: Array.isArray(input.findings)
+      ? input.findings.map((finding) => clean(finding, 1200)).slice(0, 8)
+      : [],
     audience_language: Array.isArray(input.audience_language)
-      ? input.audience_language.map(String).slice(0, 10)
+      ? input.audience_language.map((phrase) => clean(phrase, 500)).slice(0, 10)
       : [],
     angles,
     sources,
@@ -296,8 +356,23 @@ export function auditBlog(content: string): string[] {
   const lower = content.toLowerCase();
   const h2Count = (content.match(/^##\s+/gm) ?? []).length;
   const markdownLinks = (content.match(/\[[^\]]+\]\(https?:\/\/[^)]+\)/g) ?? []).length;
+  const proseWithoutUrls = content.replace(/https?:\/\/[^\s)]+/g, '');
+  const sentences = proseWithoutUrls
+    .replace(/^#{1,6}\s+/gm, '')
+    .split(/[.!?]+(?:\s|$)/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+  const sentenceWordCounts = sentences.map((sentence) =>
+    sentence.split(/\s+/).filter(Boolean).length
+  );
+  const averageSentenceLength = sentenceWordCounts.length
+    ? sentenceWordCounts.reduce((total, count) => total + count, 0) / sentenceWordCounts.length
+    : 0;
+  const veryLongSentences = sentenceWordCounts.filter((count) => count > 30).length;
 
-  if (/[—–]/.test(content) || content.includes('--')) issues.push('Remove all em dashes, en dashes and double hyphens.');
+  if (/[—–]/.test(proseWithoutUrls) || /-{2,}/.test(proseWithoutUrls)) {
+    issues.push('Remove all em dashes, en dashes and double hyphens.');
+  }
   if (wordCount < 1100) issues.push(`Expand the useful depth. Current word count is ${wordCount}.`);
   if (wordCount > 1900) issues.push(`Tighten the article. Current word count is ${wordCount}.`);
   if (h2Count < 3 || h2Count > 6) issues.push('Use 3 to 5 descriptive H2 sections.');
@@ -305,6 +380,12 @@ export function auditBlog(content: string): string[] {
     issues.push('Finish with the exact H2 heading "What to take back to work".');
   }
   if (markdownLinks < 2) issues.push('Include at least two inline Markdown source links.');
+  if (averageSentenceLength > 21) {
+    issues.push(`Simplify the sentence structure. Average sentence length is ${averageSentenceLength.toFixed(1)} words.`);
+  }
+  if (veryLongSentences > 2) {
+    issues.push(`Break up ${veryLongSentences} sentences that run beyond 30 words.`);
+  }
   for (const phrase of BANNED_PHRASES) {
     if (lower.includes(phrase)) issues.push(`Remove banned phrase: ${phrase}.`);
   }

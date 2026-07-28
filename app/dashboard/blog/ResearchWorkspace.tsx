@@ -52,9 +52,18 @@ async function invokeErrorMessage(
 
   const response = (invokeError as { context?: Response } | null)?.context;
   if (response) {
+    if (response.status === 401) {
+      return 'Your login session expired. Refresh this page and try again.';
+    }
     try {
-      const body = await response.json() as { error?: string };
-      if (body.error) return body.error;
+      const body = await response.clone().json() as {
+        error?: string;
+        message?: string;
+        msg?: string;
+      };
+      if (body.error || body.message || body.msg) {
+        return body.error ?? body.message ?? body.msg ?? fallback;
+      }
     } catch {
       // Fall through to the SDK message when the response body is unavailable.
     }
@@ -103,14 +112,12 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
     setShowSources(false);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const { data, error: invokeError } = await supabase.functions.invoke('research-and-draft', {
         body: {
           action: 'research',
           topic: topic.trim() || undefined,
           notes: notes.trim() || undefined,
         },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
 
       if (invokeError || data?.error || !data?.run) {
@@ -135,14 +142,12 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
     setError('');
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const { data, error: invokeError } = await supabase.functions.invoke('research-and-draft', {
         body: {
           action: 'generate',
           run_id: run.id,
           angle_index: angleIndex,
         },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
 
       if (invokeError || data?.error || !data?.post_id) {

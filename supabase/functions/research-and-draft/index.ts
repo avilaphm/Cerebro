@@ -13,6 +13,7 @@ import {
   type GeneratedBlog,
   normaliseResearchPacket,
   parseJsonObject,
+  removeDashPunctuation,
   slugifyBlogTitle,
 } from '../_shared/blog-system.ts';
 
@@ -57,7 +58,7 @@ const webSearchTool = {
     country: 'AU',
     timezone: 'Australia/Sydney',
   },
-};
+} as const;
 
 function respond(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -146,7 +147,7 @@ Deno.serve(async (req: Request) => {
         system: BLOG_RESEARCH_SYSTEM,
         tools: [webSearchTool],
         messages: researchMessages,
-      } as any);
+      });
 
       // Anthropic server tools may pause a long-running turn. Continue with the
       // returned content exactly as documented instead of treating it as a final answer.
@@ -164,7 +165,7 @@ Deno.serve(async (req: Request) => {
           system: BLOG_RESEARCH_SYSTEM,
           tools: [webSearchTool],
           messages: researchMessages,
-        } as any);
+        });
       }
 
       const raw = extractText(researchResponse.content as unknown[]);
@@ -339,7 +340,9 @@ Run the final source-integrity edit. Return the required JSON only.`,
       if (!sourceIntegrity?.content_md) {
         throw new Error('The final source-integrity check did not return a usable article.');
       }
-      blog.content_md = sourceIntegrity.content_md;
+      blog.title = removeDashPunctuation(blog.title);
+      blog.meta_description = removeDashPunctuation(blog.meta_description ?? '');
+      blog.content_md = removeDashPunctuation(sourceIntegrity.content_md);
       auditIssues = auditBlog(blog.content_md);
 
       const baseSlug = slugifyBlogTitle(blog.slug || blog.title);
@@ -347,7 +350,9 @@ Run the final source-integrity edit. Return the required JSON only.`,
       const qcReport = {
         deterministic_issues: auditIssues,
         source_integrity_fixes: Array.isArray(sourceIntegrity.issues)
-          ? sourceIntegrity.issues.map(String).slice(0, 20)
+          ? sourceIntegrity.issues
+              .map((issue) => removeDashPunctuation(String(issue)))
+              .slice(0, 20)
           : [],
         model_check: blog.quality_check ?? {},
         checked_at: new Date().toISOString(),

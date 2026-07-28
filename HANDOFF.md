@@ -1,12 +1,43 @@
 # Handoff
 
 ## Last updated
-2026-07-29 by Codex - The dashboard blog generator is now a construction-first research workflow: current public research, exactly three angles, Pedro selects one, then a source-integrity checked article is saved as a review draft and never auto-published.
+2026-07-29 by Codex - Blog generation now refreshes dashboard authentication automatically, bans long-dash punctuation at the save boundary, and enforces plain, first-read language without removing useful construction terminology.
 
 ## Last code fix commit
-Latest commit - Build research-led Cerebro blog workflow
+Latest commit - Fix blog authentication and readability
 
 ## What just happened (read first)
+
+### Blog authentication, punctuation and readability gates (2026-07-29, Codex)
+
+Pedro clicked `Write this article` after leaving the dashboard open and received the generic
+`Edge Function returned a non-2xx status code` message. Live logs showed a 401 at the Supabase
+gateway before the function started. The dashboard was manually forwarding the access token
+returned by `getSession`, which could be stale.
+
+Changed:
+- Removed manual Authorization headers from dashboard blog function calls. The Supabase browser
+  client now attaches its current, automatically refreshed session JWT.
+- Added a clear expired-session message for genuine 401 responses.
+- Preserved the existing research run in `ready`; no research needs to be repeated.
+- Added a hard punctuation sanitizer to research packets, article titles, meta descriptions,
+  article bodies, refinements, and visible QC fixes.
+- Numeric ranges use `to`. Citation URLs are protected from cleanup.
+- Cleaned the existing live research run and verified zero forbidden dash punctuation across its
+  angles, findings, audience language, and sources.
+- Added a readability standard to research, writing, refinement, QC prompts, and parent skills:
+  one main idea per sentence, short paragraphs, clear open loops, precise industry terms with
+  immediate practical meaning, and depth through evidence rather than dense wording.
+- Added deterministic readability checks for average sentence length and repeated sentences over
+  30 words.
+- Deployed `research-and-draft` v25 and `refine-blog` v19.
+
+Validation:
+- `npm run test:blog-system`: 6/6 pass.
+- Focused ESLint: zero errors; one existing `no-img-element` warning.
+- `npx tsc --noEmit`: passes.
+- `npm run build`: passes in a clean `/private/tmp` validation copy on Next.js 16.2.10.
+- Existing middleware deprecation warning only.
 
 ### Research-led Cerebro blog workflow (2026-07-29, Codex)
 

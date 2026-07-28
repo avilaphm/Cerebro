@@ -4,6 +4,7 @@ import {
   auditBlog,
   BLOG_REFINER_SYSTEM,
   extractText,
+  removeDashPunctuation,
 } from '../_shared/blog-system.ts';
 
 const corsHeaders = {
@@ -81,7 +82,9 @@ Deno.serve(async (req: Request) => {
       }],
     });
 
-    let refined = extractText(response.content as unknown[]) || current_content;
+    let refined = removeDashPunctuation(
+      extractText(response.content as unknown[]) || current_content,
+    );
     let auditIssues = auditBlog(refined);
     const removedUrls = originalUrls.filter((url) => !refined.includes(`](${url})`));
     if (removedUrls.length > 0) {
@@ -98,7 +101,9 @@ Deno.serve(async (req: Request) => {
           content: `RESEARCH PACKET\n${researchContext}\n\nARTICLE TO REPAIR\n${refined}\n\nEDITORIAL ISSUES\n${auditIssues.map((issue) => `- ${issue}`).join('\n')}\n\nRepair only these issues. Return the complete Markdown article.`,
         }],
       });
-      refined = extractText(repairResponse.content as unknown[]) || refined;
+      refined = removeDashPunctuation(
+        extractText(repairResponse.content as unknown[]) || refined,
+      );
       auditIssues = auditBlog(refined);
     }
 

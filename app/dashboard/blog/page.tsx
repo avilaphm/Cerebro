@@ -146,10 +146,8 @@ export default function BlogDashboardPage() {
     }));
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const { data, error } = await supabase.functions.invoke('refine-blog', {
         body: { blog_id: id, message, current_content: editContent[id] ?? '' },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
       });
       if (!error && data?.content) {
         setEditContent((prev) => ({ ...prev, [id]: data.content }));
@@ -198,10 +196,8 @@ export default function BlogDashboardPage() {
       .eq('id', id);
 
     // Auto-generate 5 X posts
-    const { data: { session } } = await supabase.auth.getSession();
     await supabase.functions.invoke('generate-x-posts', {
       body: { blog_post_id: id, count: 5 },
-      headers: { Authorization: `Bearer ${session?.access_token}` },
     }).catch(() => {});
 
     setPosting(null);
