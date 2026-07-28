@@ -7,11 +7,11 @@ function AnimatedHero() {
   const [titleNumber, setTitleNumber] = useState(0);
   const titles = useMemo(
     () => [
-      "chase unpaid memberships.",
-      "reply to leads on Sunday night.",
-      "watch trial members go quiet.",
-      "pull end-of-month reports.",
-      "follow up with every no-show.",
+      "rebuild reports.",
+      "clean spreadsheets.",
+      "hunt for answers.",
+      "repeat the process.",
+      "hire just to grow.",
     ],
     []
   );
@@ -27,12 +27,12 @@ function AnimatedHero() {
     <div className="w-full min-h-screen flex items-end pb-20 pt-44 px-6 md:px-12">
       <div className="w-full max-w-5xl mx-auto">
         <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black mb-10">
-          Built for gyms, studios, and PTs in Australia and New Zealand
+          Embedded AI systems partner · Sydney
         </p>
 
         <h1 className="font-display text-[clamp(2.8rem,8vw,7rem)] font-light leading-[1.06] tracking-[-0.02em] max-w-[900px] mb-6 text-black">
-          You didn&apos;t get into fitness to{" "}
-          <span className="relative inline-flex justify-start overflow-hidden h-[1.15em] align-bottom w-full">
+          Your best people shouldn&apos;t{" "}
+          <span className="relative inline-flex justify-start overflow-hidden h-[2.15em] sm:h-[1.15em] align-bottom w-full">
             {titles.map((title, index) => (
               <motion.em
                 key={index}
@@ -56,9 +56,8 @@ function AnimatedHero() {
         </h1>
 
         <p className="text-[clamp(1rem,1.8vw,1.15rem)] font-light text-black/70 leading-[1.7] max-w-[560px] mt-10">
-          We connect Mindbody, Glofox, and Trainerize to your messaging and
-          payments. Lead replies, billing recovery, retention flags. Running
-          automatically.
+          Cerebro works inside your business to find where output is getting
+          stuck, then builds the system around the way your team already works.
         </p>
 
         <div className="flex items-start gap-10 flex-col sm:flex-row mt-14">
@@ -66,11 +65,12 @@ function AnimatedHero() {
             href="#start"
             className="inline-flex items-center gap-3 text-[0.7rem] font-medium tracking-[0.12em] uppercase text-white bg-black px-8 py-4 no-underline transition-[opacity,transform] duration-200 hover:opacity-75 hover:-translate-y-px shrink-0"
           >
-            Get your free operations audit
+            Map the bottleneck
             <span aria-hidden="true">→</span>
           </a>
           <p className="text-sm font-light text-black/60 leading-relaxed max-w-[360px] pt-1">
-            No platform to replace. No contract. We connect what you already use.
+            Eight-week builds from A$25,000. Two afternoons a week, inside your
+            business.
           </p>
         </div>
       </div>

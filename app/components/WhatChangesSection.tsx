@@ -1,10 +1,10 @@
 import FadeIn from "./FadeIn";
 
 const OUTCOMES = [
-  "A lead messages at 9pm. They have a booking link before you finish dinner.",
-  "A member misses two classes. Your coach gets a flag before it turns into a cancellation.",
-  "A payment fails. It retries, messages the member, and recovers automatically.",
-  "Sunday evening. A 90-second summary of your week lands in your inbox instead.",
+  "A three-week reporting cycle becomes current enough to change this month's outcome.",
+  "A senior analyst reviews the exceptions instead of checking every line by hand.",
+  "The recurring client report starts as a reviewed draft, not an empty document.",
+  "A new hire can find the firm's method without taking a senior person away for a week.",
 ];
 
 export default function WhatChangesSection() {
@@ -32,7 +32,7 @@ export default function WhatChangesSection() {
             <li className="border-t border-black" aria-hidden="true" />
           </ul>
           <p className="text-sm font-light text-black/60 leading-relaxed mt-12 max-w-[480px]">
-            Your floor time stays yours. The numbers take care of themselves.
+            Human judgement stays. The repetitive work goes.
           </p>
         </FadeIn>
       </div>

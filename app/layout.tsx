@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     template: "%s | Cerebro",
   },
   description:
-    "Cerebro builds operational systems for fitness operators, finance teams, and founder-led service businesses.",
+    "Cerebro is the embedded AI systems partner for expert-led businesses that need more output without matching headcount.",
 };
 
 export default function RootLayout({

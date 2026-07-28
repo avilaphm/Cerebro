@@ -17,14 +17,14 @@ export default function PrivacyPage() {
           <h1 className="font-display text-[clamp(2rem,4vw,3rem)] font-light tracking-[-0.025em] text-black mb-4">
             Privacy Policy
           </h1>
-          <p className="text-xs text-black/30 mb-16">Last updated: May 2026</p>
+          <p className="text-xs text-black/30 mb-16">Last updated: July 2026</p>
 
           <div className="space-y-12 text-sm font-light text-black/70 leading-relaxed">
 
             <section>
               <h2 className="text-xs font-medium tracking-[0.15em] uppercase text-black mb-4">Overview</h2>
               <p>
-                Cerebro (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is an AI automation consultancy operated by Pedro Avila, based in Sydney, Australia. This policy explains how we collect, use, and handle your personal information when you visit cerebroai.au or engage with our services.
+                Cerebro (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;) is an embedded business systems consultancy operated by Pedro Avila, based in Sydney, Australia. This policy explains how we collect, use, and handle your personal information when you visit cerebroai.au or engage with our services.
               </p>
               <p className="mt-3">
                 We handle your information in accordance with the Australian Privacy Act 1988 and the Australian Privacy Principles (APPs).
@@ -38,7 +38,7 @@ export default function PrivacyPage() {
                 {[
                   'Name and business name, when you fill out our contact or onboarding form',
                   'Email address and phone number, used to follow up on your inquiry',
-                  'Details about your business and workflow challenges, shared through our chatbot',
+                  'Details about your business, processes, systems, and delivery constraints, shared through our chatbot or during an engagement',
                   'Any other information you voluntarily provide during our conversations',
                 ].map((item) => (
                   <li key={item} className="flex gap-3">
@@ -57,9 +57,9 @@ export default function PrivacyPage() {
               <p>Your information is used to:</p>
               <ul className="mt-3 space-y-2 list-none pl-0">
                 {[
-                  'Respond to your inquiry and prepare a personalised proposal',
-                  'Schedule and conduct discovery calls',
-                  'Deliver and manage automation services you engage us for',
+                  'Respond to your inquiry and prepare a personalised starting point or proposal',
+                  'Schedule and conduct business diagnostic sessions',
+                  'Deliver and manage embedded systems work you engage us for',
                   'Send relevant follow-up communications about your project',
                   'Improve our service and website',
                 ].map((item) => (
@@ -80,7 +80,7 @@ export default function PrivacyPage() {
               <ul className="mt-3 space-y-2 list-none pl-0">
                 {[
                   { name: 'Supabase', use: 'Database and authentication — stores lead and conversation data' },
-                  { name: 'Anthropic (Claude)', use: 'Powers our AI chatbot to process your responses' },
+                  { name: 'Anthropic (Claude)', use: 'Processes chatbot responses and supports agreed systems work' },
                   { name: 'Resend', use: 'Email delivery for inquiry notifications' },
                   { name: 'Vercel', use: 'Website hosting' },
                 ].map(({ name, use }) => (

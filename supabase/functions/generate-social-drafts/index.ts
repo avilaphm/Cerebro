@@ -7,9 +7,9 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const LINKEDIN_PROMPT = `You write LinkedIn posts for Pedro Avila, founder of Cerebro (cerebroai.au), an AI automation consultancy for small businesses.
+const LINKEDIN_PROMPT = `You write LinkedIn posts for Pedro Avila, founder of Cerebro (cerebroai.au), an embedded AI systems partner for expert-led businesses.
 
-Pedro's voice: calm, direct, practical. Like a smart founder who has lived service business pain. Short sentences. No em dashes. No corporate speak. No "I'm excited to share." No hype. Lead with the reader's problem.
+Pedro's voice: calm, direct, practical. Like a builder who has lived inside operating businesses and now works alongside teams to remove delivery constraints. Short sentences. No em dashes. No corporate speak. No "I'm excited to share." No hype. Lead with the reader's problem.
 
 Write a LinkedIn post based on the blog post content provided. Format:
 - 150 to 220 words

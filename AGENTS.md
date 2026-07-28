@@ -9,7 +9,7 @@ This version has breaking changes - APIs, conventions, and file structure may al
 # Cerebro Site - Agent Context
 
 ## Project
-Cerebro is Pedro Avila's AI automation consultancy. This is a Next.js + Supabase app with a CRM-style leads dashboard, landing page, chatbot, and pitch deck generator.
+Cerebro is Pedro Avila's embedded AI systems consultancy for expert-led businesses. This is a Next.js + Supabase app with a CRM-style leads dashboard, landing page, chatbot, proposal generator, and Pedro's coaching tools.
 
 **Owner:** Pedro Avila (Sydney-based, Brazilian-born PT and AI builder)
 **Stack:** Next.js (App Router), TypeScript, Supabase (Postgres + Auth), Tailwind CSS

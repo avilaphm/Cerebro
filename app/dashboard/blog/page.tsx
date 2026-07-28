@@ -670,7 +670,7 @@ export default function BlogDashboardPage() {
             {(chatHistory[chatId] ?? []).length === 0 && (
               <div className="text-sm text-black/30 text-center mt-8">
                 <p>Tell the AI what to change.</p>
-                <p className="text-xs mt-2 text-black/20">e.g. "Make the hook sharper" · "Rewrite from the angle of a gym owner" · "Add more humor"</p>
+                <p className="text-xs mt-2 text-black/20">e.g. &quot;Make the hook sharper&quot; · &quot;Rewrite from the operator&apos;s point of view&quot; · &quot;Make the example more concrete&quot;</p>
               </div>
             )}
             {(chatHistory[chatId] ?? []).map((msg, i) => (

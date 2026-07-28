@@ -1,12 +1,51 @@
 # Handoff
 
 ## Last updated
-2026-07-16 by Claude - Studio processing no longer freezes the exported video when the tab is hidden: the offline compose paint loop now runs on a tick.worker timer instead of requestAnimationFrame. Audio was already correct; frozen 30-50s video stretches were rAF being throttled while Pedro was in another app during processing.
+2026-07-28 by Codex - Cerebro is now positioned as an embedded AI systems partner for expert-led businesses. The root site, sector routes, chatbot, proposal generator, content generators, and source-of-truth positioning documents all use the new eight-week, in-business offer.
 
 ## Last code fix commit
-Latest commit - Studio compose loop worker tick (hidden-tab freeze fix)
+Latest commit - Reposition Cerebro around embedded AI systems
 
 ## What just happened (read first)
+
+### Embedded AI systems partner repositioning (2026-07-28, Codex)
+
+Pedro's first construction advisory conversation validated a broader, higher-touch offer than the
+old fitness-first automation positioning.
+
+The core offer is now:
+- one priority operational system;
+- eight embedded weeks;
+- two four-hour sessions inside the business each week;
+- agreed success criteria and 30 days of post-launch support;
+- from A$25,000;
+- ongoing system care from A$1,000/month, with continued building scoped separately.
+
+Changed:
+- Rewrote the root landing page around delivery capacity, expert time, and "More output. Same
+  headcount."
+- Added `/fitness` as a dedicated vertical instead of making fitness the root positioning.
+- Reframed `/finance` and `/operators` for finance/M&A and expert firms including construction,
+  engineering, advisory, legal, accounting, and specialist consulting.
+- Updated navigation, footer, blog framing, contact prompts, metadata, privacy, and terms.
+- Updated the chatbot, proposal generator, blog research/drafting, social drafting, and X drafting
+  prompts. All six Edge Functions are deployed and ACTIVE on `otcnrkfvgyvwolironoz`.
+- Updated the source-of-truth Cerebro audience, landing/chatbot, pitch deck, brand, Pedro identity,
+  writing voice, social media, and target-audience documents in the parent workspace.
+- Guardrails are explicit: never promise "until you are happy"; use agreed success criteria.
+  Never promise zero training; promise minimal behaviour change and fit with the existing workflow.
+
+Validation:
+- Targeted marketing-page lint passes.
+- `npx tsc --noEmit` passes in a clean local validation copy.
+- `npm run build` passes on Next.js 16.2.10. Existing warning only: middleware convention is
+  deprecated in favour of proxy.
+- Desktop and 390px mobile visual QA passed for the root page and all three sector routes. No
+  horizontal overflow or browser console errors. Mobile menu navigation was tested.
+- Live `chat` smoke test returned the new construction-advisory positioning and asked the correct
+  bottleneck question.
+- The Google Drive working copy can time out while reading dependency files; use a clean `/tmp`
+  copy if lint/build fails with `ETIMEDOUT` before reporting a code failure.
 
 ### Studio hidden-tab processing freeze (2026-07-16, Claude)
 
@@ -4000,7 +4039,7 @@ Production wizard left as-is. Edge function path parked until/unless we want a s
 
 ### Project goal
 
-Cerebro is Pedro Avila's AI automation consultancy and PT coaching platform. The cerebro-site is a Next.js + Supabase app that includes a CRM-style leads dashboard, a PT client management system (programmes, nutrition, workouts, messaging), a landing page, a chatbot, and a pitch deck generator.
+Cerebro is Pedro Avila's embedded AI systems consultancy and PT coaching platform. The cerebro-site is a Next.js + Supabase app that includes the consultancy landing page and sector routes, a CRM-style leads dashboard, chatbot and proposal generator, plus a PT client management system for programmes, nutrition, workouts, and messaging.
 
 The current chapter: the PT programme creation wizard is structurally complete and producing correct programmes. The focus is now refinement, UX polish, and making the coach flow feel seamless end-to-end.
 

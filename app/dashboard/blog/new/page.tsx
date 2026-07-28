@@ -135,7 +135,7 @@ export default function NewBlogPage() {
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g. Why small businesses lose leads after hours"
+                placeholder="e.g. Why senior teams still spend weeks rebuilding reports"
                 required
                 disabled={aiLoading}
                 className="w-full border border-black/20 rounded-xl px-4 py-3 text-sm text-black placeholder:text-black/30 focus:outline-none focus:ring-1 focus:ring-black bg-white disabled:opacity-50"

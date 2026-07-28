@@ -17,7 +17,7 @@ export default function TermsPage() {
           <h1 className="font-display text-[clamp(2rem,4vw,3rem)] font-light tracking-[-0.025em] text-black mb-4">
             Terms of Service
           </h1>
-          <p className="text-xs text-black/30 mb-16">Last updated: May 2026</p>
+          <p className="text-xs text-black/30 mb-16">Last updated: July 2026</p>
 
           <div className="space-y-12 text-sm font-light text-black/70 leading-relaxed">
 
@@ -31,7 +31,7 @@ export default function TermsPage() {
             <section>
               <h2 className="text-xs font-medium tracking-[0.15em] uppercase text-black mb-4">Services</h2>
               <p>
-                Cerebro provides AI automation consulting services to small businesses, including workflow analysis, automation design, and implementation. The scope, deliverables, timeline, and fees for any engagement are agreed in writing before work begins.
+                Cerebro provides embedded business systems consulting, design, implementation, testing, documentation, and ongoing support. Services may use AI, automation, software integrations, and custom code where appropriate. The scope, success criteria, deliverables, timeline, attendance, support boundaries, and fees for each engagement are agreed in writing before work begins.
               </p>
               <p className="mt-3">
                 We reserve the right to decline any engagement at our discretion.
@@ -88,7 +88,7 @@ export default function TermsPage() {
             <section>
               <h2 className="text-xs font-medium tracking-[0.15em] uppercase text-black mb-4">Third-party tools</h2>
               <p>
-                Our services may involve the use of third-party AI and automation platforms. We are not responsible for the terms, availability, or performance of those platforms. Where relevant, their use will be disclosed in your engagement agreement.
+                Our services may involve third-party AI, data, hosting, and automation platforms. We are not responsible for the terms, availability, or performance of those platforms. Where relevant, their use and any client data handling requirements will be disclosed in your engagement agreement.
               </p>
             </section>
 

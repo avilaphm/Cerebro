@@ -6,8 +6,9 @@ import { usePathname } from "next/navigation";
 
 // Add new pages here. They'll appear in both desktop nav and mobile menu.
 const NAV_LINKS: { href: string; label: string }[] = [
+  { href: "/fitness", label: "Fitness" },
   { href: "/finance", label: "Finance" },
-  { href: "/operators", label: "Operators" },
+  { href: "/operators", label: "Expert firms" },
   { href: "/blog", label: "Blog" },
 ];
 
@@ -21,11 +22,6 @@ export default function Nav() {
     window.addEventListener("scroll", handler, { passive: true });
     return () => window.removeEventListener("scroll", handler);
   }, []);
-
-  // Close menu on route change
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   // Lock body scroll while menu is open
   useEffect(() => {
@@ -45,19 +41,13 @@ export default function Nav() {
   const ctaHref =
     pathname === "/"
       ? "#start"
-      : pathname?.startsWith("/finance") || pathname?.startsWith("/operators")
+      : pathname?.startsWith("/fitness") ||
+          pathname?.startsWith("/finance") ||
+          pathname?.startsWith("/operators")
         ? "#contact"
         : "/#start";
 
-  const ctaLabel =
-    pathname?.startsWith("/finance") || pathname?.startsWith("/operators")
-      ? "Start the conversation"
-      : "Free operations audit";
-
-  const visibleNavLinks =
-    pathname === "/"
-      ? NAV_LINKS.filter((link) => link.href === "/blog")
-      : NAV_LINKS;
+  const ctaLabel = "Start the conversation";
 
   return (
     <>
@@ -76,7 +66,7 @@ export default function Nav() {
 
         {/* Desktop nav — md and up */}
         <div className="hidden md:flex items-center gap-6">
-          {visibleNavLinks.map((link) => (
+          {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
@@ -126,11 +116,12 @@ export default function Nav() {
       >
         <div className="flex flex-col h-full px-6 pt-10 pb-10">
           <nav className="flex flex-col gap-7">
-            {visibleNavLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`font-display text-3xl font-light tracking-[-0.01em] no-underline ${
+            {NAV_LINKS.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={() => setOpen(false)}
+              className={`font-display text-3xl font-light tracking-[-0.01em] no-underline ${
                   isActive(link.href) ? "text-black" : "text-black/45"
                 }`}
               >

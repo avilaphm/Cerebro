@@ -2,21 +2,21 @@ import type { Metadata } from "next";
 import VerticalPage from "../components/VerticalPage";
 
 export const metadata: Metadata = {
-  title: "Operator Systems",
+  title: "Expert Service Firm Systems",
   description:
-    "Cerebro builds operational systems for founder-led service businesses where lead response, admin handoffs, payment recovery, and reporting are still too manual.",
+    "Cerebro works inside advisory, construction, engineering, and professional service firms to increase delivery output without matching headcount.",
 };
 
 export default function OperatorsPage() {
   return (
     <VerticalPage
       activeHref="/operators"
-      eyebrow="Operator route"
-      title="If the business runs on handoffs, follow-up, and memory, we can tighten it."
-      intro="Not every company landing here is a gym. Some are service businesses with the same underlying problem: sales, delivery, and admin are crossing too many tools, too many inboxes, and too many human reminders. That is the layer Cerebro fixes."
+      eyebrow="Expert firms route"
+      title="Your senior people should spend their time on judgement, not production work."
+      intro="Advisory, construction, engineering, and professional service firms often have the same constraint. The expertise is strong, the work is valuable, but delivery still depends on senior people collecting data, comparing versions, drafting reports, and carrying the firm's method in their heads."
       primaryCta={{
         href: "#contact",
-        label: "Start the conversation",
+        label: "Map the bottleneck",
       }}
       secondaryCta={{
         href: "/finance",
@@ -24,26 +24,26 @@ export default function OperatorsPage() {
       }}
       pressureLabel="What usually breaks first"
       pressurePoints={[
-        "Leads sit too long because follow-up depends on whoever remembers to chase, not on a system.",
-        "Admins and operators rebuild the same weekly picture from inboxes, spreadsheets, and half-finished notes.",
-        "Owners can feel the drag, but they cannot point to the exact handoffs where margin and time are leaking away.",
+        "Recurring analysis takes days or weeks because data has to be found, cleaned, and compared by hand.",
+        "Reports and client documents start from old templates, then senior staff rebuild the same structure for every engagement.",
+        "Growth requires more delivery staff because output is still tied directly to expert hours.",
       ]}
       buildLabel="What Cerebro builds"
       buildPoints={[
-        "Lead and client flow systems that remove the lag between enquiry, reply, booking, payment, and follow-up.",
-        "A clearer operating rhythm so the team can see open loops, missed tasks, and exceptions without chasing for updates.",
-        "Reporting that shows what needs attention this week, not a backwards-looking dump that arrives after the problem is old.",
+        "Analysis systems that compare live data, rank the material changes, and put the exceptions in front of an expert for review.",
+        "Report and document builders that start with the approved data, method, and audience instead of an empty page.",
+        "A maintained knowledge layer that gives the team access to the firm's method without removing human review.",
       ]}
       fitLabel="Best fit"
       fitPoints={[
-        "Founder-led service businesses with a small team, recurring admin load, and too many customer handoffs.",
-        "Operators who have already bought software, but still feel like the real business runs in DMs, memory, and catch-up work.",
-        "Teams that need more structure without replacing every tool or committing to a bloated platform rollout.",
-        "Non-fitness businesses that found Cerebro through referrals and need a route that speaks to their operating reality.",
+        "Expert-led firms with roughly 10 to 50 people and high internal delivery costs.",
+        "Teams producing recurring analysis, reports, proposals, contracts, or client packs.",
+        "Businesses with strong domain expertise but fragmented data across Excel, SharePoint, inboxes, and specialist tools.",
+        "Owners who want more clients and revenue without increasing headcount at the same rate.",
       ]}
-      contactTitle="If the business is growing but the operating layer still feels improvised, this is the right route."
-      contactBody="Send a short note on the business, the team size, and where the week disappears. Cerebro can tell you quickly whether the problem is lead flow, reporting, billing, handoffs, or all four."
-      contactHref="mailto:pedro@cerebroai.au?subject=Operator%20systems%20conversation"
+      contactTitle="If delivery capacity is the constraint, start with the work your best people keep repeating."
+      contactBody="Send the team size, the recurring deliverable, and where the cycle slows down. Pedro will map the first system worth testing and the result it needs to prove."
+      contactHref="mailto:pedro@cerebroai.au?subject=Expert%20firm%20systems%20conversation"
     />
   );
 }

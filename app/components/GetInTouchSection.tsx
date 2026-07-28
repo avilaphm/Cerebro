@@ -10,24 +10,24 @@ interface Message {
 
 const SUGGESTED_ACTIONS = [
   {
-    title: 'Leads go cold',
-    label: 'after hours.',
-    action: "I'm losing leads after hours. People message on Instagram at night and I don't see it until Monday.",
+    title: 'Reporting takes',
+    label: 'weeks.',
+    action: "Our reporting cycle takes weeks. By the time the analysis is ready, the information is already too old to act on.",
   },
   {
-    title: 'Members are',
-    label: 'going quiet.',
-    action: "Members are going quiet and then cancelling. By the time I notice, they're already gone.",
+    title: 'Senior people are',
+    label: 'stuck in spreadsheets.',
+    action: "Our senior people spend too much time collecting data, comparing spreadsheets, and preparing documents instead of doing the judgement work clients pay for.",
   },
   {
-    title: 'Failed payments',
-    label: 'pile up.',
-    action: "Failed payments are piling up. I feel uncomfortable chasing and most of them just sit there.",
+    title: 'Knowledge lives',
+    label: 'in people’s heads.',
+    action: "Too much of our process only exists in people's heads. Onboarding is slow and the quality depends on who teaches the new person.",
   },
   {
-    title: 'Sunday is',
-    label: 'always admin.',
-    action: "Sunday is always admin. Programs, check-ins, DMs, reports. I can't get my evenings back.",
+    title: 'Growth means',
+    label: 'more headcount.',
+    action: "Every time we win more work, we need to hire more people to deliver it. I want to increase output without growing headcount at the same rate.",
   },
 ];
 
@@ -84,7 +84,6 @@ export default function GetInTouchSection() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [leadCaptureTriggered, setLeadCaptureTriggered] = useState(false);
   const [leadCaptured, setLeadCaptured] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -116,7 +115,6 @@ export default function GetInTouchSection() {
     async (msgs: Message[]) => {
       if (captureCalledRef.current) return;
       captureCalledRef.current = true;
-      setLeadCaptureTriggered(true);
       fireTrackEvent('email_submitted');
 
       try {
@@ -135,7 +133,6 @@ export default function GetInTouchSection() {
       } catch (err) {
         console.error('Lead capture failed:', err);
         captureCalledRef.current = false;
-        setLeadCaptureTriggered(false);
       }
     },
     [supabaseUrl, supabaseAnonKey],
@@ -276,7 +273,7 @@ export default function GetInTouchSection() {
             adjustTextarea();
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Tell us where the friction is."
+          placeholder="Tell me where output is getting stuck."
           disabled={isTyping}
           rows={1}
           className="w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 pr-14 text-base md:text-sm text-black placeholder:text-black/35 focus:outline-none focus:ring-1 focus:ring-black disabled:opacity-50"

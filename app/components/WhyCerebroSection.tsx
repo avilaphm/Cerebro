@@ -11,17 +11,19 @@ export default function WhyCerebroSection() {
 
           <div className="text-[1.05rem] font-light text-black/60 leading-[1.9] max-w-[560px] space-y-6">
             <p>
-              I trained clients at PE Department, Redfern. I know what Sunday
-              evening looks like when you&apos;re behind on programs, DMs, and
-              unpaid invoices.
+              I have worked inside construction projects, fitness practices,
+              product businesses, and small teams where the useful work and the
+              admin around it slowly became the same thing.
             </p>
             <p>
-              I started building these systems because I needed them for my own
-              practice. Then I started building them for other operators.
+              I do not arrive with a platform and ask your team to adapt. I
+              spend two afternoons a week inside the business, understand how
+              the work really moves, then build around it.
             </p>
             <p className="text-black">
-              Cerebro is for the fitness business owner who built something real
-              and wants to stop running it on gut feel and Sunday night catch-up.
+              The first version will not be perfect. That is why I stay close
+              enough to see it fail, fix it, and make it fit the business before
+              calling it finished.
             </p>
           </div>
 

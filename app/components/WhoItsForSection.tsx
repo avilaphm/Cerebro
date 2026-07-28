@@ -1,9 +1,10 @@
 import FadeIn from "./FadeIn";
 
 const SEGMENTS = [
-  "Solo PTs and coaches. 10 to 40 active clients. Admin eating your evenings.",
-  "Boutique studio and gym owners. 80 to 350 members. First-year churn to fix.",
-  "Multi-site operators. Two to five locations. Fragmented systems, decisions in the dark.",
+  "Construction, engineering, and advisory teams producing recurring analysis and client reports.",
+  "Expert service firms with 10 to 50 people and expensive judgement buried under repeatable work.",
+  "Founder-led businesses where every increase in revenue currently requires another hire.",
+  "Teams with good software, but critical work still living in Excel, inboxes, SharePoint, and memory.",
 ];
 
 export default function WhoItsForSection() {
@@ -16,8 +17,8 @@ export default function WhoItsForSection() {
           </p>
 
           <p className="font-display text-[clamp(1.4rem,3vw,1.9rem)] font-light leading-[1.5] text-black max-w-[720px] mb-16">
-            If you run a gym, studio, or PT practice in Australia or New
-            Zealand, this is built for you.
+            The common thread is not the industry. It is valuable people losing
+            time to work a well-built system should already handle.
           </p>
 
           <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-12">
@@ -38,7 +39,7 @@ export default function WhoItsForSection() {
           </ul>
 
           <p className="text-sm font-light text-black/50 mt-10 italic">
-            Same operational ceiling. One fix.
+            More output. Same headcount.
           </p>
         </FadeIn>
       </div>

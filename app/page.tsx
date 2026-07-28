@@ -13,9 +13,9 @@ import GetInTouchSection from "./components/GetInTouchSection";
 import SiteFooter from "./components/SiteFooter";
 
 export const metadata: Metadata = {
-  title: "Fitness Operations Systems",
+  title: "Embedded AI Systems Partner",
   description:
-    "Automation systems for gyms, studios, and PTs in Australia and New Zealand. Lead replies, billing recovery, retention flags, and admin clarity without replacing your stack.",
+    "Cerebro works inside expert-led businesses to find where output is getting stuck, then builds bespoke systems around the way the team already works.",
 };
 
 export default function Home() {
@@ -24,58 +24,49 @@ export default function Home() {
       <AuthHashRedirect />
       <Nav />
 
-      {/* 1. Hero */}
       <AnimatedHero />
 
       <div className="border-t border-black" />
 
-      {/* 2. The Reality */}
       <RealitySection />
 
       <div className="border-t border-black" />
 
-      {/* 3. What Changes */}
       <WhatChangesSection />
 
       <div className="border-t border-black" />
 
-      {/* 4. How It Works */}
       <HowItWorksSection />
 
       <div className="border-t border-black" />
 
-      {/* 5. Who It's For */}
       <WhoItsForSection />
 
       <div className="border-t border-black" />
 
-      {/* 6. Why Cerebro */}
       <WhyCerebroSection />
 
       <div className="border-t border-black" />
 
-      {/* 7. What Happens Next */}
       <WhatHappensNextSection />
 
-      {/* 8. Start the Conversation (chatbot) */}
       <section id="start" className="border-t border-black py-20 md:py-[140px] px-6 md:px-12 scroll-mt-20">
         <div className="max-w-5xl mx-auto">
           <FadeIn>
             <p className="text-[0.65rem] font-medium tracking-[0.2em] uppercase text-black mb-6 md:mb-8">
-              Free operations audit
+              Business diagnostic
             </p>
             <h2 className="font-display text-[clamp(2rem,5vw,4rem)] font-light tracking-[-0.025em] text-black mb-4 md:mb-5 max-w-[640px]">
-              Tell us where the friction is.
+              Tell me where output is getting stuck.
             </h2>
             <p className="text-sm font-light text-black mb-8 md:mb-14 leading-relaxed max-w-[460px]">
-              Two minutes. We send your personalized picture in five.
+              Two minutes. You will get a tailored starting point in your inbox
+              within the hour.
             </p>
             <GetInTouchSection />
           </FadeIn>
         </div>
       </section>
-
-      {/* Footer */}
       <SiteFooter />
     </>
   );

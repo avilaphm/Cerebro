@@ -71,7 +71,7 @@ export default function VerticalPage({
                     Route
                   </p>
                   <p className="mt-4 font-display text-[1.8rem] font-light leading-tight">
-                    Three doors. One operating brain.
+                    One partner. Built around your operation.
                   </p>
                 </div>
               </div>
@@ -214,7 +214,7 @@ export default function VerticalPage({
                     href="/"
                     className="inline-flex items-center justify-center border border-black px-8 py-4 text-[0.72rem] font-medium uppercase tracking-[0.14em] text-black transition-colors duration-200 hover:bg-black hover:text-white"
                   >
-                    View fitness route
+                    View embedded offer
                   </Link>
                 </div>
               </div>

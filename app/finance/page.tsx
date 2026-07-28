@@ -4,7 +4,7 @@ import VerticalPage from "../components/VerticalPage";
 export const metadata: Metadata = {
   title: "Finance and M&A Systems",
   description:
-    "Cerebro maps how an operating business actually runs across reporting, billing, lead flow, and handoffs so finance teams can diligence the hidden admin layer.",
+    "Embedded reporting, diligence, and operating systems for finance teams that need current answers without rebuilding the same analysis by hand.",
 };
 
 export default function FinancePage() {
@@ -12,11 +12,11 @@ export default function FinancePage() {
     <VerticalPage
       activeHref="/finance"
       eyebrow="Finance and M&A route"
-      title="See the operation before you inherit the mess."
-      intro="Cerebro helps finance teams and acquisitive operators inspect the admin layer under revenue, retention, and reporting. The goal is simple: surface the manual patches, owner dependency, and data gaps before they become your problem."
+      title="The answer should not arrive after the decision window closes."
+      intro="Cerebro works with finance teams and acquisitive operators where reporting, diligence, and portfolio visibility still depend on people stitching systems together at month-end. We build against the live process so the human role moves from collecting and formatting to reviewing and deciding."
       primaryCta={{
         href: "#contact",
-        label: "Discuss a diligence pass",
+        label: "Map the reporting constraint",
       }}
       secondaryCta={{
         href: "/operators",
@@ -30,19 +30,19 @@ export default function FinancePage() {
       ]}
       buildLabel="What Cerebro builds"
       buildPoints={[
-        "A plain-English map of the workflows that move money, clients, and decisions through the business.",
-        "Exception reporting that shows where failed payments, missed follow-up, or service slippage are being hidden by manual recovery.",
-        "An operating layer that makes post-deal reporting faster, cleaner, and less dependent on whoever used to hold the whole thing together.",
+        "A plain-English map of the data, approvals, and documents that move a decision through the business.",
+        "Exception reporting that puts material changes and missing inputs in front of a reviewer instead of asking them to inspect every line.",
+        "A repeatable reporting layer that makes post-deal visibility faster and less dependent on whoever used to hold the model together.",
       ]}
       fitLabel="Best fit"
       fitPoints={[
-        "Fitness roll-ups, studio groups, and other service portfolios where operational quality matters as much as topline performance.",
+        "Boutique advisory, M&A, and finance teams where senior people still build recurring analysis and decks manually.",
         "Acquisition work where the P&L is not enough and the real question is how the machine behaves week to week.",
         "Operators preparing for a raise, sale, or integration and needing to tighten the business before outside scrutiny lands.",
-        "Teams that want the same brand language as the fitness route, but a more diligence-oriented entry point.",
+        "Portfolio teams that need the same operating picture across businesses without forcing every company onto one platform.",
       ]}
-      contactTitle="If you are looking at an acquisition, a portfolio company, or a reporting mess, start here."
-      contactBody="Send the context, the timeline, and where the uncertainty sits. Cerebro can scope the operational diagnosis before it turns into another spreadsheet archaeology project."
+      contactTitle="If the team keeps rebuilding the same answer, that is the place to start."
+      contactBody="Send the context, the recurring output, and where the cycle slows down. Cerebro can map the system worth testing before another month disappears into spreadsheet archaeology."
       contactHref="mailto:pedro@cerebroai.au?subject=Finance%20systems%20review"
     />
   );

@@ -37,24 +37,24 @@ const APP_URL = Deno.env.get('APP_URL') ?? '';
 // =============================================================================
 // Step A — Research prompt (uses web_search + web_fetch server-side tools)
 // =============================================================================
-const RESEARCH_SYSTEM = `You are an analyst preparing a research brief for Pedro at Cerebro, an AI automation consultancy. Pedro will use this brief to write a tailored proposal for a small business owner.
+const RESEARCH_SYSTEM = `You are an analyst preparing a research brief for Pedro at Cerebro, an embedded AI systems consultancy. Pedro will use this brief to identify the first high-value system to build for an expert-led business.
 
 Your job: gather just enough context to write a proposal that feels personalized and informed. Not a full audit. Not a market report.
 
 Use the web tools sparingly:
 - If the lead shared a website, fetch its homepage and extract: who they serve, services offered, tone of their brand, anything visible about their team size or process.
-- Then run 1 to 2 targeted web searches on automation patterns for their specific business type (e.g., "automation for boutique law firms client onboarding"). Look for what other small businesses in that segment are actually automating.
+- Then run 1 to 2 targeted web searches on how their specific business type handles the named recurring work. Look for the systems, data formats, review requirements, security constraints, and common failure points that shape a practical build.
 
 Output a tight plain-text research brief in this format. No markdown headers. No fluff.
 
 WEBSITE OBSERVATIONS:
 [2 to 4 short observations from the homepage if a site was provided. Otherwise: "No website provided."]
 
-SIMILAR BUSINESSES:
-[2 to 4 short observations about what businesses like this typically automate, with one example or pattern that's specific.]
+DELIVERY PATTERNS:
+[2 to 4 short observations about how businesses like this produce the named work, including one specific system or data pattern.]
 
-WHAT THIS LEAD LIKELY NEEDS:
-[3 to 5 sentences. Synthesise what you learned plus what the lead said into a clear picture of where the highest-leverage automation lives for this specific business. Use plain language. No hype. No em dashes.]
+FIRST SYSTEM TO INVESTIGATE:
+[3 to 5 sentences. Synthesise what you learned plus what the lead said into a clear picture of the single highest-leverage system to test first. State what should remain human. Use plain language. No hype. No em dashes.]
 
 Hard rules:
 - Never invent numbers. If you cite a number, attribute it.
@@ -65,11 +65,11 @@ Hard rules:
 // =============================================================================
 // Step B — Proposal generation (storytelling HTML email)
 // =============================================================================
-const PROPOSAL_SYSTEM = `You are writing a tailored proposal email from Pedro, the founder of Cerebro, to a small business owner who just had a chat with the Cerebro assistant.
+const PROPOSAL_SYSTEM = `You are writing a tailored starting-point email from Pedro, the founder of Cerebro, to an operator who just had a chat with the Cerebro assistant.
 
-Write this like Pedro is messaging a friend he actually wants to help. Not a pitch deck. Not polished agency copy. A real message from someone who has lived the same problems in their own business.
+Write this like Pedro is continuing a useful business conversation. Not a pitch deck. Not polished agency copy. A real message from a builder who wants to understand the work before prescribing the system.
 
-Cerebro builds bespoke automation systems for small businesses. Pedro ran service businesses for ten years before building these. He knows what the friction feels like from the inside.
+Cerebro is an embedded AI systems partner. Pedro spends two four-hour sessions each week inside the client business, works alongside the team, and builds one priority system around the way the work already moves. A typical embedded build runs for eight weeks and starts at A$25,000. Human judgement stays. Repetitive production work goes.
 
 Voice rules (non-negotiable):
 - Never use em dashes or double dashes. Never.
@@ -91,15 +91,14 @@ Structure the email in this order:
 3. Why it keeps happening (1 short paragraph).
    Reframe the problem as a system design issue, not a personal failure. Matter-of-fact. Not preachy.
 
-4. What we would build (one short intro sentence + a bullet list).
-   Write one short lead-in sentence, for example: "Here is what we would put in place:"
-   Then a <ul> with 2 to 3 <li> items. Each bullet names one specific automation and says what it actually does for their business. Be concrete. Not generic. Instead of "automate your onboarding," say what the system does: "An onboarding flow that sends the contract, collects the intake form, and books the first session automatically the moment someone says yes." Inform each bullet with the research brief if there is one.
+4. The first system to investigate (one short intro sentence + a bullet list).
+   Name ONE priority system, not a shopping list of unrelated ideas. Then use a <ul> with 2 to 3 <li> items describing its essential components, the human review point, and the existing tools or documents it needs to fit around. Be concrete.
 
 5. What changes (1 short paragraph or 2 to 3 short standalone lines).
-   Outcomes in plain language. Tied to their specific words. No big claims.
+   State the practical outcome and how it should be measured. Use only numbers the lead supplied. Do not guarantee the outcome.
 
 6. Next step (1 paragraph).
-   Warm and low-pressure. If a booking URL is provided, invite them to book. If not, invite them to reply. Do not oversell.
+   Explain that the next conversation maps the live process, confirms data and security constraints, and agrees success criteria. State that embedded builds start at A$25,000, with the final scope confirmed after that diagnostic. If a booking URL is provided, invite them to book. If not, invite them to reply.
 
 7. Sign-off.
    "Pedro" on its own line, then "Cerebro" in a lighter weight below it.
@@ -111,13 +110,13 @@ If the research brief is thin or empty, lean harder on exactly what the lead sai
 // =============================================================================
 // Step C — Discovery questions (for Pedro's call, internal-only)
 // =============================================================================
-const QUESTIONS_SYSTEM = `You are helping Pedro prepare for a discovery call with a small business owner who just had a chat with the Cerebro assistant and just received a tailored proposal.
+const QUESTIONS_SYSTEM = `You are helping Pedro prepare for a business diagnostic with an operator who just received a tailored starting point from Cerebro.
 
 Look at the lead's chat transcript, the structured fields, and the proposal that was sent. Identify what's missing or unclear that Pedro should ask on the call.
 
 Output 3 to 5 questions, each on its own line. Each question should:
 - Be specific (not "tell me about your business")
-- Fill a real gap in the proposal (volume numbers, integration constraints, decision-maker, timeline, budget if not stated, technical setup)
+- Fill a real gap in the proposal (cycle volume, current effort hours, source systems, data ownership, confidentiality, human review point, definition of done, decision-maker, timeline, or budget)
 - Be phrased the way Pedro would actually ask it: direct, warm, conversational
 - Not repeat anything the lead already answered in the chat
 
@@ -126,12 +125,12 @@ Output ONLY the questions, one per line, no numbering, no preamble. No em dashes
 // =============================================================================
 // Step D — Deliverables extraction (for the dashboard lead card)
 // =============================================================================
-const DELIVERABLES_SYSTEM = `Extract the 2 to 3 automation deliverables from this proposal email body. These are the specific things that would be built for the business, found in the "what we would build" section.
+const DELIVERABLES_SYSTEM = `Extract the named priority system and up to two supporting components from this proposal email body.
 
 Return ONLY a raw JSON array of strings. Each string names one deliverable concisely (under 12 words). No explanation, no wrapper object, no markdown code fences.
 
 Example output:
-["Lead capture and instant reply system", "Automated client onboarding flow", "Weekly check-in reminders"]`;
+["Monthly programme variance engine", "Material movement review queue", "Approved report draft"]`;
 
 // =============================================================================
 // Helpers
@@ -349,7 +348,7 @@ ${transcript || 'not available'}
         messages: [
           {
             role: 'user',
-            content: `${leadFacts}\n\nProposal that was sent:\n${proposalInnerHtml}\n\nGenerate the discovery call questions now.`,
+            content: `${leadFacts}\n\nProposal that was sent:\n${proposalInnerHtml}\n\nGenerate the business diagnostic questions now.`,
           },
         ],
       });
@@ -445,7 +444,7 @@ ${transcript || 'not available'}
       </div>
     `;
 
-    const proposalSubject = `A plan for ${businessLabel}, ${firstName}.`;
+    const proposalSubject = `Where I would start, ${firstName}.`;
 
     const proposalSendRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',

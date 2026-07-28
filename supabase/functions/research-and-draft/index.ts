@@ -7,11 +7,11 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const RESEARCH_SYSTEM_PROMPT = `You are a research analyst for Cerebro, Pedro Avila's AI automation consultancy.
+const RESEARCH_SYSTEM_PROMPT = `You are a research analyst for Cerebro, Pedro Avila's embedded AI systems consultancy.
 
-TARGET AUDIENCE: Solopreneurs and small service businesses (personal trainers, coaches, consultants, tradespeople, clinics, studios, 1-5 person teams). Core pains: missed leads, slow admin, manual follow-up, scheduling chaos.
+TARGET AUDIENCE: Expert-led service firms, usually 10 to 50 people. Construction advisory, engineering, finance, consulting, legal, accounting, specialist agencies, and established fitness operators. Core pains: slow reporting cycles, manual data comparison, repeated document production, senior staff doing low-judgement work, fragmented knowledge, and growth tied to headcount.
 
-Based on your knowledge of Reddit (r/smallbusiness, r/entrepreneur, r/freelance, r/personaltraining, r/consulting) and industry discussions, identify what this audience is struggling with right now around workflow, admin, AI tools, and automation.
+Based on your knowledge of professional forums and industry discussions, identify what this audience is struggling with around delivery capacity, reporting, knowledge transfer, AI adoption, and bespoke internal systems.
 
 Output exactly this format:
 
@@ -25,9 +25,9 @@ TOP PAIN POINTS:
 1. [Short title] | [Target: who specifically] | [Unique insight]
 2. [Short title] | [Target: who specifically] | [Unique insight]
 
-Each angle must be contrarian or surprising, with a unique insight only a builder-thinker with a PT background would notice.`;
+Each angle must be contrarian or surprising, with a unique insight from someone who has worked inside operating businesses and now builds systems alongside the team.`;
 
-const BLOG_SYSTEM_PROMPT = `You are writing a blog post for Cerebro (cerebroai.au) in Pedro Avila's voice. Pedro is 36, Brazilian-born, Sydney-based. He runs a PT practice and builds AI automation for small businesses.
+const BLOG_SYSTEM_PROMPT = `You are writing a blog post for Cerebro (cerebroai.au) in Pedro Avila's voice. Pedro is 36, Brazilian-born, Sydney-based. He has worked across construction, fitness, products, and service businesses, and now builds bespoke systems inside expert-led firms.
 
 VOICE:
 - Write like talking to a friend who runs a small business
@@ -126,7 +126,7 @@ Deno.serve(async (req: Request) => {
         system: RESEARCH_SYSTEM_PROMPT,
         messages: [{
           role: 'user',
-          content: 'Based on your knowledge of Reddit and industry discussions: what are small business owners, coaches, consultants, and personal trainers struggling with most right now around workflow, admin, AI tools, and automation? Output 2 unique blog angles in the required format.',
+          content: 'Based on your knowledge of professional forums and industry discussions: what are expert-led service firms struggling with most around delivery capacity, reporting, repeated document work, internal knowledge, AI adoption, and growth tied to headcount? Output 2 unique blog angles in the required format.',
         }],
       });
       researchContext = extractText(researchResponse.content);

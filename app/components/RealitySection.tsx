@@ -10,17 +10,16 @@ export default function RealitySection() {
           </p>
           <div className="max-w-[700px]">
             <p className="font-display text-[clamp(1.4rem,3.2vw,2rem)] font-light leading-[1.65] text-black italic">
-              &ldquo;The Australian fitness market shrank 7% last year. Your
-              software got more expensive. Your members got more selective. The
-              studios that come out ahead aren&apos;t the ones with the best
-              programming. They&apos;re the ones who fixed what their front desk
-              never had time to fix.&rdquo;
+              &ldquo;The bottleneck is rarely a lack of expertise. It is that
+              expertise spends half the week collecting data, comparing
+              versions, rewriting reports, and finding information the business
+              already has.&rdquo;
             </p>
             <p className="text-[clamp(0.95rem,1.8vw,1.1rem)] font-light leading-[1.8] text-black/60 max-w-[540px] mt-8">
-              Trial members ghost. Leads sit unanswered until Monday. Payments
-              fail and nobody chases. Members drift away for two weeks before
-              they cancel. None of it is complicated. None of it gets fixed
-              because you&apos;re on the floor.
+              Revenue grows, then headcount has to follow. Senior people end up
+              doing work a graduate could do. Reports arrive after the decision
+              window has closed. The business is busy, but output is still tied
+              to how many hours the team can personally carry.
             </p>
           </div>
         </FadeIn>

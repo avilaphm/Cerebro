@@ -3,8 +3,13 @@ import Link from "next/link";
 const DOORS = [
   {
     href: "/",
+    label: "Embedded",
+    blurb: "The core offer and how the partnership works.",
+  },
+  {
+    href: "/fitness",
     label: "Fitness",
-    blurb: "Gyms, studios, and PTs.",
+    blurb: "Gyms, studios, and coaching businesses.",
   },
   {
     href: "/finance",
@@ -13,14 +18,14 @@ const DOORS = [
   },
   {
     href: "/operators",
-    label: "Operators",
-    blurb: "Founder-led service businesses with handoff friction.",
+    label: "Expert firms",
+    blurb: "Advisory, construction, engineering, and professional services.",
   },
 ];
 
 export default function MarketingDoors({ activeHref }: { activeHref: string }) {
   return (
-    <div className="grid gap-px overflow-hidden border border-black bg-black md:grid-cols-3">
+    <div className="grid gap-px overflow-hidden border border-black bg-black md:grid-cols-2 lg:grid-cols-4">
       {DOORS.map((door) => {
         const active = door.href === activeHref;
 

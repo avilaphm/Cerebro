@@ -4,7 +4,7 @@ import Nav from '@/app/components/Nav';
 
 export const metadata = {
   title: 'Blog — Cerebro',
-  description: 'Practical thinking on automation and running a small business.',
+  description: 'Practical thinking on increasing business output without increasing headcount at the same rate.',
 };
 
 export default async function BlogListPage() {
@@ -27,7 +27,7 @@ export default async function BlogListPage() {
             Blog
           </p>
           <h1 className="font-display text-[clamp(2rem,4vw,3.5rem)] font-light tracking-[-0.025em] text-black mb-16">
-            Thinking out loud.
+            The work behind the work.
           </h1>
 
           {rows.length === 0 && (

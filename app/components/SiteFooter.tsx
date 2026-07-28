@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 const FOOTER_LINKS = [
+  { href: "/fitness", label: "Fitness" },
   { href: "/finance", label: "Finance" },
-  { href: "/operators", label: "Operators" },
+  { href: "/operators", label: "Expert firms" },
   { href: "/blog", label: "Blog" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },

@@ -3,23 +3,23 @@ import FadeIn from "./FadeIn";
 const STEPS = [
   {
     n: "01",
-    title: "The audit",
-    body: "Tell us how your operation actually runs. Where leads come from, what software you use, where the week goes. Thirty minutes. We ask the questions most operators have never been asked.",
+    title: "Find the constraint",
+    body: "We map how the work actually moves, choose one important bottleneck, and agree what a successful result needs to change.",
   },
   {
     n: "02",
-    title: "The diagnosis",
-    body: "Three specific leaks, ranked by financial impact. The order to fix them. Time and money estimates. Sent in writing after the call, whether you hire us or not.",
+    title: "Work inside the business",
+    body: "Two four-hour sessions each week with the people doing the job. We see the spreadsheets, documents, decisions, and exceptions that never appear in a brief.",
   },
   {
     n: "03",
-    title: "The build",
-    body: "We connect your existing tools. Mindbody, Glofox, Trainerize, Stripe. Custom workflows, tested before they go live. You see exactly what runs and how.",
+    title: "Build around live work",
+    body: "The first version uses your real tools, data, and documents. We test it on current work, see where it breaks, and improve it with the team.",
   },
   {
     n: "04",
-    title: "It runs",
-    body: "Lead replies happen automatically. Payments recover themselves. Members get flagged before they cancel. You get a Sunday report instead of a Sunday session.",
+    title: "Prove the outcome",
+    body: "We finish when the agreed success criteria are met. Human review stays where judgement matters, with minimal behaviour change for the team.",
   },
 ];
 
