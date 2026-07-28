@@ -7,9 +7,6 @@ import CerebroMark from "@/components/brand/CerebroMark";
 
 // Add new pages here. They'll appear in both desktop nav and mobile menu.
 const NAV_LINKS: { href: string; label: string }[] = [
-  { href: "/fitness", label: "Fitness" },
-  { href: "/finance", label: "Finance" },
-  { href: "/operators", label: "Expert firms" },
   { href: "/blog", label: "Blog" },
 ];
 

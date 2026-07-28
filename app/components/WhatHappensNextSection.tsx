@@ -18,8 +18,8 @@ const ITEMS = [
   },
   {
     n: "04",
-    title: "From A$25,000.",
-    body: "Ongoing system care starts from A$1,000 per month. Continued building is scoped separately.",
+    title: "Built to pay for itself.",
+    body: "The first system is selected to recover its cost within 60 days through saved time, increased output, or both.",
   },
 ];
 

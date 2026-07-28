@@ -1,12 +1,38 @@
 # Handoff
 
 ## Last updated
-2026-07-28 by Codex - The five-node mark from the first AMN Infrastructure proposal is now Cerebro's website signature. It appears in the header, hero, dark statement section, and footer, with the homepage hierarchy polished around it.
+2026-07-29 by Codex - Public pricing and sector-navigation links were removed from the consultancy site. The commercial signal is now a 60-day payback target, while the header and footer focus visitors on the core offer, Blog, and the conversation CTA.
 
 ## Last code fix commit
-Latest commit - Add proposal mark to Cerebro brand system
+Latest commit - Simplify public offer and navigation
 
 ## What just happened (read first)
+
+### Public offer and navigation simplification (2026-07-29, Codex)
+
+Pedro asked to remove visible pricing, replace it with the intended 60-day commercial return, and
+remove the Fitness, Finance, and Expert Firms links.
+
+Changed:
+- Replaced the hero's `Investment / From A$25,000` signal with
+  `Payback target / Within the first 60 days`.
+- Replaced the engagement price card with `Built to pay for itself`, explaining that the first
+  system is selected to recover its cost through saved time, increased output, or both.
+- Removed Fitness, Finance, and Expert Firms from the global header and footer.
+- Kept Blog, Privacy, Terms, and the primary conversation CTA.
+- Kept the sector pages available by direct URL; they are no longer promoted in global navigation.
+- Updated the landing-page, positioning, brand, and Pedro identity source documents. Pricing remains
+  an internal commercial model and can still be shared when a prospect asks directly.
+
+Validation:
+- Targeted ESLint passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing middleware deprecation warning only.
+- Desktop 1440 × 1000 and mobile 390 × 844 visual QA passes.
+- Root page contains no visible A$25,000 or A$1,000 references and no links to `/fitness`,
+  `/finance`, or `/operators`.
+- Mobile menu contains only Blog and Start the conversation.
+- No horizontal overflow or browser console warnings/errors.
 
 ### Proposal mark and homepage brand polish (2026-07-28, Codex)
 

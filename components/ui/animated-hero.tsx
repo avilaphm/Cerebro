@@ -95,10 +95,10 @@ function AnimatedHero() {
           </div>
           <div className="flex items-baseline justify-between gap-6 border-t border-black/20 py-4 sm:block sm:border-t-0 sm:pl-6">
             <dt className="text-[0.58rem] font-medium uppercase tracking-[0.18em] text-black/35">
-              Investment
+              Payback target
             </dt>
             <dd className="mt-1 text-sm font-light text-black">
-              From A$25,000
+              Within the first 60 days
             </dd>
           </div>
         </dl>

@@ -2,9 +2,6 @@ import Link from "next/link";
 import CerebroMark from "@/components/brand/CerebroMark";
 
 const FOOTER_LINKS = [
-  { href: "/fitness", label: "Fitness" },
-  { href: "/finance", label: "Finance" },
-  { href: "/operators", label: "Expert firms" },
   { href: "/blog", label: "Blog" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
