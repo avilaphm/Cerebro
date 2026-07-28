@@ -1,12 +1,37 @@
 # Handoff
 
 ## Last updated
-2026-07-28 by Codex - Cerebro is now positioned as an embedded AI systems partner for expert-led businesses. The root site, sector routes, chatbot, proposal generator, content generators, and source-of-truth positioning documents all use the new eight-week, in-business offer.
+2026-07-28 by Codex - The five-node mark from the first AMN Infrastructure proposal is now Cerebro's website signature. It appears in the header, hero, dark statement section, and footer, with the homepage hierarchy polished around it.
 
 ## Last code fix commit
-Latest commit - Reposition Cerebro around embedded AI systems
+Latest commit - Add proposal mark to Cerebro brand system
 
 ## What just happened (read first)
+
+### Proposal mark and homepage brand polish (2026-07-28, Codex)
+
+Pedro liked the small five-node network mark on the cover of
+`Cerebro Proposal AMN Infrastructure.pdf` and asked for it to become part of the website.
+
+Changed:
+- Recreated the mark as a reusable SVG component instead of using a raster crop.
+- Paired the mark with the Cerebro wordmark in the fixed header and site footer.
+- Added an oversized, low-opacity mark to the desktop hero.
+- Tightened the hero hierarchy and added a proposal-style information strip for focus, cadence,
+  and investment.
+- Turned "The reality" into a charcoal statement section with the mark as a restrained background
+  device.
+- Changed the footer to charcoal so the page closes with the same visual language as the proposal.
+- Updated `skills/cerebro/brand-direction.md` with the mark construction, meaning, usage, and new
+  white-plus-charcoal surface rules.
+
+Validation:
+- Targeted ESLint passes.
+- `npx tsc --noEmit` passes.
+- `npm run build` passes on Next.js 16.2.10. Existing middleware deprecation warning only.
+- Desktop 1440 × 1000 and mobile 390 × 844 visual QA passes with no horizontal overflow.
+- Header, hero, dark statement section, and footer were visually inspected. Browser console has no
+  warnings or errors.
 
 ### Embedded AI systems partner repositioning (2026-07-28, Codex)
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import CerebroMark from "@/components/brand/CerebroMark";
 
 // Add new pages here. They'll appear in both desktop nav and mobile menu.
 const NAV_LINKS: { href: string; label: string }[] = [
@@ -59,9 +60,13 @@ export default function Nav() {
         <Link
           href="/"
           onClick={() => setOpen(false)}
-          className="font-display text-sm font-medium tracking-[0.12em] uppercase text-black no-underline"
+          aria-label="Cerebro home"
+          className="group flex items-center gap-2.5 text-black no-underline"
         >
-          Cerebro
+          <CerebroMark className="h-7 w-[2.1rem] transition-transform duration-300 group-hover:rotate-[-3deg]" />
+          <span className="font-display text-sm font-medium tracking-[0.12em] uppercase">
+            Cerebro
+          </span>
         </Link>
 
         {/* Desktop nav — md and up */}
