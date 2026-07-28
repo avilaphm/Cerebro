@@ -1,5 +1,20 @@
 import Anthropic from 'npm:@anthropic-ai/sdk@0.65.0';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import {
+  auditBlog,
+  BLOG_QC_SYSTEM,
+  BLOG_RESEARCH_SYSTEM,
+  BLOG_WRITER_SYSTEM,
+  extractText,
+  type BlogAngle,
+  type BlogQcResult,
+  type BlogResearchPacket,
+  type BlogSource,
+  type GeneratedBlog,
+  normaliseResearchPacket,
+  parseJsonObject,
+  slugifyBlogTitle,
+} from '../_shared/blog-system.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,214 +22,392 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const RESEARCH_SYSTEM_PROMPT = `You are a research analyst for Cerebro, Pedro Avila's embedded AI systems consultancy.
+type ResearchRequest = {
+  action: 'research';
+  topic?: string;
+  notes?: string;
+};
 
-TARGET AUDIENCE: Expert-led service firms, usually 10 to 50 people. Construction advisory, engineering, finance, consulting, legal, accounting, specialist agencies, and established fitness operators. Core pains: slow reporting cycles, manual data comparison, repeated document production, senior staff doing low-judgement work, fragmented knowledge, and growth tied to headcount.
+type GenerateRequest = {
+  action: 'generate';
+  run_id: string;
+  angle_index: number;
+  notes?: string;
+};
 
-Based on your knowledge of professional forums and industry discussions, identify what this audience is struggling with around delivery capacity, reporting, knowledge transfer, AI adoption, and bespoke internal systems.
+type ResearchRunRow = {
+  id: string;
+  created_by: string;
+  seed_topic: string | null;
+  notes: string | null;
+  findings: string[];
+  audience_language: string[];
+  angles: BlogAngle[];
+  sources: BlogSource[];
+};
 
-Output exactly this format:
+const webSearchTool = {
+  type: 'web_search_20250305',
+  name: 'web_search',
+  max_uses: 4,
+  user_location: {
+    type: 'approximate',
+    city: 'Sydney',
+    region: 'New South Wales',
+    country: 'AU',
+    timezone: 'Australia/Sydney',
+  },
+};
 
-RESEARCH FINDINGS:
-[3-5 bullet points of what people are actually saying, with specific examples]
-
-TOP PAIN POINTS:
-[Top 3 specific pains]
-
-2 BLOG ANGLES:
-1. [Short title] | [Target: who specifically] | [Unique insight]
-2. [Short title] | [Target: who specifically] | [Unique insight]
-
-Each angle must be contrarian or surprising, with a unique insight from someone who has worked inside operating businesses and now builds systems alongside the team.`;
-
-const BLOG_SYSTEM_PROMPT = `You are writing a blog post for Cerebro (cerebroai.au) in Pedro Avila's voice. Pedro is 36, Brazilian-born, Sydney-based. He has worked across construction, fitness, products, and service businesses, and now builds bespoke systems inside expert-led firms.
-
-VOICE:
-- Write like talking to a friend who runs a small business
-- Short sentences. Short paragraphs.
-- NEVER use em dashes. Never.
-- No corporate filler words
-- No hedging
-- First person, draw on real experience
-- Dry humor
-
-STRUCTURE:
-1. HOOK (1-2 sentences): Bold specific claim, no throat-clearing
-2. SITUATION (3-4 short paragraphs): Expand the problem with real industry examples
-3. THE TURN (1 line): "Here's the thing." or "Here's where it gets interesting."
-4. UNIQUE INSIGHT (2-3 paragraphs): The aha moment
-5. WHAT THIS LOOKS LIKE (1-2 paragraphs): One concrete example ("A physio I know...")
-6. WHAT TO DO (1 paragraph): One specific actionable thing
-7. CLOSE: One inevitable line, then "ps:" with a nuancing thought
-
-Return ONLY valid JSON. No markdown fences. No text before or after.
-
-{"title":"Under 70 chars","slug":"kebab-case","meta_description":"Under 160 chars","hook":"First 1-2 sentences only","content_md":"Full post 1000-1400 words"}`;
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 60)
-    .replace(/-$/, '');
+function respond(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 }
 
-function extractText(content: Anthropic.ContentBlock[]): string {
-  return content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as Anthropic.TextBlock).text)
-    .join('\n')
-    .trim();
-}
-
-function parseJsonSafely(raw: string): Record<string, string> | null {
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/, '')
-    .trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start === -1 || end === -1) return null;
-  try {
-    return JSON.parse(cleaned.slice(start, end + 1));
-  } catch {
-    return null;
-  }
+function researchPacketFromRun(run: ResearchRunRow): BlogResearchPacket {
+  return normaliseResearchPacket({
+    findings: run.findings,
+    audience_language: run.audience_language,
+    angles: run.angles,
+    sources: run.sources,
+  });
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const debug: string[] = [];
-
-  const respond = (body: Record<string, unknown>, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+  let activeRunId: string | null = null;
+  let activeAction: 'research' | 'generate' | null = null;
+  let serviceSupabase: ReturnType<typeof createClient> | null = null;
 
   try {
     const authHeader = req.headers.get('Authorization') ?? '';
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
 
-    debug.push(`env: url=${!!supabaseUrl}, anon=${!!supabaseAnonKey}, service=${!!serviceRoleKey}`);
+    if (!anthropicKey) return respond({ error: 'ANTHROPIC_API_KEY is not configured.' }, 500);
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return respond({ error: 'Unauthorized' }, 401);
-    }
+    if (authError || !user) return respond({ error: 'Unauthorized' }, 401);
 
-    const anthropic = new Anthropic({ apiKey: Deno.env.get('ANTHROPIC_API_KEY')! });
-    debug.push(`anthropic: key=${!!Deno.env.get('ANTHROPIC_API_KEY')}`);
+    const input = await req.json() as ResearchRequest | GenerateRequest;
+    activeAction = input.action;
+    serviceSupabase = createClient(supabaseUrl, serviceRoleKey);
+    const anthropic = new Anthropic({ apiKey: anthropicKey });
 
-    // PHASE 1: Knowledge-based research (no web search — keeps runtime under 60s)
-    debug.push('starting research');
-    let researchContext = '';
-    try {
-      const researchResponse = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: RESEARCH_SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: 'Based on your knowledge of professional forums and industry discussions: what are expert-led service firms struggling with most around delivery capacity, reporting, repeated document work, internal knowledge, AI adoption, and growth tied to headcount? Output 2 unique blog angles in the required format.',
-        }],
-      });
-      researchContext = extractText(researchResponse.content);
-      debug.push(`research done: ${researchContext.length} chars`);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      debug.push(`research error: ${msg}`);
-      return respond({ error: `Research failed: ${msg}`, debug });
-    }
+    if (input.action === 'research') {
+      const topic = input.topic?.trim() || null;
+      const notes = input.notes?.trim() || null;
 
-    if (!researchContext) {
-      return respond({ error: 'Research returned no content', debug });
-    }
-
-    // PHASE 2: Generate 2 blog drafts in parallel
-    debug.push('starting blog generation');
-    const blogResults = await Promise.allSettled([1, 2].map((i) =>
-      anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 3000,
-        system: BLOG_SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: `Research:\n\n${researchContext}\n\nWrite blog post ${i} using angle ${i}. Return ONLY the JSON object.`,
-        }],
-      })
-    ));
-
-    const serviceSupabase = createClient(supabaseUrl, serviceRoleKey);
-    const insertedIds: string[] = [];
-
-    for (let i = 0; i < blogResults.length; i++) {
-      const result = blogResults[i];
-
-      if (result.status === 'rejected') {
-        const msg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-        debug.push(`draft ${i + 1} api failed: ${msg}`);
-        continue;
-      }
-
-      const raw = extractText(result.value.content);
-      debug.push(`draft ${i + 1} raw length: ${raw.length}, first 100: ${raw.slice(0, 100)}`);
-
-      if (!raw) {
-        debug.push(`draft ${i + 1}: no text content`);
-        continue;
-      }
-
-      const blogData = parseJsonSafely(raw);
-      if (!blogData || !blogData.title || !blogData.content_md) {
-        debug.push(`draft ${i + 1}: json parse failed or missing fields`);
-        continue;
-      }
-
-      const finalSlug = `${blogData.slug || slugify(blogData.title)}-${Date.now().toString(36)}-${i}`;
-
-      const { data: post, error: insertError } = await serviceSupabase
-        .from('blog_posts')
+      const { data: run, error: runError } = await serviceSupabase
+        .from('blog_research_runs')
         .insert({
-          title: blogData.title,
-          slug: finalSlug,
-          topic: blogData.title,
-          content_md: blogData.content_md,
-          meta_description: blogData.meta_description ?? null,
-          status: 'research_draft',
-          research_context: researchContext,
-          author: 'Pedro Avila',
+          created_by: user.id,
+          seed_topic: topic,
+          notes,
+          sector: 'construction, engineering and advisory',
+          status: 'researching',
         })
         .select('id')
         .single<{ id: string }>();
 
-      if (insertError || !post) {
-        debug.push(`draft ${i + 1} insert error: ${insertError?.message ?? 'no post returned'}`);
-        continue;
+      if (runError || !run) {
+        console.error('Blog research run insert error:', runError);
+        return respond({ error: 'Could not start the research run.' }, 500);
+      }
+      activeRunId = run.id;
+
+      const topicInstruction = topic
+        ? `Start with this topic or operating problem: ${topic}`
+        : 'Discover the strongest current construction, engineering, infrastructure or project-controls operating problem worth writing about.';
+      const notesInstruction = notes
+        ? `Pedro's optional notes. Treat these as direction, not independently verified evidence:\n${notes}`
+        : 'Pedro supplied no additional notes.';
+
+      const researchPrompt = `${topicInstruction}\n\n${notesInstruction}\n\nResearch date: ${new Date().toISOString().slice(0, 10)}. Return the required JSON only.`;
+      const researchMessages: Array<{
+        role: 'user' | 'assistant';
+        content: unknown;
+      }> = [{
+        role: 'user',
+        content: researchPrompt,
+      }];
+
+      let researchResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 5000,
+        system: BLOG_RESEARCH_SYSTEM,
+        tools: [webSearchTool],
+        messages: researchMessages,
+      } as any);
+
+      // Anthropic server tools may pause a long-running turn. Continue with the
+      // returned content exactly as documented instead of treating it as a final answer.
+      for (let continuation = 0;
+        researchResponse.stop_reason === 'pause_turn' && continuation < 2;
+        continuation += 1
+      ) {
+        researchMessages.push({
+          role: 'assistant',
+          content: researchResponse.content,
+        });
+        researchResponse = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 5000,
+          system: BLOG_RESEARCH_SYSTEM,
+          tools: [webSearchTool],
+          messages: researchMessages,
+        } as any);
       }
 
-      insertedIds.push(post.id);
-      debug.push(`draft ${i + 1} inserted: ${post.id}`);
+      const raw = extractText(researchResponse.content as unknown[]);
+      const parsed = parseJsonObject<BlogResearchPacket>(raw);
+      const packet = parsed ? normaliseResearchPacket(parsed) : null;
+
+      if (!packet || packet.angles.length !== 3 || packet.sources.length < 3) {
+        console.error('Blog research packet validation failed:', {
+          stop_reason: researchResponse.stop_reason,
+          raw_length: raw.length,
+          parsed: Boolean(parsed),
+          angles: packet?.angles.length ?? 0,
+          sources: packet?.sources.length ?? 0,
+        });
+        await serviceSupabase
+          .from('blog_research_runs')
+          .update({
+            status: 'failed',
+            error: 'Research did not return three usable angles with enough sources.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', run.id);
+        return respond({ error: 'Research was too thin to build trustworthy angles. Try a more specific topic.' }, 422);
+      }
+
+      const { error: updateError } = await serviceSupabase
+        .from('blog_research_runs')
+        .update({
+          status: 'ready',
+          findings: packet.findings,
+          audience_language: packet.audience_language,
+          angles: packet.angles,
+          sources: packet.sources,
+          error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', run.id);
+
+      if (updateError) {
+        console.error('Blog research run update error:', updateError);
+        return respond({ error: 'Research finished but could not be saved.' }, 500);
+      }
+
+      return respond({
+        run: {
+          id: run.id,
+          seed_topic: topic,
+          sector: 'construction, engineering and advisory',
+          status: 'ready',
+          ...packet,
+        },
+      });
     }
 
-    if (insertedIds.length === 0) {
-      return respond({ error: 'Failed to save any drafts', debug });
+    if (input.action === 'generate') {
+      if (!input.run_id || !Number.isInteger(input.angle_index)) {
+        return respond({ error: 'run_id and angle_index are required.' }, 400);
+      }
+      activeRunId = input.run_id;
+
+      const { data: run, error: runError } = await serviceSupabase
+        .from('blog_research_runs')
+        .select('id, created_by, seed_topic, notes, findings, audience_language, angles, sources')
+        .eq('id', input.run_id)
+        .eq('created_by', user.id)
+        .single<ResearchRunRow>();
+
+      if (runError || !run) return respond({ error: 'Research run not found.' }, 404);
+
+      const packet = researchPacketFromRun(run);
+      const angle = packet.angles[input.angle_index];
+      if (!angle) return respond({ error: 'Selected angle not found.' }, 400);
+
+      await serviceSupabase
+        .from('blog_research_runs')
+        .update({
+          status: 'generating',
+          selected_angle_index: input.angle_index,
+          error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', run.id);
+
+      const approvedNotes = [run.notes, input.notes?.trim()].filter(Boolean).join('\n\n') || '(none)';
+      const writerInput = `SELECTED ANGLE
+${JSON.stringify(angle, null, 2)}
+
+RESEARCH FINDINGS
+${JSON.stringify(packet.findings, null, 2)}
+
+AUDIENCE LANGUAGE
+${JSON.stringify(packet.audience_language, null, 2)}
+
+APPROVED SOURCES
+${JSON.stringify(packet.sources, null, 2)}
+
+PEDRO NOTES
+${approvedNotes}
+
+Write the article now. Use only these facts and sources. Return the required JSON only.`;
+
+      const writerResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 6500,
+        system: BLOG_WRITER_SYSTEM,
+        messages: [{ role: 'user', content: writerInput }],
+      });
+
+      const writerRaw = extractText(writerResponse.content as unknown[]);
+      let blog = parseJsonObject<GeneratedBlog>(writerRaw);
+      if (!blog?.title || !blog.content_md) {
+        console.error('Blog writer response was not parseable:', {
+          stop_reason: writerResponse.stop_reason,
+          raw_length: writerRaw.length,
+        });
+        const retryResponse = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 7000,
+          system: BLOG_WRITER_SYSTEM,
+          messages: [{
+            role: 'user',
+            content: `${writerInput}\n\nYour previous response could not be parsed. Try once more. Return one strict JSON object with correctly escaped Markdown in content_md and no text outside the object.`,
+          }],
+        });
+        blog = parseJsonObject<GeneratedBlog>(
+          extractText(retryResponse.content as unknown[]),
+        );
+        if (!blog?.title || !blog.content_md) {
+          throw new Error('The writer did not return a valid article after retrying.');
+        }
+      }
+
+      let auditIssues = auditBlog(blog.content_md);
+      if (auditIssues.length > 0) {
+        const revisionResponse = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 6500,
+          system: BLOG_WRITER_SYSTEM,
+          messages: [{
+            role: 'user',
+            content: `${writerInput}\n\nFIRST DRAFT\n${JSON.stringify(blog)}\n\nEDITORIAL AUDIT\n${auditIssues.map((issue) => `- ${issue}`).join('\n')}\n\nRevise once. Preserve supported facts and links. Return the complete required JSON.`,
+          }],
+        });
+        const revised = parseJsonObject<GeneratedBlog>(
+          extractText(revisionResponse.content as unknown[]),
+        );
+        if (revised?.title && revised.content_md) blog = revised;
+        auditIssues = auditBlog(blog.content_md);
+      }
+
+      const sourceIntegrityResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 6500,
+        system: BLOG_QC_SYSTEM,
+        messages: [{
+          role: 'user',
+          content: `RESEARCH PACKET
+${JSON.stringify(packet, null, 2)}
+
+APPROVED PEDRO NOTES
+${approvedNotes}
+
+ARTICLE
+${blog.content_md}
+
+Run the final source-integrity edit. Return the required JSON only.`,
+        }],
+      });
+      const sourceIntegrity = parseJsonObject<BlogQcResult>(
+        extractText(sourceIntegrityResponse.content as unknown[]),
+      );
+      if (!sourceIntegrity?.content_md) {
+        throw new Error('The final source-integrity check did not return a usable article.');
+      }
+      blog.content_md = sourceIntegrity.content_md;
+      auditIssues = auditBlog(blog.content_md);
+
+      const baseSlug = slugifyBlogTitle(blog.slug || blog.title);
+      const finalSlug = `${baseSlug || 'cerebro-article'}-${Date.now().toString(36)}`;
+      const qcReport = {
+        deterministic_issues: auditIssues,
+        source_integrity_fixes: Array.isArray(sourceIntegrity.issues)
+          ? sourceIntegrity.issues.map(String).slice(0, 20)
+          : [],
+        model_check: blog.quality_check ?? {},
+        checked_at: new Date().toISOString(),
+      };
+
+      const { data: post, error: insertError } = await serviceSupabase
+        .from('blog_posts')
+        .insert({
+          title: blog.title.slice(0, 160),
+          slug: finalSlug,
+          topic: run.seed_topic ?? angle.working_title,
+          notes: approvedNotes === '(none)' ? null : approvedNotes,
+          content_md: blog.content_md,
+          meta_description: blog.meta_description?.slice(0, 160) ?? null,
+          status: 'research_draft',
+          published_at: null,
+          research_context: JSON.stringify(packet, null, 2),
+          research_run_id: run.id,
+          qc_report: qcReport,
+          author: 'Pedro Avila',
+        })
+        .select('id, slug')
+        .single<{ id: string; slug: string }>();
+
+      if (insertError || !post) {
+        console.error('Blog draft insert error:', insertError);
+        throw new Error('The article was written but could not be saved.');
+      }
+
+      await serviceSupabase
+        .from('blog_research_runs')
+        .update({
+          status: 'drafted',
+          selected_angle_index: input.angle_index,
+          error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', run.id);
+
+      return respond({
+        post_id: post.id,
+        slug: post.slug,
+        qc_report: qcReport,
+      });
     }
 
-    return respond({ post_ids: insertedIds, debug });
+    return respond({ error: 'Unknown action.' }, 400);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    debug.push(`unhandled: ${msg}`);
-    return respond({ error: msg, debug });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('research-and-draft error:', err);
+    if (activeRunId && serviceSupabase) {
+      await serviceSupabase
+        .from('blog_research_runs')
+        .update({
+          status: activeAction === 'generate' ? 'ready' : 'failed',
+          error: message.slice(0, 1000),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', activeRunId);
+    }
+    return respond({ error: message || 'Internal server error' }, 500);
   }
 });

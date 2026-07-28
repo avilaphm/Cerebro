@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:blog-system": "node --experimental-strip-types --test __tests__/blog-system.test.mjs",
     "test:movement-screening": "tsc -p tsconfig.movement-screening-tests.json && node --test .movement-screening-test-dist/__tests__/*.test.js"
   },
   "dependencies": {

@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
+import ResearchWorkspace from './ResearchWorkspace';
 
 interface DraftPost {
   id: string;
@@ -13,6 +14,12 @@ interface DraftPost {
   header_image_url: string | null;
   header_image_position: number;
   scheduled_at: string | null;
+  research_context: string | null;
+  qc_report: {
+    deterministic_issues?: string[];
+    refinement_issues?: string[];
+    source_integrity_fixes?: string[];
+  } | null;
 }
 
 interface PublishedPost {
@@ -25,9 +32,33 @@ interface PublishedPost {
   social_drafts: { platform: string; status: string }[];
 }
 
+interface LoadedPost extends DraftPost {
+  status: string;
+  published_at: string | null;
+  social_drafts: { platform: string; status: string }[];
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+interface DraftSource {
+  title: string;
+  url: string;
+  publisher: string;
+  published_at: string | null;
+  key_fact: string;
+}
+
+function parseDraftSources(context: string | null): DraftSource[] {
+  if (!context) return [];
+  try {
+    const parsed = JSON.parse(context) as { sources?: DraftSource[] };
+    return Array.isArray(parsed.sources) ? parsed.sources : [];
+  } catch {
+    return [];
+  }
 }
 
 export default function BlogDashboardPage() {
@@ -35,12 +66,6 @@ export default function BlogDashboardPage() {
 
   const [drafts, setDrafts] = useState<DraftPost[]>([]);
   const [published, setPublished] = useState<PublishedPost[]>([]);
-  const [researching, setResearching] = useState(false);
-  const [researchError, setResearchError] = useState('');
-  const [researchProgress, setResearchProgress] = useState(0);
-  const [researchStep, setResearchStep] = useState('');
-  const progressTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
@@ -64,15 +89,16 @@ export default function BlogDashboardPage() {
   const loadPosts = useCallback(async () => {
     const { data } = await supabase
       .from('blog_posts')
-      .select('id, title, slug, status, published_at, scheduled_at, content_md, meta_description, header_image_url, header_image_position, social_drafts(platform, status)')
+      .select('id, title, slug, status, published_at, scheduled_at, content_md, meta_description, header_image_url, header_image_position, research_context, qc_report, social_drafts(platform, status)')
       .in('status', ['research_draft', 'published', 'scheduled'])
       .order('created_at', { ascending: false })
       .limit(200);
 
     if (!data) return;
 
-    const draftRows = data.filter((p: any) => p.status === 'research_draft') as DraftPost[];
-    const publishedRows = data.filter((p: any) => p.status !== 'research_draft') as PublishedPost[];
+    const rows = data as unknown as LoadedPost[];
+    const draftRows = rows.filter((post) => post.status === 'research_draft');
+    const publishedRows = rows.filter((post) => post.status !== 'research_draft');
 
     setDrafts(draftRows);
     setPublished(publishedRows);
@@ -87,61 +113,16 @@ export default function BlogDashboardPage() {
     setImagePosition((prev) => ({ ...positions, ...prev }));
   }, [supabase]);
 
-  useEffect(() => { loadPosts(); }, [loadPosts]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadPosts();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadPosts]);
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, chatId]);
-
-  function startProgressSimulation() {
-    const steps = [
-      { at: 0, pct: 5, label: 'Identifying what your audience is struggling with…' },
-      { at: 4000, pct: 25, label: 'Analysing pain points and content angles…' },
-      { at: 9000, pct: 50, label: 'Writing draft 1…' },
-      { at: 14000, pct: 72, label: 'Writing draft 2…' },
-      { at: 20000, pct: 88, label: 'Saving to your dashboard…' },
-      { at: 25000, pct: 95, label: 'Almost done…' },
-    ];
-    progressTimersRef.current = steps.map(({ at, pct, label }) =>
-      setTimeout(() => {
-        setResearchProgress(pct);
-        setResearchStep(label);
-      }, at)
-    );
-  }
-
-  function stopProgressSimulation() {
-    progressTimersRef.current.forEach(clearTimeout);
-    progressTimersRef.current = [];
-  }
-
-  async function handleResearch() {
-    setResearching(true);
-    setResearchError('');
-    setResearchProgress(0);
-    setResearchStep('Starting research…');
-    startProgressSimulation();
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const { data, error } = await supabase.functions.invoke('research-and-draft', {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      if (error || data?.error) {
-        setResearchError(data?.error ?? error?.message ?? 'Research failed. Try again.');
-      } else {
-        setResearchProgress(100);
-        setResearchStep('Done.');
-        await loadPosts();
-      }
-    } catch (e: any) {
-      setResearchError(e.message ?? 'Research failed. Try again.');
-    } finally {
-      stopProgressSimulation();
-      setResearching(false);
-      setResearchProgress(0);
-      setResearchStep('');
-    }
-  }
 
   async function handleSaveEdit(id: string) {
     setSaving(id);
@@ -287,22 +268,6 @@ export default function BlogDashboardPage() {
           <h1 className="font-display text-3xl font-light tracking-[-0.02em] text-black">Blog</h1>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleResearch}
-            disabled={researching}
-            className="flex items-center gap-2 border border-black/20 text-black text-sm px-5 py-2.5 rounded-xl hover:bg-black hover:text-white transition-colors disabled:opacity-40"
-          >
-            {researching ? (
-              <>
-                <span className="inline-block w-3.5 h-3.5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                Researching…
-              </>
-            ) : (
-              <>
-                <span className="text-base">◎</span> Research
-              </>
-            )}
-          </button>
           <Link
             href="/dashboard/blog/new"
             className="bg-black text-white text-sm px-5 py-2.5 rounded-xl hover:opacity-80 transition-opacity"
@@ -312,25 +277,12 @@ export default function BlogDashboardPage() {
         </div>
       </div>
 
-      {researchError && (
-        <p className="text-xs text-red-600 mb-4">{researchError}</p>
-      )}
-
-      {researching && (
-        <div className="mb-8 border border-black/10 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-black/60">{researchStep}</p>
-            <p className="text-xs text-black/30">{researchProgress}%</p>
-          </div>
-          <div className="w-full h-1.5 bg-black/8 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-black rounded-full transition-all duration-700 ease-out"
-              style={{ width: `${researchProgress}%` }}
-            />
-          </div>
-          <p className="text-xs text-black/30 mt-3">This takes about 30 seconds.</p>
-        </div>
-      )}
+      <ResearchWorkspace
+        onDraftCreated={async (postId) => {
+          await loadPosts();
+          setExpandedId(postId);
+        }}
+      />
 
       {/* Draft Options */}
       {drafts.length > 0 && (
@@ -351,6 +303,12 @@ export default function BlogDashboardPage() {
               const isScheduling = schedulingId === draft.id;
               const wordCount = (draft.content_md ?? '').split(/\s+/).filter(Boolean).length;
               const readTime = Math.ceil(wordCount / 200);
+              const sources = parseDraftSources(draft.research_context);
+              const qcIssues = [
+                ...(draft.qc_report?.deterministic_issues ?? []),
+                ...(draft.qc_report?.refinement_issues ?? []),
+              ];
+              const qcFixes = draft.qc_report?.source_integrity_fixes ?? [];
 
               return (
                 <div
@@ -392,7 +350,7 @@ export default function BlogDashboardPage() {
                       <p className="text-sm text-black/50 leading-relaxed line-clamp-2">
                         {(draft.content_md ?? '').split('\n').find((l) => l.trim()) ?? ''}
                       </p>
-                      <p className="text-xs text-black/30 mt-2">{readTime} min read · {wordCount.toLocaleString()} words</p>
+                      <p className="text-xs text-black/30 mt-2">{readTime} min read / {wordCount.toLocaleString()} words</p>
                     </div>
                     <button
                       onClick={() => handleDismiss(draft.id)}
@@ -401,6 +359,62 @@ export default function BlogDashboardPage() {
                       ×
                     </button>
                   </div>
+
+                  {(sources.length > 0 || qcIssues.length > 0 || qcFixes.length > 0) && (
+                    <div className="border-t border-black/10 px-5 py-3 flex flex-col gap-2">
+                      {sources.length > 0 && (
+                        <details>
+                          <summary className="text-xs text-black/50 hover:text-black cursor-pointer">
+                            Research and sources ({sources.length})
+                          </summary>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pb-1">
+                            {sources.map((source) => (
+                              <div key={source.url} className="min-w-0">
+                                <a
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs font-medium text-black underline decoration-black/20 underline-offset-4 hover:decoration-black"
+                                >
+                                  {source.title}
+                                </a>
+                                <p className="text-[0.7rem] text-black/40 mt-1">
+                                  {[source.publisher, source.published_at].filter(Boolean).join(' / ')}
+                                </p>
+                                {source.key_fact && (
+                                  <p className="text-xs text-black/55 leading-relaxed mt-1.5">{source.key_fact}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                      {qcIssues.length > 0 && (
+                        <details>
+                          <summary className="text-xs text-amber-800 cursor-pointer">
+                            Editorial checks still need attention ({qcIssues.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1">
+                            {qcIssues.map((issue) => (
+                              <li key={issue} className="text-xs text-amber-900">{issue}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                      {qcFixes.length > 0 && (
+                        <details>
+                          <summary className="text-xs text-black/50 cursor-pointer">
+                            Source-integrity corrections applied ({qcFixes.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1">
+                            {qcFixes.map((issue) => (
+                              <li key={issue} className="text-xs text-black/55">{issue}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  )}
 
                   {/* Inline editor */}
                   {isExpanded && (
@@ -524,9 +538,9 @@ export default function BlogDashboardPage() {
                 <tr>
                   <td colSpan={4} className="px-5 py-8 text-center text-black/30 text-sm">
                     No posts yet.{' '}
-                    <button onClick={handleResearch} className="underline">
+                    <a href="#blog-research" className="underline">
                       Research a topic
-                    </button>{' '}
+                    </a>{' '}
                     or{' '}
                     <Link href="/dashboard/blog/new" className="underline">
                       write one manually.
@@ -541,20 +555,20 @@ export default function BlogDashboardPage() {
                   ? new Date(dateSource).toLocaleDateString('en-AU', {
                       day: 'numeric', month: 'short', year: 'numeric',
                     })
-                  : '—';
+                  : 'Not set';
                 const hasDrafts = post.social_drafts?.length > 0;
                 const allPosted = hasDrafts && post.social_drafts.every((d) => d.status === 'posted');
                 const isRescheduling = reschedulingId === post.id;
 
                 return (
-                  <>
-                    <tr key={post.id} className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
+                  <Fragment key={post.id}>
+                    <tr className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
                       <td className="px-5 py-3.5 text-black font-medium max-w-xs">
                         <span className="line-clamp-1">{post.title}</span>
                       </td>
                       <td className="px-5 py-3.5 whitespace-nowrap">
                         {isScheduled ? (
-                          <span className="text-black/40 text-xs">Scheduled · {date}</span>
+                          <span className="text-black/40 text-xs">Scheduled / {date}</span>
                         ) : (
                           <span className="text-black/40">{date}</span>
                         )}
@@ -565,7 +579,7 @@ export default function BlogDashboardPage() {
                             {allPosted ? 'posted' : 'drafts ready'}
                           </span>
                         ) : (
-                          <span className="text-black/20 text-xs">—</span>
+                          <span className="text-black/20 text-xs">None</span>
                         )}
                       </td>
                       <td className="px-5 py-3.5">
@@ -601,7 +615,7 @@ export default function BlogDashboardPage() {
                       </td>
                     </tr>
                     {isRescheduling && (
-                      <tr key={`${post.id}-reschedule`} className="border-b border-black/5 bg-black/[0.01]">
+                      <tr className="border-b border-black/5 bg-black/[0.01]">
                         <td colSpan={4} className="px-5 py-3">
                           <div className="flex items-center gap-3">
                             <input
@@ -628,7 +642,7 @@ export default function BlogDashboardPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -670,7 +684,7 @@ export default function BlogDashboardPage() {
             {(chatHistory[chatId] ?? []).length === 0 && (
               <div className="text-sm text-black/30 text-center mt-8">
                 <p>Tell the AI what to change.</p>
-                <p className="text-xs mt-2 text-black/20">e.g. &quot;Make the hook sharper&quot; · &quot;Rewrite from the operator&apos;s point of view&quot; · &quot;Make the example more concrete&quot;</p>
+                <p className="text-xs mt-2 text-black/20">For example: &quot;Make the hook sharper&quot; or &quot;Make the example more concrete&quot;.</p>
               </div>
             )}
             {(chatHistory[chatId] ?? []).map((msg, i) => (

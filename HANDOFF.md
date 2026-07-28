@@ -1,12 +1,51 @@
 # Handoff
 
 ## Last updated
-2026-07-29 by Codex - Public pricing and sector-navigation links were removed from the consultancy site. The commercial signal is now a 60-day payback target, while the header and footer focus visitors on the core offer, Blog, and the conversation CTA.
+2026-07-29 by Codex - The dashboard blog generator is now a construction-first research workflow: current public research, exactly three angles, Pedro selects one, then a source-integrity checked article is saved as a review draft and never auto-published.
 
 ## Last code fix commit
-Latest commit - Simplify public offer and navigation
+Latest commit - Build research-led Cerebro blog workflow
 
 ## What just happened (read first)
+
+### Research-led Cerebro blog workflow (2026-07-29, Codex)
+
+Pedro asked to replace the old fitness-led blog generator with a research-first system for
+construction and other expert-led businesses, using real public cases, story-led long-form writing,
+and his voice.
+
+Changed:
+- Added a durable `blog_research_runs` table with per-user RLS, saved findings, audience language,
+  exactly three angles, sources, selection state, and failure state.
+- Added `research_run_id` and `qc_report` to `blog_posts`.
+- Rebuilt `research-and-draft` into two authenticated actions:
+  - `research` searches current construction, engineering, infrastructure, project-controls, and
+    advisory sources, handles Anthropic server-tool pause continuations, and returns three angles;
+  - `generate` writes only the selected angle, retries malformed model output once, runs structural
+    checks and a separate source-integrity editor, then saves `research_draft`.
+- Research failures remain inspectable. Writing failures return the completed research run to
+  `ready` so Pedro can retry without paying for another research cycle.
+- Retired direct unresearched generation. `generate-blog` now returns `RESEARCH_REQUIRED`.
+- Updated `refine-blog` to preserve research facts, links, voice, and QC state.
+- Replaced the dashboard blog entry screen with the research workspace, optional Pedro notes,
+  three detailed angle cards, source review, loading states, and source-integrity correction notes.
+- Kept the manual editor as a draft-only fallback.
+- Added the Cerebro blog orchestrator, audience research, story architect, writer, and QC skills in
+  the parent workspace and updated the project skill chain.
+- Deployed migration `20260728213051_create_blog_research_runs.sql` and active function versions:
+  `research-and-draft` v23, `refine-blog` v17, and `generate-blog` v2.
+
+Live validation:
+- Authenticated dashboard research returned exactly three construction project-controls angles from
+  10 public sources.
+- Selecting one angle produced a 1,280-word `research_draft` with 10 linked sources.
+- The separate source-integrity editor recorded nine corrections, removed the invented first-person
+  claim and unsupported percentage found during QA, and left zero deterministic QC issues.
+- The draft was not published. All temporary QA drafts and research runs were removed afterwards.
+- `npm run test:blog-system`: 4/4 pass.
+- `npx tsc --noEmit`: passes.
+- Focused ESLint: zero errors; one existing `no-img-element` warning.
+- `npm run build`: passes on Next.js 16.2.10. Existing middleware deprecation warning only.
 
 ### Public offer and navigation simplification (2026-07-29, Codex)
 
