@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import SocialChannels from './components/SocialChannels';
 import WebsiteStats from './components/WebsiteStats';
@@ -78,23 +79,29 @@ export default async function DashboardPage() {
         <p className="text-sm font-semibold text-black mb-1">Quick actions</p>
         <div className="mt-4 space-y-2.5">
           <a
+            href="/discovery/new"
+            className="block text-sm text-black/60 hover:text-black transition-colors"
+          >
+            Start a client discovery →
+          </a>
+          <Link
             href="/dashboard/blog/new"
             className="block text-sm text-black/60 hover:text-black transition-colors"
           >
             Write a new blog post →
-          </a>
-          <a
+          </Link>
+          <Link
             href="/dashboard/leads"
             className="block text-sm text-black/60 hover:text-black transition-colors"
           >
             View all leads →
-          </a>
-          <a
+          </Link>
+          <Link
             href="/dashboard/social"
             className="block text-sm text-black/60 hover:text-black transition-colors"
           >
             Review social drafts →
-          </a>
+          </Link>
         </div>
       </div>
     </div>

@@ -1,12 +1,41 @@
 # Handoff
 
 ## Last updated
-2026-07-29 by Codex - Each three-angle blog research run now remains available until Pedro has generated any or all three articles, with durable per-angle status and duplicate protection.
+2026-07-29 by Codex - The separate business discovery recorder is now routed through the Cerebro domain and linked from the authenticated dashboard.
 
 ## Last code fix commit
-Latest commit - Keep all three researched blog angles
+Latest commit - Route discovery through Cerebro
 
 ## What just happened (read first)
+
+### Cerebro-domain business discovery tool (2026-07-29, Codex)
+
+Pedro was accessing the voice-guided client discovery recorder through its raw Vercel project URL.
+The tool already shared Cerebro's Supabase project, so its sessions and Alan Neverov's report did
+not need a data migration.
+
+Changed:
+- Configured the discovery app as a secondary Next.js zone with collision-safe assets under
+  `/discovery-static`.
+- Routed the public-facing paths through Cerebro:
+  - `/discovery`
+  - `/discovery/new`
+  - `/discovery/history`
+  - `/discovery/:id`
+  - `/discovery/:id/report`
+- Added Discovery to the dashboard sidebar and added a new-discovery quick action.
+- Used hard navigation between the main app and the secondary zone, as required by Next.js.
+- Protected `/discovery` with the existing Cerebro dashboard login.
+- Added a server-only handoff from the authenticated Cerebro session to the discovery app's
+  existing passcode gate, avoiding a second login.
+- Kept the discovery deployment as the upstream origin. Users should only receive Cerebro URLs.
+
+Validation:
+- Discovery app targeted ESLint and TypeScript pass.
+- Discovery app production build passes on Next.js 16.2.12.
+- Cerebro targeted ESLint and TypeScript pass.
+- Cerebro production build passes in the clean validation copy on Next.js 16.2.10.
+- Discovery upstream deployment is Ready and emits `/discovery-static` asset URLs.
 
 ### Generate any or all three researched articles (2026-07-29, Codex)
 

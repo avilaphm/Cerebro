@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const discoveryOrigin = "https://discovery-app-avilaphms-projects.vercel.app";
+
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -14,6 +16,42 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  async rewrites() {
+    return [
+      {
+        source: "/discovery",
+        destination: discoveryOrigin,
+      },
+      {
+        source: "/discovery/new",
+        destination: `${discoveryOrigin}/new`,
+      },
+      {
+        source: "/discovery/history",
+        destination: `${discoveryOrigin}/discoveries`,
+      },
+      {
+        source: "/discovery/settings",
+        destination: `${discoveryOrigin}/settings`,
+      },
+      {
+        source: "/discovery/:path+",
+        destination: `${discoveryOrigin}/discovery/:path+`,
+      },
+      {
+        source: "/discovery-static/:path+",
+        destination: `${discoveryOrigin}/discovery-static/:path+`,
+      },
+      {
+        source: "/api/clients",
+        destination: `${discoveryOrigin}/api/clients`,
+      },
+      {
+        source: "/api/discovery/:path+",
+        destination: `${discoveryOrigin}/api/discovery/:path+`,
+      },
+    ];
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

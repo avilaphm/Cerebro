@@ -5,12 +5,18 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 
-const NAV = [
+const NAV: Array<{
+  label: string;
+  href: string;
+  icon: string;
+  hardNavigation?: boolean;
+}> = [
   { label: 'Overview',  href: '/dashboard',           icon: '◈' },
   { label: 'PT Dashboard', href: '/dashboard/pt',      icon: '◐' },
   { label: 'Leads',     href: '/dashboard/leads',     icon: '◎' },
   { label: 'Templates', href: '/dashboard/templates', icon: '✉' },
   { label: 'Bookings',  href: '/dashboard/bookings',  icon: '⌖' },
+  { label: 'Discovery', href: '/discovery', icon: '◫', hardNavigation: true },
   { label: 'Blog',      href: '/dashboard/blog',      icon: '◻' },
   { label: 'Studio',    href: '/dashboard/studio',    icon: '⏺' },
   { label: 'Social',    href: '/dashboard/social',    icon: '◇' },
@@ -106,18 +112,25 @@ export default function DashboardSidebar({ userEmail }: { userEmail: string }) {
               item.href === '/dashboard'
                 ? pathname === '/dashboard'
                 : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
-                  active
-                    ? 'border border-white/15 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
-                    : 'border border-transparent text-white/50 hover:border-white/10 hover:bg-white/8 hover:text-white'
-                }`}
-              >
+            const className = `flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
+              active
+                ? 'border border-white/15 bg-white/14 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]'
+                : 'border border-transparent text-white/50 hover:border-white/10 hover:bg-white/8 hover:text-white'
+            }`;
+            const content = (
+              <>
                 <span className="w-4 text-center text-sm leading-none opacity-80">{item.icon}</span>
                 {item.label}
+              </>
+            );
+
+            return item.hardNavigation ? (
+              <a key={item.href} href={item.href} className={className}>
+                {content}
+              </a>
+            ) : (
+              <Link key={item.href} href={item.href} className={className}>
+                {content}
               </Link>
             );
           })}
