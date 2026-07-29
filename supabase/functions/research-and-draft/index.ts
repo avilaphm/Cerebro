@@ -239,6 +239,29 @@ Deno.serve(async (req: Request) => {
       const angle = packet.angles[input.angle_index];
       if (!angle) return respond({ error: 'Selected angle not found.' }, 400);
 
+      const { data: existingPost } = await serviceSupabase
+        .from('blog_posts')
+        .select('id, slug, title, status')
+        .eq('research_run_id', run.id)
+        .eq('research_angle_index', input.angle_index)
+        .maybeSingle<{
+          id: string;
+          slug: string;
+          title: string;
+          status: string;
+        }>();
+
+      if (existingPost) {
+        return respond({
+          post_id: existingPost.id,
+          slug: existingPost.slug,
+          title: existingPost.title,
+          status: existingPost.status,
+          angle_index: input.angle_index,
+          existing: true,
+        });
+      }
+
       await serviceSupabase
         .from('blog_research_runs')
         .update({
@@ -371,21 +394,29 @@ Run the final source-integrity edit. Return the required JSON only.`,
           published_at: null,
           research_context: JSON.stringify(packet, null, 2),
           research_run_id: run.id,
+          research_angle_index: input.angle_index,
           qc_report: qcReport,
           author: 'Pedro Avila',
         })
-        .select('id, slug')
-        .single<{ id: string; slug: string }>();
+        .select('id, slug, title, status')
+        .single<{ id: string; slug: string; title: string; status: string }>();
 
       if (insertError || !post) {
         console.error('Blog draft insert error:', insertError);
         throw new Error('The article was written but could not be saved.');
       }
 
+      const { count: generatedAngleCount } = await serviceSupabase
+        .from('blog_posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('research_run_id', run.id)
+        .not('research_angle_index', 'is', null);
+      const completedAllAngles = (generatedAngleCount ?? 1) >= packet.angles.length;
+
       await serviceSupabase
         .from('blog_research_runs')
         .update({
-          status: 'drafted',
+          status: completedAllAngles ? 'drafted' : 'ready',
           selected_angle_index: input.angle_index,
           error: null,
           updated_at: new Date().toISOString(),
@@ -395,6 +426,10 @@ Run the final source-integrity edit. Return the required JSON only.`,
       return respond({
         post_id: post.id,
         slug: post.slug,
+        title: post.title,
+        status: post.status,
+        angle_index: input.angle_index,
+        remaining_angles: Math.max(packet.angles.length - (generatedAngleCount ?? 1), 0),
         qc_report: qcReport,
       });
     }

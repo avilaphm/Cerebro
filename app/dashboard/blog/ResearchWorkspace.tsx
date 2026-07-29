@@ -35,6 +35,14 @@ interface ResearchRun {
   sources: ResearchSource[];
 }
 
+interface GeneratedAnglePost {
+  id: string;
+  slug: string;
+  title: string;
+  status: 'research_draft' | 'scheduled' | 'published';
+  research_angle_index: number;
+}
+
 interface ResearchWorkspaceProps {
   onDraftCreated: (postId: string) => Promise<void> | void;
 }
@@ -77,16 +85,32 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
   const [topic, setTopic] = useState('');
   const [notes, setNotes] = useState('');
   const [run, setRun] = useState<ResearchRun | null>(null);
+  const [generatedAngles, setGeneratedAngles] = useState<Record<number, GeneratedAnglePost>>({});
   const [researching, setResearching] = useState(false);
   const [generatingIndex, setGeneratingIndex] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [showSources, setShowSources] = useState(false);
 
-  const loadLatestReadyRun = useCallback(async () => {
+  const loadGeneratedAngles = useCallback(async (runId: string) => {
+    const { data } = await supabase
+      .from('blog_posts')
+      .select('id, slug, title, status, research_angle_index')
+      .eq('research_run_id', runId)
+      .not('research_angle_index', 'is', null)
+      .returns<GeneratedAnglePost[]>();
+
+    const byIndex: Record<number, GeneratedAnglePost> = {};
+    for (const post of data ?? []) {
+      byIndex[post.research_angle_index] = post;
+    }
+    setGeneratedAngles(byIndex);
+  }, [supabase]);
+
+  const loadLatestResearchRun = useCallback(async () => {
     const { data } = await supabase
       .from('blog_research_runs')
       .select('id, seed_topic, sector, status, findings, audience_language, angles, sources')
-      .eq('status', 'ready')
+      .in('status', ['ready', 'drafted'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle<ResearchRun>();
@@ -94,21 +118,23 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
     if (data) {
       setRun(data);
       setTopic(data.seed_topic ?? '');
+      await loadGeneratedAngles(data.id);
     }
-  }, [supabase]);
+  }, [loadGeneratedAngles, supabase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadLatestReadyRun();
+      void loadLatestResearchRun();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadLatestReadyRun]);
+  }, [loadLatestResearchRun]);
 
   async function startResearch() {
     if (researching) return;
     setResearching(true);
     setError('');
     setRun(null);
+    setGeneratedAngles({});
     setShowSources(false);
 
     try {
@@ -129,6 +155,7 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
         return;
       }
       setRun(data.run as ResearchRun);
+      setGeneratedAngles({});
     } catch (researchError) {
       setError(researchError instanceof Error ? researchError.message : 'Research failed.');
     } finally {
@@ -160,9 +187,23 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
       }
 
       await onDraftCreated(data.post_id);
-      setRun(null);
-      setTopic('');
-      setNotes('');
+      setGeneratedAngles((current) => ({
+        ...current,
+        [angleIndex]: {
+          id: data.post_id,
+          slug: data.slug,
+          title: data.title,
+          status: data.status,
+          research_angle_index: angleIndex,
+        },
+      }));
+      setRun((current) => current
+        ? {
+            ...current,
+            status: data.remaining_angles === 0 ? 'drafted' : 'ready',
+          }
+        : current
+      );
     } catch (generateError) {
       setError(generateError instanceof Error ? generateError.message : 'The draft could not be generated.');
     } finally {
@@ -226,7 +267,10 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
           {run && (
             <button
               type="button"
-              onClick={() => setRun(null)}
+              onClick={() => {
+                setRun(null);
+                setGeneratedAngles({});
+              }}
               disabled={generatingIndex !== null}
               className="text-sm text-black/45 hover:text-black transition-colors disabled:opacity-40"
             >
@@ -259,9 +303,9 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
         <div className="border-t border-black/10">
           <div className="px-5 md:px-6 py-4 bg-black/[0.025] flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <div>
-              <p className="text-sm font-medium text-black">Choose the angle worth writing.</p>
+              <p className="text-sm font-medium text-black">Write one angle or all three.</p>
               <p className="text-xs text-black/45 mt-1">
-                One specific reader, one operating constraint, one useful takeaway.
+                {Object.keys(generatedAngles).length} of {run.angles.length} articles created. Each angle stays here after you write it.
               </p>
             </div>
             <button
@@ -274,11 +318,13 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3">
-            {run.angles.map((angle, index) => (
-              <article
-                key={angle.id}
-                className="p-5 md:p-6 border-b lg:border-b-0 lg:border-r last:border-0 border-black/10 flex flex-col"
-              >
+            {run.angles.map((angle, index) => {
+              const generatedPost = generatedAngles[index];
+              return (
+                <article
+                  key={angle.id}
+                  className="p-5 md:p-6 border-b lg:border-b-0 lg:border-r last:border-0 border-black/10 flex flex-col"
+                >
                 <p className="text-xs text-black/40 mb-3">{angle.target_reader}</p>
                 <h3 className="font-display text-lg font-medium text-black leading-snug">
                   {angle.working_title}
@@ -301,17 +347,37 @@ export default function ResearchWorkspace({ onDraftCreated }: ResearchWorkspaceP
                   </div>
                 </dl>
                 <div className="mt-auto pt-6">
-                  <button
-                    type="button"
-                    onClick={() => generateDraft(index)}
-                    disabled={generatingIndex !== null}
-                    className="w-full bg-black text-white text-sm px-4 py-2.5 rounded-lg hover:opacity-80 active:translate-y-px transition disabled:opacity-35"
-                  >
-                    {generatingIndex === index ? 'Writing and checking draft...' : 'Write this article'}
-                  </button>
+                  {generatedPost ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (generatedPost.status === 'research_draft') {
+                          void onDraftCreated(generatedPost.id);
+                        }
+                      }}
+                      disabled={generatedPost.status !== 'research_draft'}
+                      className="w-full border border-black/15 bg-black/[0.03] text-black text-sm px-4 py-2.5 rounded-lg hover:border-black/35 transition disabled:text-black/45 disabled:hover:border-black/15"
+                    >
+                      {generatedPost.status === 'research_draft'
+                        ? 'Review draft'
+                        : generatedPost.status === 'scheduled'
+                          ? 'Scheduled'
+                          : 'Published'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => generateDraft(index)}
+                      disabled={generatingIndex !== null}
+                      className="w-full bg-black text-white text-sm px-4 py-2.5 rounded-lg hover:opacity-80 active:translate-y-px transition disabled:opacity-35"
+                    >
+                      {generatingIndex === index ? 'Writing and checking draft...' : 'Write this article'}
+                    </button>
+                  )}
                 </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
 
           {showSources && (

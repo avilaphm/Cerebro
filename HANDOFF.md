@@ -1,12 +1,42 @@
 # Handoff
 
 ## Last updated
-2026-07-29 by Codex - Blog generation now refreshes dashboard authentication automatically, bans long-dash punctuation at the save boundary, and enforces plain, first-read language without removing useful construction terminology.
+2026-07-29 by Codex - Each three-angle blog research run now remains available until Pedro has generated any or all three articles, with durable per-angle status and duplicate protection.
 
 ## Last code fix commit
-Latest commit - Fix blog authentication and readability
+Latest commit - Keep all three researched blog angles
 
 ## What just happened (read first)
+
+### Generate any or all three researched articles (2026-07-29, Codex)
+
+Pedro liked all three researched angles, but generating one article marked the entire research run
+as drafted and removed the other two options.
+
+Changed:
+- Added `blog_posts.research_angle_index` with a zero-to-two check and a unique partial index on
+  `(research_run_id, research_angle_index)`.
+- Backfilled Pedro's published article to angle three and returned its research run to `ready`
+  because two angles remain.
+- The Edge Function checks for an existing post before writing, so retries cannot create a second
+  article from the same angle.
+- Research runs stay `ready` while any angle remains and become `drafted` only after all three
+  angles have articles.
+- The dashboard loads both active and completed research runs, displays progress such as
+  `1 of 3 articles created`, and keeps every angle visible after each draft is generated.
+- Generated angles show `Review draft`, `Scheduled`, or `Published`. Remaining angles keep the
+  `Write this article` action.
+- Deployed migration `20260729041711_track_blog_research_angles.sql` and
+  `research-and-draft` v26.
+
+Validation:
+- Production data confirms the existing published article is angle index 2 and the research run is
+  ready with two remaining angles.
+- `npm run test:blog-system`: 6/6 pass.
+- Focused ESLint: zero errors.
+- `npx tsc --noEmit`: passes.
+- `npm run build`: passes in a clean `/private/tmp` validation copy on Next.js 16.2.10.
+- Supabase security and performance advisors show no new blog-angle findings.
 
 ### Blog authentication, punctuation and readability gates (2026-07-29, Codex)
 
