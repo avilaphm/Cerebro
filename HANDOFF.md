@@ -4,7 +4,7 @@
 2026-07-29 by Codex - The separate business discovery recorder is now routed through the Cerebro domain and linked from the authenticated dashboard.
 
 ## Last code fix commit
-Latest commit - Route discovery through Cerebro
+`4fa0c59` - Route discovery through Cerebro
 
 ## What just happened (read first)
 
@@ -36,6 +36,12 @@ Validation:
 - Cerebro targeted ESLint and TypeScript pass.
 - Cerebro production build passes in the clean validation copy on Next.js 16.2.10.
 - Discovery upstream deployment is Ready and emits `/discovery-static` asset URLs.
+- Cerebro deployment `cerebro-2uqukitne-avilaphms-projects.vercel.app` is Ready.
+- Logged-out `/discovery` requests redirect to the Cerebro login.
+- The signed-in dashboard shows Discovery in the sidebar and opens the tool without a second login.
+- `/discovery/history` loads all six existing sessions.
+- Alan Neverov's existing report opens at
+  `/discovery/06e8129e-1af9-4969-ab30-a2bb7e470f97/report` with all export actions intact.
 
 ### Generate any or all three researched articles (2026-07-29, Codex)
 
