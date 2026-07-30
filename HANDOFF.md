@@ -1,12 +1,43 @@
 # Handoff
 
 ## Last updated
-2026-07-29 by Codex - The separate business discovery recorder is now routed through the Cerebro domain and linked from the authenticated dashboard.
+2026-07-30 by Codex - Restored the Google Calendar authorization used by PT bookings and repaired every missing future event.
 
 ## Last code fix commit
-`4fa0c59` - Route discovery through Cerebro
+`882d12b` - Expose Calendar token refresh failures
 
 ## What just happened (read first)
+
+### Google Calendar booking connection repair (2026-07-30, Codex)
+
+Pedro reported that Cerebro bookings had stopped appearing on Google Calendar after a Google
+password change.
+
+Root cause:
+- Cerebro continued saving appointments, but the Google OAuth refresh token had been revoked.
+- Calendar event IDs were present through 6 July and absent from every booking created from
+  12 July onward.
+- The Calendar helper returned `null` on a failed token refresh without logging Google's response,
+  so the booking succeeded while the integration failure remained hidden.
+
+Changed:
+- Reauthorized the existing `Cerebro Ai Youtube` Google OAuth client for
+  `pedro@pulsecoaching.app`, which owns the same primary calendar used by earlier Cerebro events.
+- Replaced `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` in Supabase
+  production without writing them to the repository.
+- Added bounded Google token error logging to `manage-pt-booking` and
+  `sync-assessment-calendar`.
+- Deployed `manage-pt-booking` v21 and `sync-assessment-calendar` v3.
+- Restored Stephen Layfield's two missed future bookings on 4 August and 6 August at 8:00am
+  Sydney time, then wrote their Google event IDs back to the appointments.
+
+Validation:
+- The exported refresh token successfully minted a new Google access token.
+- An older Cerebro event ID was confirmed on the reconnected primary calendar before production
+  credentials were replaced.
+- Both restored Stephen events are confirmed on Google Calendar.
+- Production now has zero future active bookings missing a Google Calendar event ID.
+- Focused Edge Function ESLint and `git diff --check` pass.
 
 ### Cerebro-domain business discovery tool (2026-07-29, Codex)
 
