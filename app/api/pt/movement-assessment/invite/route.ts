@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { formatBookingDate, formatBookingTime } from '@/utils/pt/bookings';
 import { MOVEMENT_ASSESSMENT_SESSION_MINUTES } from '@/utils/pt/movement-assessment-booking';
 import { PAR_Q_CONSENT_TEXT, PAR_Q_QUESTIONS, type ParQAnswer } from '@/utils/pt/parq';
 import { buildParqPdf } from '@/utils/pt/parq-pdf';
@@ -204,6 +205,19 @@ export async function POST(req: NextRequest) {
     if (clientUpdateRes.error) throw clientUpdateRes.error;
     if (inviteUpdateRes.error) throw inviteUpdateRes.error;
 
+    try {
+      await sendCoachParqNotification({
+        clientName: client.name,
+        clientEmail: client.email,
+        appointmentStartAt: appointment.start_at,
+        medicalFlag,
+        coachNotes,
+        siteOrigin: req.nextUrl.origin,
+      });
+    } catch (notificationError) {
+      console.error('Coach PAR-Q notification failed', notificationError);
+    }
+
     return NextResponse.json({ ok: true, appointment });
   } catch (error) {
     console.error('Submit invited PAR-Q failed', error);
@@ -229,4 +243,60 @@ function cleanText(value: unknown, maxLength: number) {
 
 function isAnswerRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function sendCoachParqNotification(input: {
+  clientName: string;
+  clientEmail: string;
+  appointmentStartAt: string;
+  medicalFlag: boolean;
+  coachNotes: string;
+  siteOrigin: string;
+}) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    console.error('Coach PAR-Q notification skipped: RESEND_API_KEY is missing.');
+    return false;
+  }
+
+  const coachEmail = process.env.COACH_NOTIFY_EMAIL ?? process.env.PEDRO_EMAIL ?? 'pedro@cerebroai.au';
+  const when = `${formatBookingDate(input.appointmentStartAt)} at ${formatBookingTime(input.appointmentStartAt)}`;
+  const mlUrl = `${input.siteOrigin.replace(/\/$/, '')}/dashboard/pt/ml-assessment`;
+  const parqStatus = input.medicalFlag
+    ? 'MEDICAL FLAG present. Review the answers before the session.'
+    : 'All answers are No.';
+  const subject = input.medicalFlag
+    ? `[PAR-Q complete] ${input.clientName}: medical flag`
+    : `[PAR-Q complete] ${input.clientName}`;
+  const text = [
+    `${input.clientName} has completed their PAR-Q.`,
+    '',
+    `Client: ${input.clientName} <${input.clientEmail}>`,
+    `Movement assessment: ${when}`,
+    `PAR-Q: ${parqStatus}`,
+    input.coachNotes ? `Client note: ${input.coachNotes}` : null,
+    '',
+    `Open M&L: ${mlUrl}`,
+    '',
+    'The signed PAR-Q PDF is saved on the client profile.',
+  ].filter((line): line is string => line !== null).join('\n');
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_PEDRO_NOTIFY ?? 'Pedro Avila Coaching <pedro@cerebroai.au>',
+      to: coachEmail,
+      subject,
+      text,
+    }),
+  });
+
+  if (!response.ok) {
+    console.error('Coach PAR-Q notification returned', response.status, await response.text());
+  }
+  return response.ok;
 }
