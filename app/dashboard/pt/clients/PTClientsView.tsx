@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
@@ -23,6 +23,7 @@ const STATUS_COLORS: Record<PTClient['status'], string> = {
 export default function PTClientsView({ initialClients, notesByClient = {}, groupsByClient = {} }: { initialClients: PTClient[]; notesByClient?: Record<string, number>; groupsByClient?: Record<string, PTGroup[]> }) {
   const supabase = createClient();
   const router = useRouter();
+  const viewRef = useRef<HTMLDivElement>(null);
   const [clients, setClients] = useState(initialClients);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({
@@ -38,6 +39,37 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    if (!showAdd) return;
+
+    const scrollContainers = new Set<HTMLElement>([
+      document.documentElement,
+      document.body,
+    ]);
+    let ancestor = viewRef.current?.parentElement ?? null;
+    while (ancestor) {
+      const overflowY = window.getComputedStyle(ancestor).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        scrollContainers.add(ancestor);
+      }
+      ancestor = ancestor.parentElement;
+    }
+
+    const previousOverflow = [...scrollContainers].map((element) => ({
+      element,
+      overflow: element.style.overflow,
+    }));
+    previousOverflow.forEach(({ element }) => {
+      element.style.overflow = 'hidden';
+    });
+
+    return () => {
+      previousOverflow.forEach(({ element, overflow }) => {
+        element.style.overflow = overflow;
+      });
+    };
+  }, [showAdd]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,7 +135,7 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
   };
 
   return (
-    <div className="px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <div ref={viewRef} className="px-5 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <div className="mb-8 flex flex-col gap-4 sm:mb-10 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35 mb-1">PT</p>
@@ -177,9 +209,9 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-6" role="presentation">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden overscroll-none bg-black/60 p-3 sm:p-6" role="presentation">
           <div
-            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto border border-black/15 bg-white shadow-[0_32px_100px_rgba(0,0,0,0.38)] sm:max-h-[calc(100dvh-3rem)]"
+            className="client-intake-modal no-glass max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto overscroll-contain border border-black/15 bg-white shadow-[0_32px_100px_rgba(0,0,0,0.38)] sm:max-h-[calc(100dvh-3rem)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="add-client-title"
@@ -235,8 +267,8 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
                 </label>
               </div>
 
-              <fieldset className="border border-black/10 bg-[#f7f6f1] p-4 sm:p-5">
-                <legend className="px-2 text-xs uppercase tracking-[0.16em] text-black/45">Before the assessment</legend>
+              <div className="border border-black/10 bg-[#f7f6f1] px-4 pb-4 pt-5 sm:px-5 sm:pb-5 sm:pt-6">
+                <p className="mb-5 text-xs uppercase tracking-[0.16em] text-black/45">Before the assessment</p>
                 <div className="space-y-4">
                   <ToggleRow
                     checked={form.sendParq}
@@ -275,7 +307,7 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
                     />
                   </div>
                 </div>
-              </fieldset>
+              </div>
 
               <div className="grid grid-cols-4 gap-2 border-y border-black/10 py-3 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/40">
                 <span>Client</span>

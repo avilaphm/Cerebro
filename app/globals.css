@@ -490,6 +490,15 @@ body::before {
   box-shadow: 0 18px 45px -28px rgba(0, 0, 0, 0.45) !important;
 }
 
+/* Client intake is a task surface, not a glass panel. Keep the entire modal
+   opaque so the client grid never competes with form text. */
+.liquid-dashboard main .client-intake-modal.no-glass {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  isolation: isolate;
+}
+
 .liquid-dashboard .exercise-import-modal.no-glass,
 .client-liquid .exercise-import-modal.no-glass,
 .exercise-import-modal.no-glass {
