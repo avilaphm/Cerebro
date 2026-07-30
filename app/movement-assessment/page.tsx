@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   description: 'Complete your PAR-Q and book a movement assessment with Pedro Avila.',
 };
 
-export default function MovementAssessmentPage() {
-  return <MovementAssessmentBooking />;
+export default async function MovementAssessmentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const token = typeof params.token === 'string' ? params.token : '';
+  return <MovementAssessmentBooking inviteToken={token} />;
 }

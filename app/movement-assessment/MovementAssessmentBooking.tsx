@@ -17,7 +17,15 @@ interface AssessmentSlot {
 type Answers = Record<string, ParQAnswer | undefined>;
 type Step = 1 | 2 | 3;
 
-export default function MovementAssessmentBooking() {
+interface InvitedAppointment {
+  id: string;
+  start_at: string;
+  end_at: string;
+  location: string | null;
+  status: string;
+}
+
+export default function MovementAssessmentBooking({ inviteToken = '' }: { inviteToken?: string }) {
   const [step, setStep] = useState<Step>(1);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -36,6 +44,9 @@ export default function MovementAssessmentBooking() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [confirmedSlot, setConfirmedSlot] = useState<AssessmentSlot | null>(null);
+  const [invitedAppointment, setInvitedAppointment] = useState<InvitedAppointment | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(Boolean(inviteToken));
+  const [inviteError, setInviteError] = useState('');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -84,6 +95,32 @@ export default function MovementAssessmentBooking() {
     return () => window.removeEventListener('resize', resizeCanvas);
   }, [resizeCanvas]);
 
+  useEffect(() => {
+    if (!inviteToken) return;
+    let cancelled = false;
+    async function loadInvite() {
+      try {
+        const response = await fetch(`/api/pt/movement-assessment/invite?token=${encodeURIComponent(inviteToken)}`, { cache: 'no-store' });
+        const json = await response.json();
+        if (!response.ok || !json.ok) throw new Error(json.error ?? 'Could not open this PAR-Q link.');
+        if (cancelled) return;
+        setFirstName(json.client.first_name ?? '');
+        setLastName(json.client.last_name ?? '');
+        setEmail(json.client.email ?? '');
+        setDateOfBirth(json.client.date_of_birth ?? '');
+        setInvitedAppointment(json.appointment ?? null);
+      } catch (error) {
+        if (!cancelled) setInviteError(error instanceof Error ? error.message : 'Could not open this PAR-Q link.');
+      } finally {
+        if (!cancelled) setInviteLoading(false);
+      }
+    }
+    void loadInvite();
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
+
   // Land at the top of each step so people don't start a new step mid-scroll.
   // Skip the initial mount: scrolling on first hydration can fight a user who
   // has already scrolled down to the questions, making early clicks miss.
@@ -117,8 +154,40 @@ export default function MovementAssessmentBooking() {
     // so it can't be read back at booking time.
     const signature = canvasRef.current?.toDataURL('image/png') ?? '';
     if (signature.startsWith('data:image/png;base64,')) setSignatureDataUrl(signature);
-    setStep(2);
-    if (slots.length === 0) void loadSlots();
+    if (invitedAppointment) {
+      void submitInvitedParq(signature);
+    } else {
+      setStep(2);
+      if (slots.length === 0) void loadSlots();
+    }
+  }
+
+  async function submitInvitedParq(signature: string) {
+    if (!inviteToken || submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      const response = await fetch('/api/pt/movement-assessment/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: inviteToken,
+          date_of_birth: dateOfBirth,
+          answers,
+          other_medical_note: answers['other-medical'] === 'yes' ? otherMedicalNote : '',
+          signature_data_url: signature,
+          coach_notes: coachNotes,
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.error ?? 'Could not save the PAR-Q.');
+      setConfirmedSlot(toDisplaySlot(json.appointment));
+      setStep(3);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Could not save the PAR-Q.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function submitBooking() {
@@ -146,6 +215,7 @@ export default function MovementAssessmentBooking() {
           signature_data_url: signature,
           coach_notes: coachNotes,
           start_at: selectedSlot.start_at,
+          invite_token: inviteToken || undefined,
         }),
       });
       const json = await res.json();
@@ -213,8 +283,8 @@ export default function MovementAssessmentBooking() {
           <h1 className="mt-3 font-display text-4xl font-light leading-[0.95] sm:text-5xl lg:text-4xl">Movement Assessment</h1>
           <div className="mt-7 space-y-3">
             <ProgressStep active={step === 1} done={step > 1} label="PAR-Q" />
-            <ProgressStep active={step === 2} done={step > 2} label="Calendar" />
-            <ProgressStep active={step === 3} done={step === 3} label="Booked" />
+            {!invitedAppointment && <ProgressStep active={step === 2} done={step > 2} label="Calendar" />}
+            <ProgressStep active={step === 3} done={step === 3} label={invitedAppointment ? 'Complete' : 'Booked'} />
           </div>
           <div className="mt-8 space-y-3 border-t border-black/10 pt-5 text-sm text-black/60">
             <p className="flex gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" />50 minute booking window.</p>
@@ -224,7 +294,16 @@ export default function MovementAssessmentBooking() {
         </aside>
 
         <section className="min-w-0 border border-black/10 bg-white p-5 shadow-[0_24px_70px_-55px_rgba(0,0,0,0.45)] sm:p-7 lg:p-8">
-          {step === 1 && (
+          {inviteLoading ? (
+            <div className="flex min-h-[34rem] items-center justify-center text-sm text-black/45">Opening your private PAR-Q...</div>
+          ) : inviteError ? (
+            <div className="flex min-h-[34rem] items-center justify-center">
+              <div className="max-w-md border border-red-200 bg-red-50 p-6 text-center">
+                <h2 className="font-display text-3xl font-light">This link cannot be opened</h2>
+                <p className="mt-3 text-sm leading-6 text-red-700">{inviteError}</p>
+              </div>
+            </div>
+          ) : step === 1 && (
             <div className="space-y-7">
               <div className="max-w-3xl">
                 <p className="text-[0.62rem] uppercase tracking-[0.2em] text-black/35">Step 1</p>
@@ -232,13 +311,21 @@ export default function MovementAssessmentBooking() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
-                <Field label="First name" value={firstName} onChange={setFirstName} autoComplete="given-name" />
-                <Field label="Last name" value={lastName} onChange={setLastName} autoComplete="family-name" />
+                <Field label="First name" value={firstName} onChange={setFirstName} autoComplete="given-name" readOnly={Boolean(inviteToken)} />
+                <Field label="Last name" value={lastName} onChange={setLastName} autoComplete="family-name" readOnly={Boolean(inviteToken)} />
                 <Field label="Date of birth" value={dateOfBirth} onChange={setDateOfBirth} autoComplete="bday" type="date" />
                 <div className="md:col-span-3">
-                  <Field label="Email address" value={email} onChange={setEmail} autoComplete="email" type="email" />
+                  <Field label="Email address" value={email} onChange={setEmail} autoComplete="email" type="email" readOnly={Boolean(inviteToken)} />
                 </div>
               </div>
+
+              {invitedAppointment && (
+                <div className="border border-black bg-black px-4 py-4 text-white sm:px-5">
+                  <p className="text-[0.62rem] uppercase tracking-[0.18em] text-white/55">Already booked</p>
+                  <p className="mt-2 text-lg font-medium">{formatAppointment(invitedAppointment.start_at)}</p>
+                  <p className="mt-1 text-sm text-white/65">Complete this form and your PAR-Q will be ready for Pedro before the session.</p>
+                </div>
+              )}
 
               {medicalFlag && (
                 <div className="flex gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -330,11 +417,12 @@ export default function MovementAssessmentBooking() {
               </div>
 
               <ActionBar
-                label={intakeReady ? 'Ready for the calendar' : 'Complete details, questions, and signature'}
-                actionLabel="Continue"
-                disabled={!intakeReady}
+                label={intakeReady ? (invitedAppointment ? 'Ready to send to Pedro' : 'Ready for the calendar') : 'Complete details, questions, and signature'}
+                actionLabel={submitting ? 'Saving PAR-Q...' : invitedAppointment ? 'Submit PAR-Q' : 'Continue'}
+                disabled={!intakeReady || submitting}
                 onClick={continueToCalendar}
               />
+              {submitError && <div className="border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">{submitError}</div>}
             </div>
           )}
 
@@ -445,11 +533,13 @@ export default function MovementAssessmentBooking() {
                   <Check className="h-5 w-5" />
                 </div>
                 <h2 className="mt-6 font-display text-4xl font-light">Thank you{firstName ? `, ${firstName}` : ''}.</h2>
-                <p className="mt-4 text-lg text-black/75">You are booked in.</p>
+                <p className="mt-4 text-lg text-black/75">{invitedAppointment ? 'Your PAR-Q has been sent to Pedro.' : 'You are booked in.'}</p>
                 {confirmedSlot && (
                   <p className="mt-2 text-lg font-medium text-black">{confirmedSlot.date_label} · {confirmedSlot.time_label}</p>
                 )}
-                <p className="mt-6 text-sm leading-6 text-black/50">A confirmation has been sent to your email.</p>
+                <p className="mt-6 text-sm leading-6 text-black/50">
+                  {invitedAppointment ? 'You are all set for your movement assessment.' : 'A confirmation has been sent to your email.'}
+                </p>
               </div>
             </div>
           )}
@@ -470,12 +560,13 @@ function ProgressStep({ active, done, label }: { active: boolean; done: boolean;
   );
 }
 
-function Field({ label, value, onChange, autoComplete, type = 'text' }: {
+function Field({ label, value, onChange, autoComplete, type = 'text', readOnly = false }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   autoComplete: string;
   type?: string;
+  readOnly?: boolean;
 }) {
   return (
     <label className="block">
@@ -485,10 +576,44 @@ function Field({ label, value, onChange, autoComplete, type = 'text' }: {
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete={autoComplete}
-        className="mt-2 h-12 w-full border border-black/10 bg-[#fbfbf8] px-3 text-sm outline-none transition-colors focus:border-black/35"
+        readOnly={readOnly}
+        className="mt-2 h-12 w-full border border-black/10 bg-[#fbfbf8] px-3 text-sm outline-none transition-colors focus:border-black/35 read-only:cursor-default read-only:text-black/55"
       />
     </label>
   );
+}
+
+function formatAppointment(startAt: string) {
+  return new Intl.DateTimeFormat('en-AU', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'Australia/Sydney',
+  }).format(new Date(startAt));
+}
+
+function toDisplaySlot(appointment: InvitedAppointment): AssessmentSlot {
+  const date = new Date(appointment.start_at);
+  return {
+    start_at: appointment.start_at,
+    end_at: appointment.end_at,
+    label: formatAppointment(appointment.start_at),
+    date_label: new Intl.DateTimeFormat('en-AU', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'Australia/Sydney',
+    }).format(date),
+    time_label: new Intl.DateTimeFormat('en-AU', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'Australia/Sydney',
+    }).format(date),
+    availability_id: 'coach-booked',
+    location: appointment.location,
+  };
 }
 
 function InfoTile({ title, copy }: { title: string; copy: string }) {

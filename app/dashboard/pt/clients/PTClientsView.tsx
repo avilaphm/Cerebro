@@ -25,54 +25,81 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
   const router = useRouter();
   const [clients, setClients] = useState(initialClients);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', goals: '', notes: '' });
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    goals: '',
+    notes: '',
+    sendParq: true,
+    alreadyBooked: false,
+    appointmentStartAt: '',
+    sendPortalSetup: false,
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError('');
-    const { data, error: err } = await supabase
-      .from('pt_clients')
-      .insert({
-        name: form.name.trim(),
-        email: form.email.trim().toLowerCase(),
-        goals: form.goals.trim() || null,
-        notes: form.notes.trim() || null,
-        status: 'invited',
-        use_brain: true,
-      })
-      .select()
-      .single();
-    if (err) {
-      setError(err.message);
-      setSaving(false);
-      return;
-    }
+    setNotice('');
+    try {
+      const appointmentStartAt = form.alreadyBooked && form.appointmentStartAt
+        ? new Date(form.appointmentStartAt).toISOString()
+        : null;
+      const response = await fetch('/api/pt/clients/create-with-intake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          goals: form.goals,
+          notes: form.notes,
+          send_parq: form.sendParq,
+          already_booked: form.alreadyBooked,
+          appointment_start_at: appointmentStartAt,
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.error ?? 'Could not create client.');
 
-    const created = data as PTClient;
-    setClients((prev) => [created, ...prev]);
+      const created = json.client as PTClient;
+      setClients((prev) => [created, ...prev.filter((client) => client.id !== created.id)]);
 
-    // Send the welcome / setup email immediately on creation, via the same edge
-    // function the "Resend link" button uses. Without this, new clients only
-    // got an email when the link was manually resent.
-    const { error: inviteErr } = await supabase.functions.invoke('invite-pt-client', {
-      body: { client_id: created.id },
-    });
-    if (inviteErr) {
-      // Client exists; only the email failed. Keep the modal open so the coach
-      // sees it and can resend from the client's profile.
-      setError(`${created.name} was created, but the welcome email failed to send (${inviteErr.message}). Open their profile and use "Resend link".`);
+      if (form.sendPortalSetup) {
+        const { error: inviteErr } = await supabase.functions.invoke('invite-pt-client', {
+          body: { client_id: created.id },
+        });
+        if (inviteErr) {
+          json.warning = [json.warning, `The portal setup email failed: ${inviteErr.message}`].filter(Boolean).join(' ');
+        }
+      }
+
+      const resultParts = [
+        `${created.name} was added.`,
+        form.sendParq && json.parq_sent ? 'PAR-Q sent.' : null,
+        form.alreadyBooked && json.calendar_synced ? 'Assessment added to Google Calendar.' : null,
+        json.warning,
+      ].filter(Boolean);
+      setNotice(resultParts.join(' '));
+      setForm({
+        name: '',
+        email: '',
+        goals: '',
+        notes: '',
+        sendParq: true,
+        alreadyBooked: false,
+        appointmentStartAt: '',
+        sendPortalSetup: false,
+      });
+      setShowAdd(false);
       router.refresh();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Could not create client.');
+    } finally {
       setSaving(false);
-      return;
     }
-
-    setForm({ name: '', email: '', goals: '', notes: '' });
-    setShowAdd(false);
-    router.refresh();
-    setSaving(false);
   };
 
   return (
@@ -89,6 +116,13 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
           + Add client
         </button>
       </div>
+
+      {notice && (
+        <div className="mb-5 flex items-start justify-between gap-4 border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          <p>{notice}</p>
+          <button type="button" onClick={() => setNotice('')} className="shrink-0 text-xs underline underline-offset-2">Dismiss</button>
+        </div>
+      )}
 
       {clients.length === 0 ? (
         <p className="text-sm text-black/40">No clients yet. Add your first client above.</p>
@@ -143,66 +177,131 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="liquid-solid max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto border border-black/10 bg-white">
-            <div className="px-6 py-5 border-b border-black/8">
-              <h2 className="font-display text-lg font-light">Add client</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-6" role="presentation">
+          <div
+            className="max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto border border-black/15 bg-white shadow-[0_32px_100px_rgba(0,0,0,0.38)] sm:max-h-[calc(100dvh-3rem)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-client-title"
+          >
+            <div className="border-b border-black/10 bg-white px-5 py-5 sm:px-7 sm:py-6">
+              <p className="text-[0.6rem] uppercase tracking-[0.2em] text-black/35">New intake</p>
+              <h2 id="add-client-title" className="mt-1 font-display text-3xl font-light tracking-[-0.02em]">Add client</h2>
+              <p className="mt-2 max-w-lg text-sm leading-6 text-black/50">Create their profile, send the PAR-Q, and connect an existing movement assessment to your calendar.</p>
             </div>
-            <form onSubmit={handleCreate} className="px-6 py-5 space-y-4">
-              <div>
-                <label className="block text-xs uppercase tracking-[0.15em] text-black/40 mb-1.5">Name</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  required
-                  className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
-                />
+            <form onSubmit={handleCreate} className="space-y-6 bg-white px-5 py-5 sm:px-7 sm:py-6">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs uppercase tracking-[0.15em] text-black/45">Name</span>
+                  <input
+                    type="text"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    required
+                    autoFocus
+                    className="h-12 w-full border border-black/15 bg-white px-3 text-sm text-black outline-none transition-colors focus:border-black"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs uppercase tracking-[0.15em] text-black/45">Email</span>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                    required
+                    className="h-12 w-full border border-black/15 bg-white px-3 text-sm text-black outline-none transition-colors focus:border-black"
+                  />
+                </label>
               </div>
-              <div>
-                <label className="block text-xs uppercase tracking-[0.15em] text-black/40 mb-1.5">Email</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  required
-                  className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
-                />
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs uppercase tracking-[0.15em] text-black/45">Goals</span>
+                  <input
+                    type="text"
+                    value={form.goals}
+                    onChange={(e) => setForm((f) => ({ ...f, goals: e.target.value }))}
+                    className="h-12 w-full border border-black/15 bg-white px-3 text-sm text-black outline-none transition-colors focus:border-black"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs uppercase tracking-[0.15em] text-black/45">Notes</span>
+                  <input
+                    type="text"
+                    value={form.notes}
+                    onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                    className="h-12 w-full border border-black/15 bg-white px-3 text-sm text-black outline-none transition-colors focus:border-black"
+                  />
+                </label>
               </div>
-              <div>
-                <label className="block text-xs uppercase tracking-[0.15em] text-black/40 mb-1.5">Goals</label>
-                <input
-                  type="text"
-                  value={form.goals}
-                  onChange={(e) => setForm((f) => ({ ...f, goals: e.target.value }))}
-                  className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40"
-                />
+
+              <fieldset className="border border-black/10 bg-[#f7f6f1] p-4 sm:p-5">
+                <legend className="px-2 text-xs uppercase tracking-[0.16em] text-black/45">Before the assessment</legend>
+                <div className="space-y-4">
+                  <ToggleRow
+                    checked={form.sendParq}
+                    onChange={(checked) => setForm((f) => ({ ...f, sendParq: checked }))}
+                    title="Send PAR-Q now"
+                    copy="Emails a private form link to the client."
+                  />
+                  <div className="border-t border-black/10 pt-4">
+                    <ToggleRow
+                      checked={form.alreadyBooked}
+                      onChange={(checked) => setForm((f) => ({ ...f, alreadyBooked: checked, appointmentStartAt: checked ? f.appointmentStartAt : '' }))}
+                      title="Already booked with me"
+                      copy="Add the movement assessment to Cerebro and Google Calendar."
+                    />
+                  </div>
+                  {form.alreadyBooked && (
+                    <label className="block border-l-2 border-black pl-4">
+                      <span className="mb-1.5 block text-xs uppercase tracking-[0.15em] text-black/45">Assessment date and time</span>
+                      <input
+                        type="datetime-local"
+                        value={form.appointmentStartAt}
+                        onChange={(e) => setForm((f) => ({ ...f, appointmentStartAt: e.target.value }))}
+                        required
+                        min={minimumLocalDateTime()}
+                        className="h-12 w-full border border-black/15 bg-white px-3 text-sm text-black outline-none transition-colors focus:border-black sm:max-w-sm"
+                      />
+                      <span className="mt-2 block text-xs text-black/45">50 minute movement assessment. A 5 minute calendar buffer is added automatically.</span>
+                    </label>
+                  )}
+                  <div className="border-t border-black/10 pt-4">
+                    <ToggleRow
+                      checked={form.sendPortalSetup}
+                      onChange={(checked) => setForm((f) => ({ ...f, sendPortalSetup: checked }))}
+                      title="Send client portal setup"
+                      copy="Optional. Sends a separate email to activate their client portal."
+                    />
+                  </div>
+                </div>
+              </fieldset>
+
+              <div className="grid grid-cols-4 gap-2 border-y border-black/10 py-3 text-center text-[0.6rem] uppercase tracking-[0.12em] text-black/40">
+                <span>Client</span>
+                <span>PAR-Q</span>
+                <span>Calendar</span>
+                <span>M&amp;L</span>
               </div>
-              <div>
-                <label className="block text-xs uppercase tracking-[0.15em] text-black/40 mb-1.5">Notes</label>
-                <textarea
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  rows={3}
-                  className="w-full border border-black/10 px-3 py-2.5 text-sm outline-none focus:border-black/40 resize-none"
-                />
-              </div>
-              {error && <p className="text-xs text-red-600">{error}</p>}
-              <div className="flex flex-col gap-3 pt-1 sm:flex-row">
+
+              {error && <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowAdd(false)}
-                  className="flex-1 border border-black/20 py-2.5 text-sm hover:bg-black/5 transition-colors"
+                  onClick={() => {
+                    setShowAdd(false);
+                    setError('');
+                  }}
+                  className="min-h-12 border border-black/20 px-6 text-sm transition-colors hover:bg-black/5 sm:min-w-36"
                 >
                   Cancel
                 </button>
-                <button
+                <input
                   type="submit"
                   disabled={saving}
-                  className="flex-1 border border-black bg-black text-white py-2.5 text-sm disabled:opacity-40"
-                >
-                  {saving ? 'Creating…' : 'Create client'}
-                </button>
+                  value={saving ? 'Creating client...' : 'Create client'}
+                  className="min-h-12 cursor-pointer border border-black bg-black px-7 text-sm text-white transition-colors hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40 sm:min-w-44"
+                />
               </div>
             </form>
           </div>
@@ -210,4 +309,37 @@ export default function PTClientsView({ initialClients, notesByClient = {}, grou
       )}
     </div>
   );
+}
+
+function ToggleRow({
+  checked,
+  onChange,
+  title,
+  copy,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  title: string;
+  copy: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start justify-between gap-5">
+      <span>
+        <span className="block text-sm font-medium text-black">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-black/50">{copy}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-5 w-5 shrink-0 accent-black"
+      />
+    </label>
+  );
+}
+
+function minimumLocalDateTime() {
+  const date = new Date(Date.now() + 5 * 60_000);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }

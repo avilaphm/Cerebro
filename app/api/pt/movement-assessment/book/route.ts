@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import type { PTBookingAvailability, PTBookingBlock } from '@/utils/pt/bookings';
 import {
@@ -24,6 +25,7 @@ interface BookAssessmentBody {
   signature_data_url?: unknown;
   coach_notes?: unknown;
   start_at?: unknown;
+  invite_token?: unknown;
 }
 
 interface ClientRow {
@@ -85,6 +87,12 @@ export async function POST(req: NextRequest) {
     }
 
     const client = await findOrCreateClient(supabase, parsed.data.first_name, parsed.data.last_name, parsed.data.email, parsed.data.date_of_birth);
+    const invite = parsed.data.invite_token
+      ? await findPendingInvite(supabase, parsed.data.invite_token, client.id)
+      : null;
+    if (parsed.data.invite_token && !invite) {
+      return NextResponse.json({ ok: false, error: 'This PAR-Q link is invalid or has expired.' }, { status: 410 });
+    }
     const medicalFlag = Object.values(parsed.data.answers).includes('yes');
     const submittedAt = new Date().toISOString();
     const parqAnswers = PAR_Q_QUESTIONS.map((question) => ({
@@ -199,6 +207,18 @@ export async function POST(req: NextRequest) {
           },
         },
       ]),
+      invite
+        ? supabase
+            .from('pt_movement_assessment_invites')
+            .update({
+              appointment_id: appointmentRes.data.id,
+              status: 'completed',
+              completed_at: submittedAt,
+              updated_at: submittedAt,
+            })
+            .eq('id', invite.id)
+            .eq('status', 'pending')
+        : Promise.resolve({ error: null }),
     ]);
 
     try {
@@ -232,7 +252,7 @@ export async function POST(req: NextRequest) {
 }
 
 function parseBody(body: BookAssessmentBody):
-  | { ok: true; data: { first_name: string; last_name: string; date_of_birth: string; email: string; answers: Record<string, ParQAnswer>; other_medical_note: string; signature_data_url: string; coach_notes: string; start_at: string } }
+  | { ok: true; data: { first_name: string; last_name: string; date_of_birth: string; email: string; answers: Record<string, ParQAnswer>; other_medical_note: string; signature_data_url: string; coach_notes: string; start_at: string; invite_token: string } }
   | { ok: false; error: string } {
   const firstName = cleanText(body.first_name, 80);
   const lastName = cleanText(body.last_name, 80);
@@ -242,6 +262,7 @@ function parseBody(body: BookAssessmentBody):
   const coachNotes = cleanText(body.coach_notes, 1200);
   const otherMedicalNote = cleanText(body.other_medical_note, 400);
   const signatureDataUrl = typeof body.signature_data_url === 'string' ? body.signature_data_url : '';
+  const inviteToken = cleanText(body.invite_token, 200);
 
   if (!firstName || !lastName) return { ok: false, error: 'First and last name are required.' };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || Number.isNaN(new Date(dateOfBirth).getTime()) || new Date(dateOfBirth) >= new Date()) {
@@ -274,8 +295,26 @@ function parseBody(body: BookAssessmentBody):
       signature_data_url: signatureDataUrl,
       coach_notes: coachNotes,
       start_at: new Date(startAt).toISOString(),
+      invite_token: inviteToken,
     },
   };
+}
+
+async function findPendingInvite(
+  supabase: ReturnType<typeof createAdminClient>,
+  token: string,
+  clientId: string,
+) {
+  const { data, error } = await supabase
+    .from('pt_movement_assessment_invites')
+    .select('id')
+    .eq('token_hash', createHash('sha256').update(token).digest('hex'))
+    .eq('client_id', clientId)
+    .eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
+  if (error) throw error;
+  return data as { id: string } | null;
 }
 
 function isAnswerRecord(value: unknown): value is Record<string, unknown> {
@@ -366,8 +405,8 @@ async function sendAssessmentEmails(input: {
   await sendEmail(input.clientEmail, clientSubject, clientText);
 
   const coachEmail = process.env.COACH_NOTIFY_EMAIL ?? process.env.PEDRO_EMAIL ?? 'pedro@cerebroai.au';
-  const coachSubject = `[Movement Assessment] ${input.clientName} — ${when}`;
-  const coachText = `New movement assessment booked from the public intake.\n\nClient: ${input.clientName} <${input.clientEmail}>\nWhen: ${when}${locationLine}\nPAR-Q: ${input.medicalFlag ? 'MEDICAL FLAG present — review before training' : 'all answers No'}${input.coachNotes ? `\nClient note: ${input.coachNotes}` : ''}\n\nThe signed PAR-Q PDF is saved on the client profile.`;
+  const coachSubject = `[Movement Assessment] ${input.clientName}: ${when}`;
+  const coachText = `New movement assessment booked from the public intake.\n\nClient: ${input.clientName} <${input.clientEmail}>\nWhen: ${when}${locationLine}\nPAR-Q: ${input.medicalFlag ? 'MEDICAL FLAG present. Review before training.' : 'all answers No'}${input.coachNotes ? `\nClient note: ${input.coachNotes}` : ''}\n\nThe signed PAR-Q PDF is saved on the client profile.`;
   await sendEmail(coachEmail, coachSubject, coachText);
 }
 
