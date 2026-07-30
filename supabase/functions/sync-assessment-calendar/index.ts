@@ -85,8 +85,10 @@ async function getGoogleAccessToken(): Promise<string | null> {
       if (res.ok) {
         const tokenData = (await res.json()) as { access_token?: string };
         if (tokenData.access_token) return tokenData.access_token;
+        console.error('Google token refresh returned no access token.');
       } else {
-        console.error('Google token refresh failed:', res.status, res.statusText);
+        const errorBody = await res.text();
+        console.error('Google token refresh failed:', res.status, errorBody.slice(0, 500));
       }
     } catch (tokenError) {
       console.error('Google token refresh error:', tokenError);

@@ -678,6 +678,10 @@ async function getGoogleAccessToken(): Promise<string | null> {
       if (res.ok) {
         const data = (await res.json()) as { access_token?: string };
         if (data.access_token) return data.access_token;
+        console.error('Google token refresh returned no access token.');
+      } else {
+        const errorBody = await res.text();
+        console.error('Google token refresh failed:', res.status, errorBody.slice(0, 500));
       }
     } catch (error) {
       console.error('Google token refresh failed:', error);
