@@ -1,12 +1,72 @@
 # Handoff
 
 ## Last updated
-2026-07-30 by Codex - Restored the Google Calendar authorization used by PT bookings and repaired every missing future event.
+2026-08-04 by Claude - Built the "Email from M & L" feature on the client card.
 
 ## Last code fix commit
-`882d12b` - Expose Calendar token refresh failures
+`13c7cda` - feat(pt): email from M & L
 
 ## What just happened (read first)
+
+### Email from M & L (2026-08-04, Claude)
+
+Pedro takes clients through a PAR-Q and an M & L assessment and ends up holding a
+lot of intelligence that never reaches the client. This turns that into a sendable
+email.
+
+Where it lives: `/dashboard/pt/clients/[id]`, a card called "Email from M & L",
+directly under the M & L Assessment dossier (`order-[6]`).
+
+How it works:
+- Pedro selects the sources: the signed PAR-Q, one or more M & L assessment notes,
+  and any generated M & L intelligence document. The newest of each is preselected.
+- He types (or dictates) anything else he wants covered in the free-text box.
+- Generate calls the `generate-ml-client-email` edge function, which reads only the
+  selected rows for that client, writes the email with Claude Opus 5 under Pedro's
+  voice rules plus hard non-diagnostic coaching rules, and saves a draft.
+- The draft is editable in place (subject + body). Send goes out through Resend and
+  needs a second confirming click. Every send writes `pt_notification_log`
+  (`notification_type = 'ml_assessment_feedback'`) and a `pt_events` row.
+
+Files:
+- `supabase/migrations/20260804000000_pt_client_ml_emails.sql` - applied to the
+  linked project.
+- `supabase/functions/generate-ml-client-email/index.ts` - deployed, v2, ACTIVE.
+  Two actions on one function: `generate` and `send`.
+- `app/dashboard/pt/clients/[id]/PTClientDetail.tsx` - the card.
+- `app/dashboard/pt/clients/[id]/page.tsx` - loads the last 10 saved emails.
+
+Model note: the function calls `claude-opus-5` with no `output_config`, so it runs
+at the API default effort. If generation fails the function still saves a
+structured fallback draft and surfaces the error in the card, rather than failing
+silently.
+
+Validation:
+- `npx tsc --noEmit` passes.
+- Production build passes (run from a clean local copy; see the Google Drive note
+  below).
+- Targeted ESLint on both changed files reports only pre-existing issues.
+- Migration verified in production: table, both RLS policies, and indexes exist.
+- `supabase functions list` shows `generate-ml-client-email` ACTIVE v2.
+- Not yet exercised end to end against a real client. The first real generation
+  (Noah Bernaud has 1 PAR-Q, 3 M & L notes, 1 generated document) is the thing to
+  watch.
+
+### Google Drive is corrupting node_modules reads (2026-08-04)
+
+`npm run build` and `npx eslint` both fail in the working copy with
+`Operation timed out (os error 60)` while reading files under `node_modules`
+(`motion-dom`, then `pdf-lib`, ...). The files exist in Drive's metadata but cannot
+be downloaded. Repairing one package just moves the failure to the next.
+
+Workaround used: rsync the source (excluding `node_modules`, `.next`, `.git`) into
+a local temp dir, `npm ci`, and build there. Note rsync aborts partway through on
+unreadable files, so verify the copied file list before trusting a build result.
+
+One repo source file is currently unreadable from Drive:
+`supabase/functions/draft-weekly-plan/index.ts`. It is intact in git, so
+`git checkout -- <path>` (or letting Drive re-sync) restores it. Nothing depends on
+it for the Next build.
 
 ### Google Calendar booking connection repair (2026-07-30, Codex)
 
