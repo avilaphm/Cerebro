@@ -127,6 +127,34 @@ interface PTClientDocument {
   analysis?: Record<string, unknown>;
 }
 
+export interface PTClientMLEmail {
+  id: string;
+  client_id: string;
+  created_at: string;
+  updated_at: string;
+  source_parq_note_id: string | null;
+  source_note_ids: string[];
+  source_document_ids: string[];
+  coach_instructions: string | null;
+  subject: string;
+  body_markdown: string;
+  body_html: string;
+  status: 'draft' | 'sent';
+  generation_mode: 'ai' | 'fallback';
+  generation_error: string | null;
+  recipient_email: string | null;
+  sent_at: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+interface MLEmailResponse {
+  ok?: boolean;
+  error?: string;
+  warning?: string | null;
+  email?: PTClientMLEmail;
+  sent_at?: string;
+}
+
 interface MovementAssessmentParqAnswer {
   id: string;
   label: string;
@@ -249,6 +277,7 @@ interface Props {
   weeklySetLogs?: WeeklySetLog[];
   priorSetLogs?: WeeklySetLog[];
   clientDocuments?: PTClientDocument[];
+  mlEmails?: PTClientMLEmail[];
   brainReports?: Array<{
     id: string;
     week_start: string;
@@ -386,6 +415,12 @@ function mlMovementKey(noteId: string, movementId: string) {
 function mlDocumentGenerationMode(doc: PTClientDocument): 'ai' | 'fallback' | null {
   const mode = doc.analysis?.generation_mode;
   return mode === 'ai' || mode === 'fallback' ? mode : null;
+}
+
+function isMLIntelligenceDoc(doc: PTClientDocument): boolean {
+  const parsedSource = typeof doc.parsed_summary?.source === 'string' ? doc.parsed_summary.source : null;
+  const analysisSource = typeof doc.analysis?.source === 'string' ? doc.analysis.source : null;
+  return parsedSource === 'ml_client_intelligence' || analysisSource === 'ml_client_intelligence' || doc.title.includes('M & L');
 }
 
 function getSR() {
@@ -564,6 +599,7 @@ export default function PTClientDetail({
   weeklySetLogs = [],
   priorSetLogs = [],
   clientDocuments = [],
+  mlEmails = [],
   brainReports = [],
 }: Props) {
   const supabase = createClient();
@@ -571,6 +607,7 @@ export default function PTClientDetail({
   const fileRef = useRef<HTMLInputElement>(null);
   const agentSpeechRef = useRef<SpeechRecognitionLike | null>(null);
   const mlVideoSpeechRef = useRef<SpeechRecognitionLike | null>(null);
+  const mlEmailSpeechRef = useRef<SpeechRecognitionLike | null>(null);
 
   const [client, setClient] = useState(initial);
   const [editing, setEditing] = useState(false);
@@ -625,6 +662,27 @@ export default function PTClientDetail({
   const [mlVideoListeningKey, setMlVideoListeningKey] = useState<string | null>(null);
   const [mlVideoSavingKey, setMlVideoSavingKey] = useState<string | null>(null);
   const [mlVideoStatus, setMlVideoStatus] = useState('');
+  const [mlEmailList, setMlEmailList] = useState<PTClientMLEmail[]>(mlEmails);
+  const [mlEmailParqId, setMlEmailParqId] = useState<string | null>(
+    () => initialNotes.find((note) => note.context?.source === 'movement_assessment_intake')?.id ?? null,
+  );
+  const [mlEmailNoteIds, setMlEmailNoteIds] = useState<string[]>(() => {
+    const mlNotes = initialNotes.filter((note) => note.context?.source === 'ml_assessment');
+    const preferred = mlNotes.find((note) => note.context?.stage === 'final') ?? mlNotes[0];
+    return preferred ? [preferred.id] : [];
+  });
+  const [mlEmailDocIds, setMlEmailDocIds] = useState<string[]>(() => {
+    const latest = clientDocuments.filter(isMLIntelligenceDoc)[0];
+    return latest ? [latest.id] : [];
+  });
+  const [mlEmailInstructions, setMlEmailInstructions] = useState('');
+  const [mlEmailListening, setMlEmailListening] = useState(false);
+  const [mlEmailBusy, setMlEmailBusy] = useState<'generate' | 'send' | null>(null);
+  const [mlEmailStatus, setMlEmailStatus] = useState<{ tone: 'info' | 'error' | 'done'; text: string } | null>(null);
+  const [mlEmailDraftId, setMlEmailDraftId] = useState<string | null>(mlEmails[0]?.id ?? null);
+  const [mlEmailSubject, setMlEmailSubject] = useState(mlEmails[0]?.subject ?? '');
+  const [mlEmailBody, setMlEmailBody] = useState(mlEmails[0]?.body_markdown ?? '');
+  const [mlEmailConfirmSend, setMlEmailConfirmSend] = useState(false);
   const [reviewBusy, setReviewBusy] = useState<'weekly' | 'monthly' | null>(null);
   const [agentInstructions, setAgentInstructions] = useState('');
   const [agentBusy, setAgentBusy] = useState<'new_programme' | 'revise_programme' | null>(null);
@@ -1218,15 +1276,21 @@ export default function PTClientDetail({
   const mlAssessmentNotes = notes.filter((note) => note.context?.source === 'ml_assessment');
   const visibleNotes = notes.filter((note) => note.context?.source !== 'ml_assessment');
   const latestFinalMLAssessmentNote = mlAssessmentNotes.find((note) => note.context?.stage === 'final');
-  const mlClientDocuments = clientDocuments.filter((doc) => {
-    const parsedSource = typeof doc.parsed_summary?.source === 'string' ? doc.parsed_summary.source : null;
-    const analysisSource = typeof doc.analysis?.source === 'string' ? doc.analysis.source : null;
-    return parsedSource === 'ml_client_intelligence' || analysisSource === 'ml_client_intelligence' || doc.title.includes('M & L');
-  });
+  const mlClientDocuments = clientDocuments.filter(isMLIntelligenceDoc);
   const latestMLDocument = mlClientDocuments[0] ?? null;
   const mlPdfReady = mlClientDocuments.some((doc) => Boolean(doc.storage_path));
   const latestMLPdfDocument = mlClientDocuments.find((doc) => Boolean(doc.storage_path)) ?? null;
   const mlPdfIsFallback = latestMLPdfDocument ? mlDocumentGenerationMode(latestMLPdfDocument) === 'fallback' : false;
+  const parqNotes = notes.filter((note) => note.context?.source === 'movement_assessment_intake');
+  const mlEmailHasSources = Boolean(mlEmailParqId) || mlEmailNoteIds.length > 0 || mlEmailDocIds.length > 0;
+  const activeMlEmail = mlEmailList.find((email) => email.id === mlEmailDraftId) ?? null;
+  const mlEmailFlags = Array.isArray(activeMlEmail?.metadata?.flags)
+    ? (activeMlEmail.metadata.flags as unknown[]).filter((item): item is string => typeof item === 'string')
+    : [];
+  const mlEmailDirty = Boolean(activeMlEmail) && (
+    mlEmailSubject.trim() !== (activeMlEmail?.subject ?? '').trim()
+    || mlEmailBody.trim() !== (activeMlEmail?.body_markdown ?? '').trim()
+  );
 
   const planningSignals = [
     !currentPlan ? 'No plan exists for this week.' : null,
@@ -1596,6 +1660,169 @@ export default function PTClientDetail({
       });
     } finally {
       setMlPdfBusy(false);
+    }
+  };
+
+  const toggleMlEmailNote = (noteId: string) => {
+    setMlEmailNoteIds((current) => (
+      current.includes(noteId) ? current.filter((id) => id !== noteId) : [...current, noteId]
+    ));
+  };
+
+  const toggleMlEmailDoc = (docId: string) => {
+    setMlEmailDocIds((current) => (
+      current.includes(docId) ? current.filter((id) => id !== docId) : [...current, docId]
+    ));
+  };
+
+  const stopMlEmailDictation = () => {
+    mlEmailSpeechRef.current?.stop();
+  };
+
+  const startMlEmailDictation = () => {
+    if (mlEmailListening) {
+      stopMlEmailDictation();
+      return;
+    }
+    const SR = getSR();
+    if (!SR) {
+      setMlEmailStatus({ tone: 'error', text: 'Browser dictation is not available. Type the instruction instead.' });
+      return;
+    }
+
+    mlEmailSpeechRef.current?.stop();
+    const recognition = new SR();
+    mlEmailSpeechRef.current = recognition;
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-AU';
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result?.isFinal) {
+          const transcript = result[0]?.transcript ?? '';
+          if (transcript) {
+            setMlEmailInstructions((current) => (current ? `${current} ${transcript}` : transcript).trim());
+          }
+        }
+      }
+    };
+    recognition.onerror = (event) => {
+      if (mlEmailSpeechRef.current !== recognition) return;
+      const reason = event.error ? ` (${event.error})` : '';
+      setMlEmailStatus({ tone: 'error', text: `Could not start dictation${reason}. Check Chrome microphone permission, or type the instruction instead.` });
+      setMlEmailListening(false);
+      mlEmailSpeechRef.current = null;
+    };
+    recognition.onend = () => {
+      if (mlEmailSpeechRef.current !== recognition) return;
+      setMlEmailListening(false);
+      mlEmailSpeechRef.current = null;
+    };
+    recognition.start();
+    setMlEmailListening(true);
+    setMlEmailStatus(null);
+  };
+
+  const invokeMlEmailFunction = async (payload: Record<string, unknown>) => {
+    const functionBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!functionBaseUrl || !anonKey) throw new Error('Supabase browser environment is missing.');
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error('Dashboard session expired. Sign in again and retry.');
+
+    const res = await fetch(`${functionBaseUrl}/functions/v1/generate-ml-client-email`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ client_id: client.id, ...payload }),
+    });
+
+    const data = await res.json().catch(() => ({})) as MLEmailResponse;
+    if (!res.ok || data.error) {
+      const edgeCode = res.headers.get('sb-error-code');
+      const statusText = edgeCode ? `${res.status} ${edgeCode}` : String(res.status);
+      throw new Error(data.error || `M & L email function failed (${statusText}).`);
+    }
+    return data;
+  };
+
+  const selectMlEmail = (email: PTClientMLEmail) => {
+    setMlEmailDraftId(email.id);
+    setMlEmailSubject(email.subject);
+    setMlEmailBody(email.body_markdown);
+    setMlEmailConfirmSend(false);
+    setMlEmailStatus(null);
+  };
+
+  const generateMlEmail = async () => {
+    if (mlEmailBusy || !mlEmailHasSources) return;
+    stopMlEmailDictation();
+    setMlEmailBusy('generate');
+    setMlEmailConfirmSend(false);
+    setMlEmailStatus({ tone: 'info', text: 'Reading the PAR-Q and M & L notes, then writing the email...' });
+    try {
+      const data = await invokeMlEmailFunction({
+        action: 'generate',
+        parq_note_id: mlEmailParqId,
+        note_ids: mlEmailNoteIds,
+        document_ids: mlEmailDocIds,
+        coach_instructions: mlEmailInstructions.trim(),
+      });
+      if (!data.email) throw new Error('The email draft was not returned.');
+      setMlEmailList((current) => [data.email as PTClientMLEmail, ...current.filter((row) => row.id !== data.email?.id)]);
+      selectMlEmail(data.email);
+      setMlEmailStatus(data.warning
+        ? { tone: 'error', text: data.warning }
+        : { tone: 'done', text: 'Draft ready. Read it, edit anything, then send.' });
+    } catch (err) {
+      setMlEmailStatus({ tone: 'error', text: err instanceof Error ? err.message : 'Could not generate the email.' });
+    } finally {
+      setMlEmailBusy(null);
+    }
+  };
+
+  const sendMlEmail = async () => {
+    if (mlEmailBusy || !mlEmailDraftId) return;
+    if (!mlEmailConfirmSend) {
+      setMlEmailConfirmSend(true);
+      setMlEmailStatus({ tone: 'info', text: `This sends the email to ${client.email}. Press send again to confirm.` });
+      return;
+    }
+    setMlEmailBusy('send');
+    setMlEmailStatus({ tone: 'info', text: 'Sending...' });
+    try {
+      const data = await invokeMlEmailFunction({
+        action: 'send',
+        email_id: mlEmailDraftId,
+        subject: mlEmailSubject.trim(),
+        body_markdown: mlEmailBody.trim(),
+      });
+      if (data.email) {
+        setMlEmailList((current) => current.map((row) => (row.id === data.email?.id ? data.email as PTClientMLEmail : row)));
+      }
+      setMlEmailConfirmSend(false);
+      setMlEmailStatus({ tone: 'done', text: `Sent to ${client.email}.` });
+      router.refresh();
+    } catch (err) {
+      setMlEmailConfirmSend(false);
+      setMlEmailStatus({ tone: 'error', text: err instanceof Error ? err.message : 'Could not send the email.' });
+    } finally {
+      setMlEmailBusy(null);
+    }
+  };
+
+  const copyMlEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(`${mlEmailSubject}\n\n${mlEmailBody}`);
+      setMlEmailStatus({ tone: 'done', text: 'Subject and body copied.' });
+    } catch {
+      setMlEmailStatus({ tone: 'error', text: 'Could not copy. Select the text and copy it manually.' });
     }
   };
 
@@ -2830,6 +3057,257 @@ export default function PTClientDetail({
                   </div>
                 ))}
               </div>
+          </div>
+        </section>
+      )}
+
+      {(parqNotes.length > 0 || mlAssessmentNotes.length > 0 || mlClientDocuments.length > 0 || mlEmailList.length > 0) && (
+        <section className="order-[6] mb-8 border border-black/10 bg-white/85">
+          <div className="flex w-full flex-col gap-4 px-5 py-4 text-left sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-w-0">
+              <span className="block text-[0.6rem] uppercase tracking-[0.2em] text-black/35">M & L</span>
+              <span className="mt-1 block font-display text-xl font-light text-black">Email from M &amp; L</span>
+              <span className="mt-1 block text-sm leading-6 text-black/50">
+                Pick the PAR-Q and M &amp; L sources, add anything else you want covered, and generate the feedback email for {client.name.split(' ')[0]}.
+              </span>
+            </span>
+            <span className="flex flex-wrap items-center gap-2 text-[0.62rem] uppercase tracking-[0.12em] text-black/45">
+              <span className="border border-black/10 bg-white px-2 py-1">
+                {mlEmailList.length} draft{mlEmailList.length === 1 ? '' : 's'}
+              </span>
+              <span className={`border px-2 py-1 ${activeMlEmail?.status === 'sent' ? 'border-green-200 bg-green-50 text-green-700' : 'border-black/10 bg-white'}`}>
+                {activeMlEmail?.status === 'sent' ? 'Sent' : activeMlEmail ? 'Draft ready' : 'Not written'}
+              </span>
+            </span>
+          </div>
+
+          <div className="border-t border-black/8 px-5 py-5">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">PAR-Q</p>
+                <div className="mt-2 space-y-2">
+                  {parqNotes.length === 0 && <p className="text-xs leading-5 text-black/40">No PAR-Q on file for this client.</p>}
+                  {parqNotes.map((note) => {
+                    const selected = mlEmailParqId === note.id;
+                    const flagged = note.context?.medical_flag === true;
+                    return (
+                      <button
+                        key={note.id}
+                        type="button"
+                        onClick={() => setMlEmailParqId(selected ? null : note.id)}
+                        className={`block w-full border px-3 py-2 text-left transition-colors ${selected ? 'border-black bg-black text-white' : 'border-black/12 bg-white hover:border-black/35'}`}
+                      >
+                        <span className="block text-xs font-medium">Signed PAR-Q</span>
+                        <span className={`mt-0.5 block text-[0.68rem] ${selected ? 'text-white/70' : 'text-black/40'}`}>
+                          {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {flagged ? ' · medical flag' : ''}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">M &amp; L assessment</p>
+                <div className="mt-2 space-y-2">
+                  {mlAssessmentNotes.length === 0 && <p className="text-xs leading-5 text-black/40">No M &amp; L assessment saved yet.</p>}
+                  {mlAssessmentNotes.map((note) => {
+                    const selected = mlEmailNoteIds.includes(note.id);
+                    return (
+                      <button
+                        key={note.id}
+                        type="button"
+                        onClick={() => toggleMlEmailNote(note.id)}
+                        className={`block w-full border px-3 py-2 text-left transition-colors ${selected ? 'border-black bg-black text-white' : 'border-black/12 bg-white hover:border-black/35'}`}
+                      >
+                        <span className="block text-xs font-medium">{noteContextLabel(note) ?? 'M & L Assessment'}</span>
+                        <span className={`mt-0.5 block text-[0.68rem] ${selected ? 'text-white/70' : 'text-black/40'}`}>
+                          {new Date(note.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Generated M &amp; L document</p>
+                <div className="mt-2 space-y-2">
+                  {mlClientDocuments.length === 0 && <p className="text-xs leading-5 text-black/40">No intelligence document generated yet.</p>}
+                  {mlClientDocuments.map((doc) => {
+                    const selected = mlEmailDocIds.includes(doc.id);
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        onClick={() => toggleMlEmailDoc(doc.id)}
+                        className={`block w-full border px-3 py-2 text-left transition-colors ${selected ? 'border-black bg-black text-white' : 'border-black/12 bg-white hover:border-black/35'}`}
+                      >
+                        <span className="block text-xs font-medium">{doc.title}</span>
+                        <span className={`mt-0.5 block text-[0.68rem] ${selected ? 'text-white/70' : 'text-black/40'}`}>
+                          {new Date(doc.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">What else goes in this email</p>
+              <textarea
+                value={mlEmailInstructions}
+                onChange={(event) => setMlEmailInstructions(event.target.value)}
+                rows={4}
+                placeholder="e.g. mention we are starting with the hip work before we touch anything heavy, tell him the first session is Tuesday, keep it short"
+                className="mt-2 w-full resize-none border border-black/10 bg-white px-3 py-2.5 text-sm leading-6 outline-none focus:border-black/40"
+              />
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {mlEmailListening ? (
+                  <>
+                    <span className="border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-600">Recording</span>
+                    <button
+                      type="button"
+                      onClick={stopMlEmailDictation}
+                      className="ml-dossier-solid-button border px-4 py-2 text-xs transition-colors"
+                    >
+                      Done
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startMlEmailDictation}
+                    className="ml-dossier-outline-button inline-flex items-center gap-2 border px-4 py-2 text-xs transition-colors"
+                  >
+                    <Mic className="h-3.5 w-3.5" />
+                    Voice
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void generateMlEmail()}
+                  disabled={mlEmailBusy !== null || !mlEmailHasSources}
+                  className="ml-dossier-solid-button border px-5 py-2 text-sm transition-colors disabled:cursor-not-allowed"
+                >
+                  {mlEmailBusy === 'generate' ? 'Writing...' : activeMlEmail ? 'Generate again' : 'Generate'}
+                </button>
+                {!mlEmailHasSources && (
+                  <span className="text-xs text-black/40">Select at least one source above.</span>
+                )}
+              </div>
+            </div>
+
+            {mlEmailStatus && (
+              <div className={`mt-5 border px-4 py-3 text-sm leading-6 ${
+                mlEmailStatus.tone === 'error'
+                  ? 'border-red-200 bg-red-50 text-red-800'
+                  : mlEmailStatus.tone === 'done'
+                    ? 'border-green-200 bg-green-50 text-green-800'
+                    : 'border-black/10 bg-[#fbfbf8] text-black/70'
+              }`}>
+                {mlEmailStatus.text}
+              </div>
+            )}
+
+            {activeMlEmail && (
+              <div className="mt-5 border border-black/10 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/8 px-4 py-3">
+                  <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">
+                    Draft {activeMlEmail.generation_mode === 'fallback' ? '(fallback, AI did not run)' : ''}
+                  </p>
+                  <p className="text-xs text-black/40">
+                    {activeMlEmail.status === 'sent' && activeMlEmail.sent_at
+                      ? `Sent ${new Date(activeMlEmail.sent_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`
+                      : `To ${client.email}`}
+                    {mlEmailDirty ? ' · edited' : ''}
+                  </p>
+                </div>
+
+                {mlEmailFlags.length > 0 && (
+                  <div className="border-b border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-[0.58rem] uppercase tracking-[0.16em] text-amber-700">Check before sending</p>
+                    <ul className="mt-2 space-y-1 text-xs leading-5 text-amber-800">
+                      {mlEmailFlags.map((flag) => <li key={flag}>{flag}</li>)}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="px-4 py-4">
+                  <label className="block text-[0.58rem] uppercase tracking-[0.16em] text-black/35" htmlFor="ml-email-subject">Subject</label>
+                  <input
+                    id="ml-email-subject"
+                    value={mlEmailSubject}
+                    onChange={(event) => setMlEmailSubject(event.target.value)}
+                    className="mt-2 w-full border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-black/40"
+                  />
+                  <label className="mt-4 block text-[0.58rem] uppercase tracking-[0.16em] text-black/35" htmlFor="ml-email-body">Body</label>
+                  <textarea
+                    id="ml-email-body"
+                    value={mlEmailBody}
+                    onChange={(event) => setMlEmailBody(event.target.value)}
+                    rows={20}
+                    className="mt-2 w-full resize-y border border-black/10 bg-white px-3 py-3 text-sm leading-7 outline-none focus:border-black/40"
+                  />
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void sendMlEmail()}
+                      disabled={mlEmailBusy !== null || !mlEmailSubject.trim() || !mlEmailBody.trim()}
+                      className="ml-dossier-solid-button border px-5 py-2 text-sm transition-colors disabled:cursor-not-allowed"
+                    >
+                      {mlEmailBusy === 'send'
+                        ? 'Sending...'
+                        : mlEmailConfirmSend
+                          ? `Confirm send to ${client.email}`
+                          : activeMlEmail.status === 'sent' ? 'Send again' : 'Send to client'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void copyMlEmail()}
+                      className="ml-dossier-outline-button border px-4 py-2 text-xs transition-colors"
+                    >
+                      Copy
+                    </button>
+                    {mlEmailConfirmSend && (
+                      <button
+                        type="button"
+                        onClick={() => { setMlEmailConfirmSend(false); setMlEmailStatus(null); }}
+                        className="px-2 py-2 text-xs text-black/40 underline hover:text-black"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {mlEmailList.length > 1 && (
+              <div className="mt-5 space-y-2">
+                <p className="text-[0.58rem] uppercase tracking-[0.16em] text-black/35">Earlier emails</p>
+                {mlEmailList.filter((email) => email.id !== mlEmailDraftId).map((email) => (
+                  <button
+                    key={email.id}
+                    type="button"
+                    onClick={() => selectMlEmail(email)}
+                    className="flex w-full items-start justify-between gap-4 border border-black/10 bg-[#fbfbf8] px-4 py-3 text-left transition-colors hover:border-black/30"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-black/80">{email.subject || 'Untitled draft'}</span>
+                      <span className="mt-1 block text-xs text-black/35">
+                        {new Date(email.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[0.62rem] uppercase tracking-[0.12em] text-black/40">
+                      {email.status === 'sent' ? 'Sent' : 'Draft'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
